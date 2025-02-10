@@ -2,9 +2,9 @@ CRAZYFLIE_BASE := $(PWD)/crazyflie-firmware
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
 
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include/Eigen
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include/Eigen.h
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC/src
+EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include/Eigen
+EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include/Eigen.h
+EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/src
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
