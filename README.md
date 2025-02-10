@@ -23,8 +23,8 @@ To build the firmware for the tinympc controller on Crazyflie using WSL on Windo
 ### 2. Clone the Firmware Repository
 - In WSL, navigate to your desired directory and clone the repository:
   ```bash
-  git clone --recursive https://github.com/ginoekzhang/a2r-tinympc-crazyflie-firmware.git
-  cd a2r-tinympc-crazyflie-firmware
+  git clone --recursive git@github.com:A2R-Lab/tinympc-crazyflie.git GIT_CLONE_PROTECTION_ACTIVE=false
+  cd tinympc-crazyflie
   ```
 
 ### 3. Configure the Build Settings
