@@ -62,6 +62,7 @@ extern "C"
 
 // TinyMPC and PID controllers
 #include "tinympc/admm.hpp"
+#include "tinympc/tiny_api.hpp"
 #include "controller_pid.h"
 
 // Params
