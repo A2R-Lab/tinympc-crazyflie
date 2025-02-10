@@ -23,7 +23,7 @@ To build the firmware for the tinympc controller on Crazyflie using WSL on Windo
 ### 2. Clone the Firmware Repository
 - In WSL, navigate to your desired directory and clone the repository:
   ```bash
-  git clone --recursive git@github.com:A2R-Lab/tinympc-crazyflie.git GIT_CLONE_PROTECTION_ACTIVE=false
+  GIT_CLONE_PROTECTION_ACTIVE=false git clone --recursive git@github.com:A2R-Lab/tinympc-crazyflie.git
   cd tinympc-crazyflie
   ```
 
@@ -41,4 +41,66 @@ To build the firmware for the tinympc controller on Crazyflie using WSL on Windo
 - Compile the firmware using all available CPU cores:
   ```bash
   make -j$(nproc)
+  ```
+
+
+
+# For MacOS
+
+## Prerequisites
+
+- **Homebrew**: Ensure you have Homebrew installed on your macOS.
+- **SWIG**: Use Homebrew to install SWIG.
+
+  ```bash
+  brew install swig
+  ```
+
+## Installation Steps
+
+### Step 1: Clear Build
+
+1. **Clean the Build**: This will erase the current configuration.
+
+   ```bash
+   make clean
+   ```
+
+2. **Manually Remove Files (Optional)**:
+
+   - Remove the `build` directory:
+
+     ```bash
+     rm -rf build
+     ```
+
+   - Navigate to the `src` directory and remove object files:
+
+     ```bash
+     cd src
+     rm *.o
+     ```
+
+### Step 2: Write the `.config` File
+
+1. **Generate Configuration**: Use `make nconfig` to configure the project.
+
+   ```bash
+   make nconfig
+   ```
+
+2. **Configuration Settings**:
+
+   - Navigate to **App layer config**:
+     - Set **Entry point** to **on**.
+
+   - Navigate to **Controllers**:
+     - Set **Out of tree controller** to **on**.
+
+### Step 3: Build the Project
+
+- Run the following command to build the project:
+
+  ```bash
+  make
   ```
