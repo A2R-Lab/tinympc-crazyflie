@@ -1,11 +1,5 @@
 CRAZYFLIE_BASE := $(PWD)/crazyflie-firmware
 
-CONFIG_CROSS_COMPILE="arm-none-eabi-"
-CC = arm-none-eabi-gcc
-CXX = arm-none-eabi-g++
-
-
-include $(CRAZYFLIE_BASE)/tools/make/oot.mk
 
 EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include
 EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include/Eigen
@@ -23,3 +17,5 @@ EXTRA_CFLAGS += -Wno-error
 #
 OOT_CONFIG := $(PWD)/app-config
 OOT_USES_CXX := 1
+
+include $(CRAZYFLIE_BASE)/tools/make/oot.mk
