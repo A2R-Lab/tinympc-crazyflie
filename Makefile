@@ -1,5 +1,10 @@
 CRAZYFLIE_BASE := $(PWD)/crazyflie-firmware
 
+CONFIG_CROSS_COMPILE="arm-none-eabi-"
+CC = arm-none-eabi-gcc
+CXX = arm-none-eabi-g++
+
+
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
 
 EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include
