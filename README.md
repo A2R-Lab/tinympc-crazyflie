@@ -106,10 +106,11 @@ To build the firmware for the tinympc controller on Crazyflie using WSL on Windo
   ```
 
   # Flashing the CrazyFlie
-  - Run the following with the CrazyRadio plugged in, and a CrazyFlie turned on and near you
-'''
-CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
-'''
+  - Run the following with the CrazyRadio plugged in, and a CrazyFlie turned on and near you:
+
+    ```bash
+    CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
+    ```
 
   # Docker Setup and Usage
   To use the docker container, clone the repo and run the following commands from the root - 
