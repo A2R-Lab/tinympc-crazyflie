@@ -104,3 +104,11 @@ To build the firmware for the tinympc controller on Crazyflie using WSL on Windo
   ```bash
   make
   ```
+
+
+  ### Docker Setup and Usage
+
+  To use the docker container, clone the repo and run the following commands from the root - 
+
+ - ```docker build -t crazyflie-build . ```
+ - ```docker run -it --rm -v "$(pwd):/workspace" crazyflie-build```
