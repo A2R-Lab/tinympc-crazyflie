@@ -480,6 +480,7 @@ static void tinympcControllerTask(void *parameters)
       work.iter = 0;
 
       mpc_start_timestamp = usecTimestamp();
+      //DEBUG_PRINT("TINY SOLVING!");
       tiny_solve(&solver);
       vTaskDelay(M2T(1));
       tiny_solve(&solver);

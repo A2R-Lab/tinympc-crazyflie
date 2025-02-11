@@ -1,7 +1,7 @@
 CRAZYFLIE_BASE := $(PWD)/crazyflie-firmware
 
 # Add TinyMPC directory to the build
-PROJ_ROOT = $(PWD)/src/TinyMPC/src/tinympc
+# PROJ_ROOT = $(PWD)/src/TinyMPC/src/tinympc
 
 # Include paths
 EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include
