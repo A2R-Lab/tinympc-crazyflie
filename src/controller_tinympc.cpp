@@ -198,12 +198,12 @@ static inline struct vec quat_2_rp(quaternion_t q)
   
 static void resetProblem(void) {
   // Copy problem data
-  work.x = tinyMatrix::Zero(NTOTAL, NHORIZON);
-  work.q = tinyMatrix::Zero(NTOTAL, NHORIZON);
-  work.p = tinyMatrix::Zero(NTOTAL, NHORIZON);
-  work.v = tinyMatrix::Zero(NTOTAL, NHORIZON);
-  work.vnew = tinyMatrix::Zero(NTOTAL, NHORIZON);
-  work.g = tinyMatrix::Zero(NTOTAL, NHORIZON);
+  work.x = tinyMatrix::Zero(NSTATES, NHORIZON);
+  work.q = tinyMatrix::Zero(NSTATES, NHORIZON);
+  work.p = tinyMatrix::Zero(NSTATES, NHORIZON);
+  work.v = tinyMatrix::Zero(NSTATES, NHORIZON);
+  work.vnew = tinyMatrix::Zero(NSTATES, NHORIZON);
+  work.g = tinyMatrix::Zero(NSTATES, NHORIZON);
 
   work.u = tinyMatrix::Zero(NINPUTS, NHORIZON-1);
   work.r = tinyMatrix::Zero(NINPUTS, NHORIZON-1);
@@ -239,6 +239,105 @@ static void resetProblem(void) {
 
     // Call the PID controller instead in this example to make it possible to fly
     controllerPidInit();
+
+    // Basic setup
+    solver.work = &work;
+    solver.cache = &cache;
+    solver.settings = &settings;
+
+    // Basic parameters first
+    work.nx = NSTATES;
+    work.nu = NINPUTS;
+    work.N  = NHORIZON;
+
+    // Initialize problem data to zero before any other operations
+    resetProblem();
+
+    // Initialize simple scalar values
+    work.primal_residual_state = 0;
+    work.primal_residual_input = 0;
+    work.dual_residual_state = 0;
+    work.dual_residual_input = 0;
+    work.status = 0;
+    work.iter = 0;
+
+    /*
+
+    // Copy cache data from problem_data/quadrotor*.hpp
+    cache.rho = rho_unconstrained_value;
+    cache.Kinf = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data, NINPUTS, NSTATES);
+    cache.Pinf = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Pinf_constrained_data, NSTATES, NSTATES);
+    cache.Quu_inv = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_constrained_data, NINPUTS, NINPUTS);
+    cache.AmBKt = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data, NSTATES, NSTATES);
+
+    // Copy/set workspace data
+    work.nx = NSTATES;
+    work.nu = NINPUTS;
+    work.N  = NHORIZON;
+    work.Q = Eigen::Map<tinyVector>(Q_constrained_data, NSTATES, 1);
+    work.R = Eigen::Map<tinyVector>(R_constrained_data, NINPUTS, 1);
+
+    tinyVector vec(4, 1);
+    vec << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
+    work.u_min = vec.replicate(1, NHORIZON - 1);
+
+    tinyVector vec1(4, 1);
+    vec1 << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
+    work.u_max = vec1.replicate(1, NHORIZON - 1);
+
+    // work.u_min = tinyVector(-u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3]).replicate<1, NHORIZON - 1>();
+    // work.u_max = tinyVector(1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3]).replicate<1, NHORIZON - 1>();
+    
+    for (int i = 0; i < NHORIZON; i++)
+    {
+      work.x_min(i) = -1000; // Fill with -1000
+      work.x_max(i) = 1000;  // Fill with 1000
+    }
+
+    work.Xref = tinyMatrix::Zero(NSTATES, NHORIZON);
+    work.Uref = tinyMatrix::Zero(NINPUTS, NHORIZON);
+
+    // Initialize problem data to zero
+    resetProblem();
+
+    work.primal_residual_state = 0;
+    work.primal_residual_input = 0;
+    work.dual_residual_state = 0;
+    work.dual_residual_input = 0;
+    work.status = 0;
+    work.iter = 0;
+
+    // // Copy reference trajectory into Eigen matrix
+    // Xref_total = Eigen::Map<Matrix<tinytype, NTOTAL, NSTATES, Eigen::RowMajor>>(Xref_data).transpose();
+    // Xref_total = Eigen::Map<Matrix<tinytype, NTOTAL, 3, Eigen::RowMajor>>(Xref_data).transpose();
+    // Xref_origin << Xref_total.col(0).head(3), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz start of traj
+    // Xref_end << Xref_total.col(NTOTAL-1).head(3), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz start of traj
+    // Xref_origin << Xref_total.col(0), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz start of traj
+    // Xref_end << Xref_total.col(NTOTAL-1).head(3), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz start of traj
+    Xref_origin << 0, 0, 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Always go to 0, 0, 1 (comment out enable_traj = true check in main loop)
+
+
+    enable_traj = false;
+    traj_index = 0;
+    max_traj_index = NTOTAL - NHORIZON;
+
+    */
+
+
+
+
+    // somehow the section above this is still bricking - loading red
+
+    /* Begin task initialization */
+    // runTaskSemaphore = xSemaphoreCreateBinary();
+    // ASSERT(runTaskSemaphore);
+
+    // dataMutex = xSemaphoreCreateMutexStatic(&dataMutexBuffer);
+
+    // STATIC_MEM_TASK_CREATE(tinympcControllerTask, tinympcControllerTask, SYSTEM_TASK_NAME, NULL, SYSTEM_TASK_PRI);
+
+    // isInit = true;
+    /* End of task initialization */
   }
 
   bool controllerOutOfTreeTest()
