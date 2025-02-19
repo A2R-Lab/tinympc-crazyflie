@@ -241,9 +241,18 @@ static void resetProblem(void) {
     controllerPidInit();
 
     // Basic setup
-    solver.work = &work;
+    solver.work = &work; // work is a Workspace
     solver.cache = &cache;
     solver.settings = &settings;
+
+    // Copy cache data from problem_data/quadrotor*.hpp
+    // I think that should be done first
+    cache.rho = rho_unconstrained_value;
+    cache.Kinf = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data, NINPUTS, NSTATES);
+    cache.Pinf = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Pinf_constrained_data, NSTATES, NSTATES);
+    cache.Quu_inv = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_constrained_data, NINPUTS, NINPUTS);
+    cache.AmBKt = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data, NSTATES, NSTATES);
+
 
     // Basic parameters first
     work.nx = NSTATES;
@@ -261,18 +270,85 @@ static void resetProblem(void) {
     work.status = 0;
     work.iter = 0;
 
-    // Copy cache data from problem_data/quadrotor*.hpp
-    cache.rho = rho_unconstrained_value;
-    cache.Kinf = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data, NINPUTS, NSTATES);
-    cache.Pinf = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Pinf_constrained_data, NSTATES, NSTATES);
-    cache.Quu_inv = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_constrained_data, NINPUTS, NINPUTS);
-    cache.AmBKt = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data, NSTATES, NSTATES);
+    // Use the constrained version of Q and R
+    // work.Q = Eigen::Map<Matrix<tinytype, NSTATES, 1>>(Q_constrained_data);
+    // DEBUG_PRINT("After Q init\n");
+    
+    // work.R = Eigen::Map<Matrix<tinytype, NINPUTS, 1>>(R_constrained_data);
+    // DEBUG_PRINT("After R init\n");
+
+    // First resize the vectors
+    work.Q.resize(NSTATES);
+    work.R.resize(NINPUTS);
+    
+    // Then copy the data
+    for(int i = 0; i < NSTATES; i++) {
+        work.Q(i) = Q_constrained_data[i];
+    }
+    DEBUG_PRINT("After Q init\n");
+    
+    for(int i = 0; i < NINPUTS; i++) {
+        work.R(i) = R_constrained_data[i];
+    }
+    DEBUG_PRINT("After R init\n");
 
     // Copy/set workspace data - just the Q and R mapping first
 
-    // Defined here: quadrotor_50hz_params_constrained.hpp
-    work.Q = Eigen::Map<tinyVector>(Q_constrained_data, NSTATES, 1);
-    work.R = Eigen::Map<tinyVector>(R_constrained_data, NINPUTS, 1);
+    // THIS DOES NOT WORK1!!!!!! because it uses dynamic size
+    // recommended to use fixed size for embedded systems
+
+    // work.Q = Eigen::Map<tinyVector>(Q_constrained_data, NSTATES, 1);
+    // work.R = Eigen::Map<tinyVector>(R_constrained_data, NINPUTS, 1);
+
+    // Defined in here: quadrotor_50hz_params_constrained.hpp
+    // tinyVector is defined in tinympc/types.h
+
+    // Resize vectors before mapping just in case
+    // work.Q.resize(NSTATES); // states
+    // work.R.resize(NINPUTS); // actions
+
+    // Instead of using Dynamic sizing, let's try fixed size
+    // work.Q = Matrix<tinytype, NSTATES, 1>::Zero();
+    // DEBUG_PRINT("After Q init\n");
+    
+    // work.R = Matrix<tinytype, NINPUTS, 1>::Zero();
+    // DEBUG_PRINT("After R init\n");
+
+    // Use the constrained version of Q and R
+    // work.Q = Eigen::Map<Matrix<tinytype, NSTATES, 1>>(Q_constrained_data);
+    // DEBUG_PRINT("After Q init\n");
+    
+    // work.R = Eigen::Map<Matrix<tinytype, NINPUTS, 1>>(R_constrained_data);
+    // DEBUG_PRINT("After R init\n");
+
+    /*
+    DEBUG_PRINT("Before Q copy\n");
+
+    for(int i = 0; i < NSTATES; i++) {
+        work.Q(i) = Q_constrained_data[i];
+    }
+
+    // Q copy operations
+    DEBUG_PRINT("After Q copy\n");
+    DEBUG_PRINT("Before R copy\n");
+    
+    for(int i = 0; i < NINPUTS; i++) {
+        work.R(i) = R_constrained_data[i];
+    }
+
+    // R copy operations
+    DEBUG_PRINT("After R copy\n");
+    */
+
+    /*
+    // work.Q = Eigen::Map<tinyVector>(Q_constrained_data, NSTATES, 1);
+    // work.R = Eigen::Map<tinyVector>(R_constrained_data, NINPUTS, 1);
+
+    // Now map the data, explicitly setting type instead of using tinyVector
+    work.Q = Eigen::Map<Matrix<tinytype, Dynamic, 1>>(Q_constrained_data, NSTATES);
+    work.R = Eigen::Map<Matrix<tinytype, Dynamic, 1>>(R_constrained_data, NINPUTS);
+
+    */
 
     /*
     // input constraints
