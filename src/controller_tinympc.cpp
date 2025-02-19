@@ -261,7 +261,6 @@ static void resetProblem(void) {
     work.status = 0;
     work.iter = 0;
 
-    /*
     // Copy cache data from problem_data/quadrotor*.hpp
     cache.rho = rho_unconstrained_value;
     cache.Kinf = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data, NINPUTS, NSTATES);
@@ -269,13 +268,14 @@ static void resetProblem(void) {
     cache.Quu_inv = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_constrained_data, NINPUTS, NINPUTS);
     cache.AmBKt = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data, NSTATES, NSTATES);
 
-    // Copy/set workspace data
-    work.nx = NSTATES;
-    work.nu = NINPUTS;
-    work.N  = NHORIZON;
+    // Copy/set workspace data - just the Q and R mapping first
+
+    // Defined here: quadrotor_50hz_params_constrained.hpp
     work.Q = Eigen::Map<tinyVector>(Q_constrained_data, NSTATES, 1);
     work.R = Eigen::Map<tinyVector>(R_constrained_data, NINPUTS, 1);
 
+    /*
+    // input constraints
     tinyVector vec(4, 1);
     vec << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
     work.u_min = vec.replicate(1, NHORIZON - 1);
@@ -284,9 +284,6 @@ static void resetProblem(void) {
     vec1 << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
     work.u_max = vec1.replicate(1, NHORIZON - 1);
 
-    // work.u_min = tinyVector(-u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3]).replicate<1, NHORIZON - 1>();
-    // work.u_max = tinyVector(1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3]).replicate<1, NHORIZON - 1>();
-    
     for (int i = 0; i < NHORIZON; i++)
     {
       work.x_min(i) = -1000; // Fill with -1000
@@ -295,7 +292,11 @@ static void resetProblem(void) {
 
     work.Xref = tinyMatrix::Zero(NSTATES, NHORIZON);
     work.Uref = tinyMatrix::Zero(NINPUTS, NHORIZON);
+    */
 
+
+
+    /*
     // Initialize problem data to zero
     resetProblem();
 
