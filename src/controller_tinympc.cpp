@@ -262,7 +262,6 @@ static void resetProblem(void) {
     work.iter = 0;
 
     /*
-
     // Copy cache data from problem_data/quadrotor*.hpp
     cache.rho = rho_unconstrained_value;
     cache.Kinf = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data, NINPUTS, NSTATES);
