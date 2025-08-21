@@ -3,4 +3,4 @@
 	url = https://github.com/bitcraze/crazyflie-firmware.git
 [submodule "apps/tinympc/TinyMPC"]
 	path = apps/tinympc/TinyMPC
-	url = https://github.com/tinympc/tinympc.git
+	url = https://github.com/moisesmata/tinympc.git
