@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 // Include Eigen 
-//#include <Eigen/Dense>
+#include <Eigen/Dense>
 
 // TinyMPC dimensions (must be defined before including parameter file)
 #define NSTATES 12
