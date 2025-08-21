@@ -25,7 +25,7 @@ OOT_USES_CXX := 1
 EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include -I$(PWD)/TinyMPC/include/Eigen -I$(PWD)/TinyMPC/src
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO -DEIGEN_NO_MALLOC -DNDEBUG -DEIGEN_FAST_MATH
 EXTRA_CFLAGS += -Wno-error
-# DEBUG_MODE is now handled internally by TinyMPC submodule
+EXTRA_CFLAGS += -DEMBEDDED_BUILD # Disable iostream for embedded compatibility
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
  

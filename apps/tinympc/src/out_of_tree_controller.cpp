@@ -42,28 +42,57 @@ extern "C" {
 #include "tinympc/types.hpp"
 #include "tinympc/tiny_api.hpp"
 
-// Simple MPC state
+// TinyMPC solver instance
+static TinySolver* g_solver = nullptr;
+static bool g_solver_initialized = false;
 static bool g_use_mpc = true;
-static bool g_mpc_initialized = false;
 
 // TinyMPC type definitions
 typedef Matrix<tinytype, NINPUTS, NHORIZON-1> tiny_MatrixNuNhm1;
 typedef Matrix<tinytype, NSTATES, NHORIZON> tiny_MatrixNxNh;
 typedef Matrix<tinytype, NSTATES, 1> tiny_VectorNx;
 
-// Initialize simple MPC
-static void initMPC(void) {
-  if (g_mpc_initialized) return;
+// Initialize TinyMPC solver
+static void initTinyMPC(void) {
+  if (g_solver_initialized) return;
 
-  // Map parameter data to Eigen matrices for reference
+  // Map parameter data to Eigen matrices
   tinyMatrix Adyn = Map<Matrix<tinytype, NSTATES, NSTATES, RowMajor>>(Adyn_data);
   tinyMatrix Bdyn = Map<Matrix<tinytype, NSTATES, NINPUTS, RowMajor>>(Bdyn_data);
+  tinyVector fdyn = tiny_VectorNx::Zero();
   tinyVector Q = Map<Matrix<tinytype, NSTATES, 1>>(Q_data);
   tinyVector R = Map<Matrix<tinytype, NINPUTS, 1>>(R_data);
 
-  // Simple initialization - just mark as ready
-  g_mpc_initialized = true;
-  DEBUG_PRINT("Simple MPC initialized successfully!\n");
+  // Set up constraint bounds
+  tinyMatrix x_min = tiny_MatrixNxNh::Constant(-2.0);
+  tinyMatrix x_max = tiny_MatrixNxNh::Constant(2.0);
+  tinyMatrix u_min = tiny_MatrixNuNhm1::Constant(0.0);
+  tinyMatrix u_max = tiny_MatrixNuNhm1::Constant(1.0);
+
+  // Initialize TinyMPC solver
+  int status = tiny_setup(&g_solver, Adyn, Bdyn, fdyn, Q.asDiagonal(), R.asDiagonal(),
+                          rho_value, NSTATES, NINPUTS, NHORIZON, 1);
+  if (status != 0) {
+    DEBUG_PRINT("TinyMPC setup failed: %d\n", status);
+    return;
+  }
+
+  status = tiny_set_bound_constraints(g_solver, x_min, x_max, u_min, u_max);
+  if (status != 0) {
+    DEBUG_PRINT("TinyMPC constraint setup failed: %d\n", status);
+    return;
+  }
+
+  // Set solver parameters
+  g_solver->settings->max_iter = 50;
+
+  // Set default reference (hover at 2m height)
+  tiny_VectorNx Xref_hover;
+  Xref_hover << 0, 0, 2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  g_solver->work->Xref = Xref_hover.replicate<1, NHORIZON>();
+
+  g_solver_initialized = true;
+  DEBUG_PRINT("TinyMPC initialized successfully!\n");
 }
 
 // Convert Crazyflie state to TinyMPC state vector
@@ -106,14 +135,14 @@ extern "C" void controllerOutOfTreeInit(void) {
   // Initialize PID controller as fallback
   controllerPidInit();
 
-  // Initialize simple MPC
-  initMPC();
+  // Initialize TinyMPC
+  initTinyMPC();
 
-  DEBUG_PRINT("Simple MPC OOT controller initialized!\n");
+  DEBUG_PRINT("TinyMPC OOT controller initialized!\n");
 }
 
 extern "C" bool controllerOutOfTreeTest(void) {
-  return g_mpc_initialized;
+  return g_solver_initialized;
 }
 
 extern "C" void controllerOutOfTree(control_t *control,
@@ -122,46 +151,41 @@ extern "C" void controllerOutOfTree(control_t *control,
                          const state_t *state,
                          const stabilizerStep_t tick) {
 
-  if (!g_mpc_initialized || !g_use_mpc) {
+  if (!g_solver_initialized || !g_use_mpc) {
     // Fallback to PID
     DEBUG_PRINT("Using PID fallback\n");
     controllerPid(control, setpoint, sensors, state, tick);
     return;
   }
 
-  // Simple MPC implementation
   // Convert current state to state vector
   tiny_VectorNx x0 = crazyflieStateToTinyMPC(state, sensors);
 
-  // Map parameter data to Eigen matrices
-  tinyMatrix Adyn = Map<Matrix<tinytype, NSTATES, NSTATES, RowMajor>>(Adyn_data);
-  tinyMatrix Bdyn = Map<Matrix<tinytype, NSTATES, NINPUTS, RowMajor>>(Bdyn_data);
-
-  // Create reference trajectory (hover at setpoint position)
+  // Set reference trajectory
   tiny_VectorNx Xref_current;
   Xref_current << setpoint->position.x, setpoint->position.y, setpoint->position.z,
                   0, 0, setpoint->attitude.yaw * M_PI / 180.0,
                   0, 0, 0, 0, 0, 0;
+  g_solver->work->Xref = Xref_current.replicate<1, NHORIZON>();
 
-  // Simple MPC: proportional control to reference with feedforward
-  tiny_VectorNx x_error = Xref_current - x0;
+  // Set initial state
+  tiny_set_x0(g_solver, x0);
 
-  // Simple LQR-like control (using first row of Bdyn matrix for mixing)
-  tiny_VectorNx u0 = tiny_VectorNx::Zero();
-  for (int i = 0; i < NINPUTS; i++) {
-    // Simple proportional control on position error
-    float pos_error = sqrtf(x_error(0)*x_error(0) + x_error(1)*x_error(1) + x_error(2)*x_error(2));
-    u0(i) = 0.5f + fminf(0.3f, pos_error * 0.1f);  // Base thrust + position feedback
-  }
+  // Solve MPC problem
+  tiny_solve(g_solver);
+
+  // Extract first control input
+  tiny_VectorNx u0 = g_solver->work->u.col(0);
 
   // Apply control to motors (convert thrust to normalized forces)
   control->controlMode = controlModeForce;
   for (int i = 0; i < 4; i++) {
     // Clamp thrust between 0 and 1
-    control->normalizedForces[i] = fmaxf(0.0f, fminf(1.0f, u0(i % NINPUTS)));
+    float thrust = fmaxf(0.0f, fminf(1.0f, u0(i)));
+    control->normalizedForces[i] = 0.5f + thrust * 0.3f;  // Base thrust + MPC output
   }
 
-  DEBUG_PRINT("Simple MPC: pos=%.2f,%.2f,%.2f thrust=%.2f,%.2f,%.2f,%.2f\n",
+  DEBUG_PRINT("MPC: pos=%.2f,%.2f,%.2f thrust=%.2f,%.2f,%.2f,%.2f\n",
               x0(0), x0(1), x0(2),
               control->normalizedForces[0],
               control->normalizedForces[1],
