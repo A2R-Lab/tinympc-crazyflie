@@ -1,1 +1,1 @@
-obj-$(CONFIG_APP_API_TEST) += src/
+obj-y += src/

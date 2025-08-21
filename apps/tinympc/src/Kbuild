@@ -1,2 +1,1 @@
-obj-y += controller_tinympc.o
-obj-y += TinyMPC/src/tinympc/
+obj-y += out_of_tree_controller.o

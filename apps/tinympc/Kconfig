@@ -1,5 +1,5 @@
-config APP_API_TEST
-    bool "Build API test application"
-    default n
+config TINY_MPC_CONTROLLER
+    bool "Enable TinyMPC out-of-tree controller"
+    default y
     help
-       Builds an application that uses all app layer API.
+       Builds a minimal TinyMPC-based out-of-tree controller. Currently delegates to PID for safety while scaffolding is in place.
