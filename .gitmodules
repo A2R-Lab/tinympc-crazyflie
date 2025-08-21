@@ -1,6 +1,6 @@
 [submodule "crazyflie-firmware"]
 	path = crazyflie-firmware
 	url = https://github.com/bitcraze/crazyflie-firmware.git
-[submodule "src/TinyMPC"]
-	path = src/TinyMPC
+[submodule "apps/tinympc/src/TinyMPC"]
+	path = apps/tinympc/src/TinyMPC
 	url = https://github.com/tinympc/tinympc.git
