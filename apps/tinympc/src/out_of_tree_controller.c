@@ -18,8 +18,8 @@ extern "C" {
 #include <string.h>
 
 // TinyMPC
-#include "TinyMPC/src/tinympc/tiny_api.hpp"
-#include "TinyMPC/src/tinympc/types.hpp"
+#include "tinympc/tiny_api.hpp"
+#include "tinympc/types.hpp"
 
 // Params (CMU-style headers)
 #include "quadrotor_50hz_params_unconstrained.hpp"

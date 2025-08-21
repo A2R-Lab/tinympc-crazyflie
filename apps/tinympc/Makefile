@@ -22,7 +22,7 @@ OOT_CONFIG := $(PWD)/app-config
 
 # Use C++ linker and add local include paths for TinyMPC headers (Eigen.h lives in include/)
 OOT_USES_CXX := 1
-EXTRA_CFLAGS += -I$(PWD)/src/TinyMPC/include -I$(PWD)/src/TinyMPC/src
+EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include -I$(PWD)/TinyMPC/src
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
  
