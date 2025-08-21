@@ -20,9 +20,12 @@ CRAZYFLIE_BASE := ../../crazyflie-firmware
 #
 OOT_CONFIG := $(PWD)/app-config
 
-# Use C++ linker and add local include paths for TinyMPC headers (Eigen.h lives in include/)
+# Use C++ linker and add local include paths for TinyMPC headers
 OOT_USES_CXX := 1
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include -I$(PWD)/TinyMPC/src
+EXTRA_CFLAGS += -I$(PWD)/TinyMPC/include -I$(PWD)/TinyMPC/include/Eigen -I$(PWD)/TinyMPC/src
+EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO -DEIGEN_NO_MALLOC -DNDEBUG -DEIGEN_FAST_MATH
+EXTRA_CFLAGS += -Wno-error
+# DEBUG_MODE is now handled internally by TinyMPC submodule
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
  

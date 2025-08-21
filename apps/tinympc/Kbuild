@@ -1,2 +1,5 @@
+ccflags-y += -I$(OOT)/TinyMPC/include
+ccflags-y += -I$(OOT)/TinyMPC/src
+ccflags-y += -I$(src)
+
 obj-y += src/
-obj-y += TinyMPC/src/tinympc
