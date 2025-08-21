@@ -4,3 +4,6 @@
 [submodule "apps/tinympc/src/TinyMPC"]
 	path = apps/tinympc/src/TinyMPC
 	url = https://github.com/tinympc/tinympc.git
+[submodule "apps/tinympc/TinyMPC"]
+	path = apps/tinympc/TinyMPC
+	url = https://github.com/tinympc/tinympc.git

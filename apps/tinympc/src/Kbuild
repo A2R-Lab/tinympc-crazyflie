@@ -1,1 +1,7 @@
+ccflags-y += -I$(OOT)/src/TinyMPC/include
+ccflags-y += -I$(OOT)/src/TinyMPC/src
+
 obj-y += out_of_tree_controller.o
+obj-y += TinyMPC/src/tinympc/admm.o
+obj-y += TinyMPC/src/tinympc/tiny_api.o
+obj-y += TinyMPC/src/tinympc/rho_benchmark.o
