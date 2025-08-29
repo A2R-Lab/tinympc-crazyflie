@@ -1,14 +1,10 @@
 ccflags-y += -I$(OOT)/TinyMPC/include
+ccflags-y += -I$(OOT)/TinyMPC/include/Eigen
 ccflags-y += -I$(OOT)/TinyMPC/src
 ccflags-y += -I$(OOT)/TinyMPC/src/tinympc
 ccflags-y += -I$(src)
 
-obj-y += out_of_tree_controller.o
-obj-y += cpp_compat.o
+obj-y += controller_tinympc.o
 obj-y += ../TinyMPC/src/tinympc/tiny_api.o
 obj-y += ../TinyMPC/src/tinympc/admm.o
 obj-y += ../TinyMPC/src/tinympc/rho_benchmark.o
-
-# Prefer C++ compilation
-$(obj)/out_of_tree_controller.o: $(src)/out_of_tree_controller.cpp
-$(obj)/cpp_compat.o: $(src)/cpp_compat.cpp
