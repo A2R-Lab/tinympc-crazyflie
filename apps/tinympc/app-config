@@ -1,5 +1,0 @@
-CONFIG_APP_ENABLE=y
-# Enable out-of-tree controller hook in firmware
-CONFIG_CONTROLLER_OOT=y
-CONFIG_APP_PRIORITY=0
-CONFIG_APP_STACKSIZE=300

@@ -51,6 +51,7 @@ static struct {
     bool dynamic_matrices;
     bool dynamic_operations;
     bool dynamic_decompositions;
+    bool tinympc_operations;
 } test_results = {false};
 
 /**
@@ -286,30 +287,97 @@ static void test_riccati_solver() {
 }
 
 /**
- * Test advanced matrix operations (simplified)
+ * Test TinyMPC-specific Eigen operations
  */
-static void test_matrix_operations() {
-    DEBUG_PRINT("Testing advanced matrix operations...\n");
+static void test_tinympc_operations() {
+    DEBUG_PRINT("Testing TinyMPC-specific operations...\n");
     
-    // Test matrix norms
-    Matrix<double, 2, 2> A;
-    A << 1.0, 2.0,
-         3.0, 4.0;
+    // Typical MPC dimensions
+    int nx = 12; // states
+    int nu = 4;  // inputs
+    int N = 10;  // horizon
     
-    double frobenius_norm = A.norm();
-    double trace = A.trace();
-    double determinant = A.determinant();
+    // Create dynamic matrices similar to TinyMPC
+    MatrixXd Adyn(nx, nx);
+    MatrixXd Bdyn(nx, nu);
+    MatrixXd Q(nx, nx);
+    MatrixXd R(nu, nu);
+    VectorXd fdyn(nx);
     
-    DEBUG_PRINT("Frobenius norm: %f\n", frobenius_norm);
-    DEBUG_PRINT("Trace: %f\n", trace);
-    DEBUG_PRINT("Determinant: %f\n", determinant);
+    // Initialize with some values
+    Adyn.setIdentity();
+    Adyn *= 0.9;
+    Bdyn.setRandom();
+    Bdyn *= 0.1;
+    Q.setIdentity();
+    R.setIdentity();
+    R *= 0.01;
+    fdyn.setZero();
     
-    // Test matrix slicing and operations
-    Vector2d diagonal = A.diagonal();
-    DEBUG_PRINT("Diagonal(0): %f\n", diagonal(0));
+    // Test matrix operations used in TinyMPC
+    MatrixXd rho_identity = 0.1 * MatrixXd::Identity(nx, nx);
+    MatrixXd Q_rho = Q + rho_identity;
+    VectorXd Q_diag = Q_rho.diagonal();
     
-    test_results.matrix_operations = true;
-    DEBUG_PRINT("Advanced matrix operations test PASSED\n");
+    DEBUG_PRINT("Q_rho diagonal sum: %f\n", Q_diag.sum());
+    
+    // Test lazyProduct and noalias (critical for performance)
+    MatrixXd result1(nx, nu);
+    result1.noalias() = Adyn.lazyProduct(Bdyn);
+    DEBUG_PRINT("Lazy product norm: %f\n", result1.norm());
+    
+    // Test block operations
+    MatrixXd large_matrix(nx, N);
+    large_matrix.setRandom();
+    VectorXd col_block = large_matrix.col(0);
+    MatrixXd row_block = large_matrix.row(0);
+    
+    DEBUG_PRINT("Col block norm: %f\n", col_block.norm());
+    DEBUG_PRINT("Row block norm: %f\n", row_block.norm());
+    
+    // Test head and tail operations
+    VectorXd vec(nx);
+    vec.setRandom();
+    VectorXd head_vec = vec.head(nx-1);
+    double last_element = vec(Eigen::placeholders::last);
+    
+    DEBUG_PRINT("Head norm: %f, last element: %f\n", head_vec.norm(), last_element);
+    
+    // Test cwise operations
+    MatrixXd min_bounds(nx, N);
+    MatrixXd max_bounds(nx, N);
+    min_bounds.setConstant(-10.0);
+    max_bounds.setConstant(10.0);
+    
+    MatrixXd clamped = max_bounds.cwiseMin(min_bounds.cwiseMax(large_matrix));
+    DEBUG_PRINT("Clamped matrix norm: %f\n", clamped.norm());
+    
+    // Test dot product and projections
+    VectorXd a(nx);
+    VectorXd b(nx);
+    a.setRandom();
+    b.setRandom();
+    double dot_prod = a.dot(b);
+    double sq_norm = a.squaredNorm();
+    
+    DEBUG_PRINT("Dot product: %f, squared norm: %f\n", dot_prod, sq_norm);
+    
+    // Test hyperplane projection (used in constraints)
+    VectorXd z = a;
+    double dist = (a.dot(z) - 5.0) / a.squaredNorm();
+    VectorXd projected = z - dist * a;
+    
+    DEBUG_PRINT("Projected vector norm: %f\n", projected.norm());
+    
+    // Test reshaping (used in codegen)
+    MatrixXd mat_2d(4, 3);
+    mat_2d.setRandom();
+    VectorXd reshaped = mat_2d.reshaped<RowMajor>();
+    
+    DEBUG_PRINT("Reshaped vector size: %d\n", (int)reshaped.size());
+    
+    test_results.tinympc_operations = true;
+    DEBUG_PRINT("TinyMPC-specific operations test PASSED\n");
 }
 
 /**
@@ -473,11 +541,12 @@ static void print_test_summary() {
     DEBUG_PRINT("Cholesky decomposition: %s\n", test_results.cholesky_decomposition ? "PASS" : "FAIL");
     DEBUG_PRINT("Eigenvalue decomposition: %s\n", test_results.eigenvalue_decomposition ? "PASS" : "FAIL");
     DEBUG_PRINT("Riccati solver: %s\n", test_results.riccati_solver ? "PASS" : "FAIL");
-    DEBUG_PRINT("Advanced matrix operations: %s\n", test_results.matrix_operations ? "PASS" : "FAIL");
+    DEBUG_PRINT("TinyMPC operations: %s\n", test_results.tinympc_operations ? "PASS" : "FAIL");
     DEBUG_PRINT("Vector operations: %s\n", test_results.vector_operations ? "PASS" : "FAIL");
     DEBUG_PRINT("Dynamic matrices: %s\n", test_results.dynamic_matrices ? "PASS" : "FAIL");
     DEBUG_PRINT("Dynamic operations: %s\n", test_results.dynamic_operations ? "PASS" : "FAIL");
     DEBUG_PRINT("Dynamic decompositions: %s\n", test_results.dynamic_decompositions ? "PASS" : "FAIL");
+    DEBUG_PRINT("TinyMPC operations: %s\n", test_results.tinympc_operations ? "PASS" : "FAIL");
     
     int passed = 0;
     if (test_results.basic_ops) passed++;
@@ -488,13 +557,14 @@ static void print_test_summary() {
     if (test_results.cholesky_decomposition) passed++;
     if (test_results.eigenvalue_decomposition) passed++;
     if (test_results.riccati_solver) passed++;
-    if (test_results.matrix_operations) passed++;
+    if (test_results.tinympc_operations) passed++;
     if (test_results.vector_operations) passed++;
     if (test_results.dynamic_matrices) passed++;
     if (test_results.dynamic_operations) passed++;
     if (test_results.dynamic_decompositions) passed++;
+    if (test_results.tinympc_operations) passed++;
     
-    DEBUG_PRINT("Overall: %d/13 tests passed\n", passed);
+    DEBUG_PRINT("Overall: %d/14 tests passed\n", passed);
     DEBUG_PRINT("========================\n\n");
 }
 
@@ -512,7 +582,7 @@ static void run_eigen_tests() {
     test_cholesky_decomposition();
     test_eigenvalue_decomposition();
     test_riccati_solver();
-    test_matrix_operations();
+    test_tinympc_operations();
     test_vector_operations();
     test_dynamic_matrices();
     test_dynamic_operations();

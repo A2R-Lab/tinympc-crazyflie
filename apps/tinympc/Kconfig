@@ -1,5 +1,0 @@
-config TINY_MPC_CONTROLLER
-    bool "Enable TinyMPC out-of-tree controller"
-    default y
-    help
-       Builds a minimal TinyMPC-based out-of-tree controller. Currently delegates to PID for safety while scaffolding is in place.
