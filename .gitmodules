@@ -4,3 +4,6 @@
 [submodule "apps/eigen_test/Eigen"]
 	path = apps/eigen_test/Eigen
 	url = https://gitlab.com/libeigen/eigen.git
+[submodule "TinyMPC"]
+	path = TinyMPC
+	url = https://github.com/tinympc/tinympc
