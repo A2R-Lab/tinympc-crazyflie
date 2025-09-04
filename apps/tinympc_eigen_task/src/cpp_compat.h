@@ -9,4 +9,5 @@ int _lseek() { return -1; }
 int _write(int file, char* ptr, int len)
 {
    nop();
+   return -1;
 }

@@ -27,6 +27,9 @@ EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -DEIGEN_FAST_MATH
+# Disable specific warnings for TinyMPC compilation
+EXTRA_CFLAGS += -Wno-double-promotion
+EXTRA_CFLAGS += -Wno-unused-variable
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
