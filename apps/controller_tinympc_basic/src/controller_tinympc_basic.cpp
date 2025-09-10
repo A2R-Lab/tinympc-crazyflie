@@ -53,6 +53,7 @@ extern "C"
 #include "math3d.h"
 
 // TinyMPC and PID controllers
+#include "tinympc/constants.hpp"
 #include "tinympc/types.hpp"
 #include "tinympc/admm.hpp"
 #include "controller_pid.h"
