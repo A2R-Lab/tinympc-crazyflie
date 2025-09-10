@@ -9,7 +9,7 @@ extern "C" {
 #include "debug.h"
 // #include "usec_time.h"
 
-static uint64_t startTimestamp;
+// static uint64_t startTimestamp;
 
 void multAdyn(tiny_VectorNx &Ax, const tiny_MatrixNxNx &A, const tiny_VectorNx &x) {
     Ax(0) = (x(0) + A(0,4)*x(4) + A(0,6)*x(6) + A(0,10)*x(10));
