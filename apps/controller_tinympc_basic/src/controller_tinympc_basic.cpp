@@ -484,5 +484,6 @@ static void initializeTinyMPC(void) {
 }
 
 #ifdef __cplusplus
+}
 #endif
 
