@@ -62,7 +62,9 @@ extern "C"
 // Parameter files
 #include "quadrotor_50hz_params_unconstrained.hpp"
 #include "quadrotor_50hz_params_constrained.hpp"
-#include "quadrotor_50hz_line_9s_xyz.hpp"
+// #include "quadrotor_50hz_line_9s_xyz.hpp"  // Commented out to avoid conflict
+// Trajectory references - using generated circle instead of large data files
+// #include "quadrotor_50hz_ref_circle_2_5s.hpp"
 
 // Debug module name
 #define DEBUG_MODULE "TINYMPC"
@@ -145,12 +147,9 @@ static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_origin; // Star
 static tiny_VectorNx current_state;
 
 // Helper variables
-static bool enable_traj = false;
-static int traj_index = 0;
-static int max_traj_index = 0;
 static bool isInit = false;
-static bool enable_mpc = true; // Enable MPC now that PID baseline works
-static uint32_t tick_count = 0;
+static bool enable_mpc = false; // Disable MPC until we debug the crash
+// static uint32_t tick_count = 0; // Removed unused variable
 
 // Trajectory tracking variables
 static uint64_t startTimestamp;
@@ -192,6 +191,16 @@ void controllerOutOfTreeInit() {
   memset(&setpoint_data, 0, sizeof(setpoint_data));
   memset(&sensors_data, 0, sizeof(sensors_data));
   memset(&state_data, 0, sizeof(state_data));
+  
+  // Initialize MPC setpoint to safe hover position
+  mpc_setpoint_pid.mode.yaw = modeAbs;
+  mpc_setpoint_pid.mode.x = modeAbs;
+  mpc_setpoint_pid.mode.y = modeAbs;
+  mpc_setpoint_pid.mode.z = modeAbs;
+  mpc_setpoint_pid.position.x = 0.0f;
+  mpc_setpoint_pid.position.y = 0.0f;
+  mpc_setpoint_pid.position.z = 0.5f; // Safe hover height
+  mpc_setpoint_pid.attitude.yaw = 0.0f;
 
   // Create the controller task
   STATIC_MEM_TASK_CREATE(tinympcControllerTask, tinympcControllerTask, TINYMPC_TASK_NAME, NULL, TINYMPC_TASK_PRI);
@@ -206,30 +215,47 @@ bool controllerOutOfTreeTest() {
 }
 
 void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick) {
-  // For now, fall back to PID controller until TinyMPC is fully implemented
-  if (!enable_mpc) {
-    controllerPid(control, setpoint, sensors, state, tick);
-    return;
-  }
-
-  // Copy data for task processing
+  // Always update data for MPC task (like the old working code)
   if (xSemaphoreTake(dataMutex, M2T(2)) == pdTRUE) {
     memcpy(&setpoint_data, setpoint, sizeof(setpoint_t));
     memcpy(&sensors_data, sensors, sizeof(sensorData_t));
     memcpy(&state_data, state, sizeof(state_t));
-    
-    tick_count = tick;
-    
-    // Signal the task to run MPC
-    xSemaphoreGive(runTaskSemaphore);
-    
-    // Copy control output back
-    memcpy(control, &control_data, sizeof(control_t));
-    
     xSemaphoreGive(dataMutex);
-  } else {
-    // If we can't get the mutex, fall back to PID
-    controllerPid(control, setpoint, sensors, state, tick);
+  }
+
+  // Enable MPC only after system is stable and in reasonable bounds
+  static uint32_t stable_counter = 0;
+  bool state_reasonable = (fabs(state->position.x) < 2.0f && 
+                          fabs(state->position.y) < 2.0f && 
+                          state->position.z > -0.5f && state->position.z < 2.0f);
+  
+  if (state_reasonable) stable_counter++;
+  else stable_counter = 0;
+  
+  // Enable MPC after 2500 stable PID cycles (~5 seconds at 500Hz)  
+  if (stable_counter > 2500 && !enable_mpc) {
+    enable_mpc = true;
+    DEBUG_PRINT("MPC enabled after stable PID operation\n");
+    // Print current state for debugging
+    DEBUG_PRINT("Current state: pos=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f)\n", 
+               (double)state->position.x, (double)state->position.y, (double)state->position.z,
+               (double)state->velocity.x, (double)state->velocity.y, (double)state->velocity.z);
+  }
+
+  // Always run PID at high frequency (like the old working code)
+  if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
+    if (enable_mpc) {
+      // Use MPC-generated setpoint (setpoint from MPC task)
+      controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
+    } else {  
+      // Use original setpoint before MPC is enabled
+      controllerPid(control, setpoint, sensors, state, tick);
+    }
+  }
+
+  // Signal MPC task to compute new setpoint at 50Hz (always, like old code)
+  if (RATE_DO_EXECUTE(RATE_50_HZ, tick)) {
+    xSemaphoreGive(runTaskSemaphore);
   }
 }
 
@@ -244,31 +270,42 @@ static void tinympcControllerTask(void *parameters) {
     // Wait for signal from controller
     xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
     
-    // Feed watchdog to prevent timeout
-    watchdogReset();
-    
+    // Copy data for processing (always, like old code)
     if (xSemaphoreTake(dataMutex, M2T(2)) == pdTRUE) {
-      // Copy data for processing
       memcpy(&setpoint_task, &setpoint_data, sizeof(setpoint_t));
       memcpy(&sensors_task, &sensors_data, sizeof(sensorData_t));
       memcpy(&state_task, &state_data, sizeof(state_t));
-      
       xSemaphoreGive(dataMutex);
+    }
+    
+    // Update MPC setpoint (always run like old code)
+    if (enable_mpc) {
       
-      // Implement full TinyMPC computation
-      
-      // Convert state to TinyMPC format with bounds checking
+      // Convert state to TinyMPC format with strict bounds checking
       phi = quat_2_rp(normalize_quat(state_task.attitudeQuaternion)); // quaternion to Rodrigues parameters
       
-      // Clamp values to reasonable bounds to prevent solver issues
-      float pos_x = fmax(-10.0f, fmin(10.0f, state_task.position.x));
-      float pos_y = fmax(-10.0f, fmin(10.0f, state_task.position.y)); 
-      float pos_z = fmax(-5.0f, fmin(5.0f, state_task.position.z));
+      // Clamp all values to very conservative bounds to prevent solver issues
+      float pos_x = fmax(-2.0f, fmin(2.0f, state_task.position.x));
+      float pos_y = fmax(-2.0f, fmin(2.0f, state_task.position.y)); 
+      float pos_z = fmax(0.0f, fmin(2.0f, state_task.position.z));
+      
+      // Clamp attitude and rates
+      float phi_x = fmax(-0.5f, fmin(0.5f, phi.x));
+      float phi_y = fmax(-0.5f, fmin(0.5f, phi.y));
+      float phi_z = fmax(-0.5f, fmin(0.5f, phi.z));
+      
+      float vel_x = fmax(-2.0f, fmin(2.0f, state_task.velocity.x));
+      float vel_y = fmax(-2.0f, fmin(2.0f, state_task.velocity.y));
+      float vel_z = fmax(-2.0f, fmin(2.0f, state_task.velocity.z));
+      
+      float gyro_x = fmax(-5.0f, fmin(5.0f, radians(sensors_task.gyro.x)));
+      float gyro_y = fmax(-5.0f, fmin(5.0f, radians(sensors_task.gyro.y)));
+      float gyro_z = fmax(-5.0f, fmin(5.0f, radians(sensors_task.gyro.z)));
       
       problem.x.col(0) << pos_x, pos_y, pos_z,
-          phi.x, phi.y, phi.z,
-          state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
-          radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
+          phi_x, phi_y, phi_z,
+          vel_x, vel_y, vel_z,
+          gyro_x, gyro_y, gyro_z;
       
       // Update horizon reference (for now just hover at origin)
       UpdateHorizonReference(&setpoint_task);
@@ -298,12 +335,22 @@ static void tinympcControllerTask(void *parameters) {
       // Extract MPC setpoint for PID controller with bounds checking
       mpc_setpoint = problem.x.col(NHORIZON-1);
       
-      // Set up PID setpoint from MPC result
-      setpoint_t mpc_setpoint_pid;
-      mpc_setpoint_pid.mode.yaw = modeAbs;
-      mpc_setpoint_pid.mode.x = modeAbs;
-      mpc_setpoint_pid.mode.y = modeAbs;
-      mpc_setpoint_pid.mode.z = modeAbs;
+      // Sanity check the MPC setpoint for NaN/Inf values
+      for (int i = 0; i < NSTATES; i++) {
+        if (isnan(mpc_setpoint(i)) || isinf(mpc_setpoint(i))) {
+          DEBUG_PRINT("MPC setpoint contains invalid values, using hover setpoint\n");
+          mpc_setpoint(0) = 0.0f; // x position
+          mpc_setpoint(1) = 0.0f; // y position  
+          mpc_setpoint(2) = 0.5f; // z position (hover)
+          mpc_setpoint(3) = 0.0f; // phi_x
+          mpc_setpoint(4) = 0.0f; // phi_y
+          mpc_setpoint(5) = 0.0f; // phi_z (yaw)
+          for (int j = 6; j < NSTATES; j++) {
+            mpc_setpoint(j) = 0.0f; // velocities and rates
+          }
+          break;
+        }
+      }
       
       // If solver is consistently timing out, use safe hover setpoint
       static int consecutive_timeouts = 0;
@@ -317,25 +364,32 @@ static void tinympcControllerTask(void *parameters) {
         // Use safe hover setpoint
         mpc_setpoint_pid.position.x = 0.0f;
         mpc_setpoint_pid.position.y = 0.0f;
-        mpc_setpoint_pid.position.z = 1.0f; // Hover at 1m
+        mpc_setpoint_pid.position.z = 0.3f; // Safe hover at 30cm
         mpc_setpoint_pid.attitude.yaw = 0.0f;
       } else {
-        // Use MPC result with bounds checking
-        mpc_setpoint_pid.position.x = fmax(-2.0f, fmin(2.0f, mpc_setpoint(0)));
-        mpc_setpoint_pid.position.y = fmax(-2.0f, fmin(2.0f, mpc_setpoint(1)));
-        mpc_setpoint_pid.position.z = fmax(0.1f, fmin(3.0f, mpc_setpoint(2)));
-        mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
+        // Use MPC result with very conservative bounds checking
+        mpc_setpoint_pid.position.x = fmax(-1.0f, fmin(1.0f, mpc_setpoint(0)));
+        mpc_setpoint_pid.position.y = fmax(-1.0f, fmin(1.0f, mpc_setpoint(1)));
+        mpc_setpoint_pid.position.z = fmax(0.2f, fmin(0.8f, mpc_setpoint(2))); // Conservative height range
+        
+        // Clamp yaw to prevent extreme rotation
+        float yaw_setpoint = mpc_setpoint(5);
+        while (yaw_setpoint > M_PI_F) yaw_setpoint -= 2*M_PI_F;
+        while (yaw_setpoint < -M_PI_F) yaw_setpoint += 2*M_PI_F;
+        mpc_setpoint_pid.attitude.yaw = fmax(-M_PI_F/4, fmin(M_PI_F/4, yaw_setpoint)); // Limit to ±45°
+        
+        // Debug output for first few MPC iterations
+        static int mpc_debug_count = 0;
+        if (mpc_debug_count < 10) {
+          DEBUG_PRINT("MPC setpoint %d: pos=(%.3f,%.3f,%.3f) yaw=%.3f raw=(%.3f,%.3f,%.3f)\n", 
+                     mpc_debug_count,
+                     (double)mpc_setpoint_pid.position.x, (double)mpc_setpoint_pid.position.y, (double)mpc_setpoint_pid.position.z,
+                     (double)mpc_setpoint_pid.attitude.yaw,
+                     (double)mpc_setpoint(0), (double)mpc_setpoint(1), (double)mpc_setpoint(2));
+          mpc_debug_count++;
+        }
       }
-      
-      // Use PID controller with MPC setpoint
-      controllerPid(&control_task, &mpc_setpoint_pid, &sensors_task, &state_task, tick_count);
-      
-      // Copy result back
-      if (xSemaphoreTake(dataMutex, M2T(2)) == pdTRUE) {
-        memcpy(&control_data, &control_task, sizeof(control_t));
-        xSemaphoreGive(dataMutex);
-      }
-    }
+    } // end if (enable_mpc)
   }
 }
 
@@ -359,23 +413,8 @@ static void resetProblem(void) {
 
 // Helper function to update horizon reference
 static void UpdateHorizonReference(const setpoint_t *setpoint) {
-  if (enable_traj) {
-    // TODO: Add trajectory following logic when needed
-    // For now, just use origin reference
-    params.Xref = Xref_origin.replicate<1, NHORIZON>();
-  } else {
-    // Hover at origin or setpoint position
-    if (setpoint->mode.x == modeAbs || setpoint->mode.y == modeAbs || setpoint->mode.z == modeAbs) {
-      tiny_VectorNx setpoint_ref;
-      setpoint_ref << setpoint->position.x, setpoint->position.y, setpoint->position.z,
-                     0, 0, setpoint->attitude.yaw, // attitude (rodrigues params and yaw)
-                     0, 0, 0, // velocity
-                     0, 0, 0; // angular velocity
-      params.Xref = setpoint_ref.replicate<1, NHORIZON>();
-    } else {
-      params.Xref = Xref_origin.replicate<1, NHORIZON>();
-    }
-  }
+  // Simple hover behavior - all horizon steps use the same hover setpoint
+  params.Xref = Xref_origin.replicate<1, NHORIZON>();
 }
 
 // Initialize TinyMPC parameters and cache
@@ -435,19 +474,15 @@ static void initializeTinyMPC(void) {
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints
 
-  // Set up reference trajectory (hover at origin for now)
-  Xref_origin << 0, 0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Hover at 1m height
+  // Set up reference trajectory (hover close to ground initially)
+  Xref_origin << 0, 0, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Hover at 30cm height (safer)
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
 
-  enable_traj = false;
-  traj_index = 0;
-  max_traj_index = NTOTAL - NHORIZON;
+  // Initialization complete
   
   DEBUG_PRINT("TinyMPC parameters initialized successfully\n");
 }
 
 #ifdef __cplusplus
-}
 #endif
 
-// TODO: Add parameters and logging after fixing C++ compatibility issues
