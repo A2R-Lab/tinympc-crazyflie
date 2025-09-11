@@ -150,12 +150,13 @@ static tiny_VectorNx current_state;
 static bool isInit = false;
 static bool enable_mpc = false; // Disable MPC until we debug the crash
 
-// Trajectory variables
-static Eigen::Matrix<tinytype, 3, NTOTAL, Eigen::ColMajor> Xref_total; // Full trajectory data
-static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_end; // End position for trajectory
+// Trajectory variables - use direct access to save RAM
 static bool enable_traj = false;
 static int traj_index = 0;
 static int max_traj_index = 0;
+static float traj_x_offset = 0.0f;
+static float traj_y_offset = 0.0f; 
+static float traj_z_offset = 0.0f;
 
 // Trajectory tracking variables
 static uint64_t startTimestamp;
@@ -324,32 +325,25 @@ static void tinympcControllerTask(void *parameters) {
       if (!enable_traj && !trajectory_started && usecTimestamp() - startTimestamp > 1000000 * 7) {
         DEBUG_PRINT("Enable line trajectory!\n");
         
-        // Make trajectory relative to current position
+        // Calculate trajectory offset to make it relative to current position
         // Current trajectory goes from Y=-1.5 to Y=+1.5 (3m total movement) at Z=1.0m
-        // Modify it to start from current position and height
         float current_x = pos_x; // Current drone X position
         float current_y = pos_y; // Current drone Y position  
         float current_z = pos_z; // Current drone Z position
         
-        float trajectory_start_x = Xref_total(0, 0); // Original start X = 0.0
-        float trajectory_start_y = Xref_total(1, 0); // Original start Y = -1.5
-        float trajectory_start_z = Xref_total(2, 0); // Original start Z = 1.0
+        float trajectory_start_x = Xref_data[0]; // Original start X = 0.0
+        float trajectory_start_y = Xref_data[1]; // Original start Y = -1.5
+        float trajectory_start_z = Xref_data[2]; // Original start Z = 1.0
         
-        float x_offset = current_x - trajectory_start_x; // X offset to apply
-        float y_offset = current_y - trajectory_start_y; // Y offset to apply
-        float z_offset = current_z - trajectory_start_z; // Z offset to apply
+        // Store offsets to use during trajectory access
+        traj_x_offset = current_x - trajectory_start_x; 
+        traj_y_offset = current_y - trajectory_start_y; 
+        traj_z_offset = current_z - trajectory_start_z; 
         
-        // Shift entire trajectory to start from current position
-        for (int i = 0; i < NTOTAL; i++) {
-          Xref_total(0, i) += x_offset; // Shift X coordinates
-          Xref_total(1, i) += y_offset; // Shift Y coordinates
-          Xref_total(2, i) += z_offset; // Shift Z coordinates
-        }
-        
-        DEBUG_PRINT("Trajectory shifted: Y(%.3f→%.3f), Z(%.3f→%.3f), offsets=(%.3f,%.3f,%.3f)\n",
+        DEBUG_PRINT("Trajectory offset: Y(%.3f→%.3f), Z(%.3f→%.3f), offsets=(%.3f,%.3f,%.3f)\n",
                    (double)trajectory_start_y, (double)current_y, 
                    (double)trajectory_start_z, (double)current_z,
-                   (double)x_offset, (double)y_offset, (double)z_offset);
+                   (double)traj_x_offset, (double)traj_y_offset, (double)traj_z_offset);
         DEBUG_PRINT("Trajectory limits: NTOTAL=%d, NHORIZON=%d, max_traj_index=%d\n", 
                    NTOTAL, NHORIZON, max_traj_index);
         
@@ -481,15 +475,30 @@ static void resetProblem(void) {
 static void UpdateHorizonReference(const setpoint_t *setpoint) {
   if (enable_traj) {
     if (traj_index < max_traj_index) {
-      // Bounds check to prevent matrix access out of range
+      // Bounds check to prevent access out of range
       if (traj_index + NHORIZON <= NTOTAL) {
-        // Extract trajectory horizon: copy XYZ positions and zero out attitude/velocities
-        params.Xref.block<3, NHORIZON>(0,0) = Xref_total.block<3, NHORIZON>(0, traj_index);
-        // Zero out attitude and velocities (rows 3-11)
-        params.Xref.block<9, NHORIZON>(3,0).setZero();
+        // Access trajectory data directly from header - much more memory efficient
+        for (int i = 0; i < NHORIZON; i++) {
+          int data_idx = (traj_index + i) * 3; // Xref_data is stored as [x0,y0,z0,x1,y1,z1,...]
+          params.Xref(0, i) = Xref_data[data_idx] + traj_x_offset;     // x + offset
+          params.Xref(1, i) = Xref_data[data_idx + 1] + traj_y_offset; // y + offset 
+          params.Xref(2, i) = Xref_data[data_idx + 2] + traj_z_offset; // z + offset
+          // Zero out attitude and velocities (rows 3-11)
+          for (int j = 3; j < NSTATES; j++) {
+            params.Xref(j, i) = 0.0f;
+          }
+        }
       } else {
-        // Near end of trajectory - use end position 
-        params.Xref = Xref_end.replicate<1, NHORIZON>();
+        // Near end of trajectory - use final position 
+        int final_idx = (NTOTAL-1) * 3;
+        for (int i = 0; i < NHORIZON; i++) {
+          params.Xref(0, i) = Xref_data[final_idx] + traj_x_offset;     // x + offset
+          params.Xref(1, i) = Xref_data[final_idx + 1] + traj_y_offset; // y + offset
+          params.Xref(2, i) = Xref_data[final_idx + 2] + traj_z_offset; // z + offset
+          for (int j = 3; j < NSTATES; j++) {
+            params.Xref(j, i) = 0.0f;
+          }
+        }
         DEBUG_PRINT("Trajectory near end: traj_index=%d, using end position\n", traj_index);
       }
       
@@ -503,8 +512,16 @@ static void UpdateHorizonReference(const setpoint_t *setpoint) {
                    (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
     } else if (traj_index >= max_traj_index) {
-      // Use end position for remaining horizon
-      params.Xref = Xref_end.replicate<1, NHORIZON>();
+      // Use final trajectory position for all horizon steps
+      int final_idx = (NTOTAL-1) * 3;
+      for (int i = 0; i < NHORIZON; i++) {
+        params.Xref(0, i) = Xref_data[final_idx] + traj_x_offset;     // x + offset
+        params.Xref(1, i) = Xref_data[final_idx + 1] + traj_y_offset; // y + offset
+        params.Xref(2, i) = Xref_data[final_idx + 2] + traj_z_offset; // z + offset
+        for (int j = 3; j < NSTATES; j++) {
+          params.Xref(j, i) = 0.0f;
+        }
+      }
       // Trajectory finished, disable it
       enable_traj = false;
       DEBUG_PRINT("Line trajectory completed: traj_index=%d >= max_traj_index=%d, switching to hover\n", 
@@ -573,14 +590,8 @@ static void initializeTinyMPC(void) {
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints
 
-  // Set up reference trajectory data
-  // Xref_data is [NTOTAL*3] stored row-major: [x0,y0,z0, x1,y1,z1, ...]
-  // Map as NTOTAL x 3 matrix, then transpose to get 3 x NTOTAL
-  Xref_total = Eigen::Map<Eigen::Matrix<tinytype, NTOTAL, 3, Eigen::RowMajor>>(Xref_data).transpose();
-  
   // Set hover position to safe initial hover (not trajectory start)
   Xref_origin << 0, 0, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Hover at current position (50cm height)
-  Xref_end << Xref_total.col(NTOTAL-1).head(3), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz end of trajectory
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
   
   // Initialize trajectory parameters
@@ -588,10 +599,10 @@ static void initializeTinyMPC(void) {
   traj_index = 0;
   max_traj_index = NTOTAL - NHORIZON;
   
-  DEBUG_PRINT("Line trajectory loaded: %d total steps, start=(%.3f,%.3f,%.3f), end=(%.3f,%.3f,%.3f)\n",
+  DEBUG_PRINT("Line trajectory ready: %d total steps, start=(%.3f,%.3f,%.3f), end=(%.3f,%.3f,%.3f)\n",
              NTOTAL, 
-             (double)Xref_total(0,0), (double)Xref_total(1,0), (double)Xref_total(2,0),
-             (double)Xref_total(0,NTOTAL-1), (double)Xref_total(1,NTOTAL-1), (double)Xref_total(2,NTOTAL-1));
+             (double)Xref_data[0], (double)Xref_data[1], (double)Xref_data[2],
+             (double)Xref_data[(NTOTAL-1)*3], (double)Xref_data[(NTOTAL-1)*3+1], (double)Xref_data[(NTOTAL-1)*3+2]);
 
   // Initialization complete
   
