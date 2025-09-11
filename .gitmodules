@@ -6,4 +6,4 @@
 	url = https://gitlab.com/libeigen/eigen.git
 [submodule "TinyMPC"]
 	path = TinyMPC
-	url = https://github.com/tinympc/tinympc
+	url = https://github.com/moisesmata/TinyMPC
