@@ -62,9 +62,9 @@ extern "C"
 // Parameter files
 #include "quadrotor_50hz_params_unconstrained.hpp"
 #include "quadrotor_50hz_params_constrained.hpp"
-// #include "quadrotor_50hz_line_9s_xyz.hpp"  // Commented out to avoid conflict
-// Trajectory references - using generated circle instead of large data files
-// #include "quadrotor_50hz_ref_circle_2_5s.hpp"
+
+// Trajectory files
+#include "quadrotor_50hz_line_9s_xyz.hpp"
 
 // Debug module name
 #define DEBUG_MODULE "TINYMPC"
@@ -149,7 +149,13 @@ static tiny_VectorNx current_state;
 // Helper variables
 static bool isInit = false;
 static bool enable_mpc = false; // Disable MPC until we debug the crash
-// static uint32_t tick_count = 0; // Removed unused variable
+
+// Trajectory variables
+static Eigen::Matrix<tinytype, 3, NTOTAL, Eigen::ColMajor> Xref_total; // Full trajectory data
+static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_end; // End position for trajectory
+static bool enable_traj = false;
+static int traj_index = 0;
+static int max_traj_index = 0;
 
 // Trajectory tracking variables
 static uint64_t startTimestamp;
@@ -280,6 +286,12 @@ static void tinympcControllerTask(void *parameters) {
     
     // Update MPC setpoint (always run like old code)
     if (enable_mpc) {
+      // Add periodic debug to ensure MPC task is running
+      static int task_debug_count = 0;
+      if (++task_debug_count % 100 == 1) {
+        DEBUG_PRINT("MPC task running: cycle %d, enable_traj=%d, traj_index=%d\n", 
+                   task_debug_count, enable_traj, traj_index);
+      }
       
       // Convert state to TinyMPC format with strict bounds checking
       phi = quat_2_rp(normalize_quat(state_task.attitudeQuaternion)); // quaternion to Rodrigues parameters
@@ -307,7 +319,46 @@ static void tinympcControllerTask(void *parameters) {
           vel_x, vel_y, vel_z,
           gyro_x, gyro_y, gyro_z;
       
-      // Update horizon reference (for now just hover at origin)
+      // Enable trajectory after 7 seconds of stable MPC operation (only once)
+      static bool trajectory_started = false;
+      if (!enable_traj && !trajectory_started && usecTimestamp() - startTimestamp > 1000000 * 7) {
+        DEBUG_PRINT("Enable line trajectory!\n");
+        
+        // Make trajectory relative to current position
+        // Current trajectory goes from Y=-1.5 to Y=+1.5 (3m total movement) at Z=1.0m
+        // Modify it to start from current position and height
+        float current_x = pos_x; // Current drone X position
+        float current_y = pos_y; // Current drone Y position  
+        float current_z = pos_z; // Current drone Z position
+        
+        float trajectory_start_x = Xref_total(0, 0); // Original start X = 0.0
+        float trajectory_start_y = Xref_total(1, 0); // Original start Y = -1.5
+        float trajectory_start_z = Xref_total(2, 0); // Original start Z = 1.0
+        
+        float x_offset = current_x - trajectory_start_x; // X offset to apply
+        float y_offset = current_y - trajectory_start_y; // Y offset to apply
+        float z_offset = current_z - trajectory_start_z; // Z offset to apply
+        
+        // Shift entire trajectory to start from current position
+        for (int i = 0; i < NTOTAL; i++) {
+          Xref_total(0, i) += x_offset; // Shift X coordinates
+          Xref_total(1, i) += y_offset; // Shift Y coordinates
+          Xref_total(2, i) += z_offset; // Shift Z coordinates
+        }
+        
+        DEBUG_PRINT("Trajectory shifted: Y(%.3f→%.3f), Z(%.3f→%.3f), offsets=(%.3f,%.3f,%.3f)\n",
+                   (double)trajectory_start_y, (double)current_y, 
+                   (double)trajectory_start_z, (double)current_z,
+                   (double)x_offset, (double)y_offset, (double)z_offset);
+        DEBUG_PRINT("Trajectory limits: NTOTAL=%d, NHORIZON=%d, max_traj_index=%d\n", 
+                   NTOTAL, NHORIZON, max_traj_index);
+        
+        enable_traj = true; 
+        trajectory_started = true; // Prevent re-enabling
+        traj_index = 0; // Reset to start of trajectory
+      }
+      
+      // Update horizon reference (hover or trajectory) - but don't advance trajectory yet
       UpdateHorizonReference(&setpoint_task);
       
       // MPC solve - with timeout protection
@@ -319,16 +370,25 @@ static void tinympcControllerTask(void *parameters) {
       
       // Check if we're taking too long (watchdog protection)
       uint32_t elapsed = usecTimestamp() - mpc_start_timestamp;
-      if (elapsed < 18000) { // Increased timeout to 18ms for more stable MPC
+      bool solve_successful = false;
+      if (elapsed < 40000) { // Increased timeout to 40ms to allow MPC solver to complete
         vTaskDelay(M2T(1));
         solve_admm(&problem, &params);
         mpc_time_us = usecTimestamp() - mpc_start_timestamp - 1000;
+        solve_successful = true;
       } else {
         mpc_time_us = elapsed;
-        // Only print timeout message occasionally to reduce spam
+        solve_successful = false;
+        // Print timeout messages to understand solver performance
         static int timeout_count = 0;
-        if (++timeout_count % 50 == 0) {
-          DEBUG_PRINT("MPC solve timeout (%d), using single iteration\n", (int)timeout_count);
+        if (++timeout_count % 10 == 0) {
+          DEBUG_PRINT("MPC timeout #%d (%.1fms), enable_traj=%d, traj_index=%d\n", 
+                     (int)timeout_count, (double)elapsed/1000.0, enable_traj, traj_index);
+        }
+        // Also print first few timeouts immediately
+        if (timeout_count <= 5) {
+          DEBUG_PRINT("MPC timeout early #%d (%.1fms) enable_traj=%d\n", 
+                     (int)timeout_count, (double)elapsed/1000.0, enable_traj);
         }
       }
       
@@ -354,18 +414,25 @@ static void tinympcControllerTask(void *parameters) {
       
       // If solver is consistently timing out, use safe hover setpoint
       static int consecutive_timeouts = 0;
-      if (mpc_time_us > 18000) {
+      if (mpc_time_us > 35000) { // Only count as timeout if >35ms
         consecutive_timeouts++;
       } else {
         consecutive_timeouts = 0;
       }
       
-      if (consecutive_timeouts > 10) {
+      if (consecutive_timeouts > 20) { // Allow more timeouts before emergency mode
         // Use safe hover setpoint
         mpc_setpoint_pid.position.x = 0.0f;
         mpc_setpoint_pid.position.y = 0.0f;
         mpc_setpoint_pid.position.z = 0.3f; // Safe hover at 30cm
         mpc_setpoint_pid.attitude.yaw = 0.0f;
+        
+        // Debug output when using emergency hover
+        static int emergency_debug_count = 0;
+        if (++emergency_debug_count % 50 == 1) {
+          DEBUG_PRINT("EMERGENCY HOVER: consecutive_timeouts=%d, mpc_time_us=%d\n", 
+                     consecutive_timeouts, (int)mpc_time_us);
+        }
       } else {
         // Use MPC result with very conservative bounds checking
         mpc_setpoint_pid.position.x = fmax(-1.0f, fmin(1.0f, mpc_setpoint(0)));
@@ -378,15 +445,14 @@ static void tinympcControllerTask(void *parameters) {
         while (yaw_setpoint < -M_PI_F) yaw_setpoint += 2*M_PI_F;
         mpc_setpoint_pid.attitude.yaw = fmax(-M_PI_F/4, fmin(M_PI_F/4, yaw_setpoint)); // Limit to ±45°
         
-        // Debug output for first few MPC iterations
+        // Debug output for MPC setpoints (more frequent during trajectory)
         static int mpc_debug_count = 0;
-        if (mpc_debug_count < 10) {
-          DEBUG_PRINT("MPC setpoint %d: pos=(%.3f,%.3f,%.3f) yaw=%.3f raw=(%.3f,%.3f,%.3f)\n", 
+        mpc_debug_count++;
+        if ((enable_traj && mpc_debug_count % 25 == 1) || mpc_debug_count <= 10) {
+          DEBUG_PRINT("MPC setpoint %d: pos=(%.3f,%.3f,%.3f) solve_time=%.1fms traj=%d\n", 
                      mpc_debug_count,
                      (double)mpc_setpoint_pid.position.x, (double)mpc_setpoint_pid.position.y, (double)mpc_setpoint_pid.position.z,
-                     (double)mpc_setpoint_pid.attitude.yaw,
-                     (double)mpc_setpoint(0), (double)mpc_setpoint(1), (double)mpc_setpoint(2));
-          mpc_debug_count++;
+                     (double)mpc_time_us/1000.0, enable_traj);
         }
       }
     } // end if (enable_mpc)
@@ -413,8 +479,41 @@ static void resetProblem(void) {
 
 // Helper function to update horizon reference
 static void UpdateHorizonReference(const setpoint_t *setpoint) {
-  // Simple hover behavior - all horizon steps use the same hover setpoint
-  params.Xref = Xref_origin.replicate<1, NHORIZON>();
+  if (enable_traj) {
+    if (traj_index < max_traj_index) {
+      // Bounds check to prevent matrix access out of range
+      if (traj_index + NHORIZON <= NTOTAL) {
+        // Extract trajectory horizon: copy XYZ positions and zero out attitude/velocities
+        params.Xref.block<3, NHORIZON>(0,0) = Xref_total.block<3, NHORIZON>(0, traj_index);
+        // Zero out attitude and velocities (rows 3-11)
+        params.Xref.block<9, NHORIZON>(3,0).setZero();
+      } else {
+        // Near end of trajectory - use end position 
+        params.Xref = Xref_end.replicate<1, NHORIZON>();
+        DEBUG_PRINT("Trajectory near end: traj_index=%d, using end position\n", traj_index);
+      }
+      
+      // Advance trajectory index every cycle (like Ishaan's original)
+      traj_index++;
+      
+      // Debug output for trajectory steps (every 50 steps to reduce spam)
+      if (traj_index % 50 == 1 || traj_index <= 10) {
+        DEBUG_PRINT("Trajectory advance %d/%d: pos=(%.3f,%.3f,%.3f)\n", 
+                   traj_index, max_traj_index,
+                   (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
+      }
+    } else if (traj_index >= max_traj_index) {
+      // Use end position for remaining horizon
+      params.Xref = Xref_end.replicate<1, NHORIZON>();
+      // Trajectory finished, disable it
+      enable_traj = false;
+      DEBUG_PRINT("Line trajectory completed: traj_index=%d >= max_traj_index=%d, switching to hover\n", 
+                 traj_index, max_traj_index);
+    }
+  } else {
+    // Simple hover behavior - all horizon steps use the same hover setpoint
+    params.Xref = Xref_origin.replicate<1, NHORIZON>();
+  }
 }
 
 // Initialize TinyMPC parameters and cache
@@ -474,9 +573,25 @@ static void initializeTinyMPC(void) {
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints
 
-  // Set up reference trajectory (hover close to ground initially)
-  Xref_origin << 0, 0, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Hover at 30cm height (safer)
+  // Set up reference trajectory data
+  // Xref_data is [NTOTAL*3] stored row-major: [x0,y0,z0, x1,y1,z1, ...]
+  // Map as NTOTAL x 3 matrix, then transpose to get 3 x NTOTAL
+  Xref_total = Eigen::Map<Eigen::Matrix<tinytype, NTOTAL, 3, Eigen::RowMajor>>(Xref_data).transpose();
+  
+  // Set hover position to safe initial hover (not trajectory start)
+  Xref_origin << 0, 0, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0; // Hover at current position (50cm height)
+  Xref_end << Xref_total.col(NTOTAL-1).head(3), 0, 0, 0, 0, 0, 0, 0, 0, 0; // Go to xyz end of trajectory
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
+  
+  // Initialize trajectory parameters
+  enable_traj = false;
+  traj_index = 0;
+  max_traj_index = NTOTAL - NHORIZON;
+  
+  DEBUG_PRINT("Line trajectory loaded: %d total steps, start=(%.3f,%.3f,%.3f), end=(%.3f,%.3f,%.3f)\n",
+             NTOTAL, 
+             (double)Xref_total(0,0), (double)Xref_total(1,0), (double)Xref_total(2,0),
+             (double)Xref_total(0,NTOTAL-1), (double)Xref_total(1,NTOTAL-1), (double)Xref_total(2,NTOTAL-1));
 
   // Initialization complete
   
