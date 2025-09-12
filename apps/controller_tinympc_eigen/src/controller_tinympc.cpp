@@ -55,6 +55,15 @@ extern "C" {
 
 #include "tinympc/tinympc.h"
 
+// Rodriguez parameters conversion function (missing in new firmware)
+static inline struct vec quat2rp(struct quat q) {
+  struct vec v;
+  v.x = q.x/q.w;
+  v.y = q.y/q.w;
+  v.z = q.z/q.w;
+  return v;
+}
+
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "TINYMPC-E"
 #include "debug.h"
@@ -93,8 +102,8 @@ static MatrixMf R;
 static VectorNf Xhrz[NHORIZON];
 static VectorMf Uhrz[NHORIZON-1]; 
 
-static float Xhrz_log[NHORIZON*12];
-static float Uhrz_log[(NHORIZON-1)*4];
+// static float Xhrz_log[NHORIZON*12]; // Currently unused - for future logging
+// static float Uhrz_log[(NHORIZON-1)*4]; // Currently unused - for future logging
 static uint32_t iter_log;
 static float pri_resid_log;
 static float dual_resid_log;
@@ -135,7 +144,7 @@ static tiny_AdmmWorkspace work;
 
 // Helper variables
 static uint64_t startTimestamp;
-static bool isInit = false;  // fix for tracking problem
+// static bool isInit = false;  // Currently unused - for future tracking
 static uint32_t mpcTime = 0;
 static float u_hover[4] = {0.6641f, 0.6246f, 0.7216f, 0.5756f};  // cf1
 static int8_t result = 0;
@@ -304,18 +313,42 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   
   /* Output control */
   if (setpoint->mode.z == modeDisable) {
-    control->normalizedForces[0] = 0.0f;
-    control->normalizedForces[1] = 0.0f;
-    control->normalizedForces[2] = 0.0f;
-    control->normalizedForces[3] = 0.0f;
+    control->thrust = 0;
+    control->roll = 0;
+    control->pitch = 0;
+    control->yaw = 0;
   } else {
-    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
-    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
-    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
-    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
+    // Convert TinyMPC motor forces to legacy control format
+    // Get optimized motor forces (adding baseline hover forces)
+    float f0 = ZU_new[0](0) + u_hover[0];  // Motor 0 force
+    float f1 = ZU_new[0](1) + u_hover[1];  // Motor 1 force  
+    float f2 = ZU_new[0](2) + u_hover[2];  // Motor 2 force
+    float f3 = ZU_new[0](3) + u_hover[3];  // Motor 3 force
+    
+    // Invert the standard quadrotor mixing matrix:
+    // f0 = thrust - roll - pitch - yaw
+    // f1 = thrust - roll + pitch + yaw  
+    // f2 = thrust + roll + pitch - yaw
+    // f3 = thrust + roll - pitch + yaw
+    
+    // Inverse mixing to get thrust, roll, pitch, yaw components
+    float thrust_force = 0.25f * (f0 + f1 + f2 + f3);
+    float roll_force = 0.25f * (-f0 - f1 + f2 + f3);
+    float pitch_force = 0.25f * (-f0 + f1 + f2 - f3);
+    float yaw_force = 0.25f * (-f0 + f1 - f2 + f3);
+    
+    // Convert to legacy control format
+    // Thrust in units expected by firmware (scale motor forces to 0-65535)
+    control->thrust = (uint16_t)(thrust_force * 65535.0f / 15.0f);  // Assuming max thrust ~15N total
+    
+    // Roll/pitch in degrees (approximate conversion from force differences)
+    const float arm = 0.707106781f * 0.046f;  // ARM_LENGTH = 46mm
+    control->roll = roll_force * arm * 57.3f;   // Convert torque to angle (rad to deg)
+    control->pitch = pitch_force * arm * 57.3f;
+    control->yaw = yaw_force * 57.3f;           // Yaw rate in deg/s
   } 
 
-  control->controlMode = controlModePWM;
+  control->controlMode = controlModeLegacy;
 
   //Save results for logging
   iter_log = info.iter;
@@ -327,6 +360,11 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
  * Logging variables for the command and reference signals for the
  * MPC controller
  */
+
+/*
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 LOG_GROUP_START(ctrlMPC)
 
@@ -340,6 +378,11 @@ LOG_ADD(LOG_FLOAT, ref_y, &ref_y)
 LOG_ADD(LOG_FLOAT, ref_z, &ref_z)
 
 LOG_GROUP_STOP(ctrlMPC)
+
+#ifdef __cplusplus
+}
+#endif
+*/
 
 #ifdef __cplusplus
 }

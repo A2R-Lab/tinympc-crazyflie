@@ -76,17 +76,17 @@ enum tiny_ErrorCode {
 # define TIME_LIMIT (0.0)
 
 
-// # ifndef TINY_NULL_MAT
-// #  define TINY_NULL_MAT  \
-//   ((Matrix){      \
-//       0,          \
-//       0,          \
-//       0,          \
-//       0,          \
-//       TINY_NULL,       \
-//       slap_DENSE, \
-//   })
-// # endif /* ifndef TINY_NULL_MAT */
+/* ifndef TINY_NULL_MAT
+   define TINY_NULL_MAT  
+   ((Matrix){      
+       0,          
+       0,          
+       0,          
+       0,          
+       TINY_NULL,       
+       slap_DENSE, 
+   })
+   endif */ /* ifndef TINY_NULL_MAT */
 
 # ifndef TINY_NULL
 #  define TINY_NULL 0

@@ -96,8 +96,8 @@ enum tiny_ErrorCode tiny_InitWorkspace(tiny_AdmmWorkspace* work,
   // tiny_InitData(work);
 
   // int n = model->nstates;
-  int m = model->ninputs;
-  int N = model->nhorizon;
+  // int m = model->ninputs; // Currently unused
+  // int N = model->nhorizon; // Currently unused
 
   work->reg = (float)REG_MIN;
   work->alpha = (float)ALPHA;

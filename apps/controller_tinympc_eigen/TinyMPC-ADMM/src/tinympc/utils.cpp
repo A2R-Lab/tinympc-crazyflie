@@ -9,8 +9,8 @@ void PrintSolveInfo(tiny_AdmmWorkspace* work) {
   printf("Solve info: \n");
   printf(" Status: %d\n", info->status_val);
   printf(" Iter: %d\n", info->iter);   
-  printf(" Obj value: %f\n", info->obj_val);
-  printf(" Primal res: %f, dual res: %f\n", info->pri_res, info->dua_res);
+  printf(" Obj value: %f\n", (double)info->obj_val);
+  printf(" Primal res: %f, dual res: %f\n", (double)info->pri_res, (double)info->dua_res);
 }
 
 void PrintLine(void) {
@@ -36,10 +36,10 @@ void PrintIteration(tiny_AdmmWorkspace *work) {
   info = work->info;
 
   printf("%4i",     (int)info->iter);
-  printf(" %12.4e", info->obj_val);
-  printf("  %9.2e", info->pri_res);
-  printf("  %9.2e", info->dua_res);
-  printf("  %9.2e", work->rho);
+  printf(" %12.4e", (double)info->obj_val);
+  printf("  %9.2e", (double)info->pri_res);
+  printf("  %9.2e", (double)info->dua_res);
+  printf("  %9.2e", (double)work->rho);
   printf("\n");
 }
 
@@ -51,7 +51,7 @@ void PrintSummary(tiny_AdmmInfo *info) {
   printf("number of iterations: %i\n", (int)info->iter);
 
   if (info->status_val == TINY_SOLVED) {
-    printf("optimal objective:    %.4f\n", info->obj_val);
+    printf("optimal objective:    %.4f\n", (double)info->obj_val);
   }
   printf("\n");
 }
