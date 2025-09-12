@@ -119,6 +119,9 @@ static VectorNf q[NHORIZON-1];
 static VectorMf r[NHORIZON-1];
 static VectorMf r_tilde[NHORIZON-1];
 
+// Rate limiting to reduce computational load
+static uint32_t control_counter = 0;
+
 static VectorNf Xref[NHORIZON];
 static VectorMf Uref[NHORIZON-1];
 
@@ -272,7 +275,7 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;
-  stgs.max_iter = 6;           // limit this if needed
+  stgs.max_iter = 2;           // Further reduced from 3 to minimize computational load
   stgs.verbose = 0;
   stgs.check_termination = 2;
   stgs.tol_abs_dual = 1e-2;
@@ -298,59 +301,43 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     return;
   }
   
-  // Get current time
-  updateHorizonReference(setpoint);
-  /* Get current state (initial state for MPC) */
-  updateInitialState(sensors, state);
+  // Rate limit MPC optimization to reduce computational load
+  control_counter++;
+  bool run_full_mpc = (control_counter % 5 == 0); // Run full MPC every 5th cycle (100Hz)
+  
+  if (run_full_mpc) {
+    // Get current time
+    updateHorizonReference(setpoint);
+    /* Get current state (initial state for MPC) */
+    updateInitialState(sensors, state);
 
-  /* MPC solve */
-  tiny_UpdateLinearCost(&work);
-  startTimestamp = usecTimestamp();
-  tiny_SolveAdmm(&work);
-  mpcTime = usecTimestamp() - startTimestamp;
- 
-  result = info.status_val * info.iter;
+    /* MPC solve */
+    tiny_UpdateLinearCost(&work);
+    startTimestamp = usecTimestamp();
+    tiny_SolveAdmm(&work);
+    mpcTime = usecTimestamp() - startTimestamp;
+   
+    result = info.status_val * info.iter;
+  } else {
+    // On non-MPC cycles, just update current state for next full MPC cycle
+    updateInitialState(sensors, state);
+  }
+  // Regardless of MPC cycle, always output control using latest solution
   
   /* Output control */
   if (setpoint->mode.z == modeDisable) {
-    control->thrust = 0;
-    control->roll = 0;
-    control->pitch = 0;
-    control->yaw = 0;
+    control->normalizedForces[0] = 0.0f;
+    control->normalizedForces[1] = 0.0f;
+    control->normalizedForces[2] = 0.0f;
+    control->normalizedForces[3] = 0.0f;
   } else {
-    // Convert TinyMPC motor forces to legacy control format
-    // Get optimized motor forces (adding baseline hover forces)
-    float f0 = ZU_new[0](0) + u_hover[0];  // Motor 0 force
-    float f1 = ZU_new[0](1) + u_hover[1];  // Motor 1 force  
-    float f2 = ZU_new[0](2) + u_hover[2];  // Motor 2 force
-    float f3 = ZU_new[0](3) + u_hover[3];  // Motor 3 force
-    
-    // Invert the standard quadrotor mixing matrix:
-    // f0 = thrust - roll - pitch - yaw
-    // f1 = thrust - roll + pitch + yaw  
-    // f2 = thrust + roll + pitch - yaw
-    // f3 = thrust + roll - pitch + yaw
-    
-    // Inverse mixing to get thrust, roll, pitch, yaw components
-    float thrust_force = 0.25f * (f0 + f1 + f2 + f3);
-    float roll_force = 0.25f * (-f0 - f1 + f2 + f3);
-    float pitch_force = 0.25f * (-f0 + f1 + f2 - f3);
-    float yaw_force = 0.25f * (-f0 + f1 - f2 + f3);
-    
-    // Convert to legacy control format
-    // Thrust in units expected by firmware (scale motor forces to 0-65535)
-    control->thrust = (uint16_t)(thrust_force * 65535.0f / 15.0f);  // Assuming max thrust ~15N total
-    
-    // Roll/pitch in degrees (approximate conversion from force differences)
-    const float arm = 0.707106781f * 0.046f;  // ARM_LENGTH = 46mm
-    control->roll = roll_force * arm * 57.3f;   // Convert torque to angle (rad to deg)
-    control->pitch = pitch_force * arm * 57.3f;
-    control->yaw = yaw_force * 57.3f;           // Yaw rate in deg/s
+    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
+    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
+    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
+    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
   } 
 
-  control->controlMode = controlModeLegacy;
-
-  //Save results for logging
+  control->controlMode = controlModeForce;  //Save results for logging
   iter_log = info.iter;
   pri_resid_log = info.pri_res;
   dual_resid_log = info.dua_res;
