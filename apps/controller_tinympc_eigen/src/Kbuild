@@ -1,0 +1,2 @@
+obj-y += controller_tinympc.o
+obj-y += ../TinyMPC-ADMM/src/tinympc/

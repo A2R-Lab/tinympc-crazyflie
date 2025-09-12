@@ -1,0 +1,272 @@
+cost_lqr.o: \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/cost_lqr.cpp \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/cost_lqr.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/types.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/Core \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/DisableStupidWarnings.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/Macros.h \
+ /usr/include/newlib/c++/10.3.1/cmath \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/c++config.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/os_defines.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/cpu_defines.h \
+ /usr/include/newlib/c++/10.3.1/bits/cpp_type_traits.h \
+ /usr/include/newlib/c++/10.3.1/ext/type_traits.h \
+ /usr/include/newlib/c++/10.3.1/math.h /usr/include/newlib/math.h \
+ /usr/include/newlib/sys/reent.h /usr/include/newlib/_ansi.h \
+ /usr/include/newlib/newlib.h /usr/include/newlib/_newlib_version.h \
+ /usr/include/newlib/sys/config.h /usr/include/newlib/machine/ieeefp.h \
+ /usr/include/newlib/sys/features.h \
+ /usr/lib/gcc/arm-none-eabi/10.3.1/include/stddef.h \
+ /usr/include/newlib/sys/_types.h /usr/include/newlib/machine/_types.h \
+ /usr/include/newlib/machine/_default_types.h \
+ /usr/include/newlib/sys/lock.h /usr/include/newlib/sys/cdefs.h \
+ /usr/include/newlib/_ansi.h \
+ /usr/include/newlib/c++/10.3.1/bits/std_abs.h \
+ /usr/include/newlib/c++/10.3.1/stdlib.h /usr/include/newlib/stdlib.h \
+ /usr/include/newlib/machine/stdlib.h /usr/include/newlib/alloca.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/ConfigureVectorization.h \
+ /usr/include/newlib/c++/10.3.1/complex \
+ /usr/include/newlib/c++/10.3.1/sstream \
+ /usr/include/newlib/c++/10.3.1/istream \
+ /usr/include/newlib/c++/10.3.1/ios /usr/include/newlib/c++/10.3.1/iosfwd \
+ /usr/include/newlib/c++/10.3.1/bits/stringfwd.h \
+ /usr/include/newlib/c++/10.3.1/bits/memoryfwd.h \
+ /usr/include/newlib/c++/10.3.1/bits/postypes.h \
+ /usr/include/newlib/c++/10.3.1/cwchar /usr/include/newlib/wchar.h \
+ /usr/lib/gcc/arm-none-eabi/10.3.1/include/stdarg.h \
+ /usr/include/newlib/sys/_locale.h \
+ /usr/include/newlib/c++/10.3.1/exception \
+ /usr/include/newlib/c++/10.3.1/bits/exception.h \
+ /usr/include/newlib/c++/10.3.1/bits/exception_ptr.h \
+ /usr/include/newlib/c++/10.3.1/bits/exception_defines.h \
+ /usr/include/newlib/c++/10.3.1/bits/cxxabi_init_exception.h \
+ /usr/include/newlib/c++/10.3.1/typeinfo \
+ /usr/include/newlib/c++/10.3.1/bits/hash_bytes.h \
+ /usr/include/newlib/c++/10.3.1/new \
+ /usr/include/newlib/c++/10.3.1/bits/nested_exception.h \
+ /usr/include/newlib/c++/10.3.1/bits/move.h \
+ /usr/include/newlib/c++/10.3.1/type_traits \
+ /usr/include/newlib/c++/10.3.1/bits/char_traits.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_algobase.h \
+ /usr/include/newlib/c++/10.3.1/bits/functexcept.h \
+ /usr/include/newlib/c++/10.3.1/ext/numeric_traits.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_pair.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_iterator_base_types.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_iterator_base_funcs.h \
+ /usr/include/newlib/c++/10.3.1/bits/concept_check.h \
+ /usr/include/newlib/c++/10.3.1/debug/assertions.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_iterator.h \
+ /usr/include/newlib/c++/10.3.1/bits/ptr_traits.h \
+ /usr/include/newlib/c++/10.3.1/debug/debug.h \
+ /usr/include/newlib/c++/10.3.1/bits/predefined_ops.h \
+ /usr/include/newlib/c++/10.3.1/cstdint \
+ /usr/lib/gcc/arm-none-eabi/10.3.1/include/stdint.h \
+ /usr/include/newlib/c++/10.3.1/bits/localefwd.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/c++locale.h \
+ /usr/include/newlib/c++/10.3.1/clocale /usr/include/newlib/locale.h \
+ /usr/include/newlib/c++/10.3.1/cctype /usr/include/newlib/ctype.h \
+ /usr/include/newlib/c++/10.3.1/bits/ios_base.h \
+ /usr/include/newlib/c++/10.3.1/ext/atomicity.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/gthr.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/gthr-default.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/atomic_word.h \
+ /usr/include/newlib/c++/10.3.1/bits/locale_classes.h \
+ /usr/include/newlib/c++/10.3.1/string \
+ /usr/include/newlib/c++/10.3.1/bits/allocator.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/c++allocator.h \
+ /usr/include/newlib/c++/10.3.1/ext/new_allocator.h \
+ /usr/include/newlib/c++/10.3.1/bits/ostream_insert.h \
+ /usr/include/newlib/c++/10.3.1/bits/cxxabi_forced.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_function.h \
+ /usr/include/newlib/c++/10.3.1/backward/binders.h \
+ /usr/include/newlib/c++/10.3.1/bits/range_access.h \
+ /usr/include/newlib/c++/10.3.1/initializer_list \
+ /usr/include/newlib/c++/10.3.1/bits/iterator_concepts.h \
+ /usr/include/newlib/c++/10.3.1/concepts \
+ /usr/include/newlib/c++/10.3.1/bits/range_cmp.h \
+ /usr/include/newlib/c++/10.3.1/bits/basic_string.h \
+ /usr/include/newlib/c++/10.3.1/ext/alloc_traits.h \
+ /usr/include/newlib/c++/10.3.1/bits/alloc_traits.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_construct.h \
+ /usr/include/newlib/c++/10.3.1/ext/string_conversions.h \
+ /usr/include/newlib/c++/10.3.1/cstdlib \
+ /usr/include/newlib/c++/10.3.1/cstdio /usr/include/newlib/stdio.h \
+ /usr/include/newlib/sys/types.h /usr/include/newlib/sys/_stdint.h \
+ /usr/include/newlib/machine/endian.h \
+ /usr/include/newlib/machine/_endian.h /usr/include/newlib/sys/select.h \
+ /usr/include/newlib/sys/_sigset.h /usr/include/newlib/sys/_timeval.h \
+ /usr/include/newlib/sys/timespec.h /usr/include/newlib/sys/_timespec.h \
+ /usr/include/newlib/sys/_pthreadtypes.h /usr/include/newlib/sys/sched.h \
+ /usr/include/newlib/machine/types.h /usr/include/newlib/sys/stdio.h \
+ /usr/include/newlib/c++/10.3.1/cerrno /usr/include/newlib/errno.h \
+ /usr/include/newlib/sys/errno.h \
+ /usr/include/newlib/c++/10.3.1/bits/charconv.h \
+ /usr/include/newlib/c++/10.3.1/bits/functional_hash.h \
+ /usr/include/newlib/c++/10.3.1/bits/basic_string.tcc \
+ /usr/include/newlib/c++/10.3.1/bits/locale_classes.tcc \
+ /usr/include/newlib/c++/10.3.1/system_error \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/error_constants.h \
+ /usr/include/newlib/c++/10.3.1/stdexcept \
+ /usr/include/newlib/c++/10.3.1/streambuf \
+ /usr/include/newlib/c++/10.3.1/bits/streambuf.tcc \
+ /usr/include/newlib/c++/10.3.1/bits/basic_ios.h \
+ /usr/include/newlib/c++/10.3.1/bits/locale_facets.h \
+ /usr/include/newlib/c++/10.3.1/cwctype /usr/include/newlib/wctype.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/ctype_base.h \
+ /usr/include/newlib/c++/10.3.1/bits/streambuf_iterator.h \
+ /usr/include/newlib/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/ctype_inline.h \
+ /usr/include/newlib/c++/10.3.1/bits/locale_facets.tcc \
+ /usr/include/newlib/c++/10.3.1/bits/basic_ios.tcc \
+ /usr/include/newlib/c++/10.3.1/ostream \
+ /usr/include/newlib/c++/10.3.1/bits/ostream.tcc \
+ /usr/include/newlib/c++/10.3.1/bits/istream.tcc \
+ /usr/include/newlib/c++/10.3.1/bits/sstream.tcc \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/MKL_support.h \
+ /usr/include/newlib/c++/10.3.1/cstddef \
+ /usr/include/newlib/c++/10.3.1/cassert /usr/include/newlib/assert.h \
+ /usr/include/newlib/c++/10.3.1/functional \
+ /usr/include/newlib/c++/10.3.1/tuple \
+ /usr/include/newlib/c++/10.3.1/utility \
+ /usr/include/newlib/c++/10.3.1/bits/stl_relops.h \
+ /usr/include/newlib/c++/10.3.1/array \
+ /usr/include/newlib/c++/10.3.1/bits/uses_allocator.h \
+ /usr/include/newlib/c++/10.3.1/bits/invoke.h \
+ /usr/include/newlib/c++/10.3.1/bits/refwrap.h \
+ /usr/include/newlib/c++/10.3.1/bits/std_function.h \
+ /usr/include/newlib/c++/10.3.1/cstring /usr/include/newlib/string.h \
+ /usr/include/newlib/strings.h /usr/include/newlib/sys/string.h \
+ /usr/include/newlib/c++/10.3.1/limits \
+ /usr/include/newlib/c++/10.3.1/climits \
+ /usr/lib/gcc/arm-none-eabi/10.3.1/include-fixed/limits.h \
+ /usr/include/newlib/c++/10.3.1/algorithm \
+ /usr/include/newlib/c++/10.3.1/bits/stl_algo.h \
+ /usr/include/newlib/c++/10.3.1/bits/algorithmfwd.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_heap.h \
+ /usr/include/newlib/c++/10.3.1/bits/stl_tempbuf.h \
+ /usr/include/newlib/c++/10.3.1/bits/uniform_int_dist.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/Constants.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/Meta.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/ForwardDeclarations.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/StaticAssert.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/XprHelper.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/Memory.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/IntegralConstant.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/SymbolicIndex.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/NumTraits.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/MathFunctions.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/GenericPacketMath.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/MathFunctionsImpl.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/ConjHelper.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/Half.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/TypeCasting.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/GenericPacketMathFunctionsFwd.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/Settings.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/arch/Default/GenericPacketMathFunctions.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/TernaryFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/BinaryFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/UnaryFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/NullaryFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/StlFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/functors/AssignmentFunctors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/IndexedViewHelper.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/ReshapedHelper.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ArithmeticSequence.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/IO.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/DenseCoeffsBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/DenseBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/CommonCwiseUnaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/BlockMethods.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/IndexedViewMethods.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/IndexedViewMethods.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/ReshapedMethods.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/ReshapedMethods.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/MatrixBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/CommonCwiseBinaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/MatrixCwiseUnaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/MatrixCwiseBinaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/EigenBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Product.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CoreEvaluators.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/AssignEvaluator.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Assign.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ArrayBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/ArrayCwiseUnaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/../plugins/ArrayCwiseBinaryOps.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/BlasUtil.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/DenseStorage.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/NestByValue.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ReturnByValue.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/NoAlias.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/PlainObjectBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Matrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Array.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CwiseTernaryOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CwiseBinaryOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CwiseUnaryOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CwiseNullaryOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CwiseUnaryView.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/SelfCwiseBinaryOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Dot.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/StableNorm.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Stride.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/MapBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Map.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Ref.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Block.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/VectorBlock.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/IndexedView.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Reshaped.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Transpose.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/DiagonalMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Diagonal.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/DiagonalProduct.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Redux.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Visitor.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Fuzzy.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Swap.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CommaInitializer.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/GeneralProduct.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Solve.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Inverse.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/SolverBase.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/PermutationMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Transpositions.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/TriangularMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/SelfAdjointView.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/GeneralBlockPanelKernel.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/Parallelizer.h \
+ /usr/include/newlib/c++/10.3.1/atomic \
+ /usr/include/newlib/c++/10.3.1/bits/atomic_base.h \
+ /usr/include/newlib/c++/10.3.1/bits/atomic_lockfree_defines.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ProductEvaluators.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/GeneralMatrixVector.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/GeneralMatrixMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/SolveTriangular.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/GeneralMatrixMatrixTriangular.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/SelfadjointMatrixVector.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/SelfadjointMatrixMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/SelfadjointProduct.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/SelfadjointRank2Update.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/TriangularMatrixVector.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/TriangularMatrixMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/TriangularSolverMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/products/TriangularSolverVector.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/BandMatrix.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/CoreIterators.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ConditionEstimator.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/BooleanRedux.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Select.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/VectorwiseOp.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/PartialReduxEvaluator.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Random.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Replicate.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/Reverse.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/ArrayWrapper.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/StlIterators.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/GlobalFunctions.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/src/Core/util/ReenableStupidWarnings.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/constants.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/errors.h \
+ /home/moises/Documents/A2R/firmware/tinympc-crazyflie/crazyflie-firmware/examples/controller_tinympc_eigen/src/../TinyMPC-ADMM/src/tinympc/utils.h \
+ /usr/include/newlib/c++/10.3.1/iostream
