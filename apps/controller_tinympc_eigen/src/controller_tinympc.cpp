@@ -152,6 +152,7 @@ static uint32_t mpcTime = 0;
 static float u_hover[4] = {0.6641f, 0.6246f, 0.7216f, 0.5756f};  // cf1
 static int8_t result = 0;
 static uint32_t step = 0;
+
 static bool en_traj = false;
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
@@ -348,11 +349,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
  * MPC controller
  */
 
-/*
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// Note: Currently log groups are disabled due to C++ string literal compatibility
+// Uncomment and fix string casting if needed in the future
+
+/*
 LOG_GROUP_START(ctrlMPC)
 
 LOG_ADD(LOG_INT32, iters, &iter_log)
@@ -365,11 +369,13 @@ LOG_ADD(LOG_FLOAT, ref_y, &ref_y)
 LOG_ADD(LOG_FLOAT, ref_z, &ref_z)
 
 LOG_GROUP_STOP(ctrlMPC)
-
-#ifdef __cplusplus
-}
-#endif
 */
+
+// Note: Controller switching is handled by the core firmware.
+// TinyMPC is activated when stabilizer.controller = 5 (Out-of-Tree).
+// The parameter is defined in the core stabilizer module.
+
+} // extern "C"
 
 #ifdef __cplusplus
 }
