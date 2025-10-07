@@ -22,8 +22,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  *
- * controller_tinympc.cpp - TinyMPC-ADMM based controller for new crazyflie firmware.
- * Adapted from Ishaan's implementation for the latest firmware API.
+ * controller_tinympc.c - App layer application of TinyMPC.
+ */
+
+/** 
+ * Single lap
  */
 
 #include "Eigen.h"
@@ -48,19 +51,26 @@ extern "C" {
 #include "param.h"
 #include "num.h"
 #include "math3d.h"
-#include "eventtrigger.h"
-#include "stabilizer_types.h"
+#include "stabilizer_types.h"  // For controlModePWM
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
 #include "tinympc/tinympc.h"
 
-// Rodriguez parameters conversion function (missing in new firmware)
+// Rodriguez parameters conversion function (needed for old firmware compatibility)
 static inline struct vec quat2rp(struct quat q) {
   struct vec v;
-  v.x = q.x/q.w;
-  v.y = q.y/q.w;
-  v.z = q.z/q.w;
+  float w_abs = fabsf(q.w);
+  if (w_abs > 1e-6f) { // Avoid division by near-zero
+    v.x = q.x / q.w;
+    v.y = q.y / q.w;
+    v.z = q.z / q.w;
+  } else {
+    // Handle singular case
+    v.x = 0.0f;
+    v.y = 0.0f;
+    v.z = 0.0f;
+  }
   return v;
 }
 
@@ -78,18 +88,20 @@ void appMain() {
 
 // Macro variables, model dimensions in tinympc/types.h
 #define DT 0.002f       // dt
-#define NHORIZON 15   // horizon steps (NHORIZON states and NHORIZON-1 controls)
-#define MPC_RATE 500  // control frequency
+#define NHORIZON 25   // horizon steps (NHORIZON states and NHORIZON-1 controls)
+#define MPC_RATE RATE_100_HZ  // control frequency
+#define LQR_RATE RATE_500_HZ  // control frequency
 
 /* Include trajectory to track */
 #include "traj_fig8_12.h"
-// #include "traj_circle_500hz.h"
+//#include "traj_circle_500hz.h"
 // #include "traj_perching.h"
 
 // Precomputed data and cache, in params_*.h
 static MatrixNf A;
 static MatrixNMf B;
 static MatrixMNf Kinf;
+static MatrixMNf Klqr;
 static MatrixNf Pinf;
 static MatrixMf Quu_inv;
 static MatrixNf AmBKt;
@@ -101,16 +113,7 @@ static MatrixMf R;
 
 static VectorNf Xhrz[NHORIZON];
 static VectorMf Uhrz[NHORIZON-1]; 
-
-// static float Xhrz_log[NHORIZON*12]; // Currently unused - for future logging
-// static float Uhrz_log[(NHORIZON-1)*4]; // Currently unused - for future logging
-static uint32_t iter_log;
-static float pri_resid_log;
-static float dual_resid_log;
-static float ref_x;
-static float ref_y;
-static float ref_z;
-
+static VectorMf Ulqr;
 static VectorMf d[NHORIZON-1];
 static VectorNf p[NHORIZON];
 static VectorMf YU[NHORIZON];
@@ -118,9 +121,6 @@ static VectorMf YU[NHORIZON];
 static VectorNf q[NHORIZON-1];
 static VectorMf r[NHORIZON-1];
 static VectorMf r_tilde[NHORIZON-1];
-
-// Rate limiting to reduce computational load
-static uint32_t control_counter = 0;
 
 static VectorNf Xref[NHORIZON];
 static VectorMf Uref[NHORIZON-1];
@@ -147,23 +147,23 @@ static tiny_AdmmWorkspace work;
 
 // Helper variables
 static uint64_t startTimestamp;
-// static bool isInit = false;  // Currently unused - for future tracking
-static uint32_t mpcTime = 0;
-static float u_hover[4] = {0.6641f, 0.6246f, 0.7216f, 0.5756f};  // cf1
+// static bool isInit = false;  // fix for tracking problem - UNUSED, commented out
+// static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
+static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
+// static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
-
 static bool en_traj = false;
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
-static int8_t traj_hold = 3;       // hold current trajectory for this no of steps
+static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
 static int8_t traj_iter = 0;
 static uint32_t traj_idx = 0;
 
 static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
-  
+
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
   x0(1) = state->position.y;
@@ -194,15 +194,14 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     if (step % traj_hold == 0) {
       traj_idx = (int)(step / traj_hold);
       for (int i = 0; i < NHORIZON; ++i) {
-        for (int j = 0; j < 3; ++j) {
+        for (int j = 0; j < NSTATES; ++j) {
           Xref[i](j) = X_ref_data[traj_idx][j];
         }
-        for (int j = 6; j < 9; ++j) {
-          Xref[i](j) = X_ref_data[traj_idx][j];
+        if (i < NHORIZON - 1) {
+          for (int j = 0; j < NINPUTS; ++j) {
+            Uref[i](j) = U_ref_data[traj_idx][j];
+          }          
         }
-        ref_x = X_ref_data[traj_idx][0];
-        ref_y = X_ref_data[traj_idx][1];
-        ref_z = X_ref_data[traj_idx][2];
       }
     }
   }
@@ -225,7 +224,11 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     xg(4) = phi.y;
     xg(5) = phi.z;
     tiny_SetGoalState(&work, Xref, &xg);
+    tiny_SetGoalInput(&work, Uref, &ug);
+    // // xg(1) = 1.0;
+    // // xg(2) = 2.0;
   }
+  // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref[0](2)));
 
   // stop trajectory executation
   if (en_traj) {
@@ -244,10 +247,11 @@ void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
 
   // Precompute/Cache
-  #include "params_500hz.h"
+  // #include "params_500hz.h"
+  #include "params_100hz.h"
 
   // End of Precompute/Cache
-  traj_length = traj_length * traj_hold;
+
   tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
   tiny_InitSettings(&stgs);
   stgs.rho_init = 250.0;  // Important (select offline, associated with precomp.)
@@ -261,11 +265,13 @@ void controllerOutOfTreeInit(void) {
   tiny_SetInitialState(&work, &x0);  
   tiny_SetStateReference(&work, Xref);
   tiny_SetInputReference(&work, Uref);
+  // tiny_SetGoalState(&work, Xref, &xg);
+  // tiny_SetGoalInput(&work, Uref, &ug);
 
   /* Set up LQR cost */
   tiny_InitDataCost(&work, &Q, q, &R, r, r_tilde);
-  
-  /* Set up constraints */
+  // R = R + stgs.rho_init * MatrixMf::Identity();
+  // /* Set up constraints */
   ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
   lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
@@ -276,18 +282,22 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;
-  stgs.max_iter = 2;           // Further reduced from 3 to minimize computational load
+  stgs.max_iter = 2;           // limit this if needed
   stgs.verbose = 0;
-  stgs.check_termination = 2;
-  stgs.tol_abs_dual = 1e-2;
-  stgs.tol_abs_prim = 1e-2;
+  stgs.check_termination = 0;
+  stgs.tol_abs_dual = 5e-2;
+  stgs.tol_abs_prim = 5e-2;
+
+  Klqr << 
+  -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
+  0.120236f,0.119379f,0.285625f,-0.346222f,0.403763f,0.475821f,0.071330f,0.068348f,0.186504f,-0.020972f,0.037152f,0.187009f,
+  0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
+  -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
   /* End of MPC initialization */  
   en_traj = true;
   step = 0;  
   traj_iter = 0;
-  
-  DEBUG_PRINT("TinyMPC controller initialized successfully!\n");
 }
 
 bool controllerOutOfTreeTest() {
@@ -295,87 +305,96 @@ bool controllerOutOfTreeTest() {
   return true;
 }
 
-void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const stabilizerStep_t stabilizerStep) {
+void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick) {
+  // Get current time
+  startTimestamp = usecTimestamp();
+
+  /* Get current state (initial state for MPC) */
+  // delta_x = x - x_bar; x_bar = 0
+  // Positon error, [m]
+  updateInitialState(sensors, state);
 
   /* Controller rate */
-  if (!RATE_DO_EXECUTE(MPC_RATE, stabilizerStep)) {
-    return;
-  }
-  
-  // Rate limit MPC optimization to reduce computational load
-  control_counter++;
-  bool run_full_mpc = (control_counter % 5 == 0); // Run full MPC every 5th cycle (100Hz)
-  
-  if (run_full_mpc) {
-    // Get current time
+  if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
+    // Get command reference
     updateHorizonReference(setpoint);
-    /* Get current state (initial state for MPC) */
-    updateInitialState(sensors, state);
 
     /* MPC solve */
+    // Solve optimization problem using ADMM
     tiny_UpdateLinearCost(&work);
-    startTimestamp = usecTimestamp();
     tiny_SolveAdmm(&work);
-    mpcTime = usecTimestamp() - startTimestamp;
-   
-    result = info.status_val * info.iter;
-  } else {
-    // On non-MPC cycles, just update current state for next full MPC cycle
-    updateInitialState(sensors, state);
+ 
+    // DEBUG_PRINT("Uhrz[0] = [%.2f, %.2f]\n", (double)(Uhrz[0](0)), (double)(Uhrz[0](1)));
+    // DEBUG_PRINT("ZU[0] = [%.2f, %.2f]\n", (double)(ZU_new[0](0)), (double)(ZU_new[0](1)));
+    // DEBUG_PRINT("YU[0] = [%.2f, %.2f, %.2f, %.2f]\n", (double)(YU[0].data[0]), (double)(YU[0].data[1]), (double)(YU[0].data[2]), (double)(YU[0].data[3]));
+    // DEBUG_PRINT("info.pri_res: %f\n", (double)(info.pri_res));
+    // DEBUG_PRINT("info.dua_res: %f\n", (double)(info.dua_res));
+    result =  info.status_val * info.iter;
+    // DEBUG_PRINT("%d %d %d \n", info.status_val, info.iter, mpcTime);
+    // DEBUG_PRINT("%.2f, %.2f, %.2f, %.2f \n", (double)(Xref[0](5)), (double)(Uhrz[0](2)), (double)(Uhrz[0](3)), (double)(ZU_new[0](0)));
   }
-  // Regardless of MPC cycle, always output control using latest solution
-  
-  /* Output control */
-  if (setpoint->mode.z == modeDisable) {
-    control->normalizedForces[0] = 0.0f;
-    control->normalizedForces[1] = 0.0f;
-    control->normalizedForces[2] = 0.0f;
-    control->normalizedForces[3] = 0.0f;
-  } else {
-    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
-    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
-    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
-    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
-  } 
 
-  control->controlMode = controlModeForce;  //Save results for logging
-  iter_log = info.iter;
-  pri_resid_log = info.pri_res;
-  dual_resid_log = info.dua_res;
+  if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
+    // Reference from MPC
+    Ulqr = -(Kinf) * (x0 - Xhrz[1]) + ZU_new[0];
+    
+    /* Output control */
+    if (setpoint->mode.z == modeDisable) {
+      control->normalizedForces[0] = 0.0f;
+      control->normalizedForces[1] = 0.0f;
+      control->normalizedForces[2] = 0.0f;
+      control->normalizedForces[3] = 0.0f;
+    } else {
+      control->normalizedForces[0] = Ulqr(0) + u_hover[0];  // PWM 0..1
+      control->normalizedForces[1] = Ulqr(1) + u_hover[1];
+      control->normalizedForces[2] = Ulqr(2) + u_hover[2];
+      control->normalizedForces[3] = Ulqr(3) + u_hover[3];
+    } 
+    control->controlMode = controlModePWM;
+  }
+  // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
+
+  // control->normalizedForces[0] = 0.0f;
+  // control->normalizedForces[1] = 0.0f;
+  // control->normalizedForces[2] = 0.0f;
+  // control->normalizedForces[3] = 0.0f;
 }
+
+/**
+ * Tunning variables for the full state quaternion LQR controller
+ */
+// PARAM_GROUP_START(ctrlMPC)
+// /**
+//  * @brief K gain
+//  */
+// PARAM_ADD(PARAM_FLOAT, u_hover, &u_hover)
+
+// PARAM_GROUP_STOP(ctrlMPC)
 
 /**
  * Logging variables for the command and reference signals for the
  * MPC controller
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Note: Currently log groups are disabled due to C++ string literal compatibility
-// Uncomment and fix string casting if needed in the future
-
+// Note: LOG macros disabled due to C++ string literal compatibility with new firmware
 /*
 LOG_GROUP_START(ctrlMPC)
 
-LOG_ADD(LOG_INT32, iters, &iter_log)
+LOG_ADD(LOG_INT8, result, &result)
 LOG_ADD(LOG_UINT32, mpcTime, &mpcTime)
 
-LOG_ADD(LOG_FLOAT, primal_residual, &pri_resid_log)
-LOG_ADD(LOG_FLOAT, dual_residual, &dual_resid_log)
-LOG_ADD(LOG_FLOAT, ref_x, &ref_x)
-LOG_ADD(LOG_FLOAT, ref_y, &ref_y)
-LOG_ADD(LOG_FLOAT, ref_z, &ref_z)
+LOG_ADD(LOG_FLOAT, u0, &(Uhrz[0](0)))
+LOG_ADD(LOG_FLOAT, u1, &(Uhrz[0](1)))
+LOG_ADD(LOG_FLOAT, u2, &(Uhrz[0](2)))
+LOG_ADD(LOG_FLOAT, u3, &(Uhrz[0](3)))
+
+LOG_ADD(LOG_FLOAT, zu0, &(ZU_new[0](0)))
+LOG_ADD(LOG_FLOAT, zu1, &(ZU_new[0](1)))
+LOG_ADD(LOG_FLOAT, zu2, &(ZU_new[0](2)))
+LOG_ADD(LOG_FLOAT, zu3, &(ZU_new[0](3)))
 
 LOG_GROUP_STOP(ctrlMPC)
 */
-
-// Note: Controller switching is handled by the core firmware.
-// TinyMPC is activated when stabilizer.controller = 5 (Out-of-Tree).
-// The parameter is defined in the core stabilizer module.
-
-} // extern "C"
 
 #ifdef __cplusplus
 }
