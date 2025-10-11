@@ -1,6 +1,0 @@
-obj-y += src/
-
-# TinyMPC source files
-obj-y += ../../TinyMPC/src/tinympc/tiny_api.o
-obj-y += ../../TinyMPC/src/tinympc/admm.o
-obj-y += ../../TinyMPC/src/tinympc/rho_benchmark.o
