@@ -176,6 +176,38 @@ public:
         // Apply value shift
         return output[0] - VALUE_SHIFT;
     }
+    
+    /**
+     * Compute gradient using finite differences
+     * grad[i] = (f(x + h*e_i) - f(x - h*e_i)) / (2*h)
+     */
+    void forward_with_gradient(const float* x, float* g_out, float* grad_out) {
+        // Compute f(x)
+        *g_out = forward(x);
+        
+        // Finite difference step size
+        const float h = 1e-4f;
+        
+        // Compute gradient for each input dimension
+        float x_perturbed[INPUT_DIM];
+        for (int i = 0; i < INPUT_DIM; i++) {
+            // Copy x
+            for (int j = 0; j < INPUT_DIM; j++) {
+                x_perturbed[j] = x[j];
+            }
+            
+            // f(x + h*e_i)
+            x_perturbed[i] = x[i] + h;
+            float f_plus = forward(x_perturbed);
+            
+            // f(x - h*e_i)
+            x_perturbed[i] = x[i] - h;
+            float f_minus = forward(x_perturbed);
+            
+            // Central difference
+            grad_out[i] = (f_plus - f_minus) / (2.0f * h);
+        }
+    }
 };
 
 } // namespace SafetyNN_INT8

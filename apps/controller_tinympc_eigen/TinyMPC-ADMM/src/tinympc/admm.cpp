@@ -8,6 +8,27 @@
 extern "C" {
 # endif // ifdef __cplusplus
 
+/**
+ * Project a vector u onto a halfspace defined by a^T u <= b
+ * Only projects if constraint is violated (a^T u > b)
+ * @param u Vector to project (control input)
+ * @param a Normal vector of the halfspace
+ * @param b Offset of the halfspace
+ * @return Projection of u onto the halfspace boundary if violated, otherwise u unchanged
+ */
+static inline Eigen::VectorMf project_halfspace(const Eigen::VectorMf& u, const Eigen::VectorMf& a, float b) {
+    float a_squared = a.squaredNorm();
+    if (a_squared < 1e-12f) {
+        return u;  // Degenerate constraint, no projection
+    }
+    float violation = a.dot(u) - b;
+    if (violation <= 0.0f) {
+        return u;  // Constraint satisfied, no projection needed
+    }
+    // Project: u_proj = u - (violation / ||a||²) * a
+    return u - (violation / a_squared) * a;
+}
+
 enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
 
   tiny_ResetInfo(work);
@@ -142,6 +163,21 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       work->ZU_new[k] = work->soln->YU[k].cwiseMin(*(work->data->ucu)).cwiseMax(*(work->data->lcu)); 
 
       work->soln->YU[k] = work->soln->YU[k] - work->ZU_new[k];
+    }
+    
+    // CBF halfspace projection on input (applied AFTER box constraints)
+    if (work->stgs->en_cbf && work->cbf_active) {
+      int K = work->stgs->cbf_stages;
+      if (K < 0) K = 0;
+      if (K > N - 2) K = N - 2;
+      
+      // Project first K+1 stages (k=0..K) onto CBF halfspace
+      for (int k = 0; k <= K; k++) {
+        Eigen::VectorMf z_proj = project_halfspace(work->ZU_new[k], work->cbf_a, work->cbf_b);
+        
+        // Apply box constraints again after CBF projection
+        work->ZU_new[k] = z_proj.cwiseMin(*(work->data->ucu)).cwiseMax(*(work->data->lcu));
+      }
     }
   }
   return TINY_NO_ERROR;

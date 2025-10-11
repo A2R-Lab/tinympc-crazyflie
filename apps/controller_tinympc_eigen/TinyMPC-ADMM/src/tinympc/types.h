@@ -114,6 +114,10 @@ typedef struct {
   int   check_termination;   ///< Integer, check termination interval; if 0, then termination checking is disabled
   int   warm_start;          ///< boolean, enable warm start
   float time_limit;          ///< Time limit of each MPC step; if 0, disabled
+  
+  // CBF parameters
+  int   en_cbf;              ///< Boolean, enable CBF projection (1/0)
+  int   cbf_stages;          ///< Number of stages to apply CBF (0 means only k=0)
 } tiny_AdmmSettings;
 
 // void tiny_InitSettings(tiny_AdmmSettings* solver);
@@ -172,6 +176,11 @@ typedef struct {
   Eigen::VectorMf* ZU_new;     ///< Updated slack variable for input
   Eigen::VectorNf* ZX;         ///< Slack variable for input
   Eigen::VectorNf* ZX_new;     ///< Updated slack variable for input
+
+  // CBF variables
+  int             cbf_active;  ///< Whether CBF is active for this solve (0/1)
+  Eigen::VectorMf cbf_a;       ///< nu x 1: halfspace normal vector
+  float           cbf_b;       ///< scalar: halfspace offset
 
   int data_size;      ///< sum data size of all temporary data //TODO: + model + solution 
   int first_run;      ///< flag indicating whether the solve function has been run before

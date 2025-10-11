@@ -170,17 +170,24 @@ static struct vec phi;
 // ===== Neural Network Safety Filter =====
 static SafetyNN_INT8::SafetyNNEvaluatorINT8 safety_nn;
 
+// Force NN weights into binary (prevent linker optimization)
+// This ensures weights are included even if not fully utilized yet
+volatile const void* force_nn_link = (const void*)SafetyNN_INT8::LAYER0_WEIGHT_Q;
+
 // CBF parameters (tunable)
-static float cbf_gamma = 0.3f;           // CBF class-K function coefficient
+static float cbf_gamma __attribute__((unused)) = 0.3f;           // CBF class-K function coefficient
 static float safety_margin = 0.05f;      // Activation threshold
-static bool enable_cbf = true;           // Enable/disable CBF
+static bool enable_cbf = false;          // Enable/disable CBF (TEMPORARILY DISABLED - NN weights linking issue)
 
 // CBF runtime variables
 static float g_value = 0.0f;             // Certificate value g(x)
-static float cbf_plane_a[NINPUTS];       // Halfspace normal: a^T u <= b
-static float cbf_plane_b = 0.0f;         // Halfspace constant
+static float cbf_plane_a[NINPUTS] __attribute__((unused));       // Halfspace normal: a^T u <= b
+static float cbf_plane_b __attribute__((unused)) = 0.0f;         // Halfspace constant
 static bool cbf_active = false;          // Whether CBF is active this step
-static uint32_t cbf_projection_count = 0; // Number of projections applied
+static uint32_t cbf_projection_count __attribute__((unused)) = 0; // Number of projections applied
+
+// NN init check (to prevent optimization)
+static volatile float nn_init_check = 0.0f;
 
 /**
  * Project vector u onto halfspace {x | a^T x <= b}
@@ -221,34 +228,76 @@ static bool compute_cbf_plane(const VectorNf& x0_state) {
     
     // Pack state into float array for NN
     float x_float[12];
+    float grad_g[12];  // Gradient of g w.r.t. x
+    
     for (int i = 0; i < 12; i++) {
         x_float[i] = x0_state(i);
     }
     
-    // Evaluate NN: g(x) (gradient not needed for forward-only version)
-    g_value = safety_nn.forward(x_float);
+    // Evaluate NN: g(x) and ∇g(x)
+    safety_nn.forward_with_gradient(x_float, &g_value, grad_g);
     
-    // TODO: Implement gradient computation for proper CBF
-    // For now, use a simple conservative approach: if g > -margin, be cautious
+    // Compute a = ∇g @ B (gradient projected onto input space)
+    // grad_g is [12x1], B is [12x4], so a is [4x1]
+    for (int i = 0; i < NINPUTS; i++) {
+        cbf_plane_a[i] = 0.0f;
+        for (int j = 0; j < NSTATES; j++) {
+            cbf_plane_a[i] += grad_g[j] * B(j, i);
+        }
+    }
     
-    // Check activation: g >= -safety_margin
-    bool active = (g_value >= -safety_margin);
+    // Check if gradient is significant enough
+    float a_norm = 0.0f;
+    for (int i = 0; i < NINPUTS; i++) {
+        a_norm += cbf_plane_a[i] * cbf_plane_a[i];
+    }
+    a_norm = sqrtf(a_norm);
+    
+    // Check activation: g >= -safety_margin AND gradient is significant
+    bool active = (g_value >= -safety_margin) && (a_norm > 1e-9f);
     
     if (!active) {
         cbf_active = false;
         return false;
     }
     
-    // SIMPLIFIED VERSION: Just limit controls when close to boundary
-    // Full implementation would compute: a = grad_g @ B
-    // For now, we'll use a conservative box constraint on controls
+    // Compute Lf = ∇g @ (A - I) @ x
+    // A is [12x12], x is [12x1], so (A-I)@x is [12x1]
+    float Ax_minus_x[NSTATES];
+    for (int i = 0; i < NSTATES; i++) {
+        Ax_minus_x[i] = -x_float[i];  // Start with -x
+        for (int j = 0; j < NSTATES; j++) {
+            Ax_minus_x[i] += A(i, j) * x_float[j];  // Add A@x
+        }
+    }
     
-    // Mark as active for monitoring
+    float Lf = 0.0f;
+    for (int i = 0; i < NSTATES; i++) {
+        Lf += grad_g[i] * Ax_minus_x[i];
+    }
+    
+    // Clip Lf to avoid numerical issues (as in Python code)
+    if (Lf < -0.3f) Lf = -0.3f;
+    if (Lf > 0.3f) Lf = 0.3f;
+    
+    // Compute RHS of CBF: -Lf - γ*g(x) - margin
+    float rhs = -Lf - cbf_gamma * g_value - safety_margin;
+    
+    // Add u_eq contribution: b = rhs + a^T u_eq
+    float a_dot_u_eq = 0.0f;
+    for (int i = 0; i < NINPUTS; i++) {
+        a_dot_u_eq += cbf_plane_a[i] * u_hover[i];
+    }
+    cbf_plane_b = rhs + a_dot_u_eq;
+    
+    // Normalize the constraint (better conditioning)
+    float norm = sqrtf(a_norm * a_norm);
+    for (int i = 0; i < NINPUTS; i++) {
+        cbf_plane_a[i] /= norm;
+    }
+    cbf_plane_b /= norm;
+    
     cbf_active = true;
-    
-    // TODO: Implement proper gradient-based CBF constraint
-    // This requires adding gradient computation to SafetyNNEvaluatorINT8
-    
     return true;
 }
 
@@ -333,6 +382,8 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
+  
+  DEBUG_PRINT("=== TinyMPC-E Controller Init START ===\n");
 
   // Precompute/Cache
   // #include "params_500hz.h"
@@ -375,6 +426,10 @@ void controllerOutOfTreeInit(void) {
   stgs.check_termination = 0;
   stgs.tol_abs_dual = 5e-2;
   stgs.tol_abs_prim = 5e-2;
+  
+  // CBF settings (DISABLED for now - NN weights need external linkage fix)
+  stgs.en_cbf = 0;              // Disable CBF projection temporarily
+  stgs.cbf_stages = 0;          // Apply CBF only at k=0 (can increase for multi-stage)
 
   Klqr << 
   -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
@@ -386,6 +441,22 @@ void controllerOutOfTreeInit(void) {
   en_traj = true;
   step = 0;  
   traj_iter = 0;
+  
+  // DISABLED: NN initialization (weights not linking, causes crash)
+  // TODO: Fix NN weight linkage, then re-enable
+  /*
+  float dummy_state[12] = {0.0f};
+  float dummy_grad[12];
+  float dummy_g;
+  safety_nn.forward_with_gradient(dummy_state, &dummy_g, dummy_grad);
+  nn_init_check = dummy_g;
+  volatile int8_t weight_check = ((const int8_t*)SafetyNN_INT8::LAYER0_WEIGHT_Q)[0];
+  nn_init_check += (float)weight_check * 1e-10f;
+  DEBUG_PRINT("NN initialized: g(0)=%.3f, grad[0]=%.3f, w[0]=%d\n", 
+              (double)dummy_g, (double)dummy_grad[0], (int)weight_check);
+  */
+  
+  DEBUG_PRINT("=== TinyMPC-E Controller Init COMPLETE ===\n");
 }
 
 bool controllerOutOfTreeTest() {
@@ -415,6 +486,15 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
     // Get command reference
     updateHorizonReference(setpoint);
+
+    /* Pass CBF data to workspace */
+    work.cbf_active = cbf_active ? 1 : 0;
+    if (cbf_active) {
+        for (int i = 0; i < NINPUTS; i++) {
+            work.cbf_a(i) = cbf_plane_a[i];
+        }
+        work.cbf_b = cbf_plane_b;
+    }
 
     /* MPC solve */
     // Solve optimization problem using ADMM
