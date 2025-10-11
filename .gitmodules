@@ -1,6 +1,6 @@
 [submodule "crazyflie-firmware"]
-	path = crazyflie-firmware
-	url = https://github.com/bitcraze/crazyflie-firmware.git
+        path = crazyflie-firmware
+        url = https://github.com/moisesmata/crazyflie-firmware.git
 [submodule "apps/eigen_test/Eigen"]
 	path = apps/eigen_test/Eigen
 	url = https://gitlab.com/libeigen/eigen.git
