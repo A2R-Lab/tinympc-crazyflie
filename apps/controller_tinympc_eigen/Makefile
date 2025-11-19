@@ -14,6 +14,8 @@
 #
 CRAZYFLIE_BASE := ../../crazyflie-firmware
 
+TINYMPC_BASE := ../../TinyMPC
+
 #
 # To include header files from other directories
 #
@@ -21,8 +23,8 @@ CRAZYFLIE_BASE := ../../crazyflie-firmware
 # EXTRA_CFLAGS += -lgcc
 # EXTRA_CFLAGS += -lc
 # EXTRA_CFLAGS += -lm
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC-ADMM/ext/Eigen
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC-ADMM/src
+EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include/Eigen
+EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
