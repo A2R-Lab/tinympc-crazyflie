@@ -350,7 +350,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       control->normalizedForces[2] = Ulqr(2) + u_hover[2];
       control->normalizedForces[3] = Ulqr(3) + u_hover[3];
     } 
-    control->controlMode = controlModePWM;
+    control->controlMode = control_mode_t::controlModeForce;
   }
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
 
