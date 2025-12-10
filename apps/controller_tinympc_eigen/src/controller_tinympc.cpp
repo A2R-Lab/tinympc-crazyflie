@@ -29,7 +29,7 @@
  * Single lap
  */
 
-#include "Eigen.h"
+#include <Eigen.h>
 using namespace Eigen;
 
 #ifdef __cplusplus
@@ -55,7 +55,7 @@ extern "C" {
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
-#include "tinympc/tinympc.h"
+// #include "tinympc/tinympc.h"
 
 // Rodriguez parameters conversion function (needed for old firmware compatibility)
 static inline struct vec quat2rp(struct quat q) {

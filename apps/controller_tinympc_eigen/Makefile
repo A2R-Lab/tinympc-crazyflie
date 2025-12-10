@@ -14,7 +14,7 @@
 #
 CRAZYFLIE_BASE := ../../crazyflie-firmware
 
-TINYMPC_BASE := ../../TinyMPC
+TINYMPC_BASE := ../TinyMPC
 
 #
 # To include header files from other directories
