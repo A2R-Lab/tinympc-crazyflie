@@ -12,29 +12,34 @@
 # We want to execute the main Makefile for the firmware project,
 # it will handle the build for us.
 #
+CXX := clang++
+CODEGEN_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I../../TinyMPC/src -I../../TinyMPC/include
+
+
+TINYMPC_CPP := $(shell find ../../TinyMPC/src/tinympc -name '*.cpp')
 CRAZYFLIE_BASE := ../../crazyflie-firmware
+TINYMPC_BASE := ../../TinyMPC
 
-TINYMPC_BASE := ../TinyMPC
-
-#
-# To include header files from other directories
-#
-# EXTRA_CFLAGS += -lstdc++
-# EXTRA_CFLAGS += -lgcc
-# EXTRA_CFLAGS += -lc
-# EXTRA_CFLAGS += -lm
+# Target-specific config for the firmware build
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include/Eigen
-EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
+EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
-#
-# We override the default OOT_CONFIG here, we could also name our config
-# to oot-config and that would be the default.
-#
-OOT_CONFIG := $(PWD)/app-config
 
-OOT_USES_CXX := 1
+controller: OOT_CONFIG := $(PWD)/app-config
+controller: OOT_USES_CXX := 1
 
+controller:
+	$(MAKE) -C $(CRAZYFLIE_BASE) O=$(PWD) OOT=$(PWD)
+
+# Pull in Crazyflie OOT build rules (must be top-level, not indented)
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
+
+codegen:
+	$(CXX) $(CODEGEN_CXXFLAGS) $(EXTRA_CFLAGS) \
+		src/codegen_crazyflie.cpp \
+		$(TINYMPC_CPP) \
+		-o src/codegen_crazyflie
+
