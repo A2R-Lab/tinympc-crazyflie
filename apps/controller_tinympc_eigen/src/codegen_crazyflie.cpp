@@ -1,5 +1,5 @@
-// Example of using codegen to generate C++ code for a random MPC problem
-// The code will be generated in the `tinympc_generated_code_random_example` folder
+// Codegen for Crazyflie quadrotor MPC
+// The code will be generated in the `tinympc_generated_code_crazyflie_example` folder
 
 #include <iostream>
 #ifdef __MINGW32__
@@ -13,9 +13,11 @@ namespace std_fs = std::filesystem;
 #include <tinympc/tiny_api.hpp>
 #include <tinympc/codegen.hpp>
 
-#define NSTATES 2  // state dimension: x (m), theta (rad), dx, dtheta
-#define NINPUTS 2  // input dimension: F (Newtons)
-#define NHORIZON 3 // horizon
+#define NSTATES 12
+#define NINPUTS 4
+#define NHORIZON 25
+
+#include "../../TinyMPC/examples/problem_data/quadrotor_100hz_params.hpp"
 
 extern "C" {
 
@@ -29,28 +31,16 @@ int main()
 {
     TinySolver *solver;
 
-    tinytype rho_value = 0.1;
-
-    tinytype Adyn_data[NSTATES * NSTATES] = {1, 5, 1, 2};
-    tinytype Bdyn_data[NSTATES * NINPUTS] = {3, 3, 4, 1};
-    tinytype Q_data[NSTATES] = {1, 1};
-    tinytype R_data[NINPUTS] = {2, 2};
-
-    tinytype x_min_data[NSTATES * NHORIZON] = {-1, -2, -1, -2, -1, -2};
-    tinytype x_max_data[NSTATES * NHORIZON] = {1, 2, 1, 2, 1, 2};
-    tinytype u_min_data[NINPUTS * (NHORIZON - 1)] = {-2, -3, -2, -3};
-    tinytype u_max_data[NINPUTS * (NHORIZON - 1)] = {2, 3, 2, 3};
-    
     tinyMatrix Adyn = Map<Matrix<tinytype, NSTATES, NSTATES, RowMajor>>(Adyn_data);
     tinyMatrix Bdyn = Map<Matrix<tinytype, NSTATES, NINPUTS, RowMajor>>(Bdyn_data);
     tinyVector fdyn = tiny_VectorNx::Zero();
     tinyVector Q = Map<Matrix<tinytype, NSTATES, 1>>(Q_data);
     tinyVector R = Map<Matrix<tinytype, NINPUTS, 1>>(R_data);
 
-    tinyMatrix x_min = Map<tiny_MatrixNxNh>(x_min_data);
-    tinyMatrix x_max = Map<tiny_MatrixNxNh>(x_max_data);
-    tinyMatrix u_min = Map<tiny_MatrixNuNhm1>(u_min_data);
-    tinyMatrix u_max = Map<tiny_MatrixNuNhm1>(u_max_data);
+    tinyMatrix x_min = tiny_MatrixNxNh::Constant(-1e9);
+    tinyMatrix x_max = tiny_MatrixNxNh::Constant(1e9);
+    tinyMatrix u_min = tiny_MatrixNuNhm1::Constant(-1e9);
+    tinyMatrix u_max = tiny_MatrixNuNhm1::Constant(1e9);
 
     // Set up problem
     int verbose = 0;

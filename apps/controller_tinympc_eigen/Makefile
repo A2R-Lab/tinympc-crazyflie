@@ -16,6 +16,9 @@ CRAZYFLIE_BASE := ../../crazyflie-firmware
 
 TINYMPC_BASE := ../../TinyMPC
 TINYMPC_BASE := ../TinyMPC
+CXX := clang++
+CODEGEN_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I../../TinyMPC/src -I../../TinyMPC/include -I../../TinyMPC/include/Eigen
+TINYMPC_CPP := $(shell find ../../TinyMPC/src/tinympc -name '*.cpp')
 
 #
 # To include header files from other directories
@@ -37,5 +40,11 @@ EXTRA_CFLAGS += -Wno-unused-result
 OOT_CONFIG := $(PWD)/app-config
 
 OOT_USES_CXX := 1
+
+codegen:
+	$(CXX) $(CODEGEN_CXXFLAGS) $(EXTRA_CFLAGS) \
+		src/codegen_crazyflie.cpp \
+		$(TINYMPC_CPP) \
+		-o src/codegen_crazyflie
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
