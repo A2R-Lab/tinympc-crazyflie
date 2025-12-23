@@ -2,7 +2,7 @@ ccflags-y += -I$(src)/../../../TinyMPC/include
 ccflags-y += -I$(src)/../../../TinyMPC/include/Eigen
 ccflags-y += -I$(src)/../../../TinyMPC/src
 ccflags-y += -I$(src)/../../../TinyMPC/src/tinympc
-ccflags-y += -I$(src)/tinympc_generated_code_random_example
+ccflags-y += -I$(src)/tinympc_generated_code_crazyflie_example
 
 obj-y += controller_tinympc.o
 obj-y += ../../../TinyMPC/src/tinympc/tiny_api.o

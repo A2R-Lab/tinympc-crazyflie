@@ -12,13 +12,11 @@
 # We want to execute the main Makefile for the firmware project,
 # it will handle the build for us.
 #
-CRAZYFLIE_BASE := ../../crazyflie-firmware
-
-TINYMPC_BASE := ../../TinyMPC
-TINYMPC_BASE := ../TinyMPC
+CRAZYFLIE_BASE := $(abspath ../../crazyflie-firmware)
+TINYMPC_BASE := $(abspath ../../TinyMPC)
 CXX := clang++
-CODEGEN_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I../../TinyMPC/src -I../../TinyMPC/include -I../../TinyMPC/include/Eigen
-TINYMPC_CPP := $(shell find ../../TinyMPC/src/tinympc -name '*.cpp')
+CODEGEN_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I$(TINYMPC_BASE)/src -I$(TINYMPC_BASE)/include -I$(TINYMPC_BASE)/include/Eigen
+TINYMPC_CPP := $(shell find $(TINYMPC_BASE)/src/tinympc -name '*.cpp')
 
 #
 # To include header files from other directories
@@ -27,7 +25,9 @@ TINYMPC_CPP := $(shell find ../../TinyMPC/src/tinympc -name '*.cpp')
 # EXTRA_CFLAGS += -lgcc
 # EXTRA_CFLAGS += -lc
 # EXTRA_CFLAGS += -lm
+EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include/Eigen
+EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
@@ -40,6 +40,10 @@ EXTRA_CFLAGS += -Wno-unused-result
 OOT_CONFIG := $(PWD)/app-config
 
 OOT_USES_CXX := 1
+
+.PHONY: controller codegen
+
+controller: all
 
 codegen:
 	$(CXX) $(CODEGEN_CXXFLAGS) $(EXTRA_CFLAGS) \
