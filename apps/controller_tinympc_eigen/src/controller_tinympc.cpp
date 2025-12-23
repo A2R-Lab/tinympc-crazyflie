@@ -32,6 +32,8 @@
 #include <Eigen.h>
 using namespace Eigen;
 
+#include "tinympc_cf_adapter.hpp"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -89,8 +91,19 @@ void appMain() {
 // Macro variables, model dimensions in tinympc/types.h
 #define DT 0.002f       // dt
 #define NHORIZON 25   // horizon steps (NHORIZON states and NHORIZON-1 controls)
+#define NSTATES 12
+#define NINPUTS 4
 #define MPC_RATE RATE_100_HZ  // control frequency
 #define LQR_RATE RATE_500_HZ  // control frequency
+
+#define T_ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+using MatrixNf = Matrix<float, NSTATES, NSTATES>;
+using MatrixNMf = Matrix<float, NSTATES, NINPUTS>;
+using MatrixMNf = Matrix<float, NINPUTS, NSTATES>;
+using MatrixMf = Matrix<float, NINPUTS, NINPUTS>;
+using VectorNf = Matrix<float, NSTATES, 1>;
+using VectorMf = Matrix<float, NINPUTS, 1>;
 
 /* Include trajectory to track */
 #include "traj_fig8_12.h"
@@ -111,39 +124,18 @@ static MatrixMf R;
 
 /* Allocate global variables for MPC */
 
-static VectorNf Xhrz[NHORIZON];
-static VectorMf Uhrz[NHORIZON-1]; 
 static VectorMf Ulqr;
-static VectorMf d[NHORIZON-1];
-static VectorNf p[NHORIZON];
-static VectorMf YU[NHORIZON];
-
-static VectorNf q[NHORIZON-1];
-static VectorMf r[NHORIZON-1];
-static VectorMf r_tilde[NHORIZON-1];
-
-static VectorNf Xref[NHORIZON];
-static VectorMf Uref[NHORIZON-1];
-
-static MatrixMf Acu;
-static VectorMf ucu;
-static VectorMf lcu;
-
-static VectorMf Qu;
-static VectorMf ZU[NHORIZON-1]; 
-static VectorMf ZU_new[NHORIZON-1];
 
 static VectorNf x0;
 static VectorNf xg;
-static VectorMf ug;
+static VectorNf x1;
+static VectorMf u0;
 
-// Create TinyMPC struct
-static tiny_Model model;
-static tiny_AdmmSettings stgs;
-static tiny_AdmmData data;
-static tiny_AdmmInfo info;
-static tiny_AdmmSolution soln;
-static tiny_AdmmWorkspace work;
+static float x0_flat[NSTATES];
+static float x1_flat[NSTATES];
+static float u0_flat[NINPUTS];
+static float Xref_flat[NHORIZON * NSTATES];
+static float Uref_flat[(NHORIZON - 1) * NINPUTS];
 
 // Helper variables
 static uint64_t startTimestamp;
@@ -186,6 +178,10 @@ void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(3) = phi.x;
   x0(4) = phi.y;
   x0(5) = phi.z;
+
+  for (int i = 0; i < NSTATES; ++i) {
+    x0_flat[i] = x0(i);
+  }
 }
 
 void updateHorizonReference(const setpoint_t *setpoint) {
@@ -195,11 +191,11 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       traj_idx = (int)(step / traj_hold);
       for (int i = 0; i < NHORIZON; ++i) {
         for (int j = 0; j < NSTATES; ++j) {
-          Xref[i](j) = X_ref_data[traj_idx][j];
+          Xref_flat[i * NSTATES + j] = X_ref_data[traj_idx][j];
         }
         if (i < NHORIZON - 1) {
           for (int j = 0; j < NINPUTS; ++j) {
-            Uref[i](j) = U_ref_data[traj_idx][j];
+            Uref_flat[i * NINPUTS + j] = U_ref_data[traj_idx][j];
           }          
         }
       }
@@ -223,12 +219,18 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     xg(3) = phi.x;
     xg(4) = phi.y;
     xg(5) = phi.z;
-    tiny_SetGoalState(&work, Xref, &xg);
-    tiny_SetGoalInput(&work, Uref, &ug);
-    // // xg(1) = 1.0;
-    // // xg(2) = 2.0;
+    for (int i = 0; i < NHORIZON; ++i) {
+      for (int j = 0; j < NSTATES; ++j) {
+        Xref_flat[i * NSTATES + j] = xg(j);
+      }
+      if (i < NHORIZON - 1) {
+        for (int j = 0; j < NINPUTS; ++j) {
+          Uref_flat[i * NINPUTS + j] = 0.0f;
+        }
+      }
+    }
   }
-  // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref[0](2)));
+  // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref_flat[2]));
 
   // stop trajectory executation
   if (en_traj) {
@@ -252,41 +254,15 @@ void controllerOutOfTreeInit(void) {
 
   // End of Precompute/Cache
 
-  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
-  tiny_InitSettings(&stgs);
-  stgs.rho_init = 250.0;  // Important (select offline, associated with precomp.)
-  tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
-  
-  // Fill in the remaining struct 
-  tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, 0, 0);
-  tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
-  tiny_InitSolution(&work, Xhrz, Uhrz, 0, YU, 0, &Kinf, d, &Pinf, p);
-
-  tiny_SetInitialState(&work, &x0);  
-  tiny_SetStateReference(&work, Xref);
-  tiny_SetInputReference(&work, Uref);
-  // tiny_SetGoalState(&work, Xref, &xg);
-  // tiny_SetGoalInput(&work, Uref, &ug);
-
-  /* Set up LQR cost */
-  tiny_InitDataCost(&work, &Q, q, &R, r, r_tilde);
-  // R = R + stgs.rho_init * MatrixMf::Identity();
-  // /* Set up constraints */
-  ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
-  lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
-  tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
-
-  tiny_UpdateLinearCost(&work);
-
-  /* Solver settings */
-  stgs.en_cstr_goal = 0;
-  stgs.en_cstr_inputs = 1;
-  stgs.en_cstr_states = 0;
-  stgs.max_iter = 2;           // limit this if needed
-  stgs.verbose = 0;
-  stgs.check_termination = 0;
-  stgs.tol_abs_dual = 5e-2;
-  stgs.tol_abs_prim = 5e-2;
+  tinympc_cf_init_defaults();
+  tinympc_cf_set_settings(2, 0);
+  memset(Xref_flat, 0, sizeof(Xref_flat));
+  memset(Uref_flat, 0, sizeof(Uref_flat));
+  memset(x0_flat, 0, sizeof(x0_flat));
+  memset(x1_flat, 0, sizeof(x1_flat));
+  memset(u0_flat, 0, sizeof(u0_flat));
+  x1.setZero();
+  u0.setZero();
 
   Klqr << 
   -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
@@ -320,23 +296,30 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     updateHorizonReference(setpoint);
 
     /* MPC solve */
-    // Solve optimization problem using ADMM
-    tiny_UpdateLinearCost(&work);
-    tiny_SolveAdmm(&work);
+    tinympc_cf_set_x0(x0_flat, NSTATES);
+    tinympc_cf_set_reference(Xref_flat, NSTATES, NHORIZON, Uref_flat, NINPUTS);
+    result = (int8_t)tinympc_cf_solve();
+    tinympc_cf_get_x_pred_1(x1_flat, NSTATES);
+    tinympc_cf_get_u0(u0_flat, NINPUTS, TinympcControlOutputKind::ZNEW);
+
+    for (int i = 0; i < NSTATES; ++i) {
+      x1(i) = x1_flat[i];
+    }
+    for (int j = 0; j < NINPUTS; ++j) {
+      u0(j) = u0_flat[j];
+    }
  
     // DEBUG_PRINT("Uhrz[0] = [%.2f, %.2f]\n", (double)(Uhrz[0](0)), (double)(Uhrz[0](1)));
     // DEBUG_PRINT("ZU[0] = [%.2f, %.2f]\n", (double)(ZU_new[0](0)), (double)(ZU_new[0](1)));
     // DEBUG_PRINT("YU[0] = [%.2f, %.2f, %.2f, %.2f]\n", (double)(YU[0].data[0]), (double)(YU[0].data[1]), (double)(YU[0].data[2]), (double)(YU[0].data[3]));
     // DEBUG_PRINT("info.pri_res: %f\n", (double)(info.pri_res));
     // DEBUG_PRINT("info.dua_res: %f\n", (double)(info.dua_res));
-    result =  info.status_val * info.iter;
-    // DEBUG_PRINT("%d %d %d \n", info.status_val, info.iter, mpcTime);
-    // DEBUG_PRINT("%.2f, %.2f, %.2f, %.2f \n", (double)(Xref[0](5)), (double)(Uhrz[0](2)), (double)(Uhrz[0](3)), (double)(ZU_new[0](0)));
+    // DEBUG_PRINT("%.2f, %.2f, %.2f, %.2f \n", (double)(Xref_flat[5]), (double)(u0(2)), (double)(u0(3)), (double)(u0(0)));
   }
 
   if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
     // Reference from MPC
-    Ulqr = -(Kinf) * (x0 - Xhrz[1]) + ZU_new[0];
+    Ulqr = -(Kinf) * (x0 - x1) + u0;
     
     /* Output control */
     if (setpoint->mode.z == modeDisable) {
