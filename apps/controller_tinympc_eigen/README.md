@@ -15,12 +15,20 @@ This is a TinyMPC-ADMM based controller for the Crazyflie, adapted for the lates
 2. Adapted for new firmware build system and structure
 3. Maintained compatibility with TinyMPC-ADMM library
 4. Added proper includes for new firmware API (`stabilizer_types.h`)
+5. Added code generation to generate a custom TinyMPC solver for the Crazyflie
+6. Added APIs to interface with TinyMPC library
 
 ## Build Instructions
 
+### Code Generation
+
 1. Navigate to this directory
-2. Run `make` to build the controller
-3. Flash the resulting firmware to your Crazyflie
+2. Run `make codegen` to generate the solver.
+
+### Building the Firmware
+
+1. Run `make controller` to build the controller
+2. Flash the resulting firmware to your Crazyflie
 
 ## Configuration
 
