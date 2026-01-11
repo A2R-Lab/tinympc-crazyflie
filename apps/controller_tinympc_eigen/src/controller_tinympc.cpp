@@ -156,6 +156,14 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
+// ========== PSD Obstacle Avoidance Configuration ==========
+// Enable PSD-based obstacle avoidance (set to 1 to enable)
+static uint8_t en_psd_avoidance = 0;
+// Obstacle positions (can be updated via parameters)
+static float psd_obs1_x = 1.0f;
+static float psd_obs1_y = 0.0f;
+static float psd_obs1_r = 0.3f;
+
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
   x0(1) = state->position.y;
@@ -269,6 +277,23 @@ void controllerOutOfTreeInit(void) {
   0.120236f,0.119379f,0.285625f,-0.346222f,0.403763f,0.475821f,0.071330f,0.068348f,0.186504f,-0.020972f,0.037152f,0.187009f,
   0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
   -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
+
+  // ========== PSD Obstacle Avoidance Setup ==========
+  // Initialize PSD with 2D position (x, y) constraints
+  // rho_psd = 5.0 is a good starting point
+  if (en_psd_avoidance) {
+    int psd_result = tinympc_cf_enable_psd(2, 5.0f);  // 2D position, rho=5.0
+    if (psd_result == 0) {
+      DEBUG_PRINT("PSD enabled successfully\n");
+      
+      // Add initial obstacle
+      tinympc_cf_add_psd_disk(psd_obs1_x, psd_obs1_y, psd_obs1_r);
+      DEBUG_PRINT("PSD obstacle at (%.2f, %.2f) r=%.2f\n", 
+                  (double)psd_obs1_x, (double)psd_obs1_y, (double)psd_obs1_r);
+    } else {
+      DEBUG_PRINT("PSD init failed: %d\n", psd_result);
+    }
+  }
 
   /* End of MPC initialization */  
   en_traj = true;

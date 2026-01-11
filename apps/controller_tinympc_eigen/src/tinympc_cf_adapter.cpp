@@ -1,4 +1,5 @@
 #include "tinympc_cf_adapter.hpp"
+#include "tinympc/psd_support.hpp"
 
 // You need the generated solver object.
 // Typically codegen provides something like:
@@ -77,7 +78,7 @@ void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind
   TinySolver* s = cf_solver();
 
   for (int j = 0; j < ninputs; ++j) {
-    // Choose which trajectory to expose for the old controller’s “ZU_new[0]”.
+    // Choose which trajectory to expose for the old controller's "ZU_new[0]".
     // If your generated work has znew and u, this mapping is straightforward.
     if (kind == TinympcControlOutputKind::ZNEW) {
       out_u0[j] = (float)s->work->znew(j, 0);
@@ -85,4 +86,36 @@ void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind
       out_u0[j] = (float)s->work->u(j, 0);
     }
   }
+}
+
+// ========== PSD (Obstacle Avoidance) Implementation ==========
+
+int tinympc_cf_enable_psd(int nx0, float rho_psd) {
+  TinySolver* s = cf_solver();
+  return tinympc::tiny_enable_psd(s, nx0, (tinytype)rho_psd);
+}
+
+int tinympc_cf_add_psd_disk(float cx, float cy, float radius) {
+  TinySolver* s = cf_solver();
+  return tinympc::tiny_add_psd_disk(s, (tinytype)cx, (tinytype)cy, (tinytype)radius);
+}
+
+int tinympc_cf_update_psd_disk(int idx, float cx, float cy, float radius) {
+  TinySolver* s = cf_solver();
+  return tinympc::tiny_update_psd_disk(s, idx, (tinytype)cx, (tinytype)cy, (tinytype)radius);
+}
+
+void tinympc_cf_clear_psd_disks(void) {
+  TinySolver* s = cf_solver();
+  tinympc::tiny_clear_psd_disks(s);
+}
+
+int tinympc_cf_get_psd_num_disks(void) {
+  TinySolver* s = cf_solver();
+  return s->work->psd_num_disks;
+}
+
+float tinympc_cf_get_psd_residual(void) {
+  TinySolver* s = cf_solver();
+  return (float)s->work->primal_residual_psd;
 }
