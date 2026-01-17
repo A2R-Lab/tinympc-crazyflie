@@ -60,6 +60,17 @@ extern "C" {
         int check_termination;
         int en_state_bound;
         int en_input_bound;
+
+        // Linear constraint flags
+        int en_state_linear;      // Static linear state constraints
+        int en_tv_state_linear;   // Time-varying linear state constraints
+        int en_base_tangent_tv;   // Base tangent update (TV)
+
+        // Obstacle metadata (used by TV helpers)
+        tinytype obs_x;
+        tinytype obs_y;
+        tinytype obs_r;
+        tinytype obs_margin;
         
         // PSD settings
         int en_psd;            // Enable PSD constraints (0=off, 1=on)
@@ -110,6 +121,20 @@ extern "C" {
         tinyMatrix x_max;   // nx x N
         tinyMatrix u_min;   // nu x N-1
         tinyMatrix u_max;   // nu x N-1
+
+        // Linear state constraints (static)
+        int numStateLinear;
+        tinyMatrix Alin_x;  // numStateLinear x nx
+        tinyVector blin_x;  // numStateLinear x 1
+        tinyMatrix vlnew;   // nx x N
+        tinyMatrix gl;      // nx x N
+
+        // Linear state constraints (time-varying)
+        int numtvStateLinear;
+        tinyMatrix tv_Alin_x; // (numtvStateLinear * N) x nx
+        tinyMatrix tv_blin_x; // numtvStateLinear x N
+        tinyMatrix vlnew_tv;  // nx x N
+        tinyMatrix gl_tv;     // nx x N
 
         // Reference trajectory to track for one horizon
         tinyMatrix Xref;    // nx x N

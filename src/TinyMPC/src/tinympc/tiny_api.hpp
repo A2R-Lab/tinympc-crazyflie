@@ -23,6 +23,14 @@ int tiny_update_settings(TinySettings* settings,
                             int en_state_bound, int en_input_bound);
 int tiny_set_default_settings(TinySettings* settings);
 
+int tiny_set_bound_constraints(TinySolver* solver,
+                               tinyMatrix x_min, tinyMatrix x_max,
+                               tinyMatrix u_min, tinyMatrix u_max);
+
+int tiny_set_linear_constraints(TinySolver* solver,
+                                tinyMatrix Alin_x, tinyVector blin_x,
+                                tinyMatrix Alin_u, tinyVector blin_u);
+
 int tiny_set_x0(TinySolver* solver, tinyVector x0);
 int tiny_set_x_ref(TinySolver* solver, tinyMatrix x_ref);
 int tiny_set_u_ref(TinySolver* solver, tinyMatrix u_ref);

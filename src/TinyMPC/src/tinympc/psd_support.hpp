@@ -63,7 +63,6 @@ inline void tiny_build_lifted_from_base(
     Eigen::Matrix<tinytype, Eigen::Dynamic, Eigen::Dynamic>& A_out,
     Eigen::Matrix<tinytype, Eigen::Dynamic, Eigen::Dynamic>& B_out)
 {
-    using Mat = Eigen::Matrix<tinytype, Eigen::Dynamic, Eigen::Dynamic>;
     const int nx0 = Ad.rows();
     const int nu0 = Bd.cols();
     const int nxx = nx0*nx0;
@@ -777,4 +776,23 @@ inline int tiny_set_lifted_ellipses(
         blin_x,
         tinyMatrix::Zero(0, solver->work->nu),
         tinyVector::Zero(0));
+}
+
+// --------- PSD core hooks (minimal placeholders) ----------
+inline void tiny_update_slack_psd(TinySolver* solver) {
+    if (!solver) return;
+    if (solver->work->Spsd.rows() == 0) return;
+    solver->work->Spsd_new = solver->work->Spsd;
+    solver->work->primal_residual_psd = 0;
+}
+
+inline void tiny_update_dual_psd(TinySolver* solver) {
+    if (!solver) return;
+    if (solver->work->Spsd.rows() == 0) return;
+    solver->work->Hpsd = solver->work->Hpsd + (solver->work->Spsd - solver->work->Spsd_new);
+    solver->work->dual_residual_psd = 0;
+}
+
+inline void tiny_add_psd_to_linear_cost(TinySolver* solver) {
+    (void)solver;
 }

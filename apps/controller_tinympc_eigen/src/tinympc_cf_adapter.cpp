@@ -57,7 +57,7 @@ void tinympc_cf_set_reference(const float* Xref, int nstates, int nhorizon,
     }
   }
 
-  update_linear_cost(s);
+  tinympc::update_linear_cost(s);
 }
 
 int tinympc_cf_solve(void) {
@@ -115,9 +115,9 @@ int tinympc_cf_set_psd_disks(const float* disks, int count) {
   vec.reserve(static_cast<size_t>(count));
   for (int i = 0; i < count; ++i) {
     const int base = 3 * i;
-    vec.push_back({(tinytype)disks[base + 0],
-                   (tinytype)disks[base + 1],
-                   (tinytype)disks[base + 2]});
+    vec.push_back({{(tinytype)disks[base + 0],
+                    (tinytype)disks[base + 1],
+                    (tinytype)disks[base + 2]}});
   }
   return tiny_set_lifted_disks(s, vec);
 }
