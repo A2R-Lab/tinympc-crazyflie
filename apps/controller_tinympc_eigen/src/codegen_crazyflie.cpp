@@ -12,18 +12,17 @@ namespace std_fs = std::filesystem;
 
 #include <tinympc/tiny_api.hpp>
 #include <tinympc/codegen.hpp>
+#include <tinympc/psd_support.hpp>
 
-#define NSTATES 12
-#define NINPUTS 4
+#define NX0 4
+#define NU0 2
 #define NHORIZON 25
-
-#include "../../TinyMPC/examples/problem_data/quadrotor_100hz_params.hpp"
 
 extern "C" {
 
-typedef Matrix<tinytype, NINPUTS, NHORIZON-1, ColMajor> tiny_MatrixNuNhm1;
-typedef Matrix<tinytype, NSTATES, NHORIZON, ColMajor> tiny_MatrixNxNh;
-typedef Matrix<tinytype, NSTATES, 1> tiny_VectorNx;
+typedef Matrix<tinytype, NX0 + NX0*NX0, NHORIZON, ColMajor> tiny_MatrixNxNh;
+typedef Matrix<tinytype, NU0 + NX0*NU0 + NU0*NX0 + NU0*NU0, NHORIZON-1, ColMajor> tiny_MatrixNuNhm1;
+typedef Matrix<tinytype, NX0 + NX0*NX0, 1> tiny_VectorNx;
 
 std_fs::path output_dir_relative = "tinympc_generated_code_crazyflie_example/";
 
@@ -31,22 +30,45 @@ int main()
 {
     TinySolver *solver;
 
-    tinyMatrix Adyn = Map<Matrix<tinytype, NSTATES, NSTATES, RowMajor>>(Adyn_data);
-    tinyMatrix Bdyn = Map<Matrix<tinytype, NSTATES, NINPUTS, RowMajor>>(Bdyn_data);
+    const tinytype dt = tinytype(0.01);
+    Eigen::Matrix<tinytype, NX0, NX0> Ad;
+    Ad << 1, 0, dt, 0,
+          0, 1, 0, dt,
+          0, 0, 1, 0,
+          0, 0, 0, 1;
+    Eigen::Matrix<tinytype, NX0, NU0> Bd;
+    Bd << 0.5*dt*dt, 0,
+          0, 0.5*dt*dt,
+          dt, 0,
+          0, dt;
+
+    tinyMatrix A, B;
+    tiny_build_lifted_from_base(Ad, Bd, A, B);
+
+    const int nx = A.rows();
+    const int nu = B.cols();
     tinyVector fdyn = tiny_VectorNx::Zero();
-    tinyVector Q = Map<Matrix<tinytype, NSTATES, 1>>(Q_data);
-    tinyVector R = Map<Matrix<tinytype, NINPUTS, 1>>(R_data);
+
+    tinyMatrix Q = tinyMatrix::Zero(nx, nx);
+    Q(0,0) = 50.0; Q(1,1) = 50.0;
+    Q(2,2) = 5.0;  Q(3,3) = 5.0;
+    Q.diagonal().segment(NX0, NX0*NX0).array() = tinytype(1e-3);
+
+    tinyMatrix R = tinyMatrix::Zero(nu, nu);
+    R.diagonal().head(NU0).array() = tinytype(1.0);
+    R.diagonal().segment(NU0, NX0*NU0).array() = tinytype(2.0);
+    R.diagonal().segment(NU0 + NX0*NU0, NU0*NX0).array() = tinytype(2.0);
+    R.diagonal().segment(NU0 + NX0*NU0 + NU0*NX0, NU0*NU0).array() = tinytype(10.0);
 
     tinyMatrix x_min = tiny_MatrixNxNh::Constant(-1e9);
     tinyMatrix x_max = tiny_MatrixNxNh::Constant(1e9);
     tinyMatrix u_min = tiny_MatrixNuNhm1::Constant(-1e9);
     tinyMatrix u_max = tiny_MatrixNuNhm1::Constant(1e9);
 
-    // Set up problem
     int verbose = 0;
     int status = tiny_setup(&solver,
-                            Adyn, Bdyn, fdyn, Q.asDiagonal(), R.asDiagonal(),
-                            rho_value, NSTATES, NINPUTS, NHORIZON, verbose);
+                            A, B, fdyn, Q, R,
+                            tinytype(1.0), nx, nu, NHORIZON, verbose);
     // Set bound constraints
     status = tiny_set_bound_constraints(solver, x_min, x_max, u_min, u_max);
 

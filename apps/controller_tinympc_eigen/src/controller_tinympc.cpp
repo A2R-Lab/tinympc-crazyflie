@@ -48,33 +48,18 @@ extern "C" {
 #include "task.h"
 
 #include "controller.h"
+#include "controller_pid.h"
 #include "physicalConstants.h"
 #include "log.h"
 #include "param.h"
 #include "num.h"
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
+#include "peer_localization.h"
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
 // #include "tinympc/tinympc.h"
-
-// Rodriguez parameters conversion function (needed for old firmware compatibility)
-static inline struct vec quat2rp(struct quat q) {
-  struct vec v;
-  float w_abs = fabsf(q.w);
-  if (w_abs > 1e-6f) { // Avoid division by near-zero
-    v.x = q.x / q.w;
-    v.y = q.y / q.w;
-    v.z = q.z / q.w;
-  } else {
-    // Handle singular case
-    v.x = 0.0f;
-    v.y = 0.0f;
-    v.z = 0.0f;
-  }
-  return v;
-}
 
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "TINYMPC-E"
@@ -89,12 +74,13 @@ void appMain() {
 }
 
 // Macro variables, model dimensions in tinympc/types.h
-#define DT 0.002f       // dt
-#define NHORIZON 25   // horizon steps (NHORIZON states and NHORIZON-1 controls)
-#define NSTATES 12
-#define NINPUTS 4
+#define DT 0.01f       // dt (100 Hz)
+#define NHORIZON 25    // horizon steps (NHORIZON states and NHORIZON-1 controls)
+#define NX0 4          // base state dim: x, y, vx, vy
+#define NU0 2          // base input dim: ax, ay
+#define NSTATES (NX0 + NX0 * NX0)
+#define NINPUTS (NU0 + NX0 * NU0 + NU0 * NX0 + NU0 * NU0)
 #define MPC_RATE RATE_100_HZ  // control frequency
-#define LQR_RATE RATE_500_HZ  // control frequency
 
 #define T_ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -104,32 +90,14 @@ using MatrixMNf = Matrix<float, NINPUTS, NSTATES>;
 using MatrixMf = Matrix<float, NINPUTS, NINPUTS>;
 using VectorNf = Matrix<float, NSTATES, 1>;
 using VectorMf = Matrix<float, NINPUTS, 1>;
-
-/* Include trajectory to track */
-#include "traj_fig8_12.h"
-//#include "traj_circle_500hz.h"
-// #include "traj_perching.h"
-
-// Precomputed data and cache, in params_*.h
-static MatrixNf A;
-static MatrixNMf B;
-static MatrixMNf Kinf;
-static MatrixMNf Klqr;
-static MatrixNf Pinf;
-static MatrixMf Quu_inv;
-static MatrixNf AmBKt;
-static MatrixNMf coeff_d2p;
-static MatrixNf Q;
-static MatrixMf R;
+using VectorBase = Matrix<float, NX0, 1>;
+using VectorU0 = Matrix<float, NU0, 1>;
 
 /* Allocate global variables for MPC */
-
-static VectorMf Ulqr;
-
-static VectorNf x0;
-static VectorNf xg;
-static VectorNf x1;
-static VectorMf u0;
+static VectorBase x0;
+static VectorBase xg;
+static VectorNf x1_lifted;
+static VectorU0 u0_base;
 
 static float x0_flat[NSTATES];
 static float x1_flat[NSTATES];
@@ -141,126 +109,105 @@ static float Uref_flat[(NHORIZON - 1) * NINPUTS];
 static uint64_t startTimestamp;
 // static bool isInit = false;  // fix for tracking problem - UNUSED, commented out
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
-static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
-// static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = false;
-static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
-static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
-static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
-static int8_t traj_iter = 0;
-static uint32_t traj_idx = 0;
-
-static struct vec desired_rpy;
-static struct quat attitude;
-static struct vec phi;
 
 // ========== PSD Obstacle Avoidance Configuration ==========
-// Enable PSD-based obstacle avoidance (set to 1 to enable)
 static uint8_t en_psd_avoidance = 0;
-// Obstacle positions (can be updated via parameters)
-static float psd_obs1_x = 1.0f;
-static float psd_obs1_y = 0.0f;
-static float psd_obs1_r = 0.3f;
+static uint8_t psd_max_peers = 3;
+static float psd_peer_radius = 0.3f;
+static float psd_peer_margin = 0.15f;
+static int32_t psd_peer_max_age_ms = 500;
+static float psd_rho = 5.0f;
 
-void updateInitialState(const sensorData_t *sensors, const state_t *state) {
-  x0(0) = state->position.x;
-  x0(1) = state->position.y;
-  x0(2) = state->position.z;
-  // Body velocity error, [m/s]                          
-  x0(6) = state->velocity.x;
-  x0(7) = state->velocity.y;
-  x0(8) = state->velocity.z;
-  // Angular rate error, [rad/s]
-  x0(9)  = radians(sensors->gyro.x);   
-  x0(10) = radians(sensors->gyro.y);
-  x0(11) = radians(sensors->gyro.z);
-  attitude = mkquat(
-    state->attitudeQuaternion.x,
-    state->attitudeQuaternion.y,
-    state->attitudeQuaternion.z,
-    state->attitudeQuaternion.w);  // current attitude
-  phi = quat2rp(qnormalize(attitude));  // quaternion to Rodriquez parameters  
-  // Attitude error
-  x0(3) = phi.x;
-  x0(4) = phi.y;
-  x0(5) = phi.z;
+static float psd_disks[PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
 
-  for (int i = 0; i < NSTATES; ++i) {
-    x0_flat[i] = x0(i);
+static void build_lifted_flat(const VectorBase& xb, float* out_lifted) {
+  if (!out_lifted) {
+    return;
+  }
+  for (int i = 0; i < NX0; ++i) {
+    out_lifted[i] = xb(i);
+  }
+  for (int j = 0; j < NX0; ++j) {
+    for (int i = 0; i < NX0; ++i) {
+      out_lifted[NX0 + j * NX0 + i] = xb(i) * xb(j);
+    }
   }
 }
 
-void updateHorizonReference(const setpoint_t *setpoint) {
-  // Update reference: from stored trajectory or commander
-  if (en_traj) {
-    if (step % traj_hold == 0) {
-      traj_idx = (int)(step / traj_hold);
-      for (int i = 0; i < NHORIZON; ++i) {
-        for (int j = 0; j < NSTATES; ++j) {
-          Xref_flat[i * NSTATES + j] = X_ref_data[traj_idx][j];
-        }
-        if (i < NHORIZON - 1) {
-          for (int j = 0; j < NINPUTS; ++j) {
-            Uref_flat[i * NINPUTS + j] = U_ref_data[traj_idx][j];
-          }          
-        }
+static int gather_psd_disks(float* out_disks, int max_disks) {
+  if (!out_disks || max_disks <= 0) {
+    return 0;
+  }
+  TickType_t now = xTaskGetTickCount();
+  int count = 0;
+
+  uint8_t max_peers = psd_max_peers;
+  if (max_peers > PEER_LOCALIZATION_MAX_NEIGHBORS) {
+    max_peers = PEER_LOCALIZATION_MAX_NEIGHBORS;
+  }
+  if (max_peers > (uint8_t)max_disks) {
+    max_peers = (uint8_t)max_disks;
+  }
+  const float radius = psd_peer_radius + psd_peer_margin;
+
+  for (int i = 0; i < PEER_LOCALIZATION_MAX_NEIGHBORS && count < max_peers; ++i) {
+    peerLocalizationOtherPosition_t const *other = peerLocalizationGetPositionByIdx(i);
+    if (!other || other->id == 0) {
+      continue;
+    }
+    if (psd_peer_max_age_ms >= 0) {
+      TickType_t age = now - other->pos.timestamp;
+      if (age > (TickType_t)psd_peer_max_age_ms) {
+        continue;
       }
     }
+    const int base = 3 * count;
+    out_disks[base + 0] = other->pos.x;
+    out_disks[base + 1] = other->pos.y;
+    out_disks[base + 2] = radius;
+    count++;
   }
-  else {
-    xg(0)  = setpoint->position.x;
-    xg(1)  = setpoint->position.y;
-    xg(2)  = setpoint->position.z;
-    xg(6)  = setpoint->velocity.x;
-    xg(7)  = setpoint->velocity.y;
-    xg(8)  = setpoint->velocity.z;
-    xg(9)  = radians(setpoint->attitudeRate.roll);
-    xg(10) = radians(setpoint->attitudeRate.pitch);
-    xg(11) = radians(setpoint->attitudeRate.yaw);
-    desired_rpy = mkvec(radians(setpoint->attitude.roll), 
-                        radians(setpoint->attitude.pitch), 
-                        radians(setpoint->attitude.yaw));
-    attitude = rpy2quat(desired_rpy);
-    phi = quat2rp(qnormalize(attitude));  
-    xg(3) = phi.x;
-    xg(4) = phi.y;
-    xg(5) = phi.z;
-    for (int i = 0; i < NHORIZON; ++i) {
-      for (int j = 0; j < NSTATES; ++j) {
-        Xref_flat[i * NSTATES + j] = xg(j);
-      }
-      if (i < NHORIZON - 1) {
-        for (int j = 0; j < NINPUTS; ++j) {
-          Uref_flat[i * NINPUTS + j] = 0.0f;
-        }
+  return count;
+}
+
+void updateInitialState(const sensorData_t *sensors, const state_t *state) {
+  (void)sensors;
+  x0(0) = state->position.x;
+  x0(1) = state->position.y;
+  x0(2) = state->velocity.x;
+  x0(3) = state->velocity.y;
+}
+
+void updateHorizonReference(const setpoint_t *setpoint) {
+  // Reference from commander: planar (x, y, vx, vy)
+  xg(0) = setpoint->position.x;
+  xg(1) = setpoint->position.y;
+  xg(2) = setpoint->velocity.x;
+  xg(3) = setpoint->velocity.y;
+
+  float lifted_ref[NSTATES];
+  build_lifted_flat(xg, lifted_ref);
+
+  for (int i = 0; i < NHORIZON; ++i) {
+    for (int j = 0; j < NSTATES; ++j) {
+      Xref_flat[i * NSTATES + j] = lifted_ref[j];
+    }
+    if (i < NHORIZON - 1) {
+      for (int j = 0; j < NINPUTS; ++j) {
+        Uref_flat[i * NINPUTS + j] = 0.0f;
       }
     }
   }
   // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref_flat[2]));
 
-  // stop trajectory executation
-  if (en_traj) {
-    if (traj_iter >= user_traj_iter) en_traj = false;
-
-    if (traj_idx >= traj_length - 1 - NHORIZON + 1) { 
-      // complete one trajectory
-      step = 0; 
-      traj_iter += 1;
-    } 
-    else step += 1;
-  }
+  // No internal trajectory in planar PSD mode
 }
 
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
-
-  // Precompute/Cache
-  // #include "params_500hz.h"
-  #include "params_100hz.h"
-
-  // End of Precompute/Cache
 
   tinympc_cf_init_defaults();
   tinympc_cf_set_settings(2, 0);
@@ -269,36 +216,23 @@ void controllerOutOfTreeInit(void) {
   memset(x0_flat, 0, sizeof(x0_flat));
   memset(x1_flat, 0, sizeof(x1_flat));
   memset(u0_flat, 0, sizeof(u0_flat));
-  x1.setZero();
-  u0.setZero();
+  x1_lifted.setZero();
+  u0_base.setZero();
 
-  Klqr << 
-  -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
-  0.120236f,0.119379f,0.285625f,-0.346222f,0.403763f,0.475821f,0.071330f,0.068348f,0.186504f,-0.020972f,0.037152f,0.187009f,
-  0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
-  -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
-
-  // ========== PSD Obstacle Avoidance Setup ==========
-  // Initialize PSD with 2D position (x, y) constraints
-  // rho_psd = 5.0 is a good starting point
+  // PSD enable (requires a lifted PSD solver codegen)
   if (en_psd_avoidance) {
-    int psd_result = tinympc_cf_enable_psd(2, 5.0f);  // 2D position, rho=5.0
+    int psd_result = tinympc_cf_enable_psd(NX0, NU0, psd_rho);
     if (psd_result == 0) {
-      DEBUG_PRINT("PSD enabled successfully\n");
-      
-      // Add initial obstacle
-      tinympc_cf_add_psd_disk(psd_obs1_x, psd_obs1_y, psd_obs1_r);
-      DEBUG_PRINT("PSD obstacle at (%.2f, %.2f) r=%.2f\n", 
-                  (double)psd_obs1_x, (double)psd_obs1_y, (double)psd_obs1_r);
+      DEBUG_PRINT("PSD enabled (rho=%.2f)\n", (double)psd_rho);
     } else {
-      DEBUG_PRINT("PSD init failed: %d\n", psd_result);
+      DEBUG_PRINT("PSD enable failed: %d (needs lifted solver)\n", psd_result);
     }
   }
 
-  /* End of MPC initialization */  
-  en_traj = true;
+  /* End of MPC initialization */
+  en_traj = false;
   step = 0;  
-  traj_iter = 0;
+  controllerPidInit();
 }
 
 bool controllerOutOfTreeTest() {
@@ -320,7 +254,13 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // Get command reference
     updateHorizonReference(setpoint);
 
+    if (en_psd_avoidance) {
+      int disk_count = gather_psd_disks(psd_disks, psd_max_peers);
+      tinympc_cf_set_psd_disks(psd_disks, disk_count);
+    }
+
     /* MPC solve */
+    build_lifted_flat(x0, x0_flat);
     tinympc_cf_set_x0(x0_flat, NSTATES);
     tinympc_cf_set_reference(Xref_flat, NSTATES, NHORIZON, Uref_flat, NINPUTS);
     result = (int8_t)tinympc_cf_solve();
@@ -328,10 +268,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     tinympc_cf_get_u0(u0_flat, NINPUTS, TinympcControlOutputKind::ZNEW);
 
     for (int i = 0; i < NSTATES; ++i) {
-      x1(i) = x1_flat[i];
+      x1_lifted(i) = x1_flat[i];
     }
-    for (int j = 0; j < NINPUTS; ++j) {
-      u0(j) = u0_flat[j];
+    for (int j = 0; j < NU0; ++j) {
+      u0_base(j) = u0_flat[j];
     }
  
     // DEBUG_PRINT("Uhrz[0] = [%.2f, %.2f]\n", (double)(Uhrz[0](0)), (double)(Uhrz[0](1)));
@@ -342,25 +282,16 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // DEBUG_PRINT("%.2f, %.2f, %.2f, %.2f \n", (double)(Xref_flat[5]), (double)(u0(2)), (double)(u0(3)), (double)(u0(0)));
   }
 
-  if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
-    // Reference from MPC
-    Ulqr = -(Kinf) * (x0 - x1) + u0;
-    
-    /* Output control */
-    if (setpoint->mode.z == modeDisable) {
-      control->normalizedForces[0] = 0.0f;
-      control->normalizedForces[1] = 0.0f;
-      control->normalizedForces[2] = 0.0f;
-      control->normalizedForces[3] = 0.0f;
-    } else {
-      control->normalizedForces[0] = Ulqr(0) + u_hover[0];  // PWM 0..1
-      control->normalizedForces[1] = Ulqr(1) + u_hover[1];
-      control->normalizedForces[2] = Ulqr(2) + u_hover[2];
-      control->normalizedForces[3] = Ulqr(3) + u_hover[3];
-    } 
-    control->controlMode = control_mode_t::controlModeForce;
-  }
-  // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
+  // Use PID controller to track MPC-provided planar setpoint
+  setpoint_t sp = *setpoint;
+  sp.mode.x = modeAbs;
+  sp.mode.y = modeAbs;
+  sp.position.x = x1_lifted(0);
+  sp.position.y = x1_lifted(1);
+  sp.velocity.x = x1_lifted(2);
+  sp.velocity.y = x1_lifted(3);
+  sp.velocity_body = false;
+  controllerPid(control, &sp, sensors, state, tick);
 
   // control->normalizedForces[0] = 0.0f;
   // control->normalizedForces[1] = 0.0f;
@@ -378,6 +309,33 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 // PARAM_ADD(PARAM_FLOAT, u_hover, &u_hover)
 
 // PARAM_GROUP_STOP(ctrlMPC)
+
+PARAM_GROUP_START(psdAvoid)
+  /**
+   * @brief Enable PSD obstacle avoidance
+   */
+  PARAM_ADD(PARAM_UINT8, enable, &en_psd_avoidance)
+  /**
+   * @brief Max peers to consider (<= PEER_LOCALIZATION_MAX_NEIGHBORS)
+   */
+  PARAM_ADD(PARAM_UINT8, maxPeers, &psd_max_peers)
+  /**
+   * @brief Safety radius around each peer [m]
+   */
+  PARAM_ADD(PARAM_FLOAT, radius, &psd_peer_radius)
+  /**
+   * @brief Additional safety margin [m]
+   */
+  PARAM_ADD(PARAM_FLOAT, margin, &psd_peer_margin)
+  /**
+   * @brief Max peer localization age [ms], <0 disables filtering
+   */
+  PARAM_ADD(PARAM_INT32, maxAgeMs, &psd_peer_max_age_ms)
+  /**
+   * @brief PSD penalty rho
+   */
+  PARAM_ADD(PARAM_FLOAT, rho, &psd_rho)
+PARAM_GROUP_STOP(psdAvoid)
 
 /**
  * Logging variables for the command and reference signals for the

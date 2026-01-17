@@ -90,32 +90,44 @@ void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind
 
 // ========== PSD (Obstacle Avoidance) Implementation ==========
 
-int tinympc_cf_enable_psd(int nx0, float rho_psd) {
+int tinympc_cf_enable_psd(int nx0, int nu0, float rho_psd) {
   TinySolver* s = cf_solver();
-  return tinympc::tiny_enable_psd(s, nx0, (tinytype)rho_psd);
+  if (!s) return -1;
+
+  const int nx_req = nx0 + nx0 * nx0;
+  const int nu_req = nu0 + nx0 * nu0 + nu0 * nx0 + nu0 * nu0;
+  if (s->work->nx < nx_req || s->work->nu < nu_req) {
+    // Solver not configured for lifted PSD dimensions
+    s->settings->en_psd = 0;
+    return -2;
+  }
+  return tiny_enable_psd(s, nx0, nu0, (tinytype)rho_psd);
 }
 
-int tinympc_cf_add_psd_disk(float cx, float cy, float radius) {
+int tinympc_cf_set_psd_disks(const float* disks, int count) {
   TinySolver* s = cf_solver();
-  return tinympc::tiny_add_psd_disk(s, (tinytype)cx, (tinytype)cy, (tinytype)radius);
-}
-
-int tinympc_cf_update_psd_disk(int idx, float cx, float cy, float radius) {
-  TinySolver* s = cf_solver();
-  return tinympc::tiny_update_psd_disk(s, idx, (tinytype)cx, (tinytype)cy, (tinytype)radius);
+  if (!s) return -1;
+  if (!disks || count <= 0) {
+    tinympc_cf_clear_psd_disks();
+    return 0;
+  }
+  std::vector<std::array<tinytype,3>> vec;
+  vec.reserve(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    const int base = 3 * i;
+    vec.push_back({(tinytype)disks[base + 0],
+                   (tinytype)disks[base + 1],
+                   (tinytype)disks[base + 2]});
+  }
+  return tiny_set_lifted_disks(s, vec);
 }
 
 void tinympc_cf_clear_psd_disks(void) {
   TinySolver* s = cf_solver();
-  tinympc::tiny_clear_psd_disks(s);
+  if (!s) return;
+  s->settings->en_state_linear = 0;
+  s->work->numStateLinear = 0;
+  s->work->Alin_x = tinyMatrix::Zero(0, s->work->nx);
+  s->work->blin_x = tinyVector::Zero(0);
 }
 
-int tinympc_cf_get_psd_num_disks(void) {
-  TinySolver* s = cf_solver();
-  return s->work->psd_num_disks;
-}
-
-float tinympc_cf_get_psd_residual(void) {
-  TinySolver* s = cf_solver();
-  return (float)s->work->primal_residual_psd;
-}

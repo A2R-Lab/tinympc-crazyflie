@@ -67,28 +67,17 @@ void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind
 
 // Enable PSD constraints for obstacle avoidance.
 // nx0: base state dimension (2 for XY, 3 for XYZ)
+// nu0: base input dimension (0 if using position-only PSD)
 // rho_psd: penalty parameter (typically 1.0 - 10.0)
 // Returns 0 on success.
-int tinympc_cf_enable_psd(int nx0, float rho_psd);
+int tinympc_cf_enable_psd(int nx0, int nu0, float rho_psd);
 
-// Add a disk obstacle (XY plane).
-// cx, cy: obstacle center
-// radius: obstacle radius
-// Returns 0 on success, -1 if max obstacles reached.
-int tinympc_cf_add_psd_disk(float cx, float cy, float radius);
+// Set disk obstacles in lifted space. Each disk is (cx, cy, r).
+// disks points to 3*count floats.
+int tinympc_cf_set_psd_disks(const float* disks, int count);
 
-// Update an existing disk obstacle position (for dynamic obstacles).
-// idx: obstacle index (0-based)
-int tinympc_cf_update_psd_disk(int idx, float cx, float cy, float radius);
-
-// Clear all obstacles.
+// Clear PSD disk constraints (disables lifted disk linear constraints).
 void tinympc_cf_clear_psd_disks(void);
-
-// Get number of active obstacles.
-int tinympc_cf_get_psd_num_disks(void);
-
-// Get PSD primal residual (for debugging).
-float tinympc_cf_get_psd_residual(void);
 
 #ifdef __cplusplus
 }
