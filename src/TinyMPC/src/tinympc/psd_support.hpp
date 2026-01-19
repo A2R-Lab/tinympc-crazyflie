@@ -778,6 +778,44 @@ inline int tiny_set_lifted_ellipses(
         tinyVector::Zero(0));
 }
 
+// --------- PSD certificate helper (plan validation) ----------
+struct PsdCertificate {
+    bool certified;
+    tinytype trace_gap;
+    tinytype eta_min;
+};
+
+inline PsdCertificate tiny_psd_certificate_2d(
+    const tinyVector& x_lifted,
+    const std::vector<std::array<tinytype,3>>& disks,
+    int nx0)
+{
+    (void)nx0;
+    PsdCertificate cert;
+    if (disks.empty()) {
+        cert.certified = true;
+        cert.trace_gap = tinytype(1e6);
+        cert.eta_min = tinytype(1e6);
+        return cert;
+    }
+    tinytype x = x_lifted(0);
+    tinytype y = x_lifted(1);
+    tinytype min_gap = tinytype(1e9);
+    for (const auto& d : disks) {
+        tinytype dx = x - d[0];
+        tinytype dy = y - d[1];
+        tinytype dist = std::sqrt(dx*dx + dy*dy);
+        tinytype gap = dist - d[2];
+        if (gap < min_gap) {
+            min_gap = gap;
+        }
+    }
+    cert.certified = (min_gap >= tinytype(0));
+    cert.trace_gap = min_gap;
+    cert.eta_min = min_gap;
+    return cert;
+}
+
 // --------- PSD core hooks (minimal placeholders) ----------
 inline void tiny_update_slack_psd(TinySolver* solver) {
     if (!solver) return;

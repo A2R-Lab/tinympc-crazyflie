@@ -343,9 +343,9 @@ static void disks_to_vector(const float* disks, int count,
   out.reserve(static_cast<size_t>(count));
   for (int i = 0; i < count; ++i) {
     const int base = 3 * i;
-    out.push_back({(tinytype)disks[base + 0],
-                   (tinytype)disks[base + 1],
-                   (tinytype)disks[base + 2]});
+    out.push_back({{(tinytype)disks[base + 0],
+                    (tinytype)disks[base + 1],
+                    (tinytype)disks[base + 2]}});
   }
 }
 

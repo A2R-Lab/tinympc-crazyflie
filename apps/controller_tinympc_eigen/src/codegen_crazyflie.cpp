@@ -47,7 +47,6 @@ int main()
 
     const int nx = A.rows();
     const int nu = B.cols();
-    tinyVector fdyn = tiny_VectorNx::Zero();
     tinyMatrix Q = tinyMatrix::Zero(nx, nx);
     Q(0,0) = 50.0; Q(1,1) = 50.0;
     Q(2,2) = 5.0;  Q(3,3) = 5.0;
@@ -66,10 +65,10 @@ int main()
 
     int verbose = 0;
     int status = tiny_setup(&solver,
-                            A, B, fdyn, Q, R,
-                            tinytype(1.0), nx, nu, NHORIZON, verbose);
-    // Set bound constraints
-    status = tiny_set_bound_constraints(solver, x_min, x_max, u_min, u_max);
+                            A, B, Q, R,
+                            tinytype(1.0), nx, nu, NHORIZON,
+                            x_min, x_max, u_min, u_max,
+                            verbose);
 
     // Solver options
     solver->settings->abs_pri_tol = 1e-3;
