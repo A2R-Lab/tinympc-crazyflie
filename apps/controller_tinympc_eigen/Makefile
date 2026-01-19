@@ -13,7 +13,9 @@
 # it will handle the build for us.
 #
 CRAZYFLIE_BASE := $(abspath ../../crazyflie-firmware)
-TINYMPC_BASE := $(abspath ../../TinyMPC)
+TINYMPC_BASE_FALLBACK := $(abspath ../../TinyMPC)
+TINYMPC_BASE_PSD := $(abspath ../../src/TinyMPC)
+TINYMPC_BASE := $(if $(wildcard $(TINYMPC_BASE_PSD)/src/tinympc/psd_support.hpp),$(TINYMPC_BASE_PSD),$(TINYMPC_BASE_FALLBACK))
 CXX := clang++
 CODEGEN_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -I$(TINYMPC_BASE)/src -I$(TINYMPC_BASE)/include -I$(TINYMPC_BASE)/include/Eigen
 TINYMPC_CPP := $(shell find $(TINYMPC_BASE)/src/tinympc -name '*.cpp')
@@ -29,6 +31,7 @@ EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include/Eigen
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
+EXTRA_CFLAGS += -I$(PWD)/tinympc_generated_code_crazyflie_example
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG

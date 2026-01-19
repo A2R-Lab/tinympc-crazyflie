@@ -48,7 +48,6 @@ int main()
     const int nx = A.rows();
     const int nu = B.cols();
     tinyVector fdyn = tiny_VectorNx::Zero();
-
     tinyMatrix Q = tinyMatrix::Zero(nx, nx);
     Q(0,0) = 50.0; Q(1,1) = 50.0;
     Q(2,2) = 5.0;  Q(3,3) = 5.0;

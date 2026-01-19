@@ -36,15 +36,25 @@ extern "C" {
 
 using namespace Eigen;
 
-static void print_matrix(FILE *f, MatrixXd mat, int num_elements)
+#ifdef __cplusplus
+}
+#endif
+
+template <typename Derived>
+static void print_matrix_file(FILE *f, const MatrixBase<Derived>& mat, int num_elements)
 {
     for (int i = 0; i < num_elements; i++)
     {
-        fprintf(f, "(tinytype)%.16f", mat.reshaped<RowMajor>()[i]);
+        fprintf(f, "(tinytype)%.16f",
+                static_cast<double>(mat.derived().template reshaped<RowMajor>()[i]));
         if (i < num_elements - 1)
             fprintf(f, ",");
     }
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 static void create_directory(const char* dir, int verbose) {
     // Attempt to create directory
@@ -175,10 +185,10 @@ int codegen_data_source(TinySolver* solver, const char* output_dir, int verbose)
     fprintf(data_cpp_f, "\t%d,\t\t// iter\n", solver->solution->iter);
     fprintf(data_cpp_f, "\t%d,\t\t// solved\n", solver->solution->solved);
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// x\n"); // x solution
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N-1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N-1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// x\n"); // u solution
 
     fprintf(data_cpp_f, "};\n\n");
@@ -189,17 +199,18 @@ int codegen_data_source(TinySolver* solver, const char* output_dir, int verbose)
 
     fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// rho (step size/penalty)\n", solver->cache->rho);
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, nx);
-    print_matrix(data_cpp_f, solver->cache->Kinf, nu * nx);
+    print_matrix_file(data_cpp_f, solver->cache->Kinf, nu * nx);
     fprintf(data_cpp_f, ").finished(),\t// Kinf\n"); // Kinf
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, nx);
-    print_matrix(data_cpp_f, solver->cache->Pinf, nx * nx);
+    print_matrix_file(data_cpp_f, solver->cache->Pinf, nx * nx);
     fprintf(data_cpp_f, ").finished(),\t// Pinf\n"); // Pinf
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, nu);
-    print_matrix(data_cpp_f, solver->cache->Quu_inv, nu * nu);
+    print_matrix_file(data_cpp_f, solver->cache->Quu_inv, nu * nu);
     fprintf(data_cpp_f, ").finished(),\t// Quu_inv\n"); // Quu_inv
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, nx);
-    print_matrix(data_cpp_f, solver->cache->AmBKt, nx * nx);
+    print_matrix_file(data_cpp_f, solver->cache->AmBKt, nx * nx);
     fprintf(data_cpp_f, ").finished(),\t// AmBKt\n"); // AmBKt
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// rho_psd\n", solver->cache->rho_psd);
 
     fprintf(data_cpp_f, "};\n\n");
 
@@ -212,7 +223,17 @@ int codegen_data_source(TinySolver* solver, const char* output_dir, int verbose)
     fprintf(data_cpp_f, "\t%d,\t\t// max iterations\n", solver->settings->max_iter);
     fprintf(data_cpp_f, "\t%d,\t\t// iterations per termination check\n", solver->settings->check_termination);
     fprintf(data_cpp_f, "\t%d,\t\t// enable state constraints\n", solver->settings->en_state_bound);
-    fprintf(data_cpp_f, "\t%d\t\t// enable input constraints\n", solver->settings->en_input_bound);
+    fprintf(data_cpp_f, "\t%d,\t\t// enable input constraints\n", solver->settings->en_input_bound);
+    fprintf(data_cpp_f, "\t%d,\t\t// enable state linear constraints\n", solver->settings->en_state_linear);
+    fprintf(data_cpp_f, "\t%d,\t\t// enable tv state linear constraints\n", solver->settings->en_tv_state_linear);
+    fprintf(data_cpp_f, "\t%d,\t\t// enable base tangent tv\n", solver->settings->en_base_tangent_tv);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// obs_x\n", solver->settings->obs_x);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// obs_y\n", solver->settings->obs_y);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// obs_r\n", solver->settings->obs_r);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// obs_margin\n", solver->settings->obs_margin);
+    fprintf(data_cpp_f, "\t%d,\t\t// enable psd\n", solver->settings->en_psd);
+    fprintf(data_cpp_f, "\t%d,\t\t// nx0_psd\n", solver->settings->nx0_psd);
+    fprintf(data_cpp_f, "\t%d\t\t// nu0_psd\n", solver->settings->nu0_psd);
 
     fprintf(data_cpp_f, "};\n\n");
 
@@ -225,81 +246,125 @@ int codegen_data_source(TinySolver* solver, const char* output_dir, int verbose)
     fprintf(data_cpp_f, "\t%d,\t// Number of knotpoints in the horizon\n", N);
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// x\n"); // x
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// u\n"); // u
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// q\n"); // q
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// r\n"); // r
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// p\n"); // p
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// d\n"); // d
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// v\n"); // v
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// vnew\n"); // vnew
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// z\n"); // z
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// znew\n"); // znew
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// g\n"); // g
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// y\n"); // y
 
     fprintf(data_cpp_f, "\t(tinyVector(%d) << ", nx);
-    print_matrix(data_cpp_f, solver->work->Q, nx);
+    print_matrix_file(data_cpp_f, solver->work->Q, nx);
     fprintf(data_cpp_f, ").finished(),\t// Q\n"); // Q
     fprintf(data_cpp_f, "\t(tinyVector(%d) << ", nu);
-    print_matrix(data_cpp_f, solver->work->R, nu);
+    print_matrix_file(data_cpp_f, solver->work->R, nu);
     fprintf(data_cpp_f, ").finished(),\t// R\n"); // R
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, nx);
-    print_matrix(data_cpp_f, solver->work->Adyn, nx * nx);
+    print_matrix_file(data_cpp_f, solver->work->Adyn, nx * nx);
     fprintf(data_cpp_f, ").finished(),\t// Adyn\n"); // Adyn
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, nu);
-    print_matrix(data_cpp_f, solver->work->Bdyn, nx * nu);
+    print_matrix_file(data_cpp_f, solver->work->Bdyn, nx * nu);
     fprintf(data_cpp_f, ").finished(),\t// Bdyn\n"); // Bdyn
 
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, solver->work->x_min, nx * N);
+    print_matrix_file(data_cpp_f, solver->work->x_min, nx * N);
     fprintf(data_cpp_f, ").finished(),\t// x_min\n"); // x_min
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, solver->work->x_max, nx * N);
+    print_matrix_file(data_cpp_f, solver->work->x_max, nx * N);
     fprintf(data_cpp_f, ").finished(),\t// x_max\n"); // x_max
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, solver->work->u_min, nu * (N-1));
+    print_matrix_file(data_cpp_f, solver->work->u_min, nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// u_min\n"); // u_min
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, solver->work->u_max, nu * (N-1));
+    print_matrix_file(data_cpp_f, solver->work->u_max, nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// u_max\n"); // u_max
+
+    fprintf(data_cpp_f, "\t%d,\t// numStateLinear\n", solver->work->numStateLinear);
+    if (solver->work->numStateLinear == 0) {
+        fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// Alin_x\n", nx);
+        fprintf(data_cpp_f, "\t(tinyVector::Zero(0)),\t// blin_x\n");
+    } else {
+        fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", solver->work->numStateLinear, nx);
+        print_matrix_file(data_cpp_f, tinyMatrix::Zero(solver->work->numStateLinear, nx),
+                          solver->work->numStateLinear * nx);
+        fprintf(data_cpp_f, ").finished(),\t// Alin_x\n"); // Alin_x
+        fprintf(data_cpp_f, "\t(tinyVector(%d) << ", solver->work->numStateLinear);
+        print_matrix_file(data_cpp_f, tinyVector::Zero(solver->work->numStateLinear),
+                          solver->work->numStateLinear);
+        fprintf(data_cpp_f, ").finished(),\t// blin_x\n"); // blin_x
+    }
+    fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
+    print_matrix_file(data_cpp_f, tinyMatrix::Zero(nx, N), nx * N);
+    fprintf(data_cpp_f, ").finished(),\t// vlnew\n"); // vlnew
+    fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
+    print_matrix_file(data_cpp_f, tinyMatrix::Zero(nx, N), nx * N);
+    fprintf(data_cpp_f, ").finished(),\t// gl\n"); // gl
+
+    fprintf(data_cpp_f, "\t%d,\t// numtvStateLinear\n", solver->work->numtvStateLinear);
+    if (solver->work->numtvStateLinear == 0) {
+        fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// tv_Alin_x\n", nx);
+        fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// tv_blin_x\n", N);
+    } else {
+        fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", solver->work->numtvStateLinear * N, nx);
+        print_matrix_file(data_cpp_f,
+                          tinyMatrix::Zero(solver->work->numtvStateLinear * N, nx),
+                          solver->work->numtvStateLinear * N * nx);
+        fprintf(data_cpp_f, ").finished(),\t// tv_Alin_x\n"); // tv_Alin_x
+        fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", solver->work->numtvStateLinear, N);
+        print_matrix_file(data_cpp_f,
+                          tinyMatrix::Zero(solver->work->numtvStateLinear, N),
+                          solver->work->numtvStateLinear * N);
+        fprintf(data_cpp_f, ").finished(),\t// tv_blin_x\n"); // tv_blin_x
+    }
+    fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
+    print_matrix_file(data_cpp_f, tinyMatrix::Zero(nx, N), nx * N);
+    fprintf(data_cpp_f, ").finished(),\t// vlnew_tv\n"); // vlnew_tv
+    fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
+    print_matrix_file(data_cpp_f, tinyMatrix::Zero(nx, N), nx * N);
+    fprintf(data_cpp_f, ").finished(),\t// gl_tv\n"); // gl_tv
     
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nx, N);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nx, N), nx * N);
     fprintf(data_cpp_f, ").finished(),\t// Xref\n"); // Xref
     fprintf(data_cpp_f, "\t(tinyMatrix(%d, %d) << ", nu, N-1);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, N - 1), nu * (N-1));
     fprintf(data_cpp_f, ").finished(),\t// Uref\n"); // Uref
 
     fprintf(data_cpp_f, "\t(tinyVector(%d) << ", nu);
-    print_matrix(data_cpp_f, MatrixXd::Zero(nu, 1), nu);
+    print_matrix_file(data_cpp_f, MatrixXd::Zero(nu, 1), nu);
     fprintf(data_cpp_f, ").finished(),\t// Qu\n"); // Qu
 
     fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// state primal residual\n", 0.0);
@@ -308,6 +373,16 @@ int codegen_data_source(TinySolver* solver, const char* output_dir, int verbose)
     fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// input dual residual\n", 0.0);
     fprintf(data_cpp_f, "\t%d,\t// solve status\n", 0);
     fprintf(data_cpp_f, "\t%d,\t// solve iteration\n", 0);
+
+    fprintf(data_cpp_f, "\t{\n");
+    fprintf(data_cpp_f, "\t  {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}\n");
+    fprintf(data_cpp_f, "\t},\t// psd_disks\n");
+    fprintf(data_cpp_f, "\t%d,\t// psd_num_disks\n", 0);
+    fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// Spsd\n", N);
+    fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// Spsd_new\n", N);
+    fprintf(data_cpp_f, "\t(tinyMatrix::Zero(0, %d)),\t// Hpsd\n", N);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f,\t// psd primal residual\n", 0.0);
+    fprintf(data_cpp_f, "\t(tinytype)%.16f\t// psd dual residual\n", 0.0);
 
     fprintf(data_cpp_f, "};\n\n");
 

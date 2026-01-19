@@ -100,6 +100,18 @@ int tiny_setup(TinySolver** solverp,
     work->u_min = u_min;
     work->u_max = u_max;
 
+    // Linear constraint storage (default empty)
+    work->numStateLinear = 0;
+    work->Alin_x = tinyMatrix::Zero(0, nx);
+    work->blin_x = tinyVector::Zero(0);
+    work->vlnew = tinyMatrix::Zero(nx, N);
+    work->gl = tinyMatrix::Zero(nx, N);
+    work->numtvStateLinear = 0;
+    work->tv_Alin_x = tinyMatrix::Zero(0, nx);
+    work->tv_blin_x = tinyMatrix::Zero(0, N);
+    work->vlnew_tv = tinyMatrix::Zero(nx, N);
+    work->gl_tv = tinyMatrix::Zero(nx, N);
+
     work->Xref = tinyMatrix::Zero(nx, N);
     work->Uref = tinyMatrix::Zero(nu, N-1);
 
@@ -111,6 +123,19 @@ int tiny_setup(TinySolver** solverp,
     work->dual_residual_input = 0;
     work->status = 0;
     work->iter = 0;
+
+    // PSD defaults
+    work->psd_num_disks = 0;
+    for (int i = 0; i < 4; ++i) {
+        work->psd_disks[i][0] = 0;
+        work->psd_disks[i][1] = 0;
+        work->psd_disks[i][2] = 0;
+    }
+    work->Spsd = tinyMatrix::Zero(0, N);
+    work->Spsd_new = tinyMatrix::Zero(0, N);
+    work->Hpsd = tinyMatrix::Zero(0, N);
+    work->primal_residual_psd = 0;
+    work->dual_residual_psd = 0;
 
     // Initialize cache
     status = tiny_precompute_and_set_cache(cache, Adyn, Bdyn, work->Q.asDiagonal(), work->R.asDiagonal(), nx, nu, rho, verbose);
@@ -154,7 +179,7 @@ int tiny_precompute_and_set_cache(TinyCache *cache,
         Kinf = (R1 + Bdyn.transpose() * Ptp1 * Bdyn).inverse() * Bdyn.transpose() * Ptp1 * Adyn;
         Pinf = Q1 + Adyn.transpose() * Ptp1 * (Adyn - Bdyn * Kinf);
         // if Kinf converges, break
-        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < 1e-5)
+        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < tinytype(1e-5))
         {
             if (verbose) {
                 std::cout << "Kinf converged after " << i + 1 << " iterations" << std::endl;
@@ -204,6 +229,13 @@ int tiny_update_settings(TinySettings* settings, tinytype abs_pri_tol, tinytype 
     settings->check_termination = check_termination;
     settings->en_state_bound = en_state_bound;
     settings->en_input_bound = en_input_bound;
+    settings->en_state_linear = 0;
+    settings->en_tv_state_linear = 0;
+    settings->en_base_tangent_tv = 0;
+    settings->obs_x = 0;
+    settings->obs_y = 0;
+    settings->obs_r = 0;
+    settings->obs_margin = 0;
     return 0;
 }
 
@@ -218,6 +250,52 @@ int tiny_set_default_settings(TinySettings* settings) {
     settings->check_termination = TINY_DEFAULT_CHECK_TERMINATION;
     settings->en_state_bound = TINY_DEFAULT_EN_STATE_BOUND;
     settings->en_input_bound = TINY_DEFAULT_EN_INPUT_BOUND;
+    settings->en_state_linear = 0;
+    settings->en_tv_state_linear = 0;
+    settings->en_base_tangent_tv = 0;
+    settings->obs_x = 0;
+    settings->obs_y = 0;
+    settings->obs_r = 0;
+    settings->obs_margin = 0;
+    settings->en_psd = 0;
+    settings->nx0_psd = 0;
+    settings->nu0_psd = 0;
+    return 0;
+}
+
+int tiny_set_bound_constraints(TinySolver* solver,
+                               tinyMatrix x_min, tinyMatrix x_max,
+                               tinyMatrix u_min, tinyMatrix u_max) {
+    if (!solver) {
+        std::cout << "Error in tiny_set_bound_constraints: solver is nullptr" << std::endl;
+        return 1;
+    }
+    solver->work->x_min = x_min;
+    solver->work->x_max = x_max;
+    solver->work->u_min = u_min;
+    solver->work->u_max = u_max;
+    solver->settings->en_state_bound = 1;
+    solver->settings->en_input_bound = 1;
+    return 0;
+}
+
+int tiny_set_linear_constraints(TinySolver* solver,
+                                tinyMatrix Alin_x, tinyVector blin_x,
+                                tinyMatrix Alin_u, tinyVector blin_u) {
+    if (!solver) {
+        std::cout << "Error in tiny_set_linear_constraints: solver is nullptr" << std::endl;
+        return 1;
+    }
+    solver->work->numStateLinear = static_cast<int>(Alin_x.rows());
+    solver->work->Alin_x = Alin_x;
+    solver->work->blin_x = blin_x;
+    solver->work->vlnew = solver->work->x;
+    solver->work->gl = tinyMatrix::Zero(solver->work->nx, solver->work->N);
+    solver->settings->en_state_linear = (solver->work->numStateLinear > 0);
+
+    // Input linear constraints are currently unused in the solver core.
+    (void)Alin_u;
+    (void)blin_u;
     return 0;
 }
 
