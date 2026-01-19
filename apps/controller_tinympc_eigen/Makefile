@@ -36,6 +36,7 @@ EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
+EXTRA_CXXFLAGS += -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.

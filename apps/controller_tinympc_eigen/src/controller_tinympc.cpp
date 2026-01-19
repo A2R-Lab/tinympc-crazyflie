@@ -60,6 +60,7 @@ extern "C" {
 #include "peer_localization.h"
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
+#include "psd_params.h"
 
 // #include "tinympc/tinympc.h"
 
@@ -115,24 +116,7 @@ static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = false;
 
-// ========== PSD Obstacle Avoidance Configuration ==========
-static uint8_t en_psd_avoidance = 0;
-static uint8_t psd_max_peers = 3;
-static float psd_peer_radius = 0.3f;
-static float psd_peer_margin = 0.15f;
-static int32_t psd_peer_max_age_ms = 500;
-static float psd_rho = 5.0f;
-
 static float psd_disks[PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
-
-// Planner/tracker configuration
-static uint32_t psd_replan_stride = 5;
-static uint32_t psd_horizon_guard = 5;
-static float psd_base_on = 2.5f;
-static float psd_base_off = 2.5f;
-static float psd_goal_on_bias = 0.3f;
-static float psd_goal_off_bias = 0.8f;
-static float psd_off_hysteresis = 0.3f;
 
 enum class PlanMode {
   PSD = 0,
@@ -165,14 +149,7 @@ static PeerHistory peer_history[PEER_LOCALIZATION_MAX_NEIGHBORS];
 static float psd_disks_tv[NHORIZON * PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
 static int psd_disks_tv_counts[NHORIZON];
 
-// Logging vars
-static uint8_t psd_log_plan_mode = 0;
-static uint8_t psd_log_plan_status = 0;
-static int32_t psd_log_plan_age = 0;
-static int32_t psd_log_disk_count = 0;
-static uint8_t psd_log_certified = 0;
-static float psd_log_trace_gap = 0.0f;
-static float psd_log_eta_min = 0.0f;
+// Logging vars are defined in psd_params.c
 
 static void build_lifted_flat(const VectorBase& xb, float* out_lifted) {
   if (!out_lifted) {
@@ -571,71 +548,6 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 // PARAM_ADD(PARAM_FLOAT, u_hover, &u_hover)
 
 // PARAM_GROUP_STOP(ctrlMPC)
-
-PARAM_GROUP_START(psdAvoid)
-  /**
-   * @brief Enable PSD obstacle avoidance
-   */
-  PARAM_ADD(PARAM_UINT8, enable, &en_psd_avoidance)
-  /**
-   * @brief Max peers to consider (<= PEER_LOCALIZATION_MAX_NEIGHBORS)
-   */
-  PARAM_ADD(PARAM_UINT8, maxPeers, &psd_max_peers)
-  /**
-   * @brief Safety radius around each peer [m]
-   */
-  PARAM_ADD(PARAM_FLOAT, radius, &psd_peer_radius)
-  /**
-   * @brief Additional safety margin [m]
-   */
-  PARAM_ADD(PARAM_FLOAT, margin, &psd_peer_margin)
-  /**
-   * @brief Max peer localization age [ms], <0 disables filtering
-   */
-  PARAM_ADD(PARAM_INT32, maxAgeMs, &psd_peer_max_age_ms)
-  /**
-   * @brief PSD penalty rho
-   */
-  PARAM_ADD(PARAM_FLOAT, rho, &psd_rho)
-  /**
-   * @brief Replan stride (steps)
-   */
-  PARAM_ADD(PARAM_UINT32, replanStride, &psd_replan_stride)
-  /**
-   * @brief Horizon guard (steps)
-   */
-  PARAM_ADD(PARAM_UINT32, horizonGuard, &psd_horizon_guard)
-  /**
-   * @brief Base threshold to turn PSD on
-   */
-  PARAM_ADD(PARAM_FLOAT, baseOn, &psd_base_on)
-  /**
-   * @brief Base threshold to turn PSD off
-   */
-  PARAM_ADD(PARAM_FLOAT, baseOff, &psd_base_off)
-  /**
-   * @brief Goal proximity bias for on threshold
-   */
-  PARAM_ADD(PARAM_FLOAT, goalOnBias, &psd_goal_on_bias)
-  /**
-   * @brief Goal proximity bias for off threshold
-   */
-  PARAM_ADD(PARAM_FLOAT, goalOffBias, &psd_goal_off_bias)
-  /**
-   * @brief Hysteresis offset for off threshold
-   */
-  PARAM_ADD(PARAM_FLOAT, offHyst, &psd_off_hysteresis)
-PARAM_GROUP_STOP(psdAvoid)
-
-LOG_GROUP_START(psdMPC)
-  LOG_ADD(LOG_UINT8, planMode, &psd_log_plan_mode)
-  LOG_ADD(LOG_UINT8, planStatus, &psd_log_plan_status)
-  LOG_ADD(LOG_INT32, planAge, &psd_log_plan_age)
-  LOG_ADD(LOG_INT32, diskCount, &psd_log_disk_count)
-  LOG_ADD(LOG_UINT8, certified, &psd_log_certified)
-  LOG_ADD(LOG_FLOAT, traceGap, &psd_log_trace_gap)
-  LOG_ADD(LOG_FLOAT, etaMin, &psd_log_eta_min)
-LOG_GROUP_STOP(psdMPC)
 
 /**
  * Logging variables for the command and reference signals for the
