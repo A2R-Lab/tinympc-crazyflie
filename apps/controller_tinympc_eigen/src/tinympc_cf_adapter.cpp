@@ -74,6 +74,44 @@ void tinympc_cf_get_x_pred_1(float* out_x1, int nstates) {
   }
 }
 
+void tinympc_cf_get_x_pred_0(float* out_x0, int nstates) {
+  TinySolver* s = cf_solver();
+  if (!s || !out_x0) {
+    return;
+  }
+  for (int i = 0; i < nstates; ++i) {
+    out_x0[i] = (float)s->solution->x(i, 0);
+  }
+}
+
+void tinympc_cf_get_solution_base_states(float* out_states, int nx0, int horizon) {
+  TinySolver* s = cf_solver();
+  if (!s || !out_states) {
+    return;
+  }
+  const int N = s->work->N;
+  const int stages = (horizon > 0 && horizon < N) ? horizon : N;
+  for (int k = 0; k < stages; ++k) {
+    for (int i = 0; i < nx0; ++i) {
+      out_states[k * nx0 + i] = (float)s->solution->x(i, k);
+    }
+  }
+}
+
+void tinympc_cf_get_solution_base_inputs(float* out_inputs, int nu0, int horizon) {
+  TinySolver* s = cf_solver();
+  if (!s || !out_inputs) {
+    return;
+  }
+  const int N = s->work->N;
+  const int stages = (horizon > 1 && horizon < N) ? horizon : N;
+  for (int k = 0; k < stages - 1; ++k) {
+    for (int j = 0; j < nu0; ++j) {
+      out_inputs[k * nu0 + j] = (float)s->solution->u(j, k);
+    }
+  }
+}
+
 void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind) {
   TinySolver* s = cf_solver();
 
@@ -120,6 +158,37 @@ int tinympc_cf_set_psd_disks(const float* disks, int count) {
                    (tinytype)disks[base + 2]});
   }
   return tiny_set_lifted_disks(s, vec);
+}
+
+int tinympc_cf_set_psd_disks_tv(const float* disks, const int* counts,
+                               int stages, int max_per_stage) {
+  TinySolver* s = cf_solver();
+  if (!s || !disks || !counts || stages <= 0 || max_per_stage <= 0) {
+    return -1;
+  }
+  std::vector<std::vector<std::array<tinytype,3>>> per_stage;
+  per_stage.reserve(static_cast<size_t>(stages));
+  for (int k = 0; k < stages; ++k) {
+    int count = counts[k];
+    if (count < 0) count = 0;
+    if (count > max_per_stage) count = max_per_stage;
+    std::vector<std::array<tinytype,3>> stage;
+    stage.reserve(static_cast<size_t>(count));
+    for (int j = 0; j < count; ++j) {
+      const int base = (k * max_per_stage + j) * 3;
+      stage.push_back({(tinytype)disks[base + 0],
+                       (tinytype)disks[base + 1],
+                       (tinytype)disks[base + 2]});
+    }
+    per_stage.push_back(std::move(stage));
+  }
+  return tiny_set_lifted_disks_tv(s, per_stage);
+}
+
+void tinympc_cf_set_psd_enabled(int enabled) {
+  TinySolver* s = cf_solver();
+  if (!s) return;
+  s->settings->en_psd = enabled ? 1 : 0;
 }
 
 void tinympc_cf_clear_psd_disks(void) {

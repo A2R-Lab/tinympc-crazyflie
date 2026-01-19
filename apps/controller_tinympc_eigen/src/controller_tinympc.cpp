@@ -30,9 +30,11 @@
  */
 
 #include <Eigen.h>
+#include <cmath>
 using namespace Eigen;
 
 #include "tinympc_cf_adapter.hpp"
+#include "tinympc/psd_support.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +125,55 @@ static float psd_rho = 5.0f;
 
 static float psd_disks[PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
 
+// Planner/tracker configuration
+static uint32_t psd_replan_stride = 5;
+static uint32_t psd_horizon_guard = 5;
+static float psd_base_on = 2.5f;
+static float psd_base_off = 2.5f;
+static float psd_goal_on_bias = 0.3f;
+static float psd_goal_off_bias = 0.8f;
+static float psd_off_hysteresis = 0.3f;
+
+enum class PlanMode {
+  PSD = 0,
+  NOMINAL = 1,
+};
+
+struct PlanCache {
+  float states[NHORIZON * NX0];
+  float inputs[(NHORIZON - 1) * NU0];
+  uint32_t start_step;
+  int last_iters;
+  PlanMode mode;
+  bool valid;
+};
+
+static PlanCache plan_cache;
+static bool psd_constraints_active = false;
+
+struct PeerHistory {
+  uint8_t id;
+  float x;
+  float y;
+  uint32_t timestamp;
+  float vx;
+  float vy;
+  bool valid;
+};
+
+static PeerHistory peer_history[PEER_LOCALIZATION_MAX_NEIGHBORS];
+static float psd_disks_tv[NHORIZON * PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
+static int psd_disks_tv_counts[NHORIZON];
+
+// Logging vars
+static uint8_t psd_log_plan_mode = 0;
+static uint8_t psd_log_plan_status = 0;
+static int32_t psd_log_plan_age = 0;
+static int32_t psd_log_disk_count = 0;
+static uint8_t psd_log_certified = 0;
+static float psd_log_trace_gap = 0.0f;
+static float psd_log_eta_min = 0.0f;
+
 static void build_lifted_flat(const VectorBase& xb, float* out_lifted) {
   if (!out_lifted) {
     return;
@@ -137,6 +188,119 @@ static void build_lifted_flat(const VectorBase& xb, float* out_lifted) {
   }
 }
 
+static inline int clamp_index(int idx, int lo, int hi) {
+  if (idx < lo) return lo;
+  if (idx > hi) return hi;
+  return idx;
+}
+
+static float signed_distance_point_disks(const VectorBase& x,
+                                         const float* disks,
+                                         int count) {
+  float best = 1e9f;
+  for (int i = 0; i < count; ++i) {
+    const int base = 3 * i;
+    const float dx = x(0) - disks[base + 0];
+    const float dy = x(1) - disks[base + 1];
+    const float r = disks[base + 2];
+    const float sd = std::sqrt(dx * dx + dy * dy) - r;
+    if (sd < best) {
+      best = sd;
+    }
+  }
+  return best;
+}
+
+static void update_peer_history(void) {
+  TickType_t now = xTaskGetTickCount();
+  for (int i = 0; i < PEER_LOCALIZATION_MAX_NEIGHBORS; ++i) {
+    peerLocalizationOtherPosition_t const *other = peerLocalizationGetPositionByIdx(i);
+    if (!other || other->id == 0) {
+      continue;
+    }
+    PeerHistory &ph = peer_history[i];
+    if (ph.valid && ph.id == other->id) {
+      const uint32_t dt_ticks = now - ph.timestamp;
+      const float dt = (dt_ticks > 0) ? (0.001f * (float)dt_ticks) : DT;
+      if (dt > 1e-6f) {
+        ph.vx = (other->pos.x - ph.x) / dt;
+        ph.vy = (other->pos.y - ph.y) / dt;
+      }
+    } else {
+      ph.vx = 0.0f;
+      ph.vy = 0.0f;
+    }
+    ph.id = other->id;
+    ph.x = other->pos.x;
+    ph.y = other->pos.y;
+    ph.timestamp = now;
+    ph.valid = true;
+  }
+}
+
+static int predict_disks_per_stage(float* out_disks,
+                                   int* out_counts,
+                                   int max_per_stage) {
+  if (!out_disks || !out_counts || max_per_stage <= 0) {
+    return 0;
+  }
+  const float radius = psd_peer_radius + psd_peer_margin;
+  for (int k = 0; k < NHORIZON; ++k) {
+    int count = 0;
+    float t = DT * (float)k;
+    for (int i = 0; i < PEER_LOCALIZATION_MAX_NEIGHBORS && count < max_per_stage; ++i) {
+      const PeerHistory &ph = peer_history[i];
+      if (!ph.valid || ph.id == 0) {
+        continue;
+      }
+      if (psd_peer_max_age_ms >= 0) {
+        TickType_t age = xTaskGetTickCount() - ph.timestamp;
+        if (age > (TickType_t)psd_peer_max_age_ms) {
+          continue;
+        }
+      }
+      const int base = (k * max_per_stage + count) * 3;
+      out_disks[base + 0] = ph.x + ph.vx * t;
+      out_disks[base + 1] = ph.y + ph.vy * t;
+      out_disks[base + 2] = radius;
+      count++;
+    }
+    out_counts[k] = count;
+  }
+  return max_per_stage;
+}
+
+static void set_tracking_refs(const PlanCache& plan, uint32_t current_step) {
+  if (!plan.valid) {
+    return;
+  }
+  const int max_idx = NHORIZON - 1;
+  const int max_u_idx = NHORIZON - 2;
+  const int offset = (int)current_step - (int)plan.start_step;
+
+  for (int i = 0; i < NHORIZON; ++i) {
+    int idx = clamp_index(offset + i, 0, max_idx);
+    VectorBase xb;
+    for (int j = 0; j < NX0; ++j) {
+      xb(j) = plan.states[idx * NX0 + j];
+    }
+    float lifted_ref[NSTATES];
+    build_lifted_flat(xb, lifted_ref);
+    for (int j = 0; j < NSTATES; ++j) {
+      Xref_flat[i * NSTATES + j] = lifted_ref[j];
+    }
+  }
+
+  for (int i = 0; i < NHORIZON - 1; ++i) {
+    int idx = clamp_index(offset + i, 0, max_u_idx);
+    for (int j = 0; j < NINPUTS; ++j) {
+      Uref_flat[i * NINPUTS + j] = 0.0f;
+    }
+    for (int j = 0; j < NU0; ++j) {
+      Uref_flat[i * NINPUTS + j] = plan.inputs[idx * NU0 + j];
+    }
+  }
+}
 static int gather_psd_disks(float* out_disks, int max_disks) {
   if (!out_disks || max_disks <= 0) {
     return 0;
@@ -171,6 +335,18 @@ static int gather_psd_disks(float* out_disks, int max_disks) {
     count++;
   }
   return count;
+}
+
+static void disks_to_vector(const float* disks, int count,
+                            std::vector<std::array<tinytype,3>>& out) {
+  out.clear();
+  out.reserve(static_cast<size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    const int base = 3 * i;
+    out.push_back({(tinytype)disks[base + 0],
+                   (tinytype)disks[base + 1],
+                   (tinytype)disks[base + 2]});
+  }
 }
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -218,6 +394,14 @@ void controllerOutOfTreeInit(void) {
   memset(u0_flat, 0, sizeof(u0_flat));
   x1_lifted.setZero();
   u0_base.setZero();
+  plan_cache.valid = false;
+  plan_cache.start_step = 0;
+  plan_cache.last_iters = 0;
+  plan_cache.mode = PlanMode::NOMINAL;
+  psd_constraints_active = false;
+  memset(peer_history, 0, sizeof(peer_history));
+  memset(psd_disks_tv, 0, sizeof(psd_disks_tv));
+  memset(psd_disks_tv_counts, 0, sizeof(psd_disks_tv_counts));
 
   // PSD enable (requires a lifted PSD solver codegen)
   if (en_psd_avoidance) {
@@ -251,35 +435,113 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
   /* Controller rate */
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
-    // Get command reference
+    update_peer_history();
+
+    // Command reference for planner seed
     updateHorizonReference(setpoint);
 
+    int disk_count = 0;
     if (en_psd_avoidance) {
-      int disk_count = gather_psd_disks(psd_disks, psd_max_peers);
-      tinympc_cf_set_psd_disks(psd_disks, disk_count);
+      disk_count = gather_psd_disks(psd_disks, psd_max_peers);
+      psd_log_disk_count = disk_count;
     }
 
-    /* MPC solve */
+    const bool need_replan =
+      (!plan_cache.valid) ||
+      (step - plan_cache.start_step >= psd_replan_stride) ||
+      (step >= plan_cache.start_step + NHORIZON - psd_horizon_guard);
+
+    if (need_replan) {
+      float sd_seed = (disk_count > 0) ? signed_distance_point_disks(x0, psd_disks, disk_count) : 1e9f;
+      float goal_dist = std::sqrt(xg(0) * xg(0) + xg(1) * xg(1));
+      float on_thresh = std::min(psd_base_on, goal_dist + psd_goal_on_bias);
+      float off_thresh = std::max(on_thresh + psd_off_hysteresis,
+                                  std::min(psd_base_off, goal_dist + psd_goal_off_bias));
+
+      if (!psd_constraints_active && sd_seed < on_thresh) {
+        psd_constraints_active = true;
+      } else if (psd_constraints_active && sd_seed > off_thresh) {
+        psd_constraints_active = false;
+      }
+
+      tinympc_cf_set_psd_enabled(psd_constraints_active ? 1 : 0);
+      if (psd_constraints_active && disk_count > 0) {
+        predict_disks_per_stage(psd_disks_tv, psd_disks_tv_counts, psd_max_peers);
+        tinympc_cf_set_psd_disks_tv(psd_disks_tv, psd_disks_tv_counts, NHORIZON, psd_max_peers);
+      } else {
+        tinympc_cf_clear_psd_disks();
+      }
+
+      build_lifted_flat(x0, x0_flat);
+      tinympc_cf_set_x0(x0_flat, NSTATES);
+      tinympc_cf_set_reference(Xref_flat, NSTATES, NHORIZON, Uref_flat, NINPUTS);
+      result = (int8_t)tinympc_cf_solve();
+
+      float x0_pred[NSTATES];
+      tinympc_cf_get_x_pred_0(x0_pred, NSTATES);
+      tinyVector x0_lifted(NSTATES);
+      for (int i = 0; i < NSTATES; ++i) {
+        x0_lifted(i) = (tinytype)x0_pred[i];
+      }
+      std::vector<std::array<tinytype,3>> disk_vec;
+      disks_to_vector(psd_disks, disk_count, disk_vec);
+      PsdCertificate cert = tiny_psd_certificate_2d(x0_lifted, disk_vec, NX0);
+
+      psd_log_trace_gap = (float)cert.trace_gap;
+      psd_log_eta_min = (float)cert.eta_min;
+      psd_log_certified = cert.certified ? 1 : 0;
+
+      if (cert.certified || !psd_constraints_active) {
+        tinympc_cf_get_solution_base_states(plan_cache.states, NX0, NHORIZON);
+        tinympc_cf_get_solution_base_inputs(plan_cache.inputs, NU0, NHORIZON);
+        plan_cache.start_step = step;
+        plan_cache.mode = psd_constraints_active ? PlanMode::PSD : PlanMode::NOMINAL;
+        plan_cache.valid = true;
+        psd_log_plan_status = 1;
+      } else {
+        psd_log_plan_status = 0;
+      }
+      psd_log_plan_mode = (plan_cache.mode == PlanMode::PSD) ? 1 : 0;
+    }
+
+    // Tracker solve using plan references
+    if (plan_cache.valid) {
+      set_tracking_refs(plan_cache, step);
+      psd_log_plan_age = (int32_t)(step - plan_cache.start_step);
+    }
+
+    tinympc_cf_set_psd_enabled(0);
     build_lifted_flat(x0, x0_flat);
     tinympc_cf_set_x0(x0_flat, NSTATES);
     tinympc_cf_set_reference(Xref_flat, NSTATES, NHORIZON, Uref_flat, NINPUTS);
     result = (int8_t)tinympc_cf_solve();
-    tinympc_cf_get_x_pred_1(x1_flat, NSTATES);
-    tinympc_cf_get_u0(u0_flat, NINPUTS, TinympcControlOutputKind::ZNEW);
 
+    tinympc_cf_get_x_pred_1(x1_flat, NSTATES);
     for (int i = 0; i < NSTATES; ++i) {
       x1_lifted(i) = x1_flat[i];
     }
-    for (int j = 0; j < NU0; ++j) {
-      u0_base(j) = u0_flat[j];
+
+    float x0_track[NSTATES];
+    tinympc_cf_get_x_pred_0(x0_track, NSTATES);
+    tinyVector x0_track_lifted(NSTATES);
+    for (int i = 0; i < NSTATES; ++i) {
+      x0_track_lifted(i) = (tinytype)x0_track[i];
     }
- 
-    // DEBUG_PRINT("Uhrz[0] = [%.2f, %.2f]\n", (double)(Uhrz[0](0)), (double)(Uhrz[0](1)));
-    // DEBUG_PRINT("ZU[0] = [%.2f, %.2f]\n", (double)(ZU_new[0](0)), (double)(ZU_new[0](1)));
-    // DEBUG_PRINT("YU[0] = [%.2f, %.2f, %.2f, %.2f]\n", (double)(YU[0].data[0]), (double)(YU[0].data[1]), (double)(YU[0].data[2]), (double)(YU[0].data[3]));
-    // DEBUG_PRINT("info.pri_res: %f\n", (double)(info.pri_res));
-    // DEBUG_PRINT("info.dua_res: %f\n", (double)(info.dua_res));
-    // DEBUG_PRINT("%.2f, %.2f, %.2f, %.2f \n", (double)(Xref_flat[5]), (double)(u0(2)), (double)(u0(3)), (double)(u0(0)));
+    std::vector<std::array<tinytype,3>> disk_vec_track;
+    disks_to_vector(psd_disks, disk_count, disk_vec_track);
+    PsdCertificate cert_track = tiny_psd_certificate_2d(x0_track_lifted, disk_vec_track, NX0);
+    psd_log_certified = cert_track.certified ? 1 : 0;
+    psd_log_trace_gap = (float)cert_track.trace_gap;
+    psd_log_eta_min = (float)cert_track.eta_min;
+
+    if (!cert_track.certified) {
+      x1_lifted(0) = x0(0);
+      x1_lifted(1) = x0(1);
+      x1_lifted(2) = 0.0f;
+      x1_lifted(3) = 0.0f;
+    }
+
+    step++;
   }
 
   // Use PID controller to track MPC-provided planar setpoint
@@ -335,7 +597,45 @@ PARAM_GROUP_START(psdAvoid)
    * @brief PSD penalty rho
    */
   PARAM_ADD(PARAM_FLOAT, rho, &psd_rho)
+  /**
+   * @brief Replan stride (steps)
+   */
+  PARAM_ADD(PARAM_UINT32, replanStride, &psd_replan_stride)
+  /**
+   * @brief Horizon guard (steps)
+   */
+  PARAM_ADD(PARAM_UINT32, horizonGuard, &psd_horizon_guard)
+  /**
+   * @brief Base threshold to turn PSD on
+   */
+  PARAM_ADD(PARAM_FLOAT, baseOn, &psd_base_on)
+  /**
+   * @brief Base threshold to turn PSD off
+   */
+  PARAM_ADD(PARAM_FLOAT, baseOff, &psd_base_off)
+  /**
+   * @brief Goal proximity bias for on threshold
+   */
+  PARAM_ADD(PARAM_FLOAT, goalOnBias, &psd_goal_on_bias)
+  /**
+   * @brief Goal proximity bias for off threshold
+   */
+  PARAM_ADD(PARAM_FLOAT, goalOffBias, &psd_goal_off_bias)
+  /**
+   * @brief Hysteresis offset for off threshold
+   */
+  PARAM_ADD(PARAM_FLOAT, offHyst, &psd_off_hysteresis)
 PARAM_GROUP_STOP(psdAvoid)
+
+LOG_GROUP_START(psdMPC)
+  LOG_ADD(LOG_UINT8, planMode, &psd_log_plan_mode)
+  LOG_ADD(LOG_UINT8, planStatus, &psd_log_plan_status)
+  LOG_ADD(LOG_INT32, planAge, &psd_log_plan_age)
+  LOG_ADD(LOG_INT32, diskCount, &psd_log_disk_count)
+  LOG_ADD(LOG_UINT8, certified, &psd_log_certified)
+  LOG_ADD(LOG_FLOAT, traceGap, &psd_log_trace_gap)
+  LOG_ADD(LOG_FLOAT, etaMin, &psd_log_eta_min)
+LOG_GROUP_STOP(psdMPC)
 
 /**
  * Logging variables for the command and reference signals for the

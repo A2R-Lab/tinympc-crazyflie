@@ -63,6 +63,15 @@ void tinympc_cf_get_x_pred_1(float* out_x1, int nstates);
 // out_u0 length NINPUTS.
 void tinympc_cf_get_u0(float* out_u0, int ninputs, TinympcControlOutputKind kind);
 
+// Get predicted state at step k=0 (solution x column 0).
+void tinympc_cf_get_x_pred_0(float* out_x0, int nstates);
+
+// Copy base-state trajectory (top nx0 rows) from solution x into out (size nx0 * N).
+void tinympc_cf_get_solution_base_states(float* out_states, int nx0, int horizon);
+
+// Copy base-input trajectory (top nu0 rows) from solution u into out (size nu0 * (N-1)).
+void tinympc_cf_get_solution_base_inputs(float* out_inputs, int nu0, int horizon);
+
 // ========== PSD (Obstacle Avoidance) API ==========
 
 // Enable PSD constraints for obstacle avoidance.
@@ -75,6 +84,15 @@ int tinympc_cf_enable_psd(int nx0, int nu0, float rho_psd);
 // Set disk obstacles in lifted space. Each disk is (cx, cy, r).
 // disks points to 3*count floats.
 int tinympc_cf_set_psd_disks(const float* disks, int count);
+
+// Set per-stage disk obstacles in lifted space.
+// disks is a flat array of length stages * max_per_stage * 3.
+// counts is an array of length stages with number of disks for each stage.
+int tinympc_cf_set_psd_disks_tv(const float* disks, const int* counts,
+                               int stages, int max_per_stage);
+
+// Enable/disable PSD block (for planner/tracker toggling).
+void tinympc_cf_set_psd_enabled(int enabled);
 
 // Clear PSD disk constraints (disables lifted disk linear constraints).
 void tinympc_cf_clear_psd_disks(void);
