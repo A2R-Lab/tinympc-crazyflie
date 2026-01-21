@@ -35,9 +35,12 @@ EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
 EXTRA_CFLAGS += -I$(PWD)/tinympc_generated_code_crazyflie_psd
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
+EXTRA_CFLAGS += -DTINYMPC_NO_IOSTREAM
+EXTRA_CFLAGS += -DTINYMPC_EMBEDDED
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
 EXTRA_CFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
+EXTRA_CXXFLAGS += -fno-exceptions -fno-rtti
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
@@ -45,6 +48,9 @@ EXTRA_CFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OOT_CONFIG := $(PWD)/app-config
 
 OOT_USES_CXX := 1
+
+# Include firmware build system FIRST so 'all' is default target
+include $(CRAZYFLIE_BASE)/tools/make/oot.mk
 
 .PHONY: controller codegen fix_config
 
@@ -65,5 +71,3 @@ codegen:
 		src/codegen_crazyflie.cpp \
 		$(TINYMPC_CPP) \
 		-o src/codegen_crazyflie
-
-include $(CRAZYFLIE_BASE)/tools/make/oot.mk

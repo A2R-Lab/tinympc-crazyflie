@@ -27,6 +27,13 @@ int32_t psd_log_disk_count = 0;
 uint8_t psd_log_certified = 0;
 float psd_log_trace_gap = 0.0f;
 float psd_log_eta_min = 0.0f;
+float psd_log_cmd_x = 0.0f;
+float psd_log_cmd_y = 0.0f;
+float psd_log_cmd_vx = 0.0f;
+float psd_log_cmd_vy = 0.0f;
+float psd_log_goal_x = 0.0f;
+float psd_log_goal_y = 0.0f;
+int32_t psd_log_result = 0;
 
 PARAM_GROUP_START(psdAvoid)
   /**
@@ -96,3 +103,13 @@ LOG_GROUP_START(psdMPC)
   LOG_ADD(LOG_FLOAT, traceGap, &psd_log_trace_gap)
   LOG_ADD(LOG_FLOAT, etaMin, &psd_log_eta_min)
 LOG_GROUP_STOP(psdMPC)
+
+LOG_GROUP_START(psdDbg)
+  LOG_ADD(LOG_FLOAT, cmdX, &psd_log_cmd_x)
+  LOG_ADD(LOG_FLOAT, cmdY, &psd_log_cmd_y)
+  LOG_ADD(LOG_FLOAT, cmdVx, &psd_log_cmd_vx)
+  LOG_ADD(LOG_FLOAT, cmdVy, &psd_log_cmd_vy)
+  LOG_ADD(LOG_FLOAT, goalX, &psd_log_goal_x)
+  LOG_ADD(LOG_FLOAT, goalY, &psd_log_goal_y)
+  LOG_ADD(LOG_INT32, result, &psd_log_result)
+LOG_GROUP_STOP(psdDbg)
