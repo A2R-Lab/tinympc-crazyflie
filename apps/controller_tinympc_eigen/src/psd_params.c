@@ -4,11 +4,11 @@
 #include "param.h"
 #include "log.h"
 
-uint8_t en_psd_avoidance = 0;
-uint8_t psd_max_peers = 3;
+uint8_t en_psd_avoidance = 1;
+uint8_t psd_max_peers = 10;
 float psd_peer_radius = 0.3f;
 float psd_peer_margin = 0.15f;
-int32_t psd_peer_max_age_ms = 500;
+int32_t psd_peer_max_age_ms = 5000;
 float psd_rho = 5.0f;
 
 uint32_t psd_replan_stride = 5;

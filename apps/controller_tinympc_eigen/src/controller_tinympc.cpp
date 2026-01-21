@@ -62,6 +62,8 @@ extern "C" {
 #include "cpp_compat.h"   // needed to compile Cpp to C
 #include "psd_params.h"
 
+//#include "params_100hz.h"
+
 // #include "tinympc/tinympc.h"
 
 // Edit the debug name to get nice debug prints
@@ -114,7 +116,15 @@ static uint64_t startTimestamp;
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = false;
+static bool en_traj = true;
+
+// Tiny figure-8 reference (meters, Hz)
+static const float kFig8AmpX = 0.25f;
+static const float kFig8AmpY = 0.15f;
+static const float kFig8FreqHz = 0.15f;
+static uint32_t fig8_log_tick = 0;
+static float fig8_ref_x = 0.0f;
+static float fig8_ref_y = 0.0f;
 
 static float psd_disks[PEER_LOCALIZATION_MAX_NEIGHBORS * 3];
 
@@ -334,6 +344,44 @@ void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(3) = state->velocity.y;
 }
 
+static void updateHorizonReferenceFig8(uint32_t current_step) {
+  const float kPi = 3.14159265f;
+  const float w = 2.0f * kPi * kFig8FreqHz;
+
+  for (int i = 0; i < NHORIZON; ++i) {
+    const float t = (float)(current_step + (uint32_t)i) * DT;
+    const float xr = kFig8AmpX * sinf(w * t);
+    const float yr = kFig8AmpY * sinf(2.0f * w * t);
+
+    VectorBase xb;
+    xb(0) = xr;
+    xb(1) = yr;
+    xb(2) = 0.0f;
+    xb(3) = 0.0f;
+
+    float lifted_ref[NSTATES];
+    build_lifted_flat(xb, lifted_ref);
+    for (int j = 0; j < NSTATES; ++j) {
+      Xref_flat[i * NSTATES + j] = lifted_ref[j];
+    }
+  }
+
+  for (int i = 0; i < NHORIZON - 1; ++i) {
+    for (int j = 0; j < NINPUTS; ++j) {
+      Uref_flat[i * NINPUTS + j] = 0.0f;
+    }
+  }
+
+  // Use current reference point for PSD on/off thresholds
+  const float t0 = (float)current_step * DT;
+  fig8_ref_x = kFig8AmpX * sinf(w * t0);
+  fig8_ref_y = kFig8AmpY * sinf(2.0f * w * t0);
+  xg(0) = fig8_ref_x;
+  xg(1) = fig8_ref_y;
+  xg(2) = 0.0f;
+  xg(3) = 0.0f;
+}
+
 void updateHorizonReference(const setpoint_t *setpoint) {
   // Reference from commander: planar (x, y, vx, vy)
   xg(0) = setpoint->position.x;
@@ -391,7 +439,9 @@ void controllerOutOfTreeInit(void) {
   }
 
   /* End of MPC initialization */
-  en_traj = false;
+  en_traj = true;
+  DEBUG_PRINT("Fig8 enabled: ampX=%.2f ampY=%.2f freq=%.2fHz\n",
+              (double)kFig8AmpX, (double)kFig8AmpY, (double)kFig8FreqHz);
   step = 0;  
   controllerPidInit();
 }
@@ -415,12 +465,29 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     update_peer_history();
 
     // Command reference for planner seed
-    updateHorizonReference(setpoint);
+    if (en_traj) {
+      updateHorizonReferenceFig8(step);
+    } else {
+      updateHorizonReference(setpoint);
+    }
 
     int disk_count = 0;
     if (en_psd_avoidance) {
       disk_count = gather_psd_disks(psd_disks, psd_max_peers);
       psd_log_disk_count = disk_count;
+    }
+    static uint32_t last_disk_log = 0;
+    if ((tick - last_disk_log) > 500) {
+      if (disk_count > 0) {
+        DEBUG_PRINT("psd disks=%d first=(%.2f,%.2f,r=%.2f)\n",
+                    disk_count,
+                    (double)psd_disks[0],
+                    (double)psd_disks[1],
+                    (double)psd_disks[2]);
+      } else {
+        DEBUG_PRINT("psd disks=0\n");
+      }
+      last_disk_log = tick;
     }
 
     const bool need_replan =
@@ -505,17 +572,36 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       x0_track_lifted(i) = (tinytype)x0_track[i];
     }
     std::vector<std::array<tinytype,3>> disk_vec_track;
-    disks_to_vector(psd_disks, disk_count, disk_vec_track);
-    PsdCertificate cert_track = tiny_psd_certificate_2d(x0_track_lifted, disk_vec_track, NX0);
-    psd_log_certified = cert_track.certified ? 1 : 0;
-    psd_log_trace_gap = (float)cert_track.trace_gap;
-    psd_log_eta_min = (float)cert_track.eta_min;
+    bool cert_ok = true;
+    if (disk_count > 0) {
+      disks_to_vector(psd_disks, disk_count, disk_vec_track);
+      PsdCertificate cert_track = tiny_psd_certificate_2d(x0_track_lifted, disk_vec_track, NX0);
+      cert_ok = cert_track.certified;
+      psd_log_certified = cert_track.certified ? 1 : 0;
+      psd_log_trace_gap = (float)cert_track.trace_gap;
+      psd_log_eta_min = (float)cert_track.eta_min;
+    } else {
+      psd_log_certified = 1;
+      psd_log_trace_gap = 0.0f;
+      psd_log_eta_min = 0.0f;
+    }
 
-    if (!cert_track.certified) {
+    if (!cert_ok) {
       x1_lifted(0) = x0(0);
       x1_lifted(1) = x0(1);
       x1_lifted(2) = 0.0f;
       x1_lifted(3) = 0.0f;
+    }
+
+    if (en_traj) {
+      const float ref_mag = fabsf(fig8_ref_x) + fabsf(fig8_ref_y);
+      const float cmd_mag = fabsf(x1_lifted(0)) + fabsf(x1_lifted(1));
+      if (ref_mag > 0.05f && cmd_mag < 0.01f) {
+        x1_lifted(0) = fig8_ref_x;
+        x1_lifted(1) = fig8_ref_y;
+        x1_lifted(2) = 0.0f;
+        x1_lifted(3) = 0.0f;
+      }
     }
 
     step++;
@@ -531,6 +617,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   sp.velocity.y = x1_lifted(3);
   sp.velocity_body = false;
   controllerPid(control, &sp, sensors, state, tick);
+
+  if ((tick - fig8_log_tick) > 500) {
+    DEBUG_PRINT("Fig8 ref=(%.2f,%.2f) cmd=(%.2f,%.2f) res=%d\n",
+                (double)xg(0), (double)xg(1),
+                (double)x1_lifted(0), (double)x1_lifted(1),
+                (int)result);
+    fig8_log_tick = tick;
+  }
 
   // control->normalizedForces[0] = 0.0f;
   // control->normalizedForces[1] = 0.0f;
