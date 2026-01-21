@@ -31,12 +31,13 @@ EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/include/Eigen
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src
 EXTRA_CFLAGS += -I$(TINYMPC_BASE)/src/tinympc
-EXTRA_CFLAGS += -I$(PWD)/tinympc_generated_code_crazyflie_example
+# Use PSD lifted solver
+EXTRA_CFLAGS += -I$(PWD)/tinympc_generated_code_crazyflie_psd
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
-EXTRA_CXXFLAGS += -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables
+EXTRA_CFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
@@ -45,7 +46,17 @@ OOT_CONFIG := $(PWD)/app-config
 
 OOT_USES_CXX := 1
 
-.PHONY: controller codegen
+.PHONY: controller codegen fix_config
+
+# Fix config for macOS (merge script fails with BSD sed/cp)
+fix_config:
+	@if [ -f $(PWD)/build/.config ]; then \
+		sed -i '' 's/# CONFIG_APP_ENABLE is not set/CONFIG_APP_ENABLE=y/' $(PWD)/build/.config 2>/dev/null || true; \
+		sed -i '' 's/# CONFIG_CONTROLLER_OOT is not set/CONFIG_CONTROLLER_OOT=y/' $(PWD)/build/.config 2>/dev/null || true; \
+		grep -q "CONFIG_APP_STACKSIZE" $(PWD)/build/.config || echo "CONFIG_APP_STACKSIZE=350" >> $(PWD)/build/.config; \
+		grep -q "CONFIG_APP_PRIORITY" $(PWD)/build/.config || echo "CONFIG_APP_PRIORITY=1" >> $(PWD)/build/.config; \
+		echo "Config patched: APP_ENABLE=y, CONTROLLER_OOT=y, STACKSIZE=350"; \
+	fi
 
 controller: all
 

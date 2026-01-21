@@ -4,7 +4,8 @@
 #include "param.h"
 #include "log.h"
 
-uint8_t en_psd_avoidance = 1;
+uint8_t en_psd_avoidance = 1;  // Enabled by default for PSD demo
+uint8_t psd_obs_moving = 1;    // 1=moving obstacle for demo
 uint8_t psd_max_peers = 10;
 float psd_peer_radius = 0.3f;
 float psd_peer_margin = 0.15f;
@@ -32,6 +33,10 @@ PARAM_GROUP_START(psdAvoid)
    * @brief Enable PSD obstacle avoidance
    */
   PARAM_ADD(PARAM_UINT8, enable, &en_psd_avoidance)
+  /**
+   * @brief Virtual obstacle moving (1) or static (0)
+   */
+  PARAM_ADD(PARAM_UINT8, obsMoving, &psd_obs_moving)
   /**
    * @brief Max peers to consider (<= PEER_LOCALIZATION_MAX_NEIGHBORS)
    */

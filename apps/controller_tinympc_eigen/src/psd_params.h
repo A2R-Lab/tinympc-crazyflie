@@ -7,6 +7,7 @@ extern "C" {
 #endif
 
 extern uint8_t en_psd_avoidance;
+extern uint8_t psd_obs_moving;  // 0=static obstacle, 1=moving obstacle
 extern uint8_t psd_max_peers;
 extern float psd_peer_radius;
 extern float psd_peer_margin;
