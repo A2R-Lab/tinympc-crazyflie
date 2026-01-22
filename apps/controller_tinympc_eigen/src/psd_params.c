@@ -35,6 +35,12 @@ float psd_log_goal_x = 0.0f;
 float psd_log_goal_y = 0.0f;
 int32_t psd_log_result = 0;
 
+// Static obstacle parameters
+float psd_obs_x = 0.5f;       // Obstacle center X
+float psd_obs_y = 0.0f;       // Obstacle center Y  
+float psd_obs_r = 0.3f;       // Obstacle radius
+uint8_t psd_obs_enabled = 1;  // Obstacle enabled
+
 PARAM_GROUP_START(psdAvoid)
   /**
    * @brief Enable PSD obstacle avoidance
@@ -92,6 +98,22 @@ PARAM_GROUP_START(psdAvoid)
    * @brief Hysteresis offset for off threshold
    */
   PARAM_ADD(PARAM_FLOAT, offHyst, &psd_off_hysteresis)
+  /**
+   * @brief Static obstacle center X [m]
+   */
+  PARAM_ADD(PARAM_FLOAT, obsX, &psd_obs_x)
+  /**
+   * @brief Static obstacle center Y [m]
+   */
+  PARAM_ADD(PARAM_FLOAT, obsY, &psd_obs_y)
+  /**
+   * @brief Static obstacle radius [m]
+   */
+  PARAM_ADD(PARAM_FLOAT, obsR, &psd_obs_r)
+  /**
+   * @brief Enable static obstacle (1=on, 0=off)
+   */
+  PARAM_ADD(PARAM_UINT8, obsEn, &psd_obs_enabled)
 PARAM_GROUP_STOP(psdAvoid)
 
 LOG_GROUP_START(psdMPC)

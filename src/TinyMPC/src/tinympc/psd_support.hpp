@@ -1,7 +1,18 @@
 #pragma once
 
 #include <Eigen/Dense>
+#ifndef TINYMPC_NO_IOSTREAM
 #include <iostream>
+#define PSD_COUT PSD_COUT
+#else
+// Null stream for embedded
+struct PsdNullStream {
+    template <typename T>
+    PsdNullStream& operator<<(const T&) { return *this; }
+};
+static inline PsdNullStream& psd_null_stream() { static PsdNullStream s; return s; }
+#define PSD_COUT psd_null_stream()
+#endif
 #include <vector>
 #include <array>
 #include <cmath>
@@ -80,14 +91,14 @@ inline void tiny_build_lifted_from_base(
     B_out.block(nx0,     nu0 + nxu,     nxx, nux) = kronecker(Ad, Bd);
     B_out.block(nx0,     nu0 + nxu+nux, nxx, nuu) = kronecker(Bd, Bd);
 
-    std::cout << "[PSD] Built lifted A(" << A_out.rows() << "x" << A_out.cols()
+    PSD_COUT << "[PSD] Built lifted A(" << A_out.rows() << "x" << A_out.cols()
               << ") B(" << B_out.rows() << "x" << B_out.cols() << ")\n";
 }
 
 // Enable PSD block (stores nx0, nu0 and allocates S/H buffers)
 inline int tiny_enable_psd(TinySolver* solver, int nx0, int nu0, tinytype rho_psd)
 {
-    if (!solver) { std::cout << "tiny_enable_psd: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_psd: solver nullptr\n"; return 1; }
     solver->settings->en_psd   = 1;
     solver->settings->nx0_psd  = nx0;
     solver->settings->nu0_psd  = nu0;
@@ -101,7 +112,7 @@ inline int tiny_enable_psd(TinySolver* solver, int nx0, int nu0, tinytype rho_ps
     solver->work->Spsd_new = tinyMatrix::Zero(m, N);
     solver->work->Hpsd     = tinyMatrix::Zero(m, N);
 
-    // std::cout << "[PSD] Enabled: nx0=" << nx0 << " nu0=" << nu0
+    // PSD_COUT << "[PSD] Enabled: nx0=" << nx0 << " nu0=" << nu0
     //           << " psd_dim=" << psd_dim << " (half m=" << m << ")"
     //           << " rho_psd=" << rho_psd << "\n";
     return 0;
@@ -109,7 +120,7 @@ inline int tiny_enable_psd(TinySolver* solver, int nx0, int nu0, tinytype rho_ps
 
 // ---------------- Time-varying linear constraint helpers --------------------
 inline int tiny_enable_tv_state_linear(TinySolver* solver, int n_constr) {
-    if (!solver) { std::cout << "tiny_enable_tv_state_linear: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_tv_state_linear: solver nullptr\n"; return 1; }
     solver->settings->en_tv_state_linear = 1;
     solver->work->numtvStateLinear = n_constr;
     solver->work->tv_Alin_x = tinyMatrix::Zero(n_constr * solver->work->N, solver->work->nx);
@@ -138,7 +149,7 @@ inline void tiny_update_base_tangent_avoidance_tv(
         
         // Safety check for NaN/Inf values in trajectory
         if (!std::isfinite(x) || !std::isfinite(y)) {
-            std::cout << "[TV-UPDATE] WARNING: k=" << k << " non-finite x=" << x << " y=" << y 
+            PSD_COUT << "[TV-UPDATE] WARNING: k=" << k << " non-finite x=" << x << " y=" << y 
                       << " - using previous constraint\n";
             continue; // Keep previous constraint
         }
@@ -160,7 +171,7 @@ inline void tiny_update_base_tangent_avoidance_tv(
             ny = dy / d; 
         } else {
             // Use direction from previous stage or default
-            std::cout << "[TV-UPDATE] WARNING: k=" << k << " very close to center d=" << d 
+            PSD_COUT << "[TV-UPDATE] WARNING: k=" << k << " very close to center d=" << d 
                       << " - using default normal\n";
         }
 
@@ -172,7 +183,7 @@ inline void tiny_update_base_tangent_avoidance_tv(
 
         // Safety check on constraint coefficients
         if (!std::isfinite(b) || a.squaredNorm() < safety_eps) {
-            std::cout << "[TV-UPDATE] WARNING: k=" << k << " invalid constraint ||a||=" 
+            PSD_COUT << "[TV-UPDATE] WARNING: k=" << k << " invalid constraint ||a||=" 
                       << a.norm() << " b=" << b << " - skipping\n";
             continue;
         }
@@ -189,7 +200,7 @@ inline void tiny_update_base_tangent_avoidance_tv(
     // Print distance summary every update (sampled to reduce spam)
     tinytype signed_dist = min_dist - r;
     if (solver->work->iter % 10 == 0) {
-        std::cout << "[TV-UPDATE] iter=" << solver->work->iter 
+        PSD_COUT << "[TV-UPDATE] iter=" << solver->work->iter 
                   << " min_signed_dist=" << signed_dist << " at k=" << min_dist_k << "\n";
     }
 }
@@ -355,7 +366,7 @@ inline void tiny_update_base_tangent_avoidance_tv_multi_global(TinySolver* solve
 inline int tiny_enable_base_tangent_avoidance(
     TinySolver* solver, tinytype ox, tinytype oy, tinytype r, tinytype margin)
 {
-    if (!solver) { std::cout << "tiny_enable_base_tangent_avoidance: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_base_tangent_avoidance: solver nullptr\n"; return 1; }
     // Ensure time-varying state linear constraints are allocated (1 per stage)
     tiny_enable_tv_state_linear(solver, 1);
     solver->settings->en_tv_state_linear = 1;
@@ -375,7 +386,7 @@ inline int tiny_enable_base_tangent_avoidance_2d_multi(
     const std::vector<std::array<tinytype,3>>& disks,
     tinytype margin)
 {
-    if (!solver) { std::cout << "tiny_enable_base_tangent_avoidance_2d_multi: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_base_tangent_avoidance_2d_multi: solver nullptr\n"; return 1; }
     const int m = static_cast<int>(disks.size());
     if (m <= 0) return 0;
 
@@ -404,7 +415,7 @@ inline int tiny_enable_base_tangent_avoidance_2d_multi_per_stage(
     const std::vector<std::vector<std::array<tinytype,3>>>& disks_per_stage,
     tinytype margin)
 {
-    if (!solver) { std::cout << "tiny_enable_base_tangent_avoidance_2d_multi_per_stage: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_base_tangent_avoidance_2d_multi_per_stage: solver nullptr\n"; return 1; }
     if (disks_per_stage.empty()) return 0;
 
     // Determine max number of disks across all stages
@@ -436,7 +447,7 @@ inline int tiny_enable_base_tangent_avoidance_2d_multi_per_stage(
 
 // Enable non-time-varying linear state constraints with n_constr rows
 inline int tiny_enable_state_linear(TinySolver* solver, int n_constr) {
-    if (!solver) { std::cout << "tiny_enable_state_linear: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_enable_state_linear: solver nullptr\n"; return 1; }
     solver->settings->en_state_linear = 1;
     solver->work->numStateLinear = n_constr;
     solver->work->Alin_x = tinyMatrix::Zero(n_constr, solver->work->nx);
@@ -457,10 +468,10 @@ inline int tiny_set_lifted_disks(
     TinySolver* solver,
     const std::vector<std::array<tinytype,3>>& disks)
 {
-    if (!solver) { std::cout << "tiny_set_lifted_disks: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_set_lifted_disks: solver nullptr\n"; return 1; }
     const int nx0 = solver->settings->nx0_psd;
     const int nxL = solver->work->nx;
-    if (nx0 <= 0) { std::cout << "tiny_set_lifted_disks: nx0_psd not set (>0)\n"; return 1; }
+    if (nx0 <= 0) { PSD_COUT << "tiny_set_lifted_disks: nx0_psd not set (>0)\n"; return 1; }
     const int m = static_cast<int>(disks.size());
     if (m == 0) return 0;
 
@@ -514,11 +525,11 @@ inline int tiny_set_lifted_disks_tv(
     TinySolver* solver,
     const std::vector<std::vector<std::array<tinytype,3>>>& disks_per_stage)
 {
-    if (!solver) { std::cout << "tiny_set_lifted_disks_tv: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_set_lifted_disks_tv: solver nullptr\n"; return 1; }
     const int nx0 = solver->settings->nx0_psd;
     const int nxL = solver->work->nx;
     const int N   = solver->work->N;
-    if (nx0 <= 0) { std::cout << "tiny_set_lifted_disks_tv: nx0_psd not set (>0)\n"; return 1; }
+    if (nx0 <= 0) { PSD_COUT << "tiny_set_lifted_disks_tv: nx0_psd not set (>0)\n"; return 1; }
     if (disks_per_stage.empty()) return 0;
 
     int per_stage_rows = 0;
@@ -565,10 +576,10 @@ inline int tiny_set_lifted_spheres(
     TinySolver* solver,
     const std::vector<std::array<tinytype,4>>& spheres)
 {
-    if (!solver) { std::cout << "tiny_set_lifted_spheres: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_set_lifted_spheres: solver nullptr\n"; return 1; }
     const int nx0 = solver->settings->nx0_psd;
     const int nxL = solver->work->nx;
-    if (nx0 < 3) { std::cout << "tiny_set_lifted_spheres: nx0_psd must be >= 3\n"; return 1; }
+    if (nx0 < 3) { PSD_COUT << "tiny_set_lifted_spheres: nx0_psd must be >= 3\n"; return 1; }
     const int m = static_cast<int>(spheres.size());
     if (m == 0) return 0;
 
@@ -617,10 +628,10 @@ inline int tiny_set_lifted_projected_spheres(
     TinySolver* solver,
     const std::vector<ProjectedSphere>& spheres)
 {
-    if (!solver) { std::cout << "tiny_set_lifted_projected_spheres: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_set_lifted_projected_spheres: solver nullptr\n"; return 1; }
     const int nx0 = solver->settings->nx0_psd;
     const int nxL = solver->work->nx;
-    if (nx0 <= 0) { std::cout << "tiny_set_lifted_projected_spheres: nx0_psd not set (>0)\n"; return 1; }
+    if (nx0 <= 0) { PSD_COUT << "tiny_set_lifted_projected_spheres: nx0_psd not set (>0)\n"; return 1; }
     const int m = static_cast<int>(spheres.size());
     if (m == 0) return 0;
 
@@ -630,12 +641,12 @@ inline int tiny_set_lifted_projected_spheres(
     for (int j = 0; j < m; ++j) {
         const auto& sph = spheres[j];
         if (sph.S.cols() != nx0) {
-            std::cout << "[ProjectedSpheres] Expected S cols=" << nx0
+            PSD_COUT << "[ProjectedSpheres] Expected S cols=" << nx0
                       << " but got " << sph.S.cols() << "\n";
             return 1;
         }
         if (sph.S.rows() != sph.center.size()) {
-            std::cout << "[ProjectedSpheres] Center dimension mismatch (rows="
+            PSD_COUT << "[ProjectedSpheres] Center dimension mismatch (rows="
                       << sph.S.rows() << ", center=" << sph.center.size() << ")\n";
             return 1;
         }
@@ -748,10 +759,10 @@ inline int tiny_set_lifted_ellipses(
     TinySolver* solver,
     const std::vector<Ellipse>& ellipses)
 {
-    if (!solver) { std::cout << "tiny_set_lifted_ellipses: solver nullptr\n"; return 1; }
+    if (!solver) { PSD_COUT << "tiny_set_lifted_ellipses: solver nullptr\n"; return 1; }
     const int nx0 = solver->settings->nx0_psd;
     const int nxL = solver->work->nx;
-    if (nx0 <= 0) { std::cout << "tiny_set_lifted_ellipses: nx0_psd not set (>0)\n"; return 1; }
+    if (nx0 <= 0) { PSD_COUT << "tiny_set_lifted_ellipses: nx0_psd not set (>0)\n"; return 1; }
     const int m = static_cast<int>(ellipses.size());
     if (m == 0) return 0;
 

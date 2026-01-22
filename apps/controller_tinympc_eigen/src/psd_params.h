@@ -36,6 +36,12 @@ extern float psd_log_goal_x;
 extern float psd_log_goal_y;
 extern int32_t psd_log_result;
 
+// Obstacle parameters (settable via cfclient)
+extern float psd_obs_x;
+extern float psd_obs_y;
+extern float psd_obs_r;
+extern uint8_t psd_obs_enabled;
+
 #ifdef __cplusplus
 }
 #endif

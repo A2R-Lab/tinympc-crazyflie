@@ -41,7 +41,7 @@ TinySettings settings = {
 	(tinytype)0.0000000000000000,	// obs_y
 	(tinytype)0.0000000000000000,	// obs_r
 	(tinytype)0.0000000000000000,	// obs_margin
-	1,		// enable psd
+	1,		// enable psd (Step 2: ENABLED)
 	4,		// nx0_psd
 	2		// nu0_psd
 };
@@ -94,9 +94,9 @@ TinyWorkspace work = {
 	  {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}
 	},	// psd_disks
 	0,	// psd_num_disks
-	(tinyMatrix::Zero(0, 25)),	// Spsd
-	(tinyMatrix::Zero(0, 25)),	// Spsd_new
-	(tinyMatrix::Zero(0, 25)),	// Hpsd
+	(tinyMatrix::Zero(28, 25)),	// Spsd  (svec_size(1+4+2)=28)
+	(tinyMatrix::Zero(28, 25)),	// Spsd_new
+	(tinyMatrix::Zero(28, 25)),	// Hpsd
 	(tinytype)0.0000000000000000,	// psd primal residual
 	(tinytype)0.0000000000000000	// psd dual residual
 };

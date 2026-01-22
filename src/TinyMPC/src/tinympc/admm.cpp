@@ -1,4 +1,6 @@
+#ifndef TINYMPC_NO_IOSTREAM
 #include <iostream>
+#endif
 
 #include "admm.hpp"
 #include "psd_support.hpp"
@@ -27,9 +29,6 @@ void forward_pass(TinySolver *solver)
     for (int i = 0; i < solver->work->N - 1; i++)
     {
         (solver->work->u.col(i)).noalias() = -solver->cache->Kinf.lazyProduct(solver->work->x.col(i)) - solver->work->d.col(i);
-        // solver->work->u.col(i) << .001, .02, .3, 4;
-        // DEBUG_PRINT("u(0): %f\n", solver->work->u.col(0)(0));
-        // multAdyn(solver->Ax->cache.Adyn, solver->work->x.col(i));
         (solver->work->x.col(i + 1)).noalias() = solver->work->Adyn.lazyProduct(solver->work->x.col(i)) + solver->work->Bdyn.lazyProduct(solver->work->u.col(i));
     }
 }
@@ -118,12 +117,15 @@ bool termination_condition(TinySolver *solver)
             solver->work->dual_residual_state < solver->settings->abs_dua_tol &&
             solver->work->dual_residual_input < solver->settings->abs_dua_tol)
         {
-            return true;                 
+            return true;
         }
     }
     return false;
 }
 
+/**
+    * Solve the MPC problem
+    */
 int solve(TinySolver *solver)
 {
     // Initialize variables
@@ -151,10 +153,8 @@ int solve(TinySolver *solver)
         // Check for whether cost is minimized by calculating residuals
         if (termination_condition(solver)) {
             solver->work->status = 1; // TINY_SOLVED
-
-            // Save solution
-            solver->solution->iter = solver->work->iter;
             solver->solution->solved = 1;
+            solver->solution->iter = solver->work->iter;
             solver->solution->x = solver->work->vnew;
             solver->solution->u = solver->work->znew;
             return 0;

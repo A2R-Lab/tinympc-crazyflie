@@ -2,13 +2,12 @@ ccflags-y += -I$(src)/../../../src/TinyMPC/include
 ccflags-y += -I$(src)/../../../src/TinyMPC/include/Eigen
 ccflags-y += -I$(src)/../../../src/TinyMPC/src
 ccflags-y += -I$(src)/../../../src/TinyMPC/src/tinympc
-# Use PSD lifted solver
+# Step 1: Use lifted solver (20-state) with PSD DISABLED
 ccflags-y += -I$(src)/../tinympc_generated_code_crazyflie_psd
 
 obj-y += controller_tinympc.o
 obj-y += tinympc_cf_adapter.o
 obj-y += psd_params.o
-# PSD lifted solver data (20 states, 22 inputs)
 obj-y += ../tinympc_generated_code_crazyflie_psd/src/tiny_data.o
 obj-y += ../../../src/TinyMPC/src/tinympc/tiny_api.o
 obj-y += ../../../src/TinyMPC/src/tinympc/admm.o

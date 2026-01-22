@@ -259,22 +259,47 @@ def run_test():
         )
         # #endregion
         
-        goal_x = 0.0
+        # Configure obstacle - at (0.5, 0) with radius 0.3
+        # Drone will need to go around it to reach goal (1.0, 0)
+        print("\n=== Setting obstacle at (0.5, 0.0) radius 0.3m ===")
+        cf.param.set_value('psdAvoid.obsX', '0.5')
+        cf.param.set_value('psdAvoid.obsY', '0.0')
+        cf.param.set_value('psdAvoid.obsR', '0.3')
+        cf.param.set_value('psdAvoid.obsEn', '1')
+        time.sleep(0.3)
+        
+        print("\n=== OBSTACLE AVOIDANCE DEMO ===")
+        print("Goal: (1.0, 0.0) - Obstacle at (0.5, 0.0) r=0.3")
+        print("Drone should arc around the obstacle!")
+        
+        # Phase 1: Go to goal past the obstacle
+        goal_x = 1.0
         goal_y = 0.0
-        print("\n=== HOVER with MPC-PSD for 10 seconds ===")
-        print("Obstacle comes from RIGHT (-Y) toward origin; drone should move LEFT (+Y)")
-        for i in range(10):
-            cf.high_level_commander.go_to(goal_x, goal_y, 0.4, 0, 1.2)
+        for i in range(6):
+            cf.high_level_commander.go_to(goal_x, goal_y, 0.4, 0, 1.5)
             time.sleep(1)
-            print(f"MPC-PSD: {i+1}s")
-            # #region agent log
+            print(f"Going to ({goal_x}, {goal_y}): {i+1}s - pos=({last_state['x']:.2f}, {last_state['y']:.2f})")
             debug_log(
                 "H1",
                 "test_psd_demo.py:mpc_loop",
                 "mpc_goal",
                 {"goal_x": goal_x, "goal_y": goal_y, "tick": i + 1},
             )
-            # #endregion
+        
+        # Phase 2: Return to origin (go back around obstacle)
+        print("\n=== Returning to origin ===")
+        goal_x = 0.0
+        goal_y = 0.0
+        for i in range(6):
+            cf.high_level_commander.go_to(goal_x, goal_y, 0.4, 0, 1.5)
+            time.sleep(1)
+            print(f"Returning to ({goal_x}, {goal_y}): {i+1}s - pos=({last_state['x']:.2f}, {last_state['y']:.2f})")
+            debug_log(
+                "H1",
+                "test_psd_demo.py:mpc_loop",
+                "mpc_goal",
+                {"goal_x": goal_x, "goal_y": goal_y, "tick": i + 1},
+            )
         
         # Land immediately without intermediate holds
         print("\n=== LANDING IN PLACE (OOT) ===")
