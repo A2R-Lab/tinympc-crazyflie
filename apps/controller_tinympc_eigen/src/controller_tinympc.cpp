@@ -181,11 +181,12 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint,
         tinympc::backward_pass_grad(&tiny_solver);
         int result = tiny_solve(&tiny_solver);
         
-        // Extract base state from lifted solution (work->x contains the trajectory after solve)
-        cmd_x = tiny_solver.work->x(0, 1);
-        cmd_y = tiny_solver.work->x(1, 1);
-        cmd_vx = tiny_solver.work->x(2, 1);
-        cmd_vy = tiny_solver.work->x(3, 1);
+        // Extract base state from solution (solution->x = vnew after solve)
+        // Use timestep 1 as next position target for PID
+        cmd_x = tiny_solver.solution->x(0, 1);
+        cmd_y = tiny_solver.solution->x(1, 1);
+        cmd_vx = tiny_solver.solution->x(2, 1);
+        cmd_vy = tiny_solver.solution->x(3, 1);
         
         // Safety clamps
         if (cmd_x < -2.0f) cmd_x = -2.0f;
