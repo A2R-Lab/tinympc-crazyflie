@@ -143,6 +143,11 @@ typedef struct {
   Eigen::VectorMf* ucu;
   Eigen::VectorMf* lcu;
   
+  // Half-space constraint for obstacle avoidance: a^T x <= b (position only)
+  Eigen::Vector3f a_hs[NHORIZON];  // Normal vectors (one per horizon step)
+  float b_hs[NHORIZON];             // Offsets (one per horizon step)
+  int en_hs[NHORIZON];              // Enable flag per step (0 = off, 1 = on)
+  
   int data_size;
 } tiny_AdmmData;
 

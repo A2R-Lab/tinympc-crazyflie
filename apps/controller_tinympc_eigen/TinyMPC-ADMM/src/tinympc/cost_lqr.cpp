@@ -52,6 +52,14 @@ enum tiny_ErrorCode tiny_UpdateConstrainedLinearCost(tiny_AdmmWorkspace* work) {
       work->data->r_tilde[k] = work->data->r[k] - work->rho * (work->ZU_new[k] - work->soln->YU[k]);
     }
   }
+  if (work->stgs->en_cstr_states) {
+    for (int k = 0; k < N - 1; ++k) {
+      /* Add state constraint term to q[k]: q[k] += -ρ*(zx[k]-yx[k]) */ 
+      work->data->q[k] = work->data->q[k] - work->rho * (work->ZX_new[k] - work->soln->YX[k]);
+    }
+    /* Terminal state constraint */
+    work->soln->p[N-1] = work->soln->p[N-1] - work->rho * (work->ZX_new[N-1] - work->soln->YX[N-1]);
+  }
   return TINY_NO_ERROR;
 }
 

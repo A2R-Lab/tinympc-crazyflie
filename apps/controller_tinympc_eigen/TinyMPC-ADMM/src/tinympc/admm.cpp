@@ -56,6 +56,11 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
         work->ZU[i] = work->ZU_new[i];
       }
     }
+    if (work->stgs->en_cstr_states) {
+      for (int i = 0; i < N; ++i) {
+        work->ZX[i] = work->ZX_new[i];
+      }
+    }
 
     /* Compute x^{k+1} */
     UpdatePrimal(work);
@@ -144,6 +149,44 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       work->soln->YU[k] = work->soln->YU[k] - work->ZU_new[k];
     }
   }
+  
+  // State constraints (including obstacle avoidance)
+  if (work->stgs->en_cstr_states) {
+    for (int k = 0; k < N; ++k) {
+      // ADMM update: y = y + x
+      work->soln->YX[k] = work->soln->YX[k] + work->soln->X[k];
+      
+      // Half-space projection for obstacle avoidance (position only)
+      if (work->data->en_hs[k]) {
+        Eigen::Vector3f y_pos = work->soln->YX[k].head(3);
+        Eigen::Vector3f a = work->data->a_hs[k];
+        float b = work->data->b_hs[k];
+        float a_norm_sq = a.squaredNorm();
+        if (a_norm_sq > 1e-8f) {
+          float dist = a.dot(y_pos) - b;
+          if (dist > 0) {
+            // Project onto half-space: z = y - ((a^T y - b) / ||a||^2) * a
+            float push = dist / a_norm_sq;
+            // Limit the push to avoid aggressive corrections
+            if (push > 0.05f) push = 0.05f;
+            Eigen::Vector3f z_pos = y_pos - push * a;
+            work->ZX_new[k] = work->soln->YX[k];
+            work->ZX_new[k].head(3) = z_pos;
+          } else {
+            work->ZX_new[k] = work->soln->YX[k];
+          }
+        } else {
+          work->ZX_new[k] = work->soln->YX[k];
+        }
+      } else {
+        // Box constraint fallback (original behavior)
+        work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx)); 
+      }
+      
+      // Dual update: y = y - z
+      work->soln->YX[k] = work->soln->YX[k] - work->ZX_new[k];
+    }
+  }
   return TINY_NO_ERROR;
 }
 
@@ -153,6 +196,11 @@ enum tiny_ErrorCode ComputePrimalResidual(tiny_AdmmWorkspace* work) {
   if (work->stgs->en_cstr_inputs) {
     for (int k = 0; k < N - 1; ++k) {    
       work->info->pri_res = T_MAX(work->info->pri_res, (work->soln->U[k] - work->ZU_new[k]).cwiseAbs().maxCoeff());
+    }
+  }
+  if (work->stgs->en_cstr_states) {
+    for (int k = 0; k < N; ++k) {    
+      work->info->pri_res = T_MAX(work->info->pri_res, (work->soln->X[k] - work->ZX_new[k]).cwiseAbs().maxCoeff());
     }
   }
   return TINY_NO_ERROR;
@@ -166,8 +214,14 @@ enum tiny_ErrorCode ComputeDualResidual(tiny_AdmmWorkspace* work) {
       work->info->dua_res = T_MAX(work->info->dua_res, 
                           (work->ZU_new[k] - work->ZU[k]).cwiseAbs().maxCoeff());
     }
-  work->info->dua_res = work->info->dua_res * work->rho;
   }
+  if (work->stgs->en_cstr_states) {
+    for (int k = 0; k < N; ++k) {
+      work->info->dua_res = T_MAX(work->info->dua_res, 
+                          (work->ZX_new[k] - work->ZX[k]).cwiseAbs().maxCoeff());
+    }
+    }
+  work->info->dua_res = work->info->dua_res * work->rho;
   return TINY_NO_ERROR;
 }
 
