@@ -157,24 +157,18 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       work->soln->YX[k] = work->soln->YX[k] + work->soln->X[k];
       
       // Half-space projection for obstacle avoidance (position only)
+      // Match eigen_task: full projection without clamping
       if (work->data->en_hs[k]) {
         Eigen::Vector3f y_pos = work->soln->YX[k].head(3);
         Eigen::Vector3f a = work->data->a_hs[k];
         float b = work->data->b_hs[k];
-        float a_norm_sq = a.squaredNorm();
-        if (a_norm_sq > 1e-8f) {
-          float dist = a.dot(y_pos) - b;
-          if (dist > 0) {
-            // Project onto half-space: z = y - ((a^T y - b) / ||a||^2) * a
-            float push = dist / a_norm_sq;
-            // Limit the push to avoid aggressive corrections
-            if (push > 0.05f) push = 0.05f;
-            Eigen::Vector3f z_pos = y_pos - push * a;
-            work->ZX_new[k] = work->soln->YX[k];
-            work->ZX_new[k].head(3) = z_pos;
-          } else {
-            work->ZX_new[k] = work->soln->YX[k];
-          }
+        // Compute distance to half-space boundary: a^T * y - b
+        float dist = a.dot(y_pos) - b;
+        if (dist > 0) {
+          // Project fully onto half-space: z = y - dist * a (since ||a|| = 1)
+          Eigen::Vector3f z_pos = y_pos - dist * a;
+          work->ZX_new[k] = work->soln->YX[k];
+          work->ZX_new[k].head(3) = z_pos;
         } else {
           work->ZX_new[k] = work->soln->YX[k];
         }

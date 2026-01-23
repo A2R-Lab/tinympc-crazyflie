@@ -1,4 +1,4 @@
 
-#define TINYMPC_TASK_STACKSIZE        (40 * configMINIMAL_STACK_SIZE)
+#define TINYMPC_TASK_STACKSIZE        (10 * configMINIMAL_STACK_SIZE)
 #define TINYMPC_TASK_NAME       "TINYMPC ADMM"
 #define TINYMPC_TASK_PRI        2

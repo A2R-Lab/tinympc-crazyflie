@@ -87,8 +87,8 @@ extern "C"
 #include "debug.h"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
-// #define MPC_RATE RATE_50_HZ
-#define MPC_RATE RATE_100_HZ
+#define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
+// #define MPC_RATE RATE_100_HZ
 #define LOWLEVEL_RATE RATE_500_HZ
 
 // Semaphore to signal that we got data from the stabilizer loop to process
@@ -179,15 +179,15 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 0; // Static obstacle constraint enable
+static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
 
 // Static obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.2f;
-static float obs_activation_margin = 0.3f;
+static float r_obs = 0.35f;           // Larger radius for more aggressive avoidance
+static float obs_activation_margin = 0.4f;  // Start avoiding earlier
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -330,8 +330,9 @@ void controllerOutOfTreeInit(void)
   traj_index = 0;
   max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
 
-  // Static obstacle centered on straight-line path (adjust as needed)
-  obs_center << 0.5f, 0.0f, 0.5f;
+  // Static obstacle slightly off-center so constraint pushes sideways
+  // Offset y=0.1 so drone swerves to negative y (left) more aggressively
+  obs_center << 0.5f, 0.1f, 0.5f;
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -448,12 +449,25 @@ static void tinympcControllerTask(void *parameters)
           state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
           radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
 
+      if (task_loop_count <= 3) {
+        DEBUG_PRINT("x0: pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
+                    (double)state_task.position.x, (double)state_task.position.y, (double)state_task.position.z,
+                    (double)state_task.velocity.x, (double)state_task.velocity.y, (double)state_task.velocity.z);
+      }
+
       // Get command reference
       UpdateHorizonReference(&setpoint_task);
+      
+      if (task_loop_count <= 3) {
+        DEBUG_PRINT("ref: (%.2f,%.2f,%.2f)\n",
+                    (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
+      }
 
       // Static obstacle avoidance via LTV linear constraints (single disk)
       const bool constraint_hold =
           (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
+      static uint32_t cstr_log_cnt = 0;
+      int cstr_active_count = 0;
       for (int i = 0; i < NHORIZON; i++)
       {
         params.x_min[i] = tiny_VectorNc::Constant(-1000);
@@ -470,8 +484,19 @@ static void tinympcControllerTask(void *parameters)
             params.A_constraints[i].head(3) = a_norm.transpose();
             q_c = obs_center - r_obs * a_norm;
             params.x_max[i](0) = a_norm.transpose() * q_c;
+            cstr_active_count++;
           }
         }
+      }
+      if (cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
+        DEBUG_PRINT("OBS: %d active, pos=(%.2f,%.2f)\n", cstr_active_count,
+                    (double)state_task.position.x, (double)state_task.position.y);
+      }
+      
+      // Force cache_level=1 when any constraints are active to prevent oscillation
+      // The ADMM solver sets cache_level based on violation, but we want it stable
+      if (cstr_active_count > 0) {
+        problem.cache_level = 1;
       }
 
 
@@ -507,102 +532,24 @@ static void tinympcControllerTask(void *parameters)
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("MPC solve 1 done\n");
+        DEBUG_PRINT("MPC solve 1 done, iter=%d\n", problem.iter);
       }
-      vTaskDelay(M2T(1));
-      solve_admm(&problem, &params);
-      mpc_time_us = usecTimestamp() - mpc_start_timestamp - 1000; // -1000 for each vTaskDelay(M2T(1))
+      // Skip second solve for now to reduce stack usage
+      // vTaskDelay(M2T(1));
+      // solve_admm(&problem, &params);
+      mpc_time_us = usecTimestamp() - mpc_start_timestamp;
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("MPC solve 2 done\n");
+        DEBUG_PRINT("MPC time=%lu us\n", mpc_time_us);
       }
 
       mpc_setpoint_task = problem.x.col(NHORIZON-1);
+      
+      if (task_loop_count <= 3) {
+        DEBUG_PRINT("setpoint: x=%.2f z=%.2f\n", (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2));
+      }
 
-      eventTrigger_horizon_x_part1_payload.h0 = problem.x.col(0)(0);
-      eventTrigger_horizon_x_part1_payload.h1 = problem.x.col(1)(0);
-      eventTrigger_horizon_x_part1_payload.h2 = problem.x.col(2)(0);
-      eventTrigger_horizon_x_part1_payload.h3 = problem.x.col(3)(0);
-      eventTrigger_horizon_x_part1_payload.h4 = problem.x.col(4)(0);
-      eventTrigger_horizon_x_part2_payload.h5 = problem.x.col(5)(0);
-      eventTrigger_horizon_x_part2_payload.h6 = problem.x.col(6)(0);
-      eventTrigger_horizon_x_part2_payload.h7 = problem.x.col(7)(0);
-      eventTrigger_horizon_x_part2_payload.h8 = problem.x.col(8)(0);
-      eventTrigger_horizon_x_part2_payload.h9 = problem.x.col(9)(0);
-      eventTrigger_horizon_x_part3_payload.h10 = problem.x.col(10)(0);
-      eventTrigger_horizon_x_part3_payload.h11 = problem.x.col(11)(0);
-      eventTrigger_horizon_x_part3_payload.h12 = problem.x.col(12)(0);
-      eventTrigger_horizon_x_part3_payload.h13 = problem.x.col(13)(0);
-      eventTrigger_horizon_x_part3_payload.h14 = problem.x.col(14)(0);
-      eventTrigger_horizon_x_part4_payload.h15 = problem.x.col(15)(0);
-      eventTrigger_horizon_x_part4_payload.h16 = problem.x.col(16)(0);
-      eventTrigger_horizon_x_part4_payload.h17 = problem.x.col(17)(0);
-      eventTrigger_horizon_x_part4_payload.h18 = problem.x.col(18)(0);
-      eventTrigger_horizon_x_part4_payload.h19 = problem.x.col(19)(0);
-
-      eventTrigger_horizon_y_part1_payload.h0 = problem.x.col(0)(1);
-      eventTrigger_horizon_y_part1_payload.h1 = problem.x.col(1)(1);
-      eventTrigger_horizon_y_part1_payload.h2 = problem.x.col(2)(1);
-      eventTrigger_horizon_y_part1_payload.h3 = problem.x.col(3)(1);
-      eventTrigger_horizon_y_part1_payload.h4 = problem.x.col(4)(1);
-      eventTrigger_horizon_y_part2_payload.h5 = problem.x.col(5)(1);
-      eventTrigger_horizon_y_part2_payload.h6 = problem.x.col(6)(1);
-      eventTrigger_horizon_y_part2_payload.h7 = problem.x.col(7)(1);
-      eventTrigger_horizon_y_part2_payload.h8 = problem.x.col(8)(1);
-      eventTrigger_horizon_y_part2_payload.h9 = problem.x.col(9)(1);
-      eventTrigger_horizon_y_part3_payload.h10 = problem.x.col(10)(1);
-      eventTrigger_horizon_y_part3_payload.h11 = problem.x.col(11)(1);
-      eventTrigger_horizon_y_part3_payload.h12 = problem.x.col(12)(1);
-      eventTrigger_horizon_y_part3_payload.h13 = problem.x.col(13)(1);
-      eventTrigger_horizon_y_part3_payload.h14 = problem.x.col(14)(1);
-      eventTrigger_horizon_y_part4_payload.h15 = problem.x.col(15)(1);
-      eventTrigger_horizon_y_part4_payload.h16 = problem.x.col(16)(1);
-      eventTrigger_horizon_y_part4_payload.h17 = problem.x.col(17)(1);
-      eventTrigger_horizon_y_part4_payload.h18 = problem.x.col(18)(1);
-      eventTrigger_horizon_y_part4_payload.h19 = problem.x.col(19)(1);
-
-      eventTrigger_horizon_z_part1_payload.h0 = problem.x.col(0)(2);
-      eventTrigger_horizon_z_part1_payload.h1 = problem.x.col(1)(2);
-      eventTrigger_horizon_z_part1_payload.h2 = problem.x.col(2)(2);
-      eventTrigger_horizon_z_part1_payload.h3 = problem.x.col(3)(2);
-      eventTrigger_horizon_z_part1_payload.h4 = problem.x.col(4)(2);
-      eventTrigger_horizon_z_part2_payload.h5 = problem.x.col(5)(2);
-      eventTrigger_horizon_z_part2_payload.h6 = problem.x.col(6)(2);
-      eventTrigger_horizon_z_part2_payload.h7 = problem.x.col(7)(2);
-      eventTrigger_horizon_z_part2_payload.h8 = problem.x.col(8)(2);
-      eventTrigger_horizon_z_part2_payload.h9 = problem.x.col(9)(2);
-      eventTrigger_horizon_z_part3_payload.h10 = problem.x.col(10)(2);
-      eventTrigger_horizon_z_part3_payload.h11 = problem.x.col(11)(2);
-      eventTrigger_horizon_z_part3_payload.h12 = problem.x.col(12)(2);
-      eventTrigger_horizon_z_part3_payload.h13 = problem.x.col(13)(2);
-      eventTrigger_horizon_z_part3_payload.h14 = problem.x.col(14)(2);
-      eventTrigger_horizon_z_part4_payload.h15 = problem.x.col(15)(2);
-      eventTrigger_horizon_z_part4_payload.h16 = problem.x.col(16)(2);
-      eventTrigger_horizon_z_part4_payload.h17 = problem.x.col(17)(2);
-      eventTrigger_horizon_z_part4_payload.h18 = problem.x.col(18)(2);
-      eventTrigger_horizon_z_part4_payload.h19 = problem.x.col(19)(2);
-
-      eventTrigger_problem_data_event_payload.solvetime_us = mpc_time_us;
-      eventTrigger_problem_data_event_payload.iters = problem.iter;
-      eventTrigger_problem_data_event_payload.cache_level = problem.cache_level;
-      eventTrigger_problem_residuals_event_payload.prim_resid_state = problem.primal_residual_state;
-      eventTrigger_problem_residuals_event_payload.prim_resid_input = problem.primal_residual_input;
-      eventTrigger_problem_residuals_event_payload.dual_resid_state = problem.dual_residual_state;
-      eventTrigger_problem_residuals_event_payload.dual_resid_input = problem.dual_residual_input;
-
-      eventTrigger(&eventTrigger_horizon_x_part1);
-      eventTrigger(&eventTrigger_horizon_x_part2);
-      eventTrigger(&eventTrigger_horizon_x_part3);
-      eventTrigger(&eventTrigger_horizon_x_part4);
-      eventTrigger(&eventTrigger_horizon_y_part1);
-      eventTrigger(&eventTrigger_horizon_y_part2);
-      eventTrigger(&eventTrigger_horizon_y_part3);
-      eventTrigger(&eventTrigger_horizon_y_part4);
-      eventTrigger(&eventTrigger_horizon_z_part1);
-      eventTrigger(&eventTrigger_horizon_z_part2);
-      eventTrigger(&eventTrigger_horizon_z_part3);
-      eventTrigger(&eventTrigger_horizon_z_part4);
-      eventTrigger(&eventTrigger_problem_data_event);
-      eventTrigger(&eventTrigger_problem_residuals_event);
+      // Skip event triggers for now to simplify debugging
+      // eventTrigger payloads and calls commented out
 
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
