@@ -24,6 +24,7 @@ This is a TinyMPC-ADMM based controller for the Crazyflie, adapted for the lates
 
 1. Navigate to this directory
 2. Run `make codegen` to generate the solver.
+3. Go to src and run `./codegen_crazyflie`
 
 ### Building the Firmware
 
