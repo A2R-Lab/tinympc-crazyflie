@@ -1,8 +1,13 @@
 #include <iostream>
 
 #include "admm.hpp"
+#include "psd_support.hpp"
 
 #define DEBUG_MODULE "TINYALG"
+
+// Forward declarations for PSD functions
+void update_psd_slack(struct tiny_problem *problem, const struct tiny_params *params);
+void update_psd_dual(struct tiny_problem *problem, const struct tiny_params *params);
 
 extern "C" {
 
@@ -46,9 +51,15 @@ void solve_admm(struct tiny_problem *problem, const struct tiny_params *params) 
 
         // Project slack variables into feasible domain
         update_slack(problem, params);
+        
+        // PSD slack update (every iteration now with 25Hz rate)
+        update_psd_slack(problem, params);
 
         // Compute next iteration of dual variables
         update_dual(problem, params);
+        
+        // PSD dual update
+        update_psd_dual(problem, params);
 
         // Update linear control cost terms using reference trajectory, duals, and slack variables
         update_linear_cost(problem, params);
@@ -173,6 +184,79 @@ void update_dual(struct tiny_problem *problem, const struct tiny_params *params)
     problem->g = problem->g + problem->x - problem->vnew;
 }
 
+} /* extern "C" */
+
+// ============================================================================
+// PSD FUNCTIONS (C++ only due to Eigen templates)
+// ============================================================================
+
+/**
+ * Update PSD slack variables by projecting onto PSD cone
+ * Uses 2D position lifting: M = [1; x; y] * [1; x; y]^T
+*/
+void update_psd_slack(struct tiny_problem *problem, const struct tiny_params *params) {
+    if (!problem->en_psd) return;
+    
+    tiny_MatrixPsd M, Hk, Snew;
+    
+    for (int k = 0; k < NHORIZON; ++k) {
+        // Get position from current trajectory
+        tinytype px = problem->x(0, k);
+        tinytype py = problem->x(1, k);
+        
+        // Assemble the lifted block from current position
+        assemble_psd_block_2d(px, py, M);
+        
+        // Unpack dual variable
+        Hk = smat_3x3(problem->Hpsd.col(k));
+        
+        // Form M + H for projection
+        tiny_MatrixPsd Raw = M + Hk;
+        
+        // Project onto PSD cone
+        project_psd_3x3(Raw);
+        Snew = Raw;
+        
+        // Pack back to svec
+        problem->Spsd_new.col(k) = svec_3x3(Snew);
+    }
+}
+
+/**
+ * Update PSD dual variables (augmented Lagrangian update)
+*/
+void update_psd_dual(struct tiny_problem *problem, const struct tiny_params *params) {
+    if (!problem->en_psd) return;
+    
+    const tinytype gamma_psd = tinytype(0.2);  // Under-relaxation for stability
+    
+    tiny_MatrixPsd M, Hk, Snew;
+    
+    for (int k = 0; k < NHORIZON; ++k) {
+        tinytype px = problem->x(0, k);
+        tinytype py = problem->x(1, k);
+        
+        // Assemble lifted block from current position
+        assemble_psd_block_2d(px, py, M);
+        
+        // Unpack slack and dual
+        Hk = smat_3x3(problem->Hpsd.col(k));
+        Snew = smat_3x3(problem->Spsd_new.col(k));
+        
+        // Dual update: H = H + gamma * (M - Snew)
+        Hk = Hk + gamma_psd * (M - Snew);
+        
+        // Clip to avoid blow-up
+        const tinytype H_CLIP = tinytype(100.0);
+        Hk = Hk.cwiseMax(-H_CLIP).cwiseMin(H_CLIP);
+        
+        // Pack back
+        problem->Hpsd.col(k) = svec_3x3(Hk);
+    }
+}
+
+extern "C" {
+
 /**
  * Update linear control cost terms in the Riccati feedback using the changing
  * slack and dual variables from ADMM
@@ -185,6 +269,30 @@ void update_linear_cost(struct tiny_problem *problem, const struct tiny_params *
     // problem->p.col(NHORIZON-1) = -(params->Xref.col(NHORIZON-1).array().colwise() * params->Qf.array());
     problem->p.col(NHORIZON-1) = -(params->Xref.col(NHORIZON-1).transpose().lazyProduct(params->cache.Pinf[problem->cache_level]));
     problem->p.col(NHORIZON-1) -= params->cache.rho[problem->cache_level] * (problem->vnew.col(NHORIZON-1) - problem->g.col(NHORIZON-1));
+
+    // PSD pullback: q -= rho_psd * (gradient from Snew - H)
+    // The gradient w.r.t. [px, py] from the lifted block is [2*px, 2*py] times the (1,1) and (2,2) entries
+    if (problem->en_psd) {
+        tiny_MatrixPsd Snew, Hk, T;
+        for (int k = 0; k < NHORIZON; ++k) {
+            Snew = smat_3x3(problem->Spsd_new.col(k));
+            Hk = smat_3x3(problem->Hpsd.col(k));
+            T = Snew - Hk;  // "znew - y" analog for PSD
+            
+            // Pullback: gradient of lifted block w.r.t. px, py
+            // d/dpx of M = [0, 1, 0; 1, 2px, py; 0, py, 0]
+            // d/dpy of M = [0, 0, 1; 0, px, 0; 1, px, 2py]
+            tinytype px = problem->x(0, k);
+            tinytype py = problem->x(1, k);
+            
+            // Compute gradient: trace(T * dM/dpx) and trace(T * dM/dpy)
+            tinytype grad_px = tinytype(2.0) * T(0, 1) + tinytype(2.0) * px * T(1, 1) + py * (T(1, 2) + T(2, 1));
+            tinytype grad_py = tinytype(2.0) * T(0, 2) + px * (T(1, 2) + T(2, 1)) + tinytype(2.0) * py * T(2, 2);
+            
+            problem->q(0, k) -= params->cache.rho_psd * grad_px;
+            problem->q(1, k) -= params->cache.rho_psd * grad_py;
+        }
+    }
 
     // for (int i=0; i<NHORIZON-1; i++) {
     //     problem->r.col(i) = -params->cache.rho * (problem->znew.col(i) - problem->y.col(i)) - params->R * params->Uref.col(i);

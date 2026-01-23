@@ -31,6 +31,10 @@
 
 #include "Eigen.h"
 
+// TinyMPC headers (C++, must be before extern "C")
+#include "tinympc/admm.hpp"
+#include "tinympc/psd_support.hpp"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -60,8 +64,7 @@ extern "C"
 
 #include "cpp_compat.h" // needed to compile Cpp to C
 
-// TinyMPC and PID controllers
-#include "tinympc/admm.hpp"
+// PID controller
 #include "controller_pid.h"
 
 // Params
@@ -87,7 +90,8 @@ extern "C"
 #include "debug.h"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
-#define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
+// #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
+#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period, plenty for PSD
 // #define MPC_RATE RATE_100_HZ
 #define LOWLEVEL_RATE RATE_500_HZ
 
@@ -179,7 +183,8 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
+static uint8_t enable_obs_constraint = 0; // Static obstacle constraint enable - DISABLED for PSD-only test
+static uint8_t enable_psd = 1; // PSD constraint enable (0=off, 1=on) - using lightweight eigensolve
 
 // Static obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -333,6 +338,14 @@ void controllerOutOfTreeInit(void)
   // Static obstacle further along path so swerve happens later
   // Offset y=0.1 so drone swerves to negative y (left)
   obs_center << 0.7f, 0.1f, 0.5f;
+
+  // Initialize PSD constraints (disabled by default, enable via enable_psd flag)
+  problem.en_psd = enable_psd;
+  if (enable_psd) {
+    tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
+    tiny_enable_psd(&problem, &params, rho_psd);
+    DEBUG_PRINT("PSD enabled with rho_psd=%.1f\n", (double)rho_psd);
+  }
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();

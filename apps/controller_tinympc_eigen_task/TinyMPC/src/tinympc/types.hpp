@@ -24,6 +24,13 @@ typedef Matrix<tinytype, NSTATE_CONSTRAINTS, NSTATES> tiny_MatrixNcNx;
 typedef Matrix<tinytype, NSTATES, NHORIZON, Eigen::ColMajor> tiny_MatrixNxNh;       // Nu x Nh
 typedef Matrix<tinytype, NINPUTS, NHORIZON-1, Eigen::ColMajor> tiny_MatrixNuNhm1;   // Nu x Nh-1
 
+// PSD types for 2D position lifting (psd_dim=3: [1, x, y])
+#define PSD_DIM 3
+#define PSD_SVEC_SIZE 6  // 3*(3+1)/2
+typedef Matrix<tinytype, PSD_DIM, PSD_DIM> tiny_MatrixPsd;
+typedef Matrix<tinytype, PSD_SVEC_SIZE, 1> tiny_VectorSvec;
+typedef Matrix<tinytype, PSD_SVEC_SIZE, NHORIZON, Eigen::ColMajor> tiny_MatrixSvecNh;
+
 /**
  * Matrices that must be recomputed with changes in time step, rho, or model parameters
  * The first index for each matrix corresponds to the rho used without constraints.
@@ -38,6 +45,9 @@ struct tiny_cache {
     tiny_MatrixNuNu Quu_inv[2];
     tiny_MatrixNxNx AmBKt[2];
     tiny_MatrixNxNu coeff_d2p[2];
+    
+    // PSD penalty parameter
+    tinytype rho_psd;
 };
 
 /**
@@ -118,6 +128,12 @@ struct tiny_problem {
     // Helper variables
     int intersect;
     int cache_level;
+    
+    // PSD variables for 2D position lifting
+    int en_psd;                      // Enable PSD constraints
+    tiny_MatrixSvecNh Spsd;          // PSD slack variables (svec form)
+    tiny_MatrixSvecNh Spsd_new;      // Updated PSD slack
+    tiny_MatrixSvecNh Hpsd;          // PSD dual variables (svec form)
 };
 
 #ifdef __cplusplus
