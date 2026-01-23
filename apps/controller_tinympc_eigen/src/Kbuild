@@ -5,4 +5,8 @@ ccflags-y += -I$(src)/../../../TinyMPC/src/tinympc
 ccflags-y += -I$(src)/tinympc_generated_code_crazyflie_example
 
 obj-y += controller_tinympc.o
+obj-y += tinympc_cf_adapter.o
 obj-y += ../../../TinyMPC/src/tinympc/tiny_api.o
+obj-y += ../../../TinyMPC/src/tinympc/admm.o
+obj-y += ../../../TinyMPC/src/tinympc/rho_benchmark.o
+obj-y += tinympc_generated_code_crazyflie_example/src/tiny_data.o
