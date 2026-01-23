@@ -97,8 +97,55 @@ inline void eigenvalues_3x3_sym(const tiny_MatrixPsd& A, tinytype eig[3]) {
     eig[2] = q + tinytype(2.0) * p * cosf(phi + tinytype(4.0)*pi/tinytype(3.0));
 }
 
+// Manual cross product for 3D vectors (avoids Geometry header)
+inline Eigen::Matrix<tinytype, 3, 1> cross3(const Eigen::Matrix<tinytype, 3, 1>& a, 
+                                             const Eigen::Matrix<tinytype, 3, 1>& b) {
+    Eigen::Matrix<tinytype, 3, 1> c;
+    c(0) = a(1)*b(2) - a(2)*b(1);
+    c(1) = a(2)*b(0) - a(0)*b(2);
+    c(2) = a(0)*b(1) - a(1)*b(0);
+    return c;
+}
+
+// Compute eigenvector for given eigenvalue of 3x3 symmetric matrix
+// Uses cross-product method for robustness
+inline void eigenvector_3x3_sym(const tiny_MatrixPsd& A, tinytype lambda, 
+                                 Eigen::Matrix<tinytype, 3, 1>& v) {
+    // Form (A - lambda*I)
+    tiny_MatrixPsd B = A;
+    B(0,0) -= lambda;
+    B(1,1) -= lambda;
+    B(2,2) -= lambda;
+    
+    // Find eigenvector as cross product of two rows of B
+    // (since null space is spanned by eigenvector)
+    Eigen::Matrix<tinytype, 3, 1> r0 = B.row(0);
+    Eigen::Matrix<tinytype, 3, 1> r1 = B.row(1);
+    Eigen::Matrix<tinytype, 3, 1> r2 = B.row(2);
+    
+    // Try different cross products and use the one with largest norm
+    Eigen::Matrix<tinytype, 3, 1> c01 = cross3(r0, r1);
+    Eigen::Matrix<tinytype, 3, 1> c02 = cross3(r0, r2);
+    Eigen::Matrix<tinytype, 3, 1> c12 = cross3(r1, r2);
+    
+    tinytype n01 = c01.squaredNorm();
+    tinytype n02 = c02.squaredNorm();
+    tinytype n12 = c12.squaredNorm();
+    
+    if (n01 >= n02 && n01 >= n12 && n01 > tinytype(1e-12)) {
+        v = c01 / sqrtf(n01);
+    } else if (n02 >= n12 && n02 > tinytype(1e-12)) {
+        v = c02 / sqrtf(n02);
+    } else if (n12 > tinytype(1e-12)) {
+        v = c12 / sqrtf(n12);
+    } else {
+        // Degenerate case - use unit vector
+        v << tinytype(1.0), tinytype(0.0), tinytype(0.0);
+    }
+}
+
 // Project 3x3 symmetric matrix onto PSD cone
-// Uses analytical Cardano eigenvalue formula
+// Proper projection: M_proj = V * diag(max(lambda, 0)) * V^T
 inline void project_psd_3x3(tiny_MatrixPsd& M) {
     // Ensure symmetric
     M = tinytype(0.5) * (M + M.transpose());
@@ -114,19 +161,36 @@ inline void project_psd_3x3(tiny_MatrixPsd& M) {
         return;
     }
     
-    // Simple approximation: shift all eigenvalues up by the most negative one
-    // This is equivalent to M_proj = M - lambda_min * I when lambda_min < 0
-    tinytype min_eig = eig[0];
-    if (eig[1] < min_eig) min_eig = eig[1];
-    if (eig[2] < min_eig) min_eig = eig[2];
+    // Need to do full reconstruction with clamped eigenvalues
+    // M_proj = sum_i max(lambda_i, 0) * v_i * v_i^T
     
-    if (min_eig < tinytype(0.0)) {
-        // Add (-min_eig + eps) * I to make it PSD
-        tinytype shift = -min_eig + eps;
-        M(0,0) += shift;
-        M(1,1) += shift;
-        M(2,2) += shift;
-    }
+    // Compute eigenvectors
+    Eigen::Matrix<tinytype, 3, 1> v0, v1, v2;
+    eigenvector_3x3_sym(M, eig[0], v0);
+    eigenvector_3x3_sym(M, eig[1], v1);
+    eigenvector_3x3_sym(M, eig[2], v2);
+    
+    // Orthogonalize v1 against v0
+    v1 = v1 - v0.dot(v1) * v0;
+    tinytype n1 = v1.norm();
+    if (n1 > tinytype(1e-10)) v1 /= n1;
+    else v1 << tinytype(0), tinytype(1), tinytype(0);  // fallback
+    
+    // Orthogonalize v2 against v0 and v1
+    v2 = v2 - v0.dot(v2) * v0 - v1.dot(v2) * v1;
+    tinytype n2 = v2.norm();
+    if (n2 > tinytype(1e-10)) v2 /= n2;
+    else v2 = cross3(v0, v1);  // fallback: perpendicular to both
+    
+    // Clamp eigenvalues to >= 0
+    tinytype lam0 = (eig[0] > tinytype(0)) ? eig[0] : tinytype(0);
+    tinytype lam1 = (eig[1] > tinytype(0)) ? eig[1] : tinytype(0);
+    tinytype lam2 = (eig[2] > tinytype(0)) ? eig[2] : tinytype(0);
+    
+    // Reconstruct: M = lam0*v0*v0^T + lam1*v1*v1^T + lam2*v2*v2^T
+    M = lam0 * v0 * v0.transpose() 
+      + lam1 * v1 * v1.transpose() 
+      + lam2 * v2 * v2.transpose();
 }
 
 // Enable PSD for the problem
