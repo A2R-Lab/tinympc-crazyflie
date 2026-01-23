@@ -187,7 +187,7 @@ static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
 static float r_obs = 0.35f;           // Larger radius for more aggressive avoidance
-static float obs_activation_margin = 0.4f;  // Start avoiding earlier
+static float obs_activation_margin = 0.15f; // Smaller = later/faster swerve
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -330,9 +330,9 @@ void controllerOutOfTreeInit(void)
   traj_index = 0;
   max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
 
-  // Static obstacle slightly off-center so constraint pushes sideways
-  // Offset y=0.1 so drone swerves to negative y (left) more aggressively
-  obs_center << 0.5f, 0.1f, 0.5f;
+  // Static obstacle further along path so swerve happens later
+  // Offset y=0.1 so drone swerves to negative y (left)
+  obs_center << 0.7f, 0.1f, 0.5f;
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -364,6 +364,14 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
     if (traj_index < max_traj_index) {
       traj_index++;
     } else {
+      // Trajectory done - disable trajectory to trigger motor kill
+      static bool traj_done_msg = false;
+      if (!traj_done_msg) {
+        DEBUG_PRINT("TRAJ DONE: idx=%d, max=%d\n", traj_index, max_traj_index);
+        traj_done_msg = true;
+      }
+      enable_traj = false;
+      enable_obs_constraint = 0;
       params.Xref = Xref_end.replicate<1, NHORIZON>();
     }
   }
@@ -627,7 +635,20 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     //   // DEBUG_PRINT("x: %.4f\n", setpoint->position.x);
     // }
 
-    controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
+    // Kill motors if trajectory finished (enable_traj goes false)
+    if (!enable_traj && mpc_has_run) {
+      static bool landed_msg = false;
+      if (!landed_msg) {
+        DEBUG_PRINT("LANDING: traj done, killing motors\n");
+        landed_msg = true;
+      }
+      control->thrust = 0;
+      control->roll = 0;
+      control->pitch = 0;
+      control->yaw = 0;
+    } else {
+      controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
+    }
   }
 
   // if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
