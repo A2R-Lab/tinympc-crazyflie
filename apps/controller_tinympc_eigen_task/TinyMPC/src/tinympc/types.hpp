@@ -134,6 +134,11 @@ struct tiny_problem {
     tiny_MatrixSvecNh Spsd;          // PSD slack variables (svec form)
     tiny_MatrixSvecNh Spsd_new;      // Updated PSD slack
     tiny_MatrixSvecNh Hpsd;          // PSD dual variables (svec form)
+    
+    // PSD obstacle parameters (disk in x-y plane)
+    tinytype psd_obs_x;              // Obstacle center x
+    tinytype psd_obs_y;              // Obstacle center y
+    tinytype psd_obs_r;              // Obstacle radius
 };
 
 #ifdef __cplusplus

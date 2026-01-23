@@ -98,12 +98,12 @@ inline void eigenvalues_3x3_sym(const tiny_MatrixPsd& A, tinytype eig[3]) {
 }
 
 // Project 3x3 symmetric matrix onto PSD cone
-// Uses analytical eigenvalue formula (no iterative solver)
+// Uses analytical Cardano eigenvalue formula
 inline void project_psd_3x3(tiny_MatrixPsd& M) {
     // Ensure symmetric
     M = tinytype(0.5) * (M + M.transpose());
     
-    // Compute eigenvalues analytically
+    // Compute eigenvalues analytically using Cardano's formula
     tinytype eig[3];
     eigenvalues_3x3_sym(M, eig);
     
@@ -134,6 +134,11 @@ inline void tiny_enable_psd(struct tiny_problem* prob, struct tiny_params* param
     prob->en_psd = 1;
     params->cache.rho_psd = rho_psd;
     
+    // Initialize obstacle to zero (no constraint)
+    prob->psd_obs_x = tinytype(0.0);
+    prob->psd_obs_y = tinytype(0.0);
+    prob->psd_obs_r = tinytype(0.0);
+    
     // Initialize PSD slack/dual to zero
     prob->Spsd.setZero();
     prob->Spsd_new.setZero();
@@ -148,4 +153,38 @@ inline void tiny_enable_psd(struct tiny_problem* prob, struct tiny_params* param
         prob->Spsd.col(k) = v_init;
         prob->Spsd_new.col(k) = v_init;
     }
+}
+
+// Set PSD obstacle (disk in x-y plane)
+inline void tiny_set_psd_obstacle(struct tiny_problem* prob, tinytype ox, tinytype oy, tinytype r) {
+    prob->psd_obs_x = ox;
+    prob->psd_obs_y = oy;
+    prob->psd_obs_r = r;
+}
+
+// Compute lifted distance squared to disk obstacle
+// For M = [1, x, y; x, xx, xy; y, xy, yy] and disk at (ox, oy) with radius r:
+// lifted_dist² = M(1,1) + M(2,2) - 2*ox*M(0,1) - 2*oy*M(0,2) + ox² + oy²
+//              = xx + yy - 2*ox*x - 2*oy*y + ox² + oy²
+// Constraint: lifted_dist² >= r²
+inline tinytype compute_lifted_disk_violation(const tiny_MatrixPsd& M, 
+                                               tinytype ox, tinytype oy, tinytype r) {
+    tinytype lifted_dist2 = M(1,1) + M(2,2) - tinytype(2.0)*ox*M(0,1) - tinytype(2.0)*oy*M(0,2) 
+                           + ox*ox + oy*oy;
+    tinytype margin = lifted_dist2 - r*r;
+    return margin;  // Positive = safe, negative = violation
+}
+
+// Compute gradient of lifted disk constraint w.r.t. M entries
+// grad w.r.t. M(0,1)=x: -2*ox
+// grad w.r.t. M(0,2)=y: -2*oy  
+// grad w.r.t. M(1,1)=xx: 1
+// grad w.r.t. M(2,2)=yy: 1
+inline void compute_lifted_disk_gradient(tinytype ox, tinytype oy,
+                                          tinytype& grad_x, tinytype& grad_y,
+                                          tinytype& grad_xx, tinytype& grad_yy) {
+    grad_x = -tinytype(2.0) * ox;
+    grad_y = -tinytype(2.0) * oy;
+    grad_xx = tinytype(1.0);
+    grad_yy = tinytype(1.0);
 }

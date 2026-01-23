@@ -91,7 +91,7 @@ extern "C"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
 // #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
-#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period, plenty for PSD
+#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period for PSD
 // #define MPC_RATE RATE_100_HZ
 #define LOWLEVEL_RATE RATE_500_HZ
 
@@ -183,8 +183,8 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 0; // Static obstacle constraint enable - DISABLED for PSD-only test
-static uint8_t enable_psd = 1; // PSD constraint enable (0=off, 1=on) - using lightweight eigensolve
+static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
+static uint8_t enable_psd = 1; // PSD enabled (runs every 5 iters)
 
 // Static obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -344,7 +344,10 @@ void controllerOutOfTreeInit(void)
   if (enable_psd) {
     tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
     tiny_enable_psd(&problem, &params, rho_psd);
-    DEBUG_PRINT("PSD enabled with rho_psd=%.1f\n", (double)rho_psd);
+    // Set PSD obstacle (same as LTV obstacle)
+    tiny_set_psd_obstacle(&problem, obs_center(0), obs_center(1), r_obs);
+    DEBUG_PRINT("PSD enabled with rho_psd=%.1f, obs=(%.2f,%.2f,r=%.2f)\n", 
+                (double)rho_psd, (double)obs_center(0), (double)obs_center(1), (double)r_obs);
   }
 
   /* Begin task initialization */

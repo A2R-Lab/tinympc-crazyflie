@@ -52,14 +52,18 @@ void solve_admm(struct tiny_problem *problem, const struct tiny_params *params) 
         // Project slack variables into feasible domain
         update_slack(problem, params);
         
-        // PSD slack update (every iteration now with 25Hz rate)
-        update_psd_slack(problem, params);
+        // PSD slack update (every 5 iterations to reduce trig load)
+        if (i % 5 == 0) {
+            update_psd_slack(problem, params);
+        }
 
         // Compute next iteration of dual variables
         update_dual(problem, params);
         
-        // PSD dual update
-        update_psd_dual(problem, params);
+        // PSD dual update (every 5 iterations)
+        if (i % 5 == 0) {
+            update_psd_dual(problem, params);
+        }
 
         // Update linear control cost terms using reference trajectory, duals, and slack variables
         update_linear_cost(problem, params);
@@ -192,12 +196,17 @@ void update_dual(struct tiny_problem *problem, const struct tiny_params *params)
 
 /**
  * Update PSD slack variables by projecting onto PSD cone
+ * AND enforcing lifted disk constraint (SDP-style obstacle avoidance)
  * Uses 2D position lifting: M = [1; x; y] * [1; x; y]^T
 */
 void update_psd_slack(struct tiny_problem *problem, const struct tiny_params *params) {
     if (!problem->en_psd) return;
     
     tiny_MatrixPsd M, Hk, Snew;
+    const tinytype ox = problem->psd_obs_x;
+    const tinytype oy = problem->psd_obs_y;
+    const tinytype r = problem->psd_obs_r;
+    const bool has_obstacle = (r > tinytype(0.01));
     
     for (int k = 0; k < NHORIZON; ++k) {
         // Get position from current trajectory
@@ -216,6 +225,19 @@ void update_psd_slack(struct tiny_problem *problem, const struct tiny_params *pa
         // Project onto PSD cone
         project_psd_3x3(Raw);
         Snew = Raw;
+        
+        // Enforce lifted disk constraint if obstacle is set
+        // Constraint: xx + yy - 2*ox*x - 2*oy*y + ox² + oy² >= r²
+        if (has_obstacle) {
+            tinytype margin = compute_lifted_disk_violation(Snew, ox, oy, r);
+            if (margin < tinytype(0.0)) {
+                // Violated! Push slack to satisfy constraint
+                // Increase xx and yy to push lifted distance outward
+                tinytype push = -margin + tinytype(0.01);
+                Snew(1,1) += push * tinytype(0.5);
+                Snew(2,2) += push * tinytype(0.5);
+            }
+        }
         
         // Pack back to svec
         problem->Spsd_new.col(k) = svec_3x3(Snew);
@@ -274,6 +296,11 @@ void update_linear_cost(struct tiny_problem *problem, const struct tiny_params *
     // The gradient w.r.t. [px, py] from the lifted block is [2*px, 2*py] times the (1,1) and (2,2) entries
     if (problem->en_psd) {
         tiny_MatrixPsd Snew, Hk, T;
+        const tinytype ox = problem->psd_obs_x;
+        const tinytype oy = problem->psd_obs_y;
+        const tinytype r = problem->psd_obs_r;
+        const bool has_obstacle = (r > tinytype(0.01));
+        
         for (int k = 0; k < NHORIZON; ++k) {
             Snew = smat_3x3(problem->Spsd_new.col(k));
             Hk = smat_3x3(problem->Hpsd.col(k));
@@ -291,6 +318,21 @@ void update_linear_cost(struct tiny_problem *problem, const struct tiny_params *
             
             problem->q(0, k) -= params->cache.rho_psd * grad_px;
             problem->q(1, k) -= params->cache.rho_psd * grad_py;
+            
+            // Lifted disk constraint gradient (SDP-style obstacle avoidance)
+            // If constraint is violated, add gradient to push away from obstacle
+            if (has_obstacle) {
+                tinytype margin = compute_lifted_disk_violation(Snew, ox, oy, r);
+                if (margin < tinytype(0.5)) {  // Active when close to or violating constraint
+                    // Push away from obstacle center: grad = 2*(pos - center)
+                    tinytype scale = params->cache.rho_psd;
+                    if (margin < tinytype(0.0)) {
+                        scale *= tinytype(1.5);  // Stronger push when violated
+                    }
+                    problem->q(0, k) -= scale * (px - ox);
+                    problem->q(1, k) -= scale * (py - oy);
+                }
+            }
         }
     }
 
