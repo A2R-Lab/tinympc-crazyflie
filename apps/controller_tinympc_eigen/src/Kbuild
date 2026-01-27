@@ -4,6 +4,18 @@ ccflags-y += -I$(src)/../../../TinyMPC/src
 ccflags-y += -I$(src)/../../../TinyMPC/src/tinympc
 ccflags-y += -I$(src)/tinympc_generated_code_crazyflie_example
 
+KBUILD_CFLAGS := $(filter-out -Wno-stringop-overread,$(KBUILD_CFLAGS))
+
+ccflags-y += -Wno-error=double-promotion
+ccflags-y += -Wno-error=unused-variable
+
+CFLAGS_REMOVE_controller_tinympc.o += -Wno-stringop-overread
+CFLAGS_REMOVE_tinympc_cf_adapter.o += -Wno-stringop-overread
+CFLAGS_REMOVE_tiny_api.o += -Wno-stringop-overread
+CFLAGS_REMOVE_admm.o += -Wno-stringop-overread
+CFLAGS_REMOVE_rho_benchmark.o += -Wno-stringop-overread
+CFLAGS_REMOVE_tiny_data.o += -Wno-stringop-overread
+
 obj-y += controller_tinympc.o
 obj-y += tinympc_cf_adapter.o
 obj-y += ../../../TinyMPC/src/tinympc/tiny_api.o
