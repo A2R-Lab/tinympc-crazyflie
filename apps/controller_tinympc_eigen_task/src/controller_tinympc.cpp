@@ -222,7 +222,7 @@ static Eigen::Matrix<tinytype, 3, 1> obs_velocity_top;    // Top arm sweeps down
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.25f;           // Obstacle radius (slightly smaller for XZ)
+static float r_obs = 0.35f;           // Obstacle radius
 static float obs_activation_margin = 0.15f; // Constraint activation distance
 static uint64_t obs_start_time = 0;   // Time when obstacle motion started
 
