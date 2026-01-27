@@ -4,8 +4,15 @@
 #include <cmath>
 
 // ============================================================================
-// PSD Support for 2D Position Lifting
-// Minimal implementation for embedded: psd_dim=3 for [1, x, y] block
+// PSD Support for 2D Position Lifting (XZ Plane for Vertical Avoidance)
+// Minimal implementation for embedded: psd_dim=3 for [1, p1, p2] block
+// 
+// NOTE: For XZ plane avoidance, the "y" variable in function names and
+// formulas actually represents the Z coordinate. The admm.cpp extracts:
+//   p1 = state(0) = x position
+//   p2 = state(2) = z position (NOT y!)
+// and calls assemble_psd_block_2d(px, pz, M).
+// Similarly, psd_obs_y stores the obstacle Z coordinate.
 // ============================================================================
 
 // svec: Pack symmetric 3x3 matrix into 6-element vector (column-wise lower triangular)
@@ -219,10 +226,11 @@ inline void tiny_enable_psd(struct tiny_problem* prob, struct tiny_params* param
     }
 }
 
-// Set PSD obstacle (disk in x-y plane)
+// Set PSD obstacle (disk in chosen 2D plane)
+// For XZ plane: ox = obstacle x, oy = obstacle Z coordinate
 inline void tiny_set_psd_obstacle(struct tiny_problem* prob, tinytype ox, tinytype oy, tinytype r) {
     prob->psd_obs_x = ox;
-    prob->psd_obs_y = oy;
+    prob->psd_obs_y = oy;  // For XZ plane, this is actually the Z coordinate
     prob->psd_obs_r = r;
 }
 

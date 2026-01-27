@@ -227,9 +227,9 @@ void update_psd_slack(struct tiny_problem *problem, const struct tiny_params *pa
     const tinytype b_disk = r*r - ox*ox - oy*oy;
     
     for (int k = 0; k < NHORIZON; ++k) {
-        // Get position from current trajectory
+        // Get position from current trajectory (XZ plane: x=index 0, z=index 2)
         tinytype px = problem->x(0, k);
-        tinytype py = problem->x(1, k);
+        tinytype py = problem->x(2, k);  // Use z instead of y for XZ plane
         
         // Assemble the lifted block from current position
         assemble_psd_block_2d(px, py, M);
@@ -284,7 +284,7 @@ void update_psd_dual(struct tiny_problem *problem, const struct tiny_params *par
     
     for (int k = 0; k < NHORIZON; ++k) {
         tinytype px = problem->x(0, k);
-        tinytype py = problem->x(1, k);
+        tinytype py = problem->x(2, k);  // Use z instead of y for XZ plane
         
         // Assemble lifted block from current position
         assemble_psd_block_2d(px, py, M);
@@ -328,7 +328,7 @@ void update_linear_cost(struct tiny_problem *problem, const struct tiny_params *
         
         for (int k = 0; k < NHORIZON; ++k) {
             tinytype px = problem->x(0, k);
-            tinytype py = problem->x(1, k);
+            tinytype py = problem->x(2, k);  // Use z instead of y for XZ plane
             
             // Assemble lifted block from current position
             assemble_psd_block_2d(px, py, M);
@@ -340,19 +340,19 @@ void update_linear_cost(struct tiny_problem *problem, const struct tiny_params *
             // Residual = M - (Snew - Hk) = M - Snew + Hk
             Residual = M - Snew + Hk;
             
-            // Gradient w.r.t. px, py using chain rule
-            // dM/dpx = [0, 1, 0; 1, 2px, py; 0, py, 0]
-            // dM/dpy = [0, 0, 1; 0, px, 0; 1, px, 2py]
-            // grad = trace(Residual * dM/d(px or py))
+            // Gradient w.r.t. px, pz using chain rule (XZ plane)
+            // dM/dpx = [0, 1, 0; 1, 2px, pz; 0, pz, 0]
+            // dM/dpz = [0, 0, 1; 0, px, 0; 1, px, 2pz]
+            // grad = trace(Residual * dM/d(px or pz))
             tinytype grad_px = tinytype(2.0) * Residual(0, 1) 
                              + tinytype(2.0) * px * Residual(1, 1) 
                              + py * (Residual(1, 2) + Residual(2, 1));
-            tinytype grad_py = tinytype(2.0) * Residual(0, 2) 
+            tinytype grad_pz = tinytype(2.0) * Residual(0, 2) 
                              + px * (Residual(1, 2) + Residual(2, 1)) 
                              + tinytype(2.0) * py * Residual(2, 2);
             
             problem->q(0, k) -= params->cache.rho_psd * grad_px;
-            problem->q(1, k) -= params->cache.rho_psd * grad_py;
+            problem->q(2, k) -= params->cache.rho_psd * grad_pz;  // Apply to z (index 2) for XZ plane
         }
     }
 

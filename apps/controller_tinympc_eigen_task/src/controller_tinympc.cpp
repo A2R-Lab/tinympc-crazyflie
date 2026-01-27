@@ -47,7 +47,7 @@
  */
 
 // Use planner+tracker architecture (comment out to use old single-solver)
-#define USE_PLANNER_TRACKER_ARCH 1
+// #define USE_PLANNER_TRACKER_ARCH 1  // DISABLED - using single-solver arch
 
 /**
  * Single lap
@@ -212,13 +212,17 @@ static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
 static uint8_t enable_psd = 1; // PSD enabled (runs every 5 ADMM iters)
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
-static Eigen::Matrix<tinytype, 3, 1> obs_center;
-static Eigen::Matrix<tinytype, 3, 1> obs_start;     // Initial obstacle position
-static Eigen::Matrix<tinytype, 3, 1> obs_velocity;  // Obstacle velocity (m/s)
+// XZ PLANE: Two arms closing gap - one from bottom, one from top
+static Eigen::Matrix<tinytype, 3, 1> obs_center_bottom;   // Arm from below
+static Eigen::Matrix<tinytype, 3, 1> obs_center_top;      // Arm from above
+static Eigen::Matrix<tinytype, 3, 1> obs_start_bottom;    // Initial position (bottom arm)
+static Eigen::Matrix<tinytype, 3, 1> obs_start_top;       // Initial position (top arm)
+static Eigen::Matrix<tinytype, 3, 1> obs_velocity_bottom; // Bottom arm sweeps upward
+static Eigen::Matrix<tinytype, 3, 1> obs_velocity_top;    // Top arm sweeps downward
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.35f;           // Obstacle radius
+static float r_obs = 0.25f;           // Obstacle radius (slightly smaller for XZ)
 static float obs_activation_margin = 0.15f; // Constraint activation distance
 static uint64_t obs_start_time = 0;   // Time when obstacle motion started
 
@@ -257,11 +261,11 @@ static inline int clamp_idx(int idx, int lo, int hi) {
     return idx;
 }
 
-// Helper: compute signed distance from position to obstacle
-static inline float signed_distance_to_obs(float px, float py, float ox, float oy, float r) {
+// Helper: compute signed distance from position to obstacle in XZ plane
+static inline float signed_distance_to_obs_xz(float px, float pz, float ox, float oz, float r) {
     float dx = px - ox;
-    float dy = py - oy;
-    return sqrtf(dx*dx + dy*dy) - r;
+    float dz = pz - oz;
+    return sqrtf(dx*dx + dz*dz) - r;
 }
 
 #endif // USE_PLANNER_TRACKER_ARCH
@@ -407,22 +411,34 @@ void controllerOutOfTreeInit(void)
   traj_index = 0;
   max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
 
-  // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
-  // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
-  obs_start << 0.7f, 0.3f, 0.5f;      // Start position (left side, in drone path)
-  obs_velocity << 0.0f, -0.1f, 0.0f; // Sweeps left-to-right at 0.1 m/s
-  obs_center = obs_start;             // Initial position
-  obs_start_time = 0;                 // Will be set on first MPC solve
+  // XZ PLANE: Two dynamic obstacles - arms closing gap vertically
+  // Bottom arm starts at z=0.2, sweeps upward at 0.03 m/s
+  // Top arm starts at z=0.8, sweeps downward at 0.03 m/s
+  // Goal: drone must lift up into shrinking gap before it closes
+  obs_start_bottom << 0.7f, 0.0f, 0.2f;       // Bottom arm (low z)
+  obs_velocity_bottom << 0.0f, 0.0f, 0.03f;   // Sweeps upward
+  obs_center_bottom = obs_start_bottom;
+  
+  obs_start_top << 0.7f, 0.0f, 0.8f;          // Top arm (high z)
+  obs_velocity_top << 0.0f, 0.0f, -0.03f;     // Sweeps downward
+  obs_center_top = obs_start_top;
+  
+  obs_start_time = 0;                          // Will be set on first MPC solve
 
-  // Initialize PSD constraints (disabled by default, enable via enable_psd flag)
+  // Initialize PSD constraints for XZ plane (disabled by default, enable via enable_psd flag)
+  // Note: psd_obs_y is actually psd_obs_z in XZ mode - we use bottom arm initially
   problem.en_psd = enable_psd;
   if (enable_psd) {
     tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
     tiny_enable_psd(&problem, &params, rho_psd);
-    // Set PSD obstacle (same as LTV obstacle)
-    tiny_set_psd_obstacle(&problem, obs_center(0), obs_center(1), r_obs);
-    DEBUG_PRINT("PSD enabled with rho_psd=%.1f, obs=(%.2f,%.2f,r=%.2f)\n", 
-                (double)rho_psd, (double)obs_center(0), (double)obs_center(1), (double)r_obs);
+    // Set PSD obstacle using (x, z) coordinates - using bottom arm
+    // Note: tiny_set_psd_obstacle takes (ox, oy) but in XZ mode oy = oz
+    tiny_set_psd_obstacle(&problem, obs_center_bottom(0), obs_center_bottom(2), r_obs);
+    DEBUG_PRINT("PSD XZ enabled with rho_psd=%.1f, bottom=(%.2f,z=%.2f), top=(%.2f,z=%.2f), r=%.2f\n", 
+                (double)rho_psd, 
+                (double)obs_center_bottom(0), (double)obs_center_bottom(2),
+                (double)obs_center_top(0), (double)obs_center_top(2),
+                (double)r_obs);
   }
 
 #ifdef USE_PLANNER_TRACKER_ARCH
@@ -615,18 +631,26 @@ static void tinympcControllerTask(void *parameters)
       // Update nominal reference trajectory
       UpdateHorizonReference(&setpoint_task);
       
-      // Update obstacle position (static for now, but could be dynamic)
+      // XZ PLANE: Update obstacle positions (bottom sweeps up, top sweeps down)
       if (obs_start_time == 0) {
         obs_start_time = usecTimestamp();
       }
       float obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
-      obs_center = obs_start + obs_velocity * obs_elapsed;
-      if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
-      if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
+      
+      obs_center_bottom = obs_start_bottom + obs_velocity_bottom * obs_elapsed;
+      if (obs_center_bottom(2) > 0.5f) obs_center_bottom(2) = 0.5f;
+      if (obs_center_bottom(2) < 0.15f) obs_center_bottom(2) = 0.15f;
+      
+      obs_center_top = obs_start_top + obs_velocity_top * obs_elapsed;
+      if (obs_center_top(2) < 0.5f) obs_center_top(2) = 0.5f;
+      if (obs_center_top(2) > 0.85f) obs_center_top(2) = 0.85f;
 
-      // Compute signed distance to obstacle
-      float sd = signed_distance_to_obs(current_x(0), current_x(1), 
-                                         obs_center(0), obs_center(1), r_obs);
+      // Compute signed distance to closest obstacle (XZ plane)
+      float sd_bottom = signed_distance_to_obs_xz(current_x(0), current_x(2), 
+                                                   obs_center_bottom(0), obs_center_bottom(2), r_obs);
+      float sd_top = signed_distance_to_obs_xz(current_x(0), current_x(2), 
+                                                obs_center_top(0), obs_center_top(2), r_obs);
+      float sd = (sd_bottom < sd_top) ? sd_bottom : sd_top;
 
       // ================================================================
       // PLANNER: Run every REPLAN_STRIDE steps with PSD constraints
@@ -642,17 +666,22 @@ static void tinympcControllerTask(void *parameters)
         // Distance-based PSD activation with hysteresis
         if (!psd_constraints_active && sd < psd_on_thresh) {
           psd_constraints_active = true;
-          DEBUG_PRINT("PSD ON: sd=%.2f < %.2f\n", (double)sd, (double)psd_on_thresh);
+          DEBUG_PRINT("PSD XZ ON: sd=%.2f < %.2f\n", (double)sd, (double)psd_on_thresh);
         } else if (psd_constraints_active && sd > psd_off_thresh) {
           psd_constraints_active = false;
-          DEBUG_PRINT("PSD OFF: sd=%.2f > %.2f\n", (double)sd, (double)psd_off_thresh);
+          DEBUG_PRINT("PSD XZ OFF: sd=%.2f > %.2f\n", (double)sd, (double)psd_off_thresh);
         }
 
-        // Configure planner with PSD constraints
+        // Configure planner with PSD constraints (use closest obstacle)
         if (psd_constraints_active) {
           problem.en_psd = 1;
-          problem.psd_obs_x = obs_center(0);
-          problem.psd_obs_y = obs_center(1);
+          if (sd_bottom < sd_top) {
+            problem.psd_obs_x = obs_center_bottom(0);
+            problem.psd_obs_y = obs_center_bottom(2);  // z coordinate for XZ
+          } else {
+            problem.psd_obs_x = obs_center_top(0);
+            problem.psd_obs_y = obs_center_top(2);  // z coordinate for XZ
+          }
           problem.cache_level = 1;
         } else {
           problem.en_psd = 0;
@@ -823,24 +852,42 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
-      // Dynamic obstacle - update position based on elapsed time
-      // Arm sweeps from left (y+) to right (y-) starting when OOT activates
+      // XZ PLANE: Update positions of both arms (bottom sweeps up, top sweeps down)
       if (obs_start_time == 0) {
         obs_start_time = usecTimestamp();  // Start timer on first solve
       }
       float obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
-      obs_center = obs_start + obs_velocity * obs_elapsed;
-      // Clamp obstacle position to reasonable range
-      if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
-      if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
       
-      // Update PSD obstacle position
+      // Update bottom arm (sweeps upward)
+      obs_center_bottom = obs_start_bottom + obs_velocity_bottom * obs_elapsed;
+      if (obs_center_bottom(2) > 0.5f) obs_center_bottom(2) = 0.5f;  // Clamp max z
+      if (obs_center_bottom(2) < 0.15f) obs_center_bottom(2) = 0.15f;
+      
+      // Update top arm (sweeps downward)
+      obs_center_top = obs_start_top + obs_velocity_top * obs_elapsed;
+      if (obs_center_top(2) < 0.5f) obs_center_top(2) = 0.5f;  // Clamp min z
+      if (obs_center_top(2) > 0.85f) obs_center_top(2) = 0.85f;
+      
+      // For PSD: use the closer obstacle (XZ plane: psd_obs_y = z coordinate)
+      float drone_x = state_task.position.x;
+      float drone_z = state_task.position.z;
+      float dist_bottom = sqrtf((drone_x - obs_center_bottom(0))*(drone_x - obs_center_bottom(0)) +
+                                (drone_z - obs_center_bottom(2))*(drone_z - obs_center_bottom(2)));
+      float dist_top = sqrtf((drone_x - obs_center_top(0))*(drone_x - obs_center_top(0)) +
+                             (drone_z - obs_center_top(2))*(drone_z - obs_center_top(2)));
+      
       if (enable_psd) {
-        problem.psd_obs_x = obs_center(0);
-        problem.psd_obs_y = obs_center(1);
+        // Use closest obstacle for PSD constraint (psd_obs_y is actually z in XZ mode)
+        if (dist_bottom < dist_top) {
+          problem.psd_obs_x = obs_center_bottom(0);
+          problem.psd_obs_y = obs_center_bottom(2);  // z coordinate
+        } else {
+          problem.psd_obs_x = obs_center_top(0);
+          problem.psd_obs_y = obs_center_top(2);  // z coordinate
+        }
       }
 
-      // Dynamic obstacle avoidance via LTV linear constraints
+      // XZ PLANE: LTV linear constraints for both obstacles
       const bool constraint_hold =
           (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
       static uint32_t cstr_log_cnt = 0;
@@ -854,28 +901,58 @@ static void tinympcControllerTask(void *parameters)
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
         if (enable_obs_constraint && !constraint_hold) {
-          // Predict obstacle position for this horizon step
           float future_t = obs_elapsed + i * dt_horizon;
-          Eigen::Matrix<tinytype, 3, 1> obs_pred = obs_start + obs_velocity * future_t;
-          if (obs_pred(1) < -0.4f) obs_pred(1) = -0.4f;
-          if (obs_pred(1) > 0.4f) obs_pred(1) = 0.4f;
           
-          // Use reference position to define the tangent half-space
+          // Reference position for this horizon step
           Eigen::Matrix<tinytype, 3, 1> ref = params.Xref.col(i).head(3);
-          xc = ref - obs_pred; // points from predicted obstacle to reference
-          float xc_norm = xc.norm();
-          if (xc_norm > 1e-3f && xc_norm < (r_obs + obs_activation_margin)) {
-            a_norm = -xc / xc_norm; // inward normal (for A x <= b)
-            params.A_constraints[i].head(3) = a_norm.transpose();
-            q_c = obs_pred - r_obs * a_norm;
-            params.x_max[i](0) = a_norm.transpose() * q_c;
+          
+          // Check BOTTOM arm constraint (in XZ plane)
+          Eigen::Matrix<tinytype, 3, 1> obs_pred_b = obs_start_bottom + obs_velocity_bottom * future_t;
+          if (obs_pred_b(2) > 0.5f) obs_pred_b(2) = 0.5f;
+          if (obs_pred_b(2) < 0.15f) obs_pred_b(2) = 0.15f;
+          
+          // XZ distance from ref to bottom obstacle
+          Eigen::Matrix<tinytype, 2, 1> ref_xz(ref(0), ref(2));
+          Eigen::Matrix<tinytype, 2, 1> obs_xz_b(obs_pred_b(0), obs_pred_b(2));
+          Eigen::Matrix<tinytype, 2, 1> diff_b = ref_xz - obs_xz_b;
+          float dist_b = diff_b.norm();
+          
+          if (dist_b > 1e-3f && dist_b < (r_obs + obs_activation_margin)) {
+            // Half-space constraint in XZ plane: A_constraints uses indices 0 (x) and 2 (z)
+            Eigen::Matrix<tinytype, 2, 1> a_xz = -diff_b / dist_b;
+            params.A_constraints[i](0) = a_xz(0);   // x coefficient
+            params.A_constraints[i](2) = a_xz(1);   // z coefficient (not y!)
+            Eigen::Matrix<tinytype, 2, 1> q_xz = obs_xz_b - r_obs * a_xz;
+            params.x_max[i](0) = a_xz.dot(q_xz);
             cstr_active_count++;
+          }
+          
+          // Check TOP arm constraint (in XZ plane) - only if bottom didn't activate
+          // (single constraint per step for simplicity)
+          if (params.A_constraints[i].norm() < 1e-6f) {
+            Eigen::Matrix<tinytype, 3, 1> obs_pred_t = obs_start_top + obs_velocity_top * future_t;
+            if (obs_pred_t(2) < 0.5f) obs_pred_t(2) = 0.5f;
+            if (obs_pred_t(2) > 0.85f) obs_pred_t(2) = 0.85f;
+            
+            Eigen::Matrix<tinytype, 2, 1> obs_xz_t(obs_pred_t(0), obs_pred_t(2));
+            Eigen::Matrix<tinytype, 2, 1> diff_t = ref_xz - obs_xz_t;
+            float dist_t = diff_t.norm();
+            
+            if (dist_t > 1e-3f && dist_t < (r_obs + obs_activation_margin)) {
+              Eigen::Matrix<tinytype, 2, 1> a_xz = -diff_t / dist_t;
+              params.A_constraints[i](0) = a_xz(0);   // x coefficient
+              params.A_constraints[i](2) = a_xz(1);   // z coefficient
+              Eigen::Matrix<tinytype, 2, 1> q_xz = obs_xz_t - r_obs * a_xz;
+              params.x_max[i](0) = a_xz.dot(q_xz);
+              cstr_active_count++;
+            }
           }
         }
       }
       if (cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
-        DEBUG_PRINT("OBS: %d active, obs_y=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
-                    (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
+        DEBUG_PRINT("OBS XZ: %d active, bot_z=%.2f, top_z=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
+                    (double)obs_center_bottom(2), (double)obs_center_top(2), 
+                    (double)state_task.position.x, (double)state_task.position.z);
       }
       
       // Force cache_level=1 permanently once constraints have been activated
@@ -929,10 +1006,11 @@ static void tinympcControllerTask(void *parameters)
       }
 
       // ================================================================
-      // Safety Certificate (Section 3.4 of paper)
-      // Trace gap: Δ = trace(X^(p)) - ||p||² = S(1,1) + S(2,2) - (px² + py²)
-      // Lifted margin: η = S(1,1) + S(2,2) - 2*ox*S(0,1) - 2*oy*S(0,2) + ox² + oy² - r²
+      // Safety Certificate (Section 3.4 of paper) - XZ PLANE
+      // Trace gap: Δ = trace(X^(p)) - ||p||² = S(1,1) + S(2,2) - (px² + pz²)
+      // Lifted margin: η = S(1,1) + S(2,2) - 2*ox*S(0,1) - 2*oz*S(0,2) + ox² + oz² - r²
       // Certified if: η ≥ 0 AND |Δ| ≤ η
+      // Check certificate for BOTH obstacles, certified only if both pass
       // ================================================================
       static uint32_t cert_log_cnt = 0;
       bool certified_k0 = true;
@@ -940,32 +1018,42 @@ static void tinympcControllerTask(void *parameters)
       float eta_min_k0 = 1000.0f;
       
       if (enable_psd && enable_obs_constraint) {
-        // Check certificate for k=0 (current step)
+        // Check certificate for k=0 (current step) in XZ plane
         float px = problem.x(0, 0);
-        float py = problem.x(1, 0);
+        float pz = problem.x(2, 0);  // XZ plane: use z instead of y
         
         // Get projected slack S from svec representation
         tiny_MatrixPsd Snew = smat_3x3(problem.Spsd_new.col(0));
         
         // Trace gap: Δ = trace(X^(p)) - ||p||²
         // trace(X^(p)) = S(1,1) + S(2,2)
-        // ||p||² = px² + py²
-        trace_gap_k0 = (Snew(1,1) + Snew(2,2)) - (px*px + py*py);
+        // ||p||² = px² + pz²
+        trace_gap_k0 = (Snew(1,1) + Snew(2,2)) - (px*px + pz*pz);
         
-        // Lifted margin for obstacle
-        float ox = obs_center(0);
-        float oy = obs_center(1);
+        // Lifted margin for BOTTOM obstacle (XZ coordinates)
+        float ox_b = obs_center_bottom(0);
+        float oz_b = obs_center_bottom(2);
         float r = r_obs;
-        eta_min_k0 = Snew(1,1) + Snew(2,2) - 2.0f*ox*Snew(0,1) - 2.0f*oy*Snew(0,2) + ox*ox + oy*oy - r*r;
+        float eta_bottom = Snew(1,1) + Snew(2,2) - 2.0f*ox_b*Snew(0,1) - 2.0f*oz_b*Snew(0,2) + ox_b*ox_b + oz_b*oz_b - r*r;
         
-        // Certificate check
-        certified_k0 = (eta_min_k0 >= 0.0f) && (fabsf(trace_gap_k0) <= eta_min_k0);
+        // Lifted margin for TOP obstacle (XZ coordinates)
+        float ox_t = obs_center_top(0);
+        float oz_t = obs_center_top(2);
+        float eta_top = Snew(1,1) + Snew(2,2) - 2.0f*ox_t*Snew(0,1) - 2.0f*oz_t*Snew(0,2) + ox_t*ox_t + oz_t*oz_t - r*r;
+        
+        // Use minimum eta (closest/most constraining obstacle)
+        eta_min_k0 = (eta_bottom < eta_top) ? eta_bottom : eta_top;
+        
+        // Certificate check: certified if both obstacles pass
+        bool cert_bottom = (eta_bottom >= 0.0f) && (fabsf(trace_gap_k0) <= eta_bottom);
+        bool cert_top = (eta_top >= 0.0f) && (fabsf(trace_gap_k0) <= eta_top);
+        certified_k0 = cert_bottom && cert_top;
         
         // Log periodically
         if (cert_log_cnt++ % 50 == 0) {
-          DEBUG_PRINT("CERT: %s Δ=%.3f η=%.3f\n", 
+          DEBUG_PRINT("CERT XZ: %s Δ=%.3f η_bot=%.3f η_top=%.3f\n", 
                       certified_k0 ? "OK" : "FAIL",
-                      (double)trace_gap_k0, (double)eta_min_k0);
+                      (double)trace_gap_k0, (double)eta_bottom, (double)eta_top);
         }
         
         // Optional: emergency stop if uncertified (commented out for now)
