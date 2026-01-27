@@ -415,7 +415,7 @@ void controllerOutOfTreeInit(void)
   // Bottom arm starts at z=0.2, sweeps upward at 0.03 m/s
   // Top arm starts at z=0.8, sweeps downward at 0.03 m/s
   // Goal: drone must lift up into shrinking gap before it closes
-  obs_start_bottom << 0.7f, 0.0f, 0.2f;       // Bottom arm (low z)
+  obs_start_bottom << 0.7f, 0.0f, 0.4f;       // Bottom arm (low z)
   obs_velocity_bottom << 0.0f, 0.0f, 0.03f;   // Sweeps upward
   obs_center_bottom = obs_start_bottom;
   
