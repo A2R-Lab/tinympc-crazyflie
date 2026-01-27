@@ -26,6 +26,30 @@
  */
 
 /**
+ * =============================================================================
+ * PLANNER + TRACKER ARCHITECTURE (TinySDP)
+ * =============================================================================
+ * 
+ * This implementation uses a hierarchical architecture matching the simulation:
+ * 
+ * PLANNER (runs every REPLAN_STRIDE steps):
+ *   - Has PSD constraints enabled
+ *   - Computes collision-free trajectory
+ *   - Stores plan in cache for tracker to follow
+ * 
+ * TRACKER (runs every step):
+ *   - NO obstacle constraints
+ *   - Just tracks the planner's reference trajectory
+ *   - Lightweight, fast solve
+ * 
+ * This matches tiny_psd_dynamic_demo.cpp in simulation.
+ * =============================================================================
+ */
+
+// Use planner+tracker architecture (comment out to use old single-solver)
+#define USE_PLANNER_TRACKER_ARCH 1
+
+/**
  * Single lap
  */
 
@@ -198,6 +222,50 @@ static float r_obs = 0.35f;           // Obstacle radius
 static float obs_activation_margin = 0.15f; // Constraint activation distance
 static uint64_t obs_start_time = 0;   // Time when obstacle motion started
 
+// =============================================================================
+// PLANNER + TRACKER ARCHITECTURE VARIABLES
+// =============================================================================
+#ifdef USE_PLANNER_TRACKER_ARCH
+
+// Planner runs every REPLAN_STRIDE MPC steps
+#define REPLAN_STRIDE 5
+
+// Separate problem/params for tracker (planner uses the main problem/params)
+static struct tiny_cache cache_tracker;
+static struct tiny_params params_tracker;
+static struct tiny_problem problem_tracker;
+
+// Plan cache: stores the trajectory from the planner
+static tiny_MatrixNxNh plan_Xref_cache;      // Cached reference trajectory
+static tiny_MatrixNuNhm1 plan_Uref_cache;    // Cached input trajectory
+static int plan_start_step = 0;               // Step when plan was computed
+static int plan_iters = 0;                    // Iterations planner took
+static bool plan_valid = false;               // Is there a valid plan?
+
+// Distance-based PSD activation with hysteresis
+static const float psd_on_thresh = 0.5f;      // Distance to activate PSD
+static const float psd_off_thresh = 0.7f;     // Distance to deactivate PSD
+static bool psd_constraints_active = false;   // Current PSD state
+
+// Step counter for replan scheduling
+static int mpc_step_count = 0;
+
+// Helper: clamp index to valid range
+static inline int clamp_idx(int idx, int lo, int hi) {
+    if (idx < lo) return lo;
+    if (idx > hi) return hi;
+    return idx;
+}
+
+// Helper: compute signed distance from position to obstacle
+static inline float signed_distance_to_obs(float px, float py, float ox, float oy, float r) {
+    float dx = px - ox;
+    float dy = py - oy;
+    return sqrtf(dx*dx + dy*dy) - r;
+}
+
+#endif // USE_PLANNER_TRACKER_ARCH
+
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
   return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
@@ -357,6 +425,86 @@ void controllerOutOfTreeInit(void)
                 (double)rho_psd, (double)obs_center(0), (double)obs_center(1), (double)r_obs);
   }
 
+#ifdef USE_PLANNER_TRACKER_ARCH
+  // ==========================================================================
+  // TRACKER SOLVER INITIALIZATION
+  // Tracker has NO PSD, NO obstacle constraints - just tracks the plan
+  // ==========================================================================
+  DEBUG_PRINT("Initializing PLANNER+TRACKER architecture...\n");
+  
+  // Copy cache data for tracker (same dynamics, different rho)
+  cache_tracker.Adyn[0] = cache.Adyn[0];
+  cache_tracker.Bdyn[0] = cache.Bdyn[0];
+  cache_tracker.rho[0] = rho_unconstrained_value;
+  cache_tracker.Kinf[0] = cache.Kinf[0];
+  cache_tracker.Pinf[0] = cache.Pinf[0];
+  cache_tracker.Quu_inv[0] = cache.Quu_inv[0];
+  cache_tracker.AmBKt[0] = cache.AmBKt[0];
+  cache_tracker.coeff_d2p[0] = cache.coeff_d2p[0];
+  
+  cache_tracker.Adyn[1] = cache.Adyn[1];
+  cache_tracker.Bdyn[1] = cache.Bdyn[1];
+  cache_tracker.rho[1] = rho_constrained_value;
+  cache_tracker.Kinf[1] = cache.Kinf[1];
+  cache_tracker.Pinf[1] = cache.Pinf[1];
+  cache_tracker.Quu_inv[1] = cache.Quu_inv[1];
+  cache_tracker.AmBKt[1] = cache.AmBKt[1];
+  cache_tracker.coeff_d2p[1] = cache.coeff_d2p[1];
+  
+  // Tracker params - same as main but NO obstacle constraints
+  params_tracker.Q[0] = params.Q[0];
+  params_tracker.Qf[0] = params.Qf[0];
+  params_tracker.R[0] = params.R[0];
+  params_tracker.Q[1] = params.Q[1];
+  params_tracker.Qf[1] = params.Qf[1];
+  params_tracker.R[1] = params.R[1];
+  params_tracker.u_min = params.u_min;
+  params_tracker.u_max = params.u_max;
+  for (int i = 0; i < NHORIZON; i++) {
+    params_tracker.x_min[i] = tiny_VectorNc::Constant(-1000);
+    params_tracker.x_max[i] = tiny_VectorNc::Constant(1000);
+    params_tracker.A_constraints[i] = tiny_MatrixNcNx::Zero();
+  }
+  params_tracker.Xref = Xref_origin.replicate<1, NHORIZON>();
+  params_tracker.Uref = tiny_MatrixNuNhm1::Zero();
+  params_tracker.cache = cache_tracker;
+  
+  // Tracker problem - NO PSD
+  problem_tracker.x = tiny_MatrixNxNh::Zero();
+  problem_tracker.q = tiny_MatrixNxNh::Zero();
+  problem_tracker.p = tiny_MatrixNxNh::Zero();
+  problem_tracker.v = tiny_MatrixNxNh::Zero();
+  problem_tracker.vnew = tiny_MatrixNxNh::Zero();
+  problem_tracker.g = tiny_MatrixNxNh::Zero();
+  problem_tracker.u = tiny_MatrixNuNhm1::Zero();
+  problem_tracker.r = tiny_MatrixNuNhm1::Zero();
+  problem_tracker.d = tiny_MatrixNuNhm1::Zero();
+  problem_tracker.z = tiny_MatrixNuNhm1::Zero();
+  problem_tracker.znew = tiny_MatrixNuNhm1::Zero();
+  problem_tracker.y = tiny_MatrixNuNhm1::Zero();
+  
+  problem_tracker.primal_residual_state = 0;
+  problem_tracker.primal_residual_input = 0;
+  problem_tracker.dual_residual_state = 0;
+  problem_tracker.dual_residual_input = 0;
+  problem_tracker.abs_tol = 0.001;
+  problem_tracker.status = 0;
+  problem_tracker.iter = 0;
+  problem_tracker.max_iter = 3;  // Tracker can be faster
+  problem_tracker.iters_check_rho_update = 10;
+  problem_tracker.cache_level = 0;
+  problem_tracker.en_psd = 0;  // NO PSD for tracker!
+  
+  // Initialize plan cache
+  plan_Xref_cache = Xref_origin.replicate<1, NHORIZON>();
+  plan_Uref_cache = tiny_MatrixNuNhm1::Zero();
+  plan_valid = false;
+  psd_constraints_active = false;
+  mpc_step_count = 0;
+  
+  DEBUG_PRINT("PLANNER+TRACKER init done. Replan every %d steps.\n", REPLAN_STRIDE);
+#endif // USE_PLANNER_TRACKER_ARCH
+
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
   // ASSERT(runTaskSemaphore);
@@ -410,6 +558,182 @@ bool controllerOutOfTreeTest()
   return true;
 }
 
+#ifdef USE_PLANNER_TRACKER_ARCH
+// =============================================================================
+// PLANNER + TRACKER TASK (New Architecture)
+// =============================================================================
+static void tinympcControllerTask(void *parameters)
+{
+  uint32_t nowMs = T2M(xTaskGetTickCount());
+  uint32_t nextMpcMs = nowMs;
+  startTimestamp = usecTimestamp();
+
+  static uint32_t task_loop_count = 0;
+  static uint32_t log_cnt = 0;
+  
+  while (true)
+  {
+    xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
+    
+    task_loop_count++;
+    if (task_loop_count <= 3) {
+      DEBUG_PRINT("PLANNER+TRACKER task loop %lu\n", task_loop_count);
+    }
+
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    memcpy(&setpoint_task, &setpoint_data, sizeof(setpoint_t));
+    memcpy(&sensors_task, &sensors_data, sizeof(sensorData_t));
+    memcpy(&state_task, &state_data, sizeof(state_t));
+    memcpy(&control_task, &control_data, sizeof(control_t));
+    xSemaphoreGive(dataMutex);
+
+    nowMs = T2M(xTaskGetTickCount());
+    if (nowMs >= nextMpcMs)
+    {
+      nextMpcMs = nowMs + (1000.0f / MPC_RATE);
+
+      // Skip after landing
+      if (!enable_traj && traj_index >= max_traj_index) {
+        continue;
+      }
+
+      // Enable trajectory after 2 second delay
+      if (usecTimestamp() - startTimestamp > 1000000 * 2 && traj_index == 0 && !enable_traj)
+      {
+        DEBUG_PRINT("Enable trajectory!\n");
+        enable_traj = true;
+      }
+
+      // Get current state
+      phi = quat_2_rp(normalize_quat(state_task.attitudeQuaternion));
+      tiny_VectorNx current_x;
+      current_x << state_task.position.x, state_task.position.y, state_task.position.z,
+          phi.x, phi.y, phi.z,
+          state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
+          radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
+
+      // Update nominal reference trajectory
+      UpdateHorizonReference(&setpoint_task);
+      
+      // Update obstacle position (static for now, but could be dynamic)
+      if (obs_start_time == 0) {
+        obs_start_time = usecTimestamp();
+      }
+      float obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
+      obs_center = obs_start + obs_velocity * obs_elapsed;
+      if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
+      if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
+
+      // Compute signed distance to obstacle
+      float sd = signed_distance_to_obs(current_x(0), current_x(1), 
+                                         obs_center(0), obs_center(1), r_obs);
+
+      // ================================================================
+      // PLANNER: Run every REPLAN_STRIDE steps with PSD constraints
+      // ================================================================
+      bool need_replan = (mpc_step_count == 0) ||
+                         (mpc_step_count - plan_start_step >= REPLAN_STRIDE) ||
+                         (!plan_valid);
+      
+      const bool constraint_hold = 
+          (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
+      
+      if (need_replan && !constraint_hold) {
+        // Distance-based PSD activation with hysteresis
+        if (!psd_constraints_active && sd < psd_on_thresh) {
+          psd_constraints_active = true;
+          DEBUG_PRINT("PSD ON: sd=%.2f < %.2f\n", (double)sd, (double)psd_on_thresh);
+        } else if (psd_constraints_active && sd > psd_off_thresh) {
+          psd_constraints_active = false;
+          DEBUG_PRINT("PSD OFF: sd=%.2f > %.2f\n", (double)sd, (double)psd_off_thresh);
+        }
+
+        // Configure planner with PSD constraints
+        if (psd_constraints_active) {
+          problem.en_psd = 1;
+          problem.psd_obs_x = obs_center(0);
+          problem.psd_obs_y = obs_center(1);
+          problem.cache_level = 1;
+        } else {
+          problem.en_psd = 0;
+          problem.cache_level = 0;
+        }
+
+        // Set initial state for planner
+        problem.x.col(0) = current_x;
+        
+        // Solve planner
+        problem.iter = 0;
+        mpc_start_timestamp = usecTimestamp();
+        solve_admm(&problem, &params);
+        mpc_time_us = usecTimestamp() - mpc_start_timestamp;
+        plan_iters = problem.iter;
+
+        // Cache the plan trajectory
+        plan_Xref_cache = problem.x;
+        plan_Uref_cache = problem.u;
+        plan_start_step = mpc_step_count;
+        plan_valid = true;
+
+        if (log_cnt++ % 25 == 0) {
+          DEBUG_PRINT("PLAN: step=%d sd=%.2f psd=%d iter=%d t=%luus\n",
+                      mpc_step_count, (double)sd, psd_constraints_active ? 1 : 0,
+                      plan_iters, mpc_time_us);
+        }
+      }
+
+      // ================================================================
+      // TRACKER: Run every step, follows cached plan (NO obstacle constraints)
+      // ================================================================
+      
+      // Set tracker reference from cached plan
+      int offset = mpc_step_count - plan_start_step;
+      for (int i = 0; i < NHORIZON; ++i) {
+        int idx = clamp_idx(offset + i, 0, NHORIZON - 1);
+        params_tracker.Xref.col(i) = plan_Xref_cache.col(idx);
+      }
+      for (int i = 0; i < NHORIZON - 1; ++i) {
+        int idx = clamp_idx(offset + i, 0, NHORIZON - 2);
+        params_tracker.Uref.col(i) = plan_Uref_cache.col(idx);
+      }
+
+      // Set initial state for tracker
+      problem_tracker.x.col(0) = current_x;
+      
+      // Tracker has NO obstacle constraints - just tracks the (safe) plan
+      problem_tracker.cache_level = 0;  // Use unconstrained cache
+      problem_tracker.iter = 0;
+      
+      // Solve tracker (fast, no PSD)
+      solve_admm(&problem_tracker, &params_tracker);
+
+      // Output: use tracker's result
+      mpc_setpoint_task = problem_tracker.x.col(NHORIZON-1);
+      
+      if (task_loop_count <= 5) {
+        DEBUG_PRINT("TRACK: step=%d sp=(%.2f,%.2f,%.2f) iter=%d\n",
+                    mpc_step_count, 
+                    (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(1), (double)mpc_setpoint_task(2),
+                    problem_tracker.iter);
+      }
+
+      // Increment step counter
+      mpc_step_count++;
+
+      // Copy setpoint to shared variable
+      xSemaphoreTake(dataMutex, portMAX_DELAY);
+      memcpy(&mpc_setpoint, &mpc_setpoint_task, sizeof(tiny_VectorNx));
+      memcpy(&init_vel_z, &problem_tracker.x.col(0)(8), sizeof(float));
+      mpc_has_run = true;
+      xSemaphoreGive(dataMutex);
+    }
+  }
+}
+
+#else // USE_PLANNER_TRACKER_ARCH
+// =============================================================================
+// ORIGINAL SINGLE-SOLVER TASK (Commented out old version)
+// =============================================================================
 static void tinympcControllerTask(void *parameters)
 {
   // systemWaitStart();
@@ -669,6 +993,7 @@ static void tinympcControllerTask(void *parameters)
     }
   }
 }
+#endif // USE_PLANNER_TRACKER_ARCH
 
 /**
  * This function is called from the stabilizer loop. It is important that this call returns
