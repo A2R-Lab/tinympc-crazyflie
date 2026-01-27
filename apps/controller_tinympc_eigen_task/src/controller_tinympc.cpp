@@ -400,7 +400,8 @@ void controllerOutOfTreeInit(void)
 
   // Initialize straight-line reference (generated, not from table)
   Xref_origin << 0, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-  Xref_end << traj_dist, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  // XZ plane: end position is higher (z=1.0) to go over top arm
+  Xref_end << traj_dist, 0, 1.0f, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
 
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
@@ -540,12 +541,34 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
     const float dt = 1.0f / MPC_RATE;
     const float travel_time = traj_dist / traj_speed;
     const float base_t = traj_index * dt;
+    
+    // XZ PLANE: Reference z ramps up to go OVER the top arm
+    // Top arm is at x=0.7, starts at z=0.8
+    // Drone should lift to z~1.0 to clear it
+    const float obs_x = 0.7f;           // Obstacle x location
+    const float lift_start_x = 0.3f;    // Start lifting at x=0.3
+    const float lift_end_x = 0.7f;      // Peak at x=0.7
+    const float z_low = traj_height;    // Starting height (0.5)
+    const float z_high = 1.0f;          // Peak height to clear top arm
+    
     for (int i = 0; i < NHORIZON; ++i) {
       float t = base_t + i * dt;
       float x = (t < travel_time) ? (traj_speed * t) : traj_dist;
+      
+      // Compute z reference: ramp up as x approaches obstacle, then stay high
+      float z_ref = z_low;
+      if (x >= lift_start_x && x <= lift_end_x) {
+        // Linear ramp from z_low to z_high
+        float alpha = (x - lift_start_x) / (lift_end_x - lift_start_x);
+        z_ref = z_low + alpha * (z_high - z_low);
+      } else if (x > lift_end_x) {
+        // Stay high after passing obstacle zone
+        z_ref = z_high;
+      }
+      
       params.Xref(0, i) = x;
       params.Xref(1, i) = 0.0f;
-      params.Xref(2, i) = traj_height;
+      params.Xref(2, i) = z_ref;
     }
 
     if (traj_index < max_traj_index) {
