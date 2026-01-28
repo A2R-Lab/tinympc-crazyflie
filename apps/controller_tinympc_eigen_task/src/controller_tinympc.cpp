@@ -158,6 +158,25 @@ static struct tiny_problem problem;
 static tiny_MatrixNxNh problem_x;
 // static float horizon_nh_z;
 static float init_vel_z;
+
+// ---------------------------------------------------------------------------
+// Certificate logging (Sec. III-D): primitives for plotting and review
+//   Δ_k        = trace gap
+//   η_min,k    = lifted margin
+//   certified  = 1[ η_min,k >= 0 AND |Δ_k| <= η_min,k ]
+//
+// Additional helpful quantities for plotting (squared units):
+//   bound_sq   = η_min,k - |Δ_k|
+//   true_clear_sq = ||p - c||^2 - r^2  (measured from current state/obstacle)
+// ---------------------------------------------------------------------------
+static float cert_trace_gap_log = 0.0f;
+static float cert_eta_min_log = -1.0f;
+static float cert_abs_trace_gap_log = 0.0f;
+static float cert_bound_sq_log = -1.0f;
+static float cert_true_clear_sq_log = -1.0f;
+static uint8_t cert_certified_log = 0;
+static uint32_t cert_k_log = 0;
+
 // static Eigen::Matrix<tinytype, NSTATES, NTOTAL, Eigen::ColMajor> Xref_total;
 static Eigen::Matrix<tinytype, 3, NTOTAL, Eigen::ColMajor> Xref_total;
 static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_origin; // Start position for trajectory
@@ -637,11 +656,25 @@ static void tinympcControllerTask(void *parameters)
         // Certificate check
         certified_k0 = (eta_min_k0 >= 0.0f) && (fabsf(trace_gap_k0) <= eta_min_k0);
         
+        // True clearance (squared) = ||p - c||² - r²
+        float dx = px - ox;
+        float dy = py - oy;
+        float true_clear_sq = dx*dx + dy*dy - r*r;
+        
+        // Update logging variables
+        cert_trace_gap_log = trace_gap_k0;
+        cert_eta_min_log = eta_min_k0;
+        cert_abs_trace_gap_log = fabsf(trace_gap_k0);
+        cert_bound_sq_log = eta_min_k0 - fabsf(trace_gap_k0);  // certified lower bound
+        cert_true_clear_sq_log = true_clear_sq;
+        cert_certified_log = certified_k0 ? 1 : 0;
+        cert_k_log = task_loop_count;
+        
         // Log periodically
         if (cert_log_cnt++ % 50 == 0) {
-          DEBUG_PRINT("CERT: %s Δ=%.3f η=%.3f\n", 
+          DEBUG_PRINT("CERT: %s Δ=%.3f η=%.3f clear=%.3f\n", 
                       certified_k0 ? "OK" : "FAIL",
-                      (double)trace_gap_k0, (double)eta_min_k0);
+                      (double)trace_gap_k0, (double)eta_min_k0, (double)true_clear_sq);
         }
         
         // Optional: emergency stop if uncertified (commented out for now)
@@ -798,6 +831,15 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 LOG_GROUP_START(tinympc)
 
 LOG_ADD(LOG_FLOAT, initial_velocity, &init_vel_z)
+
+// Certificate primitives (Sec. III-D)
+LOG_ADD(LOG_FLOAT, cert_trace_gap, &cert_trace_gap_log)      // Δ_k
+LOG_ADD(LOG_FLOAT, cert_eta_min, &cert_eta_min_log)          // η_min,k
+LOG_ADD(LOG_FLOAT, cert_abs_gap, &cert_abs_trace_gap_log)    // |Δ_k|
+LOG_ADD(LOG_FLOAT, cert_bound_sq, &cert_bound_sq_log)        // η_min - |Δ|
+LOG_ADD(LOG_FLOAT, cert_true_clear_sq, &cert_true_clear_sq_log) // ||p-c||² - r²
+LOG_ADD(LOG_UINT8, cert_ok, &cert_certified_log)             // 1 if certified
+LOG_ADD(LOG_UINT32, cert_k, &cert_k_log)                     // MPC loop count
 
 LOG_GROUP_STOP(tinympc)
 
