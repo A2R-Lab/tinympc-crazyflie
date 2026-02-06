@@ -87,9 +87,9 @@ void appMain() {
   }
 }
 
-// Macro variables, model dimensions in tinympc/constants.h
+// Macro variables - define locally to avoid dependency issues
 #define DT 0.002f       // dt
-// NHORIZON defined in constants.h (must match for half-space constraint arrays)
+#define NHORIZON 25     // horizon steps (must match constants.h if used)
 #define MPC_RATE RATE_100_HZ  // control frequency
 #define LQR_RATE RATE_500_HZ  // control frequency
 
@@ -156,7 +156,7 @@ static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = true;
+static bool en_traj = false;
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 //static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
 static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
@@ -167,33 +167,7 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
-// Half-space obstacle constraint mode
-// HALFSPACE_CSTR_MODE:
-// 0 = off (straight line only)
-// 1 = log only (no constraints applied)
-// 2 = enable half-space constraints for obstacle avoidance
-// HALFSPACE_CSTR_MODE: 0=off, 1=log, 2=ADMM projection, 3=reference push (soft)
-
-
-#define HALFSPACE_CSTR_MODE 2
-
-// Storage for state constraints (always needed for solver)
-static MatrixNf Acx;
-static VectorNf lcx;
-static VectorNf ucx;
-static VectorNf YX[NHORIZON];
-static VectorNf ZX[NHORIZON];
-static VectorNf ZX_new[NHORIZON];
-
-#if HALFSPACE_CSTR_MODE >= 1
-// Obstacle parameters (static disk near the path)
-static float obs_cx = 0.5f;   // obstacle center x
-static float obs_cy = 0.15f;  // obstacle center y (offset so path brushes past)
-static float obs_cz = 0.5f;   // obstacle center z
-static float obs_r = 0.10f;   // obstacle radius (smaller = gentler push)
-// Removed: obs_activation_dist and obs_horizon_start - constraints always active now
-static uint32_t hs_log_counter = 0;
-#endif
+// Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
@@ -273,71 +247,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   }
 }
 
-// Removed: warmup/transition variables - constraints always active now
-
-static void updateHalfspaceConstraints(void) {
-  // Disable all half-space constraints by default
-  for (int k = 0; k < NHORIZON; ++k) {
-    data.en_hs[k] = 0;
-  }
-  
-#if HALFSPACE_CSTR_MODE >= 1
-  // ALWAYS constrained - no warmup, no transition
-  // Constraints are always enabled; half-space is computed for all horizon steps
-  // When far from obstacle, constraint won't be violated so no effect
-  
-  Eigen::Vector3f obs_center(obs_cx, obs_cy, obs_cz);
-  
-  // Compute half-space constraint for ALL horizon steps (always active)
-  for (int k = 0; k < NHORIZON; ++k) {
-    Eigen::Vector3f ref_pos(Xref[k](0), Xref[k](1), Xref[k](2));
-    Eigen::Vector3f diff = ref_pos - obs_center;
-    float dist_to_obs = diff.norm();
-    
-    Eigen::Vector3f n;
-    if (dist_to_obs > 1e-4f) {
-      n = diff / dist_to_obs;
-    } else {
-      n = Eigen::Vector3f(0.0f, -1.0f, 0.0f);  // Default escape direction
-    }
-    
-#if HALFSPACE_CSTR_MODE == 2
-    // ADMM half-space: always set constraint (won't be violated when far away)
-    data.a_hs[k] = -n;
-    data.b_hs[k] = -n.dot(obs_center) - obs_r;
-    data.en_hs[k] = 1;  // Always enabled
-#elif HALFSPACE_CSTR_MODE == 3
-    // Soft reference push: if ref is inside obstacle+margin, push it out
-    float penetration = (obs_r + 0.05f) - dist_to_obs;
-    if (penetration > 0) {
-      float push = (penetration < 0.02f) ? penetration : 0.02f;
-      Xref[k](0) += n(0) * push;
-      Xref[k](1) += n(1) * push;
-      Xref[k](2) += n(2) * push;
-    }
-#endif
-  }
-  
-#if HALFSPACE_CSTR_MODE == 2
-  // Always enable state constraints - no transition
-  stgs.en_cstr_states = 1;
-#else
-  stgs.en_cstr_states = 0;
-#endif
-  
-  // Logging
-  if (hs_log_counter % 25 == 0) {
-    Eigen::Vector3f pos(x0(0), x0(1), x0(2));
-    float dist = (pos - obs_center).norm();
-    // Log attitude from MPC solution (Rodrigues params: roll/pitch/yaw)
-    float roll = Xhrz[1](3);   // phi_x
-    float pitch = Xhrz[1](4); // phi_y
-    DEBUG_PRINT("HS: d=%.2f r=%.2f p=%.2f\n", 
-                (double)dist, (double)roll, (double)pitch);
-  }
-  hs_log_counter++;
-#endif
-}
+// Half-space constraint function removed for basic functionality test
 
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
@@ -354,10 +264,10 @@ void controllerOutOfTreeInit(void) {
   stgs.rho_init = 250.0;  // Original stable rho
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
   
-  // Fill in the remaining struct 
-  tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, ZX, ZX_new);
+  // Fill in the remaining struct (pass 0 for state constraints - not used)
+  tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, 0, 0);
   tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
-  tiny_InitSolution(&work, Xhrz, Uhrz, YX, YU, 0, &Kinf, d, &Pinf, p);
+  tiny_InitSolution(&work, Xhrz, Uhrz, 0, YU, 0, &Kinf, d, &Pinf, p);
 
   tiny_SetInitialState(&work, &x0);  
   tiny_SetStateReference(&work, Xref);
@@ -372,34 +282,14 @@ void controllerOutOfTreeInit(void) {
   ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
   lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
-  
-  // Initialize state constraint data
-  for (int i = 0; i < NSTATES; ++i) {
-    lcx(i) = -1e6f;
-    ucx(i) = 1e6f;
-  }
-  for (int k = 0; k < NHORIZON; ++k) {
-    YX[k].setZero();
-    ZX[k].setZero();
-    ZX_new[k].setZero();
-    // Initialize half-space constraints to disabled
-    data.a_hs[k].setZero();
-    data.b_hs[k] = 1e6f;
-    data.en_hs[k] = 0;
-  }
-  tiny_SetStateBound(&work, &Acx, &lcx, &ucx);
 
   tiny_UpdateLinearCost(&work);
 
   /* Solver settings */
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
-#if HALFSPACE_CSTR_MODE == 2
-  stgs.en_cstr_states = 1;  // Always constrained - no transition
-#else
-  stgs.en_cstr_states = 0;
-#endif
-  stgs.max_iter = 5;        // More iterations for constraints
+  stgs.en_cstr_states = 0;  // No state constraints for basic test
+  stgs.max_iter = 2;        // Original working value
   stgs.verbose = 0;
   stgs.check_termination = 0;
   stgs.tol_abs_dual = 5e-2;
@@ -412,7 +302,7 @@ void controllerOutOfTreeInit(void) {
   -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
   /* End of MPC initialization */  
-  en_traj = true;  // Enable circle trajectory tracking
+  en_traj = false;  // Hover mode (set to true for trajectory tracking)
   step = 0;  
   traj_iter = 0;
   
@@ -437,9 +327,6 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
     // Get command reference
     updateHorizonReference(setpoint);
-
-    // Half-space obstacle avoidance constraints
-    updateHalfspaceConstraints();
 
     /* MPC solve */
     // Solve optimization problem using ADMM
