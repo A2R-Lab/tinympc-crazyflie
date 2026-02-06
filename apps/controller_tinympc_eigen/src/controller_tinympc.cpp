@@ -94,11 +94,11 @@ void appMain() {
 #define LQR_RATE RATE_500_HZ  // control frequency
 
 /* Include trajectory to track */
-// #include "traj_fig8_12.h"
+#include "traj_fig8_12.h"
 // #include "traj_circle_500hz.h"  // Large circle (1m radius)
 // #include "traj_circle_small.h"  // Small circle (0.5m radius)
 // #include "traj_perching.h"
-#include "traj_straight_line.h"  // Straight line (0,0,0.5) to (1,0,0.5)
+//#include "traj_straight_line.h"  // Straight line (0,0,0.5) to (1,0,0.5)
 
 // Precomputed data and cache, in params_*.h
 static MatrixNf A;
@@ -156,7 +156,7 @@ static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = false;
+static bool en_traj = true;  // false=hover, true=trajectory tracking
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 //static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
 static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
@@ -302,7 +302,6 @@ void controllerOutOfTreeInit(void) {
   -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
   /* End of MPC initialization */  
-  en_traj = false;  // Hover mode (set to true for trajectory tracking)
   step = 0;  
   traj_iter = 0;
   
