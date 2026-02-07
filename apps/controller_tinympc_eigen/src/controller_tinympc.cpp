@@ -156,7 +156,7 @@ static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = true;  // false=hover, true=trajectory tracking
+static bool en_traj = true;
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 //static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
 static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
@@ -356,24 +356,19 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // pos_log_counter++;
   }
 
-  if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
-    // Reference from MPC
-    Ulqr = -(Kinf) * (x0 - Xhrz[1]) + ZU_new[0];
-    
-    /* Output control */
-    if (setpoint->mode.z == modeDisable) {
-      control->normalizedForces[0] = 0.0f;
-      control->normalizedForces[1] = 0.0f;
-      control->normalizedForces[2] = 0.0f;
-      control->normalizedForces[3] = 0.0f;
-    } else {
-      control->normalizedForces[0] = Ulqr(0) + u_hover[0];  // PWM 0..1
-      control->normalizedForces[1] = Ulqr(1) + u_hover[1];
-      control->normalizedForces[2] = Ulqr(2) + u_hover[2];
-      control->normalizedForces[3] = Ulqr(3) + u_hover[3];
-    } 
-    control->controlMode = controlModePWM;
+  /* Output control — pure MPC, apply projected ADMM solution directly */
+  if (setpoint->mode.z == modeDisable) {
+    control->normalizedForces[0] = 0.0f;
+    control->normalizedForces[1] = 0.0f;
+    control->normalizedForces[2] = 0.0f;
+    control->normalizedForces[3] = 0.0f;
+  } else {
+    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
+    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
+    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
+    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
   }
+  control->controlMode = controlModePWM;
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
 
   // control->normalizedForces[0] = 0.0f;
