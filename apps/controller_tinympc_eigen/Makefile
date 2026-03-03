@@ -14,6 +14,17 @@
 #
 CRAZYFLIE_BASE := ../../crazyflie-firmware
 
+# On macOS, Crazyflie's merge_config.sh requires GNU readlink/sed/cp.
+# If Homebrew gnubin shims exist, prepend them automatically.
+COREUTILS_GNUBIN := $(firstword $(wildcard /opt/homebrew/opt/coreutils/libexec/gnubin) $(wildcard /usr/local/opt/coreutils/libexec/gnubin))
+GNU_SED_GNUBIN := $(firstword $(wildcard /opt/homebrew/opt/gnu-sed/libexec/gnubin) $(wildcard /usr/local/opt/gnu-sed/libexec/gnubin))
+ifneq ($(COREUTILS_GNUBIN),)
+export PATH := $(COREUTILS_GNUBIN):$(PATH)
+endif
+ifneq ($(GNU_SED_GNUBIN),)
+export PATH := $(GNU_SED_GNUBIN):$(PATH)
+endif
+
 #
 # To include header files from other directories
 #
@@ -21,8 +32,8 @@ CRAZYFLIE_BASE := ../../crazyflie-firmware
 # EXTRA_CFLAGS += -lgcc
 # EXTRA_CFLAGS += -lc
 # EXTRA_CFLAGS += -lm
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC-ADMM/ext/Eigen
-EXTRA_CFLAGS += -I$(PWD)/TinyMPC-ADMM/src
+EXTRA_CFLAGS += -I$(CURDIR)/TinyMPC-ADMM/ext/Eigen
+EXTRA_CFLAGS += -I$(CURDIR)/TinyMPC-ADMM/src
 EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
@@ -31,7 +42,7 @@ EXTRA_CFLAGS += -Wno-unused-result
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
 #
-OOT_CONFIG := $(PWD)/app-config
+OOT_CONFIG := $(CURDIR)/app-config
 
 OOT_USES_CXX := 1
 
