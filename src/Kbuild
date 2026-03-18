@@ -1,2 +1,0 @@
-obj-y += controller_tinympc.o
-obj-y += TinyMPC/src/tinympc/

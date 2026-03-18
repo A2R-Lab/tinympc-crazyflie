@@ -1,0 +1,4 @@
+ccflags-y += -I$(OOT)/Eigen
+ccflags-y += -I$(src)
+
+obj-y += src/

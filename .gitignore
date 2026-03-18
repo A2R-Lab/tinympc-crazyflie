@@ -1,4 +1,5 @@
 build/
 *.cmd
+*.tmp
 *.o
 *:Zone.Identifier

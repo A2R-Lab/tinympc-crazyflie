@@ -1,0 +1,5 @@
+config EIGEN_TEST_APP
+    bool "Enable Eigen Test App"
+    default y
+    help
+       Builds an Eigen test app that tests modern Eigen with dynamic memory allocation for TinyMPC control.
