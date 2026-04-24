@@ -13,15 +13,28 @@ git clone --recursive git@github.com:A2R-Lab/tinympc-crazyflie.git
 cd tinympc-crazyflie
 ```
 
-2. Build from the controller app directory, not from the repository root:
+2. Regenerate the deployable controller cache from the `TinyMPC` submodule:
+
+```bash
+cd TinyMPC
+cmake -S . -B build
+cmake --build build --target codegen_quadrotor_100hz
+./build/examples/codegen_quadrotor_100hz
+```
+
+This refreshes:
+
+- `apps/controller_tinympc_eigen/src/params_100hz.h`
+- `apps/controller_tinympc_eigen/src/generated/quadrotor_100hz_generated.hpp`
+
+3. Build from the controller app directory, not from the repository root:
 
 ```bash
 cd apps/controller_tinympc_eigen
-make clean
-make
+make -j8
 ```
 
-3. Flash from the same directory:
+4. Flash from the same directory:
 
 ```bash
 CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
@@ -30,6 +43,8 @@ CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
 ## Notes
 
 - `controller_tinympc_eigen` is the supported controller on `main`.
+- The controller params are generated from top-level `TinyMPC` codegen.
+- The on-drone runtime remains the legacy embedded `TinyMPC-ADMM` solver path.
 - The controller build wraps the Crazyflie firmware build system automatically.
 - On macOS, the app `Makefile` auto-detects GNU `coreutils` and `gnu-sed` shims when Homebrew provides them.
 - Trajectory playback in `controller_tinympc_eigen` is controlled by the compile-time `en_traj` flag in `src/controller_tinympc.cpp`.

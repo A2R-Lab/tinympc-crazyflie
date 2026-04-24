@@ -46,4 +46,25 @@ OOT_CONFIG := $(CURDIR)/app-config
 
 OOT_USES_CXX := 1
 
+TINYMPC_CODEGEN_BUILD_DIR ?= /tmp/tinympc-codegen-build
+TINYMPC_CODEGEN_TARGET ?= codegen_quadrotor_100hz
+TINYMPC_CODEGEN_OUTPUT_DIR := $(TINYMPC_CODEGEN_BUILD_DIR)/examples/tinympc_generated_code_quadrotor_100hz
+GENERATED_PARAMS_DIR := $(CURDIR)/src/generated
+GENERATED_PARAMS_HEADER := $(CURDIR)/src/params_100hz.h
+GENERATED_PROBLEM_HEADER := $(GENERATED_PARAMS_DIR)/quadrotor_100hz_generated.hpp
+
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
+
+.PHONY: codegen-params generated-build
+
+codegen-params:
+	cmake -S $(CURDIR)/../../TinyMPC -B $(TINYMPC_CODEGEN_BUILD_DIR)
+	cmake --build $(TINYMPC_CODEGEN_BUILD_DIR) --target $(TINYMPC_CODEGEN_TARGET)
+	cd $(TINYMPC_CODEGEN_BUILD_DIR)/examples && ./$(TINYMPC_CODEGEN_TARGET)
+	mkdir -p $(GENERATED_PARAMS_DIR)
+	cp $(TINYMPC_CODEGEN_OUTPUT_DIR)/crazyflie/params_100hz.h $(GENERATED_PARAMS_HEADER)
+	cp $(TINYMPC_CODEGEN_OUTPUT_DIR)/problem_data/quadrotor_100hz_generated.hpp $(GENERATED_PROBLEM_HEADER)
+	@echo "Generated Crazyflie params refreshed in $(GENERATED_PARAMS_HEADER)"
+
+generated-build: codegen-params
+	$(MAKE)
