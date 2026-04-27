@@ -51,7 +51,7 @@ extern "C" {
 #include "param.h"
 #include "num.h"
 #include "math3d.h"
-#include "stabilizer_types.h"  // For controlModePWM
+#include "stabilizer_types.h"  // For controlModeForce
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
@@ -372,7 +372,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
     control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
   }
-  control->controlMode = controlModePWM;
+  control->controlMode = controlModeForce;
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
 
   // control->normalizedForces[0] = 0.0f;
