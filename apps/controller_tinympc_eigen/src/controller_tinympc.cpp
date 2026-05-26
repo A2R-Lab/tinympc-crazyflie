@@ -53,6 +53,9 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 
+#include "cpx.h"                  // AI-deck (GAP8) CPX bridge
+#include "cpx_internal_router.h"  // cpxSendPacketBlockingTimeout()
+
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
 #include "tinympc/tinympc.h"
@@ -249,7 +252,107 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 
 // Half-space constraint function removed for basic functionality test
 
-void controllerOutOfTreeInit(void) { 
+// ====================== AI-deck (GAP8) CPX bridge — trigger/response ============
+// Matches the protocol in esp_color_object/comms/comms_deck.c (GAP8 firmware).
+// STM32 sends an 8-byte TriggerRequest, GAP8 captures+processes a frame and
+// replies with a 26-byte DetectionResponse.
+#define AID_PROTO_MAGIC          0xA5u
+#define AID_PROTO_VERSION        0x01u
+#define AID_MSG_TRIGGER          0x01u
+#define AID_MSG_DETECTION        0x81u
+#define AID_MSG_ERROR            0xE1u
+#define AID_STATUS_TRIGGERED        (1u << 0)
+#define AID_STATUS_FOUND            (1u << 1)
+#define AID_STATUS_DEPTH_DEFAULTED  (1u << 2)
+#define AID_TRIGGER_PERIOD_MPC   10    // every Nth MPC tick (10 -> 10 Hz @ 100 Hz MPC_RATE)
+#define AID_TX_TIMEOUT_MS        2     // bounded so MPC tick never stalls on UART
+
+typedef struct __attribute__((packed)) {
+  uint8_t  magic;
+  uint8_t  version;
+  uint8_t  msg_type;     // AID_MSG_TRIGGER
+  uint8_t  seq;
+  uint8_t  flags;
+  uint8_t  reserved0;
+  uint16_t depth_mm;     // 0 -> GAP8 uses its default
+} AidTriggerReq_t;
+
+typedef struct __attribute__((packed)) {
+  uint8_t  magic;
+  uint8_t  version;
+  uint8_t  msg_type;     // AID_MSG_DETECTION or AID_MSG_ERROR
+  uint8_t  seq;
+  uint8_t  status;
+  uint8_t  error;
+  int16_t  centroid_x;
+  int16_t  centroid_y;
+  uint16_t bright_pixels;
+  int16_t  real_x_mm;
+  int16_t  real_y_mm;
+  uint16_t real_z_mm;
+  uint32_t frame_id;
+  uint32_t timestamp_ms;
+} AidDetectionResp_t;
+
+static AidDetectionResp_t g_aidDet       = {0};
+static volatile uint32_t  g_aidSeq       = 0;   // seqlock for g_aidDet
+static volatile uint32_t  g_aidTickRx    = 0;   // FreeRTOS tick at last valid detection
+static volatile uint32_t  g_aidBadPkts   = 0;   // bad length / magic / version
+static volatile uint32_t  g_aidErrPkts   = 0;   // GAP8 reported an error (msg_type=0xE1)
+static volatile uint32_t  g_aidRxOk      = 0;   // count of accepted detection packets
+static volatile uint32_t  g_aidTxOk      = 0;   // triggers queued successfully
+static volatile uint32_t  g_aidTxFail    = 0;   // trigger send timeouts
+static uint8_t            g_aidTxSeq     = 0;   // outgoing trigger seq counter
+
+static void aideckRxCb(const CPXPacket_t* rx) {
+  if (rx->route.source != CPX_T_GAP8) return;
+  if (rx->dataLength != sizeof(AidDetectionResp_t)) {
+    g_aidBadPkts++;
+    return;
+  }
+  AidDetectionResp_t pkt;
+  memcpy(&pkt, rx->data, sizeof(pkt));
+  if (pkt.magic != AID_PROTO_MAGIC || pkt.version != AID_PROTO_VERSION) {
+    g_aidBadPkts++;
+    return;
+  }
+  if (pkt.msg_type == AID_MSG_ERROR) {
+    g_aidErrPkts++;
+    // Still publish the response so the error/status fields show up in logs.
+  } else if (pkt.msg_type != AID_MSG_DETECTION) {
+    g_aidBadPkts++;
+    return;
+  }
+
+  // Seqlock publish: odd seq during write, even when stable.
+  uint32_t s = g_aidSeq + 1;
+  g_aidSeq = s;
+  g_aidDet = pkt;
+  g_aidTickRx = xTaskGetTickCount();
+  g_aidSeq = s + 1;
+  if (pkt.msg_type == AID_MSG_DETECTION) g_aidRxOk++;
+}
+
+static void aideckSendTrigger(void) {
+  CPXPacket_t tx;
+  cpxInitRoute(CPX_T_STM32, CPX_T_GAP8, CPX_F_APP, &tx.route);
+  AidTriggerReq_t req = {
+    .magic       = AID_PROTO_MAGIC,
+    .version     = AID_PROTO_VERSION,
+    .msg_type    = AID_MSG_TRIGGER,
+    .seq         = g_aidTxSeq++,
+    .flags       = 0,
+    .reserved0   = 0,
+    .depth_mm    = 0,    // 0 -> GAP8 uses DEFAULT_DEPTH_MM (500)
+  };
+  memcpy(tx.data, &req, sizeof(req));
+  tx.dataLength = sizeof(req);
+  if (cpxSendPacketBlockingTimeout(&tx, AID_TX_TIMEOUT_MS)) g_aidTxOk++;
+  else g_aidTxFail++;
+}
+// ================================================================================
+
+void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
 
   // Precompute/Cache
@@ -301,10 +404,15 @@ void controllerOutOfTreeInit(void) {
   0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
   -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
-  /* End of MPC initialization */  
-  step = 0;  
+  /* End of MPC initialization */
+  step = 0;
   traj_iter = 0;
-  
+
+  // Subscribe to AI-deck (GAP8) CPX_F_APP packets. CPX is initialized by the
+  // firmware on boot; the callback runs on the CPX FreeRTOS task, not here.
+  cpxRegisterAppMessageHandler(aideckRxCb);
+  DEBUG_PRINT("AI-deck CPX handler registered\n");
+
   DEBUG_PRINT("Straight line trajectory (1m forward)\n");
 }
 
@@ -323,9 +431,47 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   updateInitialState(sensors, state);
 
   /* Controller rate */
-  if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
+  if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
     // Get command reference
     updateHorizonReference(setpoint);
+
+    // AI-deck: periodically poke GAP8 for a fresh detection. TX is bounded
+    // (AID_TX_TIMEOUT_MS) so the MPC tick can never stall on UART.
+    static uint32_t aidTrigCounter = 0;
+    if ((aidTrigCounter++ % AID_TRIGGER_PERIOD_MPC) == 0) {
+      aideckSendTrigger();
+    }
+
+    // Snapshot latest detection (seqlock — safe wrt CPX rx task). Zero-filled
+    // until the first valid response arrives.
+    AidDetectionResp_t aidDet;
+    uint32_t aidS1, aidS2;
+    do {
+      aidS1 = g_aidSeq;
+      memcpy(&aidDet, &g_aidDet, sizeof(aidDet));
+      aidS2 = g_aidSeq;
+    } while (aidS1 != aidS2 || (aidS1 & 1u));
+    const uint32_t aidAgeMs =
+        (xTaskGetTickCount() - g_aidTickRx) * portTICK_PERIOD_MS;
+    const bool aidFound = (aidDet.status & AID_STATUS_FOUND) != 0;
+    // TODO(aideck): when ready, transform (real_x_mm, real_y_mm, real_z_mm)
+    // from camera frame to world frame and feed into the MPC reference/cost.
+    (void)aidDet; (void)aidAgeMs; (void)aidFound;
+
+    // Periodic health print so the link is observable from the firmware console.
+    static uint32_t aidLogCounter = 0;
+    if ((aidLogCounter++ % 500) == 0) {  // every 5s at MPC_RATE=100Hz
+      DEBUG_PRINT("AIDECK tx=%lu/%lu rx=%lu bad=%lu err=%lu found=%d cx=%d cy=%d age=%lums\n",
+                  (unsigned long)g_aidTxOk,
+                  (unsigned long)(g_aidTxOk + g_aidTxFail),
+                  (unsigned long)g_aidRxOk,
+                  (unsigned long)g_aidBadPkts,
+                  (unsigned long)g_aidErrPkts,
+                  (int)aidFound,
+                  (int)aidDet.centroid_x,
+                  (int)aidDet.centroid_y,
+                  (unsigned long)aidAgeMs);
+    }
 
     /* MPC solve */
     // Solve optimization problem using ADMM
@@ -412,6 +558,25 @@ LOG_ADD(LOG_FLOAT, zu3, &(ZU_new[0](3)))
 
 LOG_GROUP_STOP(ctrlMPC)
 */
+
+// Live view of the AI-deck detection stream in cfclient.
+LOG_GROUP_START(aideck)
+LOG_ADD(LOG_INT16,  cx,        &g_aidDet.centroid_x)
+LOG_ADD(LOG_INT16,  cy,        &g_aidDet.centroid_y)
+LOG_ADD(LOG_UINT16, px,        &g_aidDet.bright_pixels)
+LOG_ADD(LOG_INT16,  rx_mm,     &g_aidDet.real_x_mm)
+LOG_ADD(LOG_INT16,  ry_mm,     &g_aidDet.real_y_mm)
+LOG_ADD(LOG_UINT16, rz_mm,     &g_aidDet.real_z_mm)
+LOG_ADD(LOG_UINT8,  status,    &g_aidDet.status)
+LOG_ADD(LOG_UINT8,  err,       &g_aidDet.error)
+LOG_ADD(LOG_UINT32, frame,     &g_aidDet.frame_id)
+LOG_ADD(LOG_UINT32, ts_ms,     &g_aidDet.timestamp_ms)
+LOG_ADD(LOG_UINT32, rx_ok,     (uint32_t*)&g_aidRxOk)
+LOG_ADD(LOG_UINT32, tx_ok,     (uint32_t*)&g_aidTxOk)
+LOG_ADD(LOG_UINT32, tx_fail,   (uint32_t*)&g_aidTxFail)
+LOG_ADD(LOG_UINT32, bad,       (uint32_t*)&g_aidBadPkts)
+LOG_ADD(LOG_UINT32, err_pkts,  (uint32_t*)&g_aidErrPkts)
+LOG_GROUP_STOP(aideck)
 
 #ifdef __cplusplus
 }
