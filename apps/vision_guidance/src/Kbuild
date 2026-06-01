@@ -1,0 +1,1 @@
+obj-y += vision_guidance.o
