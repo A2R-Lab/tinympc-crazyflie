@@ -170,7 +170,7 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
-// ---- Vision-servo tunables (storage + PARAM/LOG live in vis_servo_params.c,
+// ---- Vision-servo tunables
 // which is a C TU because PARAM_ADD string macros don't compile cleanly here) ----
 extern uint8_t  visEnable;      // 0 = trajectory/setpoint, 1 = visual servo
 extern float    visTargetZ;     // m, altitude to hold while servoing
@@ -271,7 +271,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 
 // Half-space constraint function removed for basic functionality test
 
-// ====================== AI-deck (GAP8) CPX bridge — trigger/response ============
+// ====================== AI-deck (GAP8) CPX bridge ============
 // Matches the protocol in esp_color_object/comms/comms_deck.c (GAP8 firmware).
 // STM32 sends an 8-byte TriggerRequest, GAP8 captures+processes a frame and
 // replies with a 26-byte DetectionResponse.
@@ -425,7 +425,7 @@ void controllerOutOfTreeInit(void) {
 
   // Precompute/Cache
   // #include "params_500hz.h"
-  #include "params_100hz.h"  // Original gains (stable)
+  #include "params_100hz.h"  // the original stable gains
   // #include "params_constrained.h"
 
   // End of Precompute/Cache
@@ -553,9 +553,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
  
     result =  info.status_val * info.iter;
     
-    // Detailed logging every 0.5 seconds
+    // Detailed logging every 5 seconds (kept sparse to avoid flooding CPX /
+    // stealing time from the 1 kHz loop; bump back to %50 for dense debugging).
     static uint32_t mpc_log_counter = 0;
-    if (mpc_log_counter % 50 == 0) {  // 100Hz / 50 = every 0.5s
+    if (mpc_log_counter % 500 == 0) {  // 100Hz / 500 = every 5s
       DEBUG_PRINT("MPC: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n", 
                   (double)x0(0), (double)x0(1), (double)x0(2),
                   (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));

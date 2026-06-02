@@ -2,3 +2,6 @@ CONFIG_APP_ENABLE=y
 CONFIG_APP_PRIORITY=1
 CONFIG_APP_STACKSIZE=350
 CONFIG_CONTROLLER_OOT=y
+# Keep the AI-deck WiFi off: CPX is over the wire, and the ESP32's connect/retry
+# spam wastes CPX bandwidth and CPU (forces it regardless of a stale .config).
+CONFIG_DECK_AI_WIFI_NO_SETUP=y
