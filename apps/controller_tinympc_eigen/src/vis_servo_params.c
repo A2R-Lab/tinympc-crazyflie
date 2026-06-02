@@ -21,6 +21,7 @@
 #include "log.h"
 #include <stdint.h>
 
+uint8_t  en_traj       = 1;        // 1 = fly precomputed trajectory; 0 = track commander setpoint (hover)
 uint8_t  visEnable     = 0;        // 0 = MPC trajectory/setpoint; 1 = visual servo
 float    visTargetZ    = 0.5f;     // m, altitude to hold while servoing
 uint16_t visTargetArea = 1500;     // px, desired orange blob area (standoff)
@@ -36,6 +37,7 @@ extern float   vis_log_dyaw;
 extern uint8_t vis_log_fresh;
 
 PARAM_GROUP_START(visMpc)
+PARAM_ADD(PARAM_UINT8,  enTraj,     &en_traj)
 PARAM_ADD(PARAM_UINT8,  enable,     &visEnable)
 PARAM_ADD(PARAM_FLOAT,  targetZ,    &visTargetZ)
 PARAM_ADD(PARAM_UINT16, targetArea, &visTargetArea)

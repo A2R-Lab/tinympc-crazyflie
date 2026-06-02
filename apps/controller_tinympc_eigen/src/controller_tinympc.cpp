@@ -159,7 +159,9 @@ static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = true;
+// 1 = fly the precomputed trajectory; 0 = track the commander setpoint (hover).
+// Defined in vis_servo_params.c so it's a runtime PARAM (visMpc.enTraj).
+extern uint8_t en_traj;
 static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
 //static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
 static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
