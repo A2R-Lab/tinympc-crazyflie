@@ -505,10 +505,13 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       updateHorizonReference(setpoint);
     }
 
-    // AI-deck: periodically poke GAP8 for a fresh detection. TX is bounded
+    // AI-deck: periodically poke GAP8 for a fresh detection -- ONLY when vision
+    // servo is enabled. Touching CPX with no AI-deck present (uninitialized CPX
+    // queues) asserts in FreeRTOS queue.c and crashes the firmware, so this guard
+    // lets pure-MPC control run/tune without the deck. TX is bounded
     // (AID_TX_TIMEOUT_MS) so the MPC tick can never stall on UART.
     static uint32_t aidTrigCounter = 0;
-    if ((aidTrigCounter++ % AID_TRIGGER_PERIOD_MPC) == 0) {
+    if (visEnable && (aidTrigCounter++ % AID_TRIGGER_PERIOD_MPC) == 0) {
       aideckSendTrigger();
     }
 
