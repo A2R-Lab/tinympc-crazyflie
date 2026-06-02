@@ -38,6 +38,10 @@ EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
+# Eigen + the LOG/PARAM string-literal macros trip -Werror in C++ (e.g.
+# -Werror=write-strings). Match the eigen_task app and demote warnings.
+EXTRA_CFLAGS += -Wno-error
+EXTRA_CXXFLAGS += -Wno-error
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.

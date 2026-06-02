@@ -170,6 +170,25 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
+// ---- Vision-servo tunables (storage + PARAM/LOG live in vis_servo_params.c,
+// which is a C TU because PARAM_ADD string macros don't compile cleanly here) ----
+extern uint8_t  visEnable;      // 0 = trajectory/setpoint, 1 = visual servo
+extern float    visTargetZ;     // m, altitude to hold while servoing
+extern uint16_t visTargetArea;  // px, desired orange-blob area (standoff setpoint)
+extern float    visKpYaw;       // rad of yaw-goal offset per pixel of x error
+extern float    visKpFwd;       // m of forward-goal offset per pixel of area error
+extern float    visFwdMax;      // m, clamp on forward goal offset
+extern float    visYawMax;      // rad, clamp on yaw goal offset
+extern uint16_t visTimeoutMs;   // detection considered stale after this
+
+// Telemetry (defined here, logged by vis_servo_params.c).
+float   vis_log_fwd   = 0.0f;
+float   vis_log_dyaw  = 0.0f;
+uint8_t vis_log_fresh = 0;
+
+// Vision target frame width (centroid space) — must match the GAP8 output frame.
+#define VIS_FRAME_WIDTH 160
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -352,6 +371,55 @@ static void aideckSendTrigger(void) {
 }
 // ================================================================================
 
+// ====================== Vision reference builder ==========================
+static float vis_hold_x = 0.0f, vis_hold_y = 0.0f, vis_hold_yaw = 0.0f;
+static bool  vis_have_hold = false;
+
+static inline float vis_clampf(float v, float lo, float hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static void buildVisionReference(const state_t *state,
+                                 const AidDetectionResp_t *det,
+                                 bool found, uint32_t ageMs) {
+  const float yaw = quat2rpy(attitude).z;   // current yaw (rad); attitude set in updateInitialState()
+  const bool fresh = found && (ageMs <= visTimeoutMs);
+
+  float gx, gy, goalYaw;
+  if (fresh) {
+    float exPix   = (float)det->centroid_x - (VIS_FRAME_WIDTH / 2.0f);  // + = target to the right
+    float areaErr = (float)visTargetArea - (float)det->bright_pixels;   // + = too far (blob too small)
+    float fwd  = vis_clampf(visKpFwd * areaErr, -visFwdMax, visFwdMax);
+    float dyaw = vis_clampf(-visKpYaw * exPix,  -visYawMax, visYawMax);
+    goalYaw = yaw + dyaw;
+    gx = state->position.x + fwd * cosf(goalYaw);   // forward offset along goal heading
+    gy = state->position.y + fwd * sinf(goalYaw);
+    vis_hold_x = gx; vis_hold_y = gy; vis_hold_yaw = goalYaw; vis_have_hold = true;
+    vis_log_fwd = fwd; vis_log_dyaw = dyaw; vis_log_fresh = 1;
+  } else {
+    if (!vis_have_hold) {  // first run without a target: latch current pose
+      vis_hold_x = state->position.x; vis_hold_y = state->position.y;
+      vis_hold_yaw = yaw; vis_have_hold = true;
+    }
+    gx = vis_hold_x; gy = vis_hold_y; goalYaw = vis_hold_yaw;
+    vis_log_fwd = 0.0f; vis_log_dyaw = 0.0f; vis_log_fresh = 0;
+  }
+
+  // Assemble goal state: position (gx,gy,targetZ), level attitude at goalYaw,
+  // zero reference velocity and body rates.
+  xg(0) = gx; xg(1) = gy; xg(2) = visTargetZ;
+  xg(6) = 0.0f; xg(7) = 0.0f; xg(8) = 0.0f;
+  xg(9) = 0.0f; xg(10) = 0.0f; xg(11) = 0.0f;
+  desired_rpy = mkvec(0.0f, 0.0f, goalYaw);
+  attitude = rpy2quat(desired_rpy);
+  phi = quat2rp(qnormalize(attitude));
+  xg(3) = phi.x; xg(4) = phi.y; xg(5) = phi.z;
+
+  tiny_SetGoalState(&work, Xref, &xg);
+  tiny_SetGoalInput(&work, Uref, &ug);
+}
+// ================================================================================
+
 void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
 
@@ -432,8 +500,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
   /* Controller rate */
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
-    // Get command reference
-    updateHorizonReference(setpoint);
+    // When vision is not enabled, we revert back to the fixed setpoints
+    if (!visEnable) {
+      updateHorizonReference(setpoint);
+    }
 
     // AI-deck: periodically poke GAP8 for a fresh detection. TX is bounded
     // (AID_TX_TIMEOUT_MS) so the MPC tick can never stall on UART.
@@ -454,9 +524,12 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     const uint32_t aidAgeMs =
         (xTaskGetTickCount() - g_aidTickRx) * portTICK_PERIOD_MS;
     const bool aidFound = (aidDet.status & AID_STATUS_FOUND) != 0;
-    // TODO(aideck): when ready, transform (real_x_mm, real_y_mm, real_z_mm)
-    // from camera frame to world frame and feed into the MPC reference/cost.
-    (void)aidDet; (void)aidAgeMs; (void)aidFound;
+    // 
+    if (visEnable) {
+      buildVisionReference(state, &aidDet, aidFound, aidAgeMs);
+    } else {
+      (void)aidDet; (void)aidAgeMs; (void)aidFound;
+    }
 
     // Periodic health print so the link is observable from the firmware console.
     static uint32_t aidLogCounter = 0;

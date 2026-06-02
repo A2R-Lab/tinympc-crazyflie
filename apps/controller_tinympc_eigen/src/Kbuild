@@ -1,2 +1,3 @@
 obj-y += controller_tinympc.o
+obj-y += vis_servo_params.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/
