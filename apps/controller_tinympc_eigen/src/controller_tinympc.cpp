@@ -427,7 +427,8 @@ void controllerOutOfTreeInit(void) {
 
   // Precompute/Cache
   // #include "params_500hz.h"
-  #include "params_100hz.h"  // the original stable gains
+  // #include "params_100hz.h"  // the original stable gains
+  #include "params_aideck.h"
   // #include "params_constrained.h"
 
   // End of Precompute/Cache
