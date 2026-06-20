@@ -91,7 +91,7 @@ extern "C"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
 // #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
-#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period for PSD
+#define MPC_RATE RATE_25_HZ  // 25Hz MPC task period
 // #define MPC_RATE RATE_100_HZ
 //#define MPC_RATE 10
 #define LOWLEVEL_RATE RATE_500_HZ
@@ -184,8 +184,9 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
-static uint8_t enable_psd = 1; // PSD enabled (runs every 5 ADMM iters)
+static uint8_t enable_limo = 1; // LIMO deploy path enable
+static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
+static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -346,9 +347,15 @@ void controllerOutOfTreeInit(void)
   obs_center = obs_start;             // Initial position
   obs_start_time = 0;                 // Will be set on first MPC solve
 
-  // Initialize PSD constraints (disabled by default, enable via enable_psd flag)
+  if (enable_limo) {
+    enable_obs_constraint = 0;
+    enable_psd = 0;
+    DEBUG_PRINT("LIMO deploy mode: PSD and obstacle constraints disabled\n");
+  }
+
+  // Initialize PSD constraints when the legacy obstacle path is enabled.
   problem.en_psd = enable_psd;
-  if (enable_psd) {
+  if (!enable_limo && enable_psd) {
     tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
     tiny_enable_psd(&problem, &params, rho_psd);
     // Set PSD obstacle (same as LTV obstacle)
@@ -499,19 +506,22 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
-      // Dynamic obstacle - update position based on elapsed time
-      // Arm sweeps from left (y+) to right (y-) starting when OOT activates
-      if (obs_start_time == 0) {
-        obs_start_time = usecTimestamp();  // Start timer on first solve
+      float obs_elapsed = 0.0f;
+      if (!enable_limo && enable_obs_constraint) {
+        // Dynamic obstacle - update position based on elapsed time
+        // Arm sweeps from left (y+) to right (y-) starting when OOT activates
+        if (obs_start_time == 0) {
+          obs_start_time = usecTimestamp();  // Start timer on first solve
+        }
+        obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
+        obs_center = obs_start + obs_velocity * obs_elapsed;
+        // Clamp obstacle position to reasonable range
+        if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
+        if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
       }
-      float obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
-      obs_center = obs_start + obs_velocity * obs_elapsed;
-      // Clamp obstacle position to reasonable range
-      if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
-      if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
       
       // Update PSD obstacle position
-      if (enable_psd) {
+      if (!enable_limo && enable_psd) {
         problem.psd_obs_x = obs_center(0);
         problem.psd_obs_y = obs_center(1);
       }
@@ -529,7 +539,7 @@ static void tinympcControllerTask(void *parameters)
         params.x_max[i] = tiny_VectorNc::Constant(1000);
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
-        if (enable_obs_constraint && !constraint_hold) {
+        if (!enable_limo && enable_obs_constraint && !constraint_hold) {
           // Predict obstacle position for this horizon step
           float future_t = obs_elapsed + i * dt_horizon;
           Eigen::Matrix<tinytype, 3, 1> obs_pred = obs_start + obs_velocity * future_t;
@@ -588,7 +598,7 @@ static void tinympcControllerTask(void *parameters)
       //   params.x_max[i](0) = a_norm.transpose() * q_c;
       // }
 
-      // MPC solve (PSD runs every 5 ADMM iterations inside solve_admm)
+      // MPC solve
       problem.iter = 0;
 
       if (task_loop_count <= 3) {
@@ -615,7 +625,7 @@ static void tinympcControllerTask(void *parameters)
       float trace_gap_k0 = 0.0f;
       float eta_min_k0 = 1000.0f;
       
-      if (enable_psd && enable_obs_constraint) {
+      if (!enable_limo && enable_psd && enable_obs_constraint) {
         // Check certificate for k=0 (current step)
         float px = problem.x(0, 0);
         float py = problem.x(1, 0);
