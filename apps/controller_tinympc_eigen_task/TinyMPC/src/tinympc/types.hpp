@@ -121,7 +121,6 @@ struct tiny_problem {
     tiny_MatrixNxNh xg;
     tinytype dist;
     Matrix<tinytype, NHORIZON, NSTATE_CONSTRAINTS> dists;
-    Matrix<tinytype, 3, 1> xyz_new;
     tiny_VectorNu Qu;
     tiny_VectorNx Ax; // Stores result of sparse Adyn*x vector product computation
 

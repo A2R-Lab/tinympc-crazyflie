@@ -148,18 +148,8 @@ void update_slack(struct tiny_problem *problem, const struct tiny_params *params
 
     problem->znew = params->u_max.cwiseMin(params->u_min.cwiseMax(problem->u));
 
-    // Half space constraints on state
-    // TODO: support multiple half plane constraints per knot point
-    //      currently this only works for one constraint per knot point
-    // TODO: can potentially take advantage of the fact that A_constraints[3:end] is zero and just do
-    //      v.col(i) = x.col(i) - dist*A_constraints[i] since we have to copy x[3:end] into v anyway
-    //      downside is it's not clear this is happening externally and so values of A_constraints
-    //      not set to zero (other than the first three) can cause the algorithm to fail
-    // TODO: the only state values changing here are the first three (x, y, z) so it doesn't make sense
-    //      to do operations on the remaining 9 when projecting (or doing anything related to the dual
-    //      or auxiliary variables). v and g could be of size (3) and everything would work the same.
-    //      The only reason this doesn't break is because in the update_linear_cost function subtracts
-    //      g from v and so the last nine entries are always zero.
+    // Half-space constraints on state. This supports one full-state row
+    // A_constraints[i] x <= x_max[i](0) per knot point.
     problem->xg = problem->x + problem->g;
     // problem->dists = (params->A_constraints.transpose().cwiseProduct(problem->xg)).colwise().sum();
     // problem->dists -= params->x_max;
@@ -169,8 +159,13 @@ void update_slack(struct tiny_problem *problem, const struct tiny_params *params
     // Don't reset cache_level here - it's managed at solve_admm level with sticky logic
     // This prevents oscillation during planner/tracker mode switching
     for (int i=0; i<NHORIZON; i++) {
-        problem->dist = (params->A_constraints[i].head(3)).lazyProduct(problem->xg.col(i).head(3)); // Distances can be computed in one step outside the for loop
-        problem->dist -= params->x_max[i](0);
+        const tinytype normal_sq = params->A_constraints[i].squaredNorm();
+        if (normal_sq <= tinytype(1e-9)) {
+            problem->vnew.col(i) = problem->xg.col(i);
+            continue;
+        }
+
+        problem->dist = (params->A_constraints[i] * problem->xg.col(i))(0) - params->x_max[i](0);
         // DEBUG_PRINT("dist: %f\n", dist);
         if (problem->dist <= 0) {
             problem->vnew.col(i) = problem->xg.col(i);
@@ -178,8 +173,8 @@ void update_slack(struct tiny_problem *problem, const struct tiny_params *params
         else {
             problem->cache_level = 1;
             problem->intersect++;
-            problem->xyz_new = problem->xg.col(i).head(3) - problem->dist*params->A_constraints[i].head(3).transpose();
-            problem->vnew.col(i) << problem->xyz_new, problem->xg.col(i).tail(NSTATES-3);
+            problem->vnew.col(i).noalias() =
+                problem->xg.col(i) - (problem->dist / normal_sq) * params->A_constraints[i].transpose();
         }
     }
     // problem->vnew = problem->xg;
