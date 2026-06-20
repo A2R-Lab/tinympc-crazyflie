@@ -34,6 +34,7 @@
 // TinyMPC headers (C++, must be before extern "C")
 #include "tinympc/admm.hpp"
 #include "tinympc/psd_support.hpp"
+#include "limo_barrier.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -187,6 +188,19 @@ static int prev_cache_level = 0; // Track cache_level changes
 static uint8_t enable_limo = 1; // LIMO deploy path enable
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
+
+static tinytype limo_margin = tinytype(0.01f);
+static tinytype limo_h_deadband = tinytype(0.30f);
+static tinytype limo_act_slack = tinytype(0.20f);
+static tinytype limo_az_coeff = tinytype(8.0f);
+static tinytype limo_gravity_comp = tinytype(0.0f);
+static tinytype limo_fail_roll_deg = tinytype(50.0f);
+static tinytype limo_fail_pitch_deg = tinytype(50.0f);
+static float limo_h = 0.0f;
+static float limo_raw = 0.0f;
+static float limo_grad_norm = 0.0f;
+static uint32_t limo_eval_us = 0;
+static uint8_t limo_active = 0;
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -491,6 +505,26 @@ static void tinympcControllerTask(void *parameters)
           phi.x, phi.y, phi.z,
           state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
           radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
+
+      if (enable_limo) {
+        LimoBarrierEval limo_eval;
+        const uint32_t eval_start_us = usecTimestamp();
+        limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
+                          radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg), &limo_eval);
+        limo_eval_us = usecTimestamp() - eval_start_us;
+        limo_h = limo_eval.h;
+        limo_raw = limo_eval.raw;
+        limo_grad_norm = limo_eval.grad.norm();
+        const tinytype activation_threshold =
+            limo_h_deadband > (limo_margin + limo_act_slack) ? limo_h_deadband : (limo_margin + limo_act_slack);
+        limo_active = limo_eval.h < activation_threshold ? 1 : 0;
+
+        if (task_loop_count <= 3) {
+          DEBUG_PRINT("LIMO: h=%.3f raw=%.3f grad=%.3f active=%u eval=%lu us\n",
+                      (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
+                      (unsigned int)limo_active, limo_eval_us);
+        }
+      }
 
       if (task_loop_count <= 3) {
         DEBUG_PRINT("x0: pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
@@ -808,6 +842,11 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 LOG_GROUP_START(tinympc)
 
 LOG_ADD(LOG_FLOAT, initial_velocity, &init_vel_z)
+LOG_ADD(LOG_FLOAT, limo_h, &limo_h)
+LOG_ADD(LOG_FLOAT, limo_raw, &limo_raw)
+LOG_ADD(LOG_FLOAT, limo_grad, &limo_grad_norm)
+LOG_ADD(LOG_UINT32, limo_eval_us, &limo_eval_us)
+LOG_ADD(LOG_UINT8, limo_active, &limo_active)
 
 LOG_GROUP_STOP(tinympc)
 
