@@ -196,11 +196,13 @@ static tinytype limo_az_coeff = tinytype(8.0f);
 static tinytype limo_gravity_comp = tinytype(0.0f);
 static tinytype limo_fail_roll_deg = tinytype(50.0f);
 static tinytype limo_fail_pitch_deg = tinytype(50.0f);
+static uint8_t limo_active_horizon = 3;
 static float limo_h = 0.0f;
 static float limo_raw = 0.0f;
 static float limo_grad_norm = 0.0f;
 static uint32_t limo_eval_us = 0;
 static uint8_t limo_active = 0;
+static uint8_t limo_active_count = 0;
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -506,26 +508,6 @@ static void tinympcControllerTask(void *parameters)
           state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
           radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
 
-      if (enable_limo) {
-        LimoBarrierEval limo_eval;
-        const uint32_t eval_start_us = usecTimestamp();
-        limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
-                          radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg), &limo_eval);
-        limo_eval_us = usecTimestamp() - eval_start_us;
-        limo_h = limo_eval.h;
-        limo_raw = limo_eval.raw;
-        limo_grad_norm = limo_eval.grad.norm();
-        const tinytype activation_threshold =
-            limo_h_deadband > (limo_margin + limo_act_slack) ? limo_h_deadband : (limo_margin + limo_act_slack);
-        limo_active = limo_eval.h < activation_threshold ? 1 : 0;
-
-        if (task_loop_count <= 3) {
-          DEBUG_PRINT("LIMO: h=%.3f raw=%.3f grad=%.3f active=%u eval=%lu us\n",
-                      (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
-                      (unsigned int)limo_active, limo_eval_us);
-        }
-      }
-
       if (task_loop_count <= 3) {
         DEBUG_PRINT("x0: pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
                     (double)state_task.position.x, (double)state_task.position.y, (double)state_task.position.z,
@@ -566,12 +548,50 @@ static void tinympcControllerTask(void *parameters)
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
       const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
+      const tinytype limo_activation_threshold =
+          limo_h_deadband > (limo_margin + limo_act_slack) ? limo_h_deadband : (limo_margin + limo_act_slack);
+      limo_eval_us = 0;
+      limo_active = 0;
+      limo_active_count = 0;
+      limo_grad_norm = 0.0f;
       
       for (int i = 0; i < NHORIZON; i++)
       {
         params.x_min[i] = tiny_VectorNc::Constant(-1000);
         params.x_max[i] = tiny_VectorNc::Constant(1000);
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
+
+        if (enable_limo && !constraint_hold && i < limo_active_horizon) {
+          const tiny_VectorNx xbar = problem.x.col(i);
+          LimoBarrierEval eval;
+          const uint32_t eval_start_us = usecTimestamp();
+          limo_eval_barrier(xbar, limo_az_coeff, limo_gravity_comp,
+                            radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg), &eval);
+          limo_eval_us += usecTimestamp() - eval_start_us;
+
+          tiny_VectorNx grad = eval.grad;
+          for (int j = 0; j < NSTATES; ++j) {
+            grad(j) = limo_barrier::clamp(grad(j), tinytype(-2.0f), tinytype(2.0f));
+          }
+          const tinytype grad_norm = grad.norm();
+          const bool active = (grad_norm > tinytype(1e-6f)) && (eval.h < limo_activation_threshold);
+
+          if (i == 0) {
+            limo_h = eval.h;
+            limo_raw = eval.raw;
+            limo_grad_norm = grad_norm;
+            limo_active = active ? 1 : 0;
+          }
+
+          if (active) {
+            params.A_constraints[i] = -grad.transpose();
+            params.x_max[i](0) = eval.h - grad.dot(xbar) - limo_margin;
+            cstr_active_count++;
+            if (limo_active_count < 255) {
+              limo_active_count++;
+            }
+          }
+        }
 
         if (!enable_limo && enable_obs_constraint && !constraint_hold) {
           // Predict obstacle position for this horizon step
@@ -593,9 +613,14 @@ static void tinympcControllerTask(void *parameters)
           }
         }
       }
-      if (cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
+      if (!enable_limo && cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
         DEBUG_PRINT("OBS: %d active, obs_y=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
                     (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
+      }
+      if (enable_limo && task_loop_count <= 3) {
+        DEBUG_PRINT("LIMO TV: h=%.3f raw=%.3f grad=%.3f active0=%u active_count=%u eval=%lu us\n",
+                    (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
+                    (unsigned int)limo_active, (unsigned int)limo_active_count, limo_eval_us);
       }
       
       // Force cache_level=1 permanently once constraints have been activated
@@ -847,6 +872,7 @@ LOG_ADD(LOG_FLOAT, limo_raw, &limo_raw)
 LOG_ADD(LOG_FLOAT, limo_grad, &limo_grad_norm)
 LOG_ADD(LOG_UINT32, limo_eval_us, &limo_eval_us)
 LOG_ADD(LOG_UINT8, limo_active, &limo_active)
+LOG_ADD(LOG_UINT8, limo_active_count, &limo_active_count)
 
 LOG_GROUP_STOP(tinympc)
 
