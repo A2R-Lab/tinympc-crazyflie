@@ -190,6 +190,7 @@ static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled f
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
 static tinytype limo_margin = tinytype(0.01f);
+static tinytype limo_margin_scale = tinytype(1.0f);
 static tinytype limo_h_deadband = tinytype(0.30f);
 static tinytype limo_act_slack = tinytype(0.20f);
 static tinytype limo_az_coeff = tinytype(8.0f);
@@ -197,9 +198,20 @@ static tinytype limo_gravity_comp = tinytype(0.0f);
 static tinytype limo_fail_roll_deg = tinytype(50.0f);
 static tinytype limo_fail_pitch_deg = tinytype(50.0f);
 static uint8_t limo_active_horizon = 3;
+static tinytype limo_dist_budget = tinytype(0.0f);
+static tinytype limo_dist_margin_coeff = tinytype(0.018f);
+static tinytype limo_dist_high_cut = tinytype(1.35f);
+static tinytype limo_dist_high_bias = tinytype(0.030f);
+static tinytype limo_dist_floor_band = tinytype(0.24f);
+static tinytype limo_dist_floor_gain = tinytype(0.10f);
+static tinytype limo_dist_desc_band = tinytype(0.20f);
+static tinytype limo_dist_desc_gain = tinytype(0.02f);
+static tinytype limo_horizon_margin_rate = tinytype(0.0008f);
 static float limo_h = 0.0f;
 static float limo_raw = 0.0f;
 static float limo_grad_norm = 0.0f;
+static float limo_margin_eff = 0.0f;
+static float limo_threshold = 0.0f;
 static uint32_t limo_eval_us = 0;
 static uint8_t limo_active = 0;
 static uint8_t limo_active_count = 0;
@@ -214,6 +226,29 @@ static Eigen::Matrix<tinytype, 3, 1> q_c;
 static float r_obs = 0.35f;           // Obstacle radius
 static float obs_activation_margin = 0.15f; // Constraint activation distance
 static uint64_t obs_start_time = 0;   // Time when obstacle motion started
+
+static inline tinytype positive_part(tinytype value)
+{
+  return value > tinytype(0.0f) ? value : tinytype(0.0f);
+}
+
+static tinytype limo_effective_margin(const tiny_VectorNx &xbar, int stage)
+{
+  const tinytype budget = positive_part(limo_dist_budget);
+  const tinytype high_budget = positive_part(budget - positive_part(limo_dist_high_cut));
+  tinytype margin = positive_part(limo_margin);
+
+  margin += positive_part(limo_dist_margin_coeff) * budget;
+  margin += high_budget * positive_part(limo_dist_floor_gain) *
+            positive_part(positive_part(limo_dist_floor_band) - xbar(2));
+  margin += high_budget * positive_part(limo_dist_desc_gain) *
+            positive_part(-xbar(8) - positive_part(limo_dist_desc_band));
+  margin += positive_part(limo_horizon_margin_rate) * static_cast<tinytype>(stage);
+  margin += positive_part(limo_dist_high_bias) * high_budget;
+  margin *= positive_part(limo_margin_scale);
+
+  return margin;
+}
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -548,12 +583,12 @@ static void tinympcControllerTask(void *parameters)
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
       const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
-      const tinytype limo_activation_threshold =
-          limo_h_deadband > (limo_margin + limo_act_slack) ? limo_h_deadband : (limo_margin + limo_act_slack);
       limo_eval_us = 0;
       limo_active = 0;
       limo_active_count = 0;
       limo_grad_norm = 0.0f;
+      limo_margin_eff = 0.0f;
+      limo_threshold = 0.0f;
       
       for (int i = 0; i < NHORIZON; i++)
       {
@@ -574,18 +609,23 @@ static void tinympcControllerTask(void *parameters)
             grad(j) = limo_barrier::clamp(grad(j), tinytype(-2.0f), tinytype(2.0f));
           }
           const tinytype grad_norm = grad.norm();
-          const bool active = (grad_norm > tinytype(1e-6f)) && (eval.h < limo_activation_threshold);
+          const tinytype margin_eff = limo_effective_margin(xbar, i);
+          const tinytype activation_threshold =
+              limo_h_deadband > (margin_eff + limo_act_slack) ? limo_h_deadband : (margin_eff + limo_act_slack);
+          const bool active = (grad_norm > tinytype(1e-6f)) && (eval.h < activation_threshold);
 
           if (i == 0) {
             limo_h = eval.h;
             limo_raw = eval.raw;
             limo_grad_norm = grad_norm;
+            limo_margin_eff = margin_eff;
+            limo_threshold = activation_threshold;
             limo_active = active ? 1 : 0;
           }
 
           if (active) {
             params.A_constraints[i] = -grad.transpose();
-            params.x_max[i](0) = eval.h - grad.dot(xbar) - limo_margin;
+            params.x_max[i](0) = eval.h - grad.dot(xbar) - margin_eff;
             cstr_active_count++;
             if (limo_active_count < 255) {
               limo_active_count++;
@@ -618,8 +658,9 @@ static void tinympcControllerTask(void *parameters)
                     (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
       }
       if (enable_limo && task_loop_count <= 3) {
-        DEBUG_PRINT("LIMO TV: h=%.3f raw=%.3f grad=%.3f active0=%u active_count=%u eval=%lu us\n",
+        DEBUG_PRINT("LIMO TV: h=%.3f raw=%.3f grad=%.3f margin=%.3f thr=%.3f active0=%u active_count=%u eval=%lu us\n",
                     (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
+                    (double)limo_margin_eff, (double)limo_threshold,
                     (unsigned int)limo_active, (unsigned int)limo_active_count, limo_eval_us);
       }
       
@@ -870,11 +911,54 @@ LOG_ADD(LOG_FLOAT, initial_velocity, &init_vel_z)
 LOG_ADD(LOG_FLOAT, limo_h, &limo_h)
 LOG_ADD(LOG_FLOAT, limo_raw, &limo_raw)
 LOG_ADD(LOG_FLOAT, limo_grad, &limo_grad_norm)
+LOG_ADD(LOG_FLOAT, limo_margin, &limo_margin_eff)
+LOG_ADD(LOG_FLOAT, limo_thresh, &limo_threshold)
 LOG_ADD(LOG_UINT32, limo_eval_us, &limo_eval_us)
 LOG_ADD(LOG_UINT8, limo_active, &limo_active)
 LOG_ADD(LOG_UINT8, limo_active_count, &limo_active_count)
 
 LOG_GROUP_STOP(tinympc)
+
+#define PARAM_TOC_TYPE(TYPE) \
+  static_cast<uint8_t>(((TYPE) <= 0xFF) ? ((TYPE) & 0xFF) : (((TYPE) | PARAM_EXTENDED) & 0xFF))
+#define PARAM_TOC_EXT_TYPE(TYPE) \
+  static_cast<uint8_t>((((TYPE) & 0xFF00) >> 8))
+#define PARAM_GROUP_ENTRY(TYPE, NAME) \
+  { .type = static_cast<uint8_t>(TYPE), .extended_type = 0, .name = const_cast<char *>(#NAME), \
+    .address = NULL, .callback = NULL, .getter = NULL, },
+#define PARAM_VALUE_ENTRY(TYPE, NAME, ADDRESS) \
+  { .type = PARAM_TOC_TYPE(TYPE), .extended_type = PARAM_TOC_EXT_TYPE(TYPE), \
+    .name = const_cast<char *>(#NAME), .address = static_cast<void *>(ADDRESS), \
+    .callback = NULL, .getter = NULL, },
+
+static struct param_s __params_limo[] __attribute__((section(".param.limo"), used)) = {
+  PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_START, limo)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, enable, &enable_limo)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, activeH, &limo_active_horizon)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, margin, &limo_margin)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, mScale, &limo_margin_scale)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, hDeadband, &limo_h_deadband)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, actSlack, &limo_act_slack)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, azCoeff, &limo_az_coeff)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, gComp, &limo_gravity_comp)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, failRoll, &limo_fail_roll_deg)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, failPitch, &limo_fail_pitch_deg)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, distBudget, &limo_dist_budget)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, distCoeff, &limo_dist_margin_coeff)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, highCut, &limo_dist_high_cut)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, highBias, &limo_dist_high_bias)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, floorBand, &limo_dist_floor_band)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, floorGain, &limo_dist_floor_gain)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, descBand, &limo_dist_desc_band)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, descGain, &limo_dist_desc_gain)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, hRate, &limo_horizon_margin_rate)
+  PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_STOP, stop_limo)
+};
+
+#undef PARAM_VALUE_ENTRY
+#undef PARAM_GROUP_ENTRY
+#undef PARAM_TOC_EXT_TYPE
+#undef PARAM_TOC_TYPE
 
 #ifdef __cplusplus
 } /* extern "C" */
