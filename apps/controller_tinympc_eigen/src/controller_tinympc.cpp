@@ -55,6 +55,7 @@ extern "C" {
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
+#include "gate_tinympc_core.h"
 #include "tinympc/tinympc.h"
 #define TINYMPC_TASK_STACKSIZE        (3 * configMINIMAL_STACK_SIZE)
 
@@ -168,6 +169,65 @@ static struct quat attitude;
 static struct vec phi;
 
 // Basic mode - no obstacle avoidance constraints
+
+static bool controllerTinyMpcGateSolve(
+    const DroneState* gate_state,
+    const GateTinyMpcReference* gate_ref,
+    const GateControllerConfig* gate_config,
+    MotorCommand* command,
+    GateControllerDebug* debug) {
+  if (gate_state == 0 || gate_ref == 0 || gate_config == 0 || command == 0 || debug == 0) {
+    return false;
+  }
+
+  x0(0) = gate_state->x;
+  x0(1) = gate_state->y;
+  x0(2) = gate_state->z;
+  x0(6) = gate_state->vx;
+  x0(7) = gate_state->vy;
+  x0(8) = gate_state->vz;
+  x0(9) = gate_state->wx;
+  x0(10) = gate_state->wy;
+  x0(11) = gate_state->wz;
+  attitude = mkquat(gate_state->qx, gate_state->qy, gate_state->qz, gate_state->qw);
+  phi = quat2rp(qnormalize(attitude));
+  x0(3) = phi.x;
+  x0(4) = phi.y;
+  x0(5) = phi.z;
+
+  const float speed = gate_ref->target_speed_mps;
+  for (int i = 0; i < NHORIZON; ++i) {
+    const float t = DT * static_cast<float>(i);
+    const float desired_x = fminf(
+        fmaxf(gate_state->x + speed * t, gate_state->x),
+        gate_config->gate_x + 0.85f);
+    const float progress = fminf(1.0f, fmaxf(0.0f, desired_x / fmaxf(1e-3f, gate_config->gate_x)));
+    Xref[i].setZero();
+    Xref[i](0) = desired_x;
+    Xref[i](1) = gate_state->y + progress * (gate_ref->gate_pose_m[1] - gate_state->y);
+    Xref[i](2) = gate_state->z + progress * (gate_ref->gate_pose_m[2] - gate_state->z);
+    Xref[i](6) = speed;
+    if (i < NHORIZON - 1) {
+      Uref[i].setZero();
+    }
+  }
+
+  tiny_SetInitialState(&work, &x0);
+  tiny_SetStateReference(&work, Xref);
+  tiny_SetInputReference(&work, Uref);
+  tiny_UpdateLinearCost(&work);
+  tiny_SolveAdmm(&work);
+
+  command->motor_delta[0] = ZU_new[0](0);
+  command->motor_delta[1] = ZU_new[0](1);
+  command->motor_delta[2] = ZU_new[0](2);
+  command->motor_delta[3] = ZU_new[0](3);
+  command->solver_iterations = info.iter;
+  command->solver_success = info.status_val >= 0;
+  debug->solver_iterations = info.iter;
+  debug->solver_success = command->solver_success;
+  return command->solver_success;
+}
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
@@ -304,6 +364,8 @@ void controllerOutOfTreeInit(void) {
   /* End of MPC initialization */  
   step = 0;  
   traj_iter = 0;
+  gate_tinympc_reset();
+  gate_tinympc_set_solver(controllerTinyMpcGateSolve);
   
   DEBUG_PRINT("Straight line trajectory (1m forward)\n");
 }

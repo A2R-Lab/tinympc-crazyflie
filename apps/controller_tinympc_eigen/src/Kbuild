@@ -1,2 +1,3 @@
 obj-y += controller_tinympc.o
+obj-y += gate_tinympc_core.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/
