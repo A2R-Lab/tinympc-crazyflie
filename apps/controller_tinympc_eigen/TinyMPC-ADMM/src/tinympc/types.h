@@ -5,6 +5,8 @@
 #include "constants.h"
 #include "errors.h"
 
+#define TINY_MAX_STATE_HALFSPACES 4
+
 # ifdef __cplusplus
 extern "C" {
 # endif // ifdef __cplusplus
@@ -143,10 +145,10 @@ typedef struct {
   Eigen::VectorMf* ucu;
   Eigen::VectorMf* lcu;
   
-  // Half-space constraint for obstacle avoidance: a^T x <= b (position only)
-  Eigen::Vector3f a_hs[NHORIZON];  // Normal vectors (one per horizon step)
-  float b_hs[NHORIZON];             // Offsets (one per horizon step)
-  int en_hs[NHORIZON];              // Enable flag per step (0 = off, 1 = on)
+  // Time-varying position half-spaces: a^T p <= b.
+  Eigen::Vector3f a_hs[NHORIZON][TINY_MAX_STATE_HALFSPACES];
+  float b_hs[NHORIZON][TINY_MAX_STATE_HALFSPACES];
+  int num_hs[NHORIZON];
   
   int data_size;
 } tiny_AdmmData;

@@ -132,10 +132,16 @@ static VectorMf Uref[NHORIZON-1];
 static MatrixMf Acu;
 static VectorMf ucu;
 static VectorMf lcu;
+static MatrixNf Acx;
+static VectorNf ucx;
+static VectorNf lcx;
 
 static VectorMf Qu;
 static VectorMf ZU[NHORIZON-1]; 
 static VectorMf ZU_new[NHORIZON-1];
+static VectorNf YX[NHORIZON];
+static VectorNf ZX[NHORIZON];
+static VectorNf ZX_new[NHORIZON];
 
 static VectorNf x0;
 static VectorNf xg;
@@ -168,7 +174,86 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
-// Basic mode - no obstacle avoidance constraints
+static Vector3f gateCornerPoint(const GateTinyMpcReference* gate_ref, int index) {
+  const int base = 3 * index;
+  return Vector3f(
+      gate_ref->gate_corners_m[base + 0],
+      gate_ref->gate_corners_m[base + 1],
+      gate_ref->gate_corners_m[base + 2]);
+}
+
+static bool normalizeVector(Vector3f* value) {
+  const float norm = value->norm();
+  if (norm <= 1e-6f) {
+    return false;
+  }
+  *value = *value / norm;
+  return true;
+}
+
+static Vector3f crossVector(const Vector3f& lhs, const Vector3f& rhs) {
+  return Vector3f(
+      lhs(1) * rhs(2) - lhs(2) * rhs(1),
+      lhs(2) * rhs(0) - lhs(0) * rhs(2),
+      lhs(0) * rhs(1) - lhs(1) * rhs(0));
+}
+
+static void clearGateTvConstraints(void) {
+  for (int k = 0; k < NHORIZON; ++k) {
+    work.data->num_hs[k] = 0;
+  }
+}
+
+static void configureGateTvConstraints(const GateTinyMpcReference* gate_ref) {
+  clearGateTvConstraints();
+  if (gate_ref == 0 || !gate_ref->has_corners) {
+    return;
+  }
+
+  const Vector3f c0 = gateCornerPoint(gate_ref, 0);
+  const Vector3f c1 = gateCornerPoint(gate_ref, 1);
+  const Vector3f c2 = gateCornerPoint(gate_ref, 2);
+  const Vector3f c3 = gateCornerPoint(gate_ref, 3);
+  const Vector3f center = 0.25f * (c0 + c1 + c2 + c3);
+  Vector3f u = 0.5f * ((c1 - c0) + (c2 - c3));
+  Vector3f v = 0.5f * ((c3 - c0) + (c2 - c1));
+  if (!normalizeVector(&u) || !normalizeVector(&v)) {
+    return;
+  }
+  Vector3f normal = crossVector(u, v);
+  if (!normalizeVector(&normal)) {
+    return;
+  }
+
+  const float safety_margin_m = 0.03f;
+  const float half_width = fmaxf(
+      0.05f,
+      0.25f * ((c1 - c0).norm() + (c2 - c3).norm()) - safety_margin_m);
+  const float half_height = fmaxf(
+      0.05f,
+      0.25f * ((c3 - c0).norm() + (c2 - c1).norm()) - safety_margin_m);
+  const float slab_half_depth_m = 0.45f;
+
+  const Vector3f axes[4] = {u, -u, v, -v};
+  const float bounds[4] = {
+      u.dot(center) + half_width,
+      (-u).dot(center) + half_width,
+      v.dot(center) + half_height,
+      (-v).dot(center) + half_height,
+  };
+
+  for (int k = 1; k < NHORIZON; ++k) {
+    const Vector3f p_ref = Xref[k].head(3);
+    if (fabsf(normal.dot(p_ref - center)) > slab_half_depth_m) {
+      continue;
+    }
+    work.data->num_hs[k] = TINY_MAX_STATE_HALFSPACES;
+    for (int h = 0; h < TINY_MAX_STATE_HALFSPACES; ++h) {
+      work.data->a_hs[k][h] = axes[h];
+      work.data->b_hs[k][h] = bounds[h];
+    }
+  }
+}
 
 static bool controllerTinyMpcGateSolve(
     const DroneState* gate_state,
@@ -212,6 +297,7 @@ static bool controllerTinyMpcGateSolve(
     }
   }
 
+  configureGateTvConstraints(gate_ref);
   tiny_SetInitialState(&work, &x0);
   tiny_SetStateReference(&work, Xref);
   tiny_SetInputReference(&work, Uref);
@@ -324,10 +410,10 @@ void controllerOutOfTreeInit(void) {
   stgs.rho_init = 250.0;  // Original stable rho
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
   
-  // Fill in the remaining struct (pass 0 for state constraints - not used)
-  tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, 0, 0);
+  // Fill in the remaining struct. State slack arrays are used for gate TV constraints.
+  tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, ZX, ZX_new);
   tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
-  tiny_InitSolution(&work, Xhrz, Uhrz, 0, YU, 0, &Kinf, d, &Pinf, p);
+  tiny_InitSolution(&work, Xhrz, Uhrz, YX, YU, 0, &Kinf, d, &Pinf, p);
 
   tiny_SetInitialState(&work, &x0);  
   tiny_SetStateReference(&work, Xref);
@@ -342,14 +428,18 @@ void controllerOutOfTreeInit(void) {
   ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
   lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
+  ucx.setConstant(100.0f);
+  lcx.setConstant(-100.0f);
+  tiny_SetStateBound(&work, &Acx, &lcx, &ucx);
+  clearGateTvConstraints();
 
   tiny_UpdateLinearCost(&work);
 
   /* Solver settings */
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
-  stgs.en_cstr_states = 0;  // No state constraints for basic test
-  stgs.max_iter = 2;        // Original working value
+  stgs.en_cstr_states = 1;
+  stgs.max_iter = 8;
   stgs.verbose = 0;
   stgs.check_termination = 0;
   stgs.tol_abs_dual = 5e-2;

@@ -17,6 +17,8 @@ struct GateMemory {
   float last_min_margin;
   float last_sigma;
   float last_confidence;
+  bool has_corners;
+  float last_gate_corners_m[12];
   bool commit_active;
   float commit_entry_time_s;
   float distance_to_gate_at_commit;
@@ -107,6 +109,10 @@ static void store_valid_observation(
   memory.last_min_margin = min_packet_margin(vision);
   memory.last_sigma = finite_f(vision->sigma_m) ? vision->sigma_m : 0.0f;
   memory.last_confidence = vision->confidence;
+  memory.has_corners = vision->has_corners;
+  if (vision->has_corners) {
+    memcpy(memory.last_gate_corners_m, vision->gate_corners_m, sizeof(memory.last_gate_corners_m));
+  }
   (void)state;
 }
 
@@ -161,6 +167,19 @@ static GateTinyMpcReference reference_from_vision(
   ref.y_max = vision->has_bounds ? vision->y_max : config->gate_y + config->safe_half_width;
   ref.z_min = vision->has_bounds ? vision->z_min : config->gate_z - config->safe_half_height;
   ref.z_max = vision->has_bounds ? vision->z_max : config->gate_z + config->safe_half_height;
+  ref.has_corners = vision->has_corners;
+  if (vision->has_corners) {
+    memcpy(ref.gate_corners_m, vision->gate_corners_m, sizeof(ref.gate_corners_m));
+    ref.gate_pose_m[0] = 0.25f * (
+        vision->gate_corners_m[0] + vision->gate_corners_m[3] +
+        vision->gate_corners_m[6] + vision->gate_corners_m[9]);
+    ref.gate_pose_m[1] = 0.25f * (
+        vision->gate_corners_m[1] + vision->gate_corners_m[4] +
+        vision->gate_corners_m[7] + vision->gate_corners_m[10]);
+    ref.gate_pose_m[2] = 0.25f * (
+        vision->gate_corners_m[2] + vision->gate_corners_m[5] +
+        vision->gate_corners_m[8] + vision->gate_corners_m[11]);
+  }
   return ref;
 }
 
@@ -182,6 +201,19 @@ static GateTinyMpcReference reference_from_memory(
   ref.gate_pose_m[0] = config->gate_x;
   ref.gate_pose_m[1] = 0.5f * (ref.y_min + ref.y_max);
   ref.gate_pose_m[2] = 0.5f * (ref.z_min + ref.z_max);
+  ref.has_corners = memory.has_corners;
+  if (memory.has_corners) {
+    memcpy(ref.gate_corners_m, memory.last_gate_corners_m, sizeof(ref.gate_corners_m));
+    ref.gate_pose_m[0] = 0.25f * (
+        ref.gate_corners_m[0] + ref.gate_corners_m[3] +
+        ref.gate_corners_m[6] + ref.gate_corners_m[9]);
+    ref.gate_pose_m[1] = 0.25f * (
+        ref.gate_corners_m[1] + ref.gate_corners_m[4] +
+        ref.gate_corners_m[7] + ref.gate_corners_m[10]);
+    ref.gate_pose_m[2] = 0.25f * (
+        ref.gate_corners_m[2] + ref.gate_corners_m[5] +
+        ref.gate_corners_m[8] + ref.gate_corners_m[11]);
+  }
   return ref;
 }
 

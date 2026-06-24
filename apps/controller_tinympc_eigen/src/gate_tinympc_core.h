@@ -73,6 +73,8 @@ typedef struct GateVisionPacket {
   float distance_to_gate_m;
   bool has_bounds;
   bool has_distance;
+  bool has_corners;
+  float gate_corners_m[12];
   bool projection_gate_clipped;
 } GateVisionPacket;
 
@@ -140,6 +142,8 @@ typedef struct GateTinyMpcReference {
   float z_min;
   float z_max;
   bool has_bounds;
+  bool has_corners;
+  float gate_corners_m[12];
   GateControlSource source;
 } GateTinyMpcReference;
 
