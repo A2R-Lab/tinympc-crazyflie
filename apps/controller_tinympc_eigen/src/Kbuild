@@ -1,2 +1,3 @@
 obj-y += controller_tinympc.o
+obj-y += gate8_link.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/
