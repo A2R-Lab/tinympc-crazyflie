@@ -78,9 +78,12 @@ static inline struct vec quat2rp(struct quat q) {
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "TINYMPC-E"
 #include "debug.h"
+#include "gate8_link.h"   // GAP8 vision link, UART1/USART3 corner RX
 
 void appMain() {
   DEBUG_PRINT("Waiting for activation ...\n");
+
+  gate8LinkInit();        // start the AI-deck UART corner receiver
 
   while(1) {
     vTaskDelay(M2T(2000));
