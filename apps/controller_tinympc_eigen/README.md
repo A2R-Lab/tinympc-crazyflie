@@ -1,10 +1,12 @@
 # TinyMPC Eigen Controller
 
-This is the supported out-of-tree TinyMPC controller on `main`.
+This is the supported out-of-tree TinyMPC controller on `main`. It has been further modified to use Nanocockpit's aideck drivers to facilitate better communication with the aideck and aid in vision tasks.
 
 ## Build
 
 Run the build from this directory:
+
+Note: In order to use the new drivers, you must set `CONFIG_DECK_AI=n` in your app's app-config/oot-config to dropthe old aideck.c and CPX from the build. The old CPX protocol will no longer work as communication between STM and GAP8.
 
 ```bash
 make clean
