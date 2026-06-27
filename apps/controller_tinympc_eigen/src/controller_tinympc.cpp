@@ -79,6 +79,8 @@ static inline struct vec quat2rp(struct quat q) {
 #define DEBUG_MODULE "TINYMPC-E"
 #include "debug.h"
 #include "gate8_link.h"   // GAP8 vision link, UART1/USART3 corner RX
+#include "gate_tinympc_core.h"  // gate fallback state machine + reference selection
+#include "gate_pnp.h"           // 2-DOF corner -> metric gate projection
 
 void appMain() {
   DEBUG_PRINT("Waiting for activation ...\n");
@@ -170,6 +172,24 @@ static struct vec desired_rpy;
 static struct quat attitude;
 static struct vec phi;
 
+// --- Gate-vision MPC (visMpc PARAM group, exposed from gate_vis_params.c) ---
+// Non-static so the C params/log file can extern them (C linkage via extern "C").
+uint8_t gateEnable = 0;            // PARAM: 0 = off (default, bench-safe)
+float   gate_target_speed = 0.45f; // PARAM: forward approach speed [m/s]
+uint8_t gate_engaged = 0;          // LOG: 1 when the gate path drove the last solve
+uint8_t gate_source = 0;           // LOG: GateControlSource of the last gate step
+// Terminal-commit params: once close/centered and the gate overflows the frame,
+// fly through on the last good estimate instead of stalling (PARAM group visMpc).
+float   gate_tc_speed = 0.45f;      // forward speed during commit [m/s]
+float   gate_tc_distance = 0.9f;    // max range to allow commit [m]
+float   gate_tc_center_tol = 0.15f; // max lateral/vertical error to commit [m]
+float   gate_tc_min_margin = 0.10f; // min aperture margin to commit [m]
+float   gate_tc_max_age_s = 1.0f;   // max age of last estimate to commit [s]
+static GateControllerConfig gate_cfg;
+static GateVisionPacket     gate_vis;
+static DroneState           gate_state;
+static uint8_t              gate_have_fix = 0; // set once a valid gate is seen
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -250,6 +270,114 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   }
 }
 
+// Reference time step for the gate horizon; matches the params_100hz.h model
+// discretization (A is discretized at dt=0.02 s), as validated in tinympc-vision.
+#define GATE_REF_DT 0.02f
+// Wall-clock control period (MPC_RATE = 100 Hz), used for the core's time
+// accounting (distinct from the prediction horizon step above).
+#define GATE_CTRL_DT 0.01f
+
+// Gate solver callback: build a gate-centered approach reference into Xref and
+// run the existing firmware ADMM. Registered with the core via
+// gate_tinympc_set_solver(); invoked from inside gate_tinympc_step().
+// NOTE: hard gate (half-space) state constraints are intentionally NOT used here
+// — the shipped gain cache only regularizes inputs, so enabling en_cstr_states
+// diverges the solve (see gate-solve fix in tinympc-vision). The gate enters via
+// the reference only.
+static bool firmwareGateSolve(const DroneState *st, const GateTinyMpcReference *ref,
+                              const GateControllerConfig *cfg, MotorCommand *cmd,
+                              GateControllerDebug *dbg) {
+  (void)dbg;
+  const float speed = ref->target_speed_mps;
+  float denom = cfg->gate_x;
+  if (denom < 1e-3f) denom = 1e-3f;
+  const float x_cap = cfg->gate_x + 0.85f;
+  for (int i = 0; i < NHORIZON; ++i) {
+    const float t = GATE_REF_DT * (float)i;
+    float desired_x = st->x + speed * t;
+    if (desired_x < st->x) desired_x = st->x;
+    if (desired_x > x_cap) desired_x = x_cap;
+    float progress = desired_x / denom;
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+    for (int j = 0; j < NSTATES; ++j) Xref[i](j) = 0.0f;
+    Xref[i](0) = desired_x;
+    Xref[i](1) = st->y + progress * (ref->gate_pose_m[1] - st->y);
+    Xref[i](2) = st->z + progress * (ref->gate_pose_m[2] - st->z);
+    Xref[i](6) = speed;
+    if (i < NHORIZON - 1) {
+      for (int j = 0; j < NINPUTS; ++j) Uref[i](j) = 0.0f;
+    }
+  }
+  // x0 is already populated by updateInitialState() and referenced by work.
+  tiny_SetStateReference(&work, Xref);
+  tiny_SetInputReference(&work, Uref);
+  tiny_UpdateLinearCost(&work);
+  tiny_SolveAdmm(&work);
+  cmd->motor_delta[0] = ZU_new[0](0);
+  cmd->motor_delta[1] = ZU_new[0](1);
+  cmd->motor_delta[2] = ZU_new[0](2);
+  cmd->motor_delta[3] = ZU_new[0](3);
+  cmd->solver_iterations = info.iter;
+  cmd->solver_success = info.status_val >= 0;
+  return true;
+}
+
+// Drive one gate-vision MPC step: read corners, project to a metric gate, run the
+// core (which invokes firmwareGateSolve). Returns true iff a valid gate engaged
+// the solve (so the caller skips the normal reference + solve). On no/stale/invalid
+// detection, returns false and the controller falls back to the commander path.
+static bool runGateMpc(const sensorData_t *sensors, const state_t *state) {
+  gate_engaged = 0;
+  gate_state.x = state->position.x;
+  gate_state.y = state->position.y;
+  gate_state.z = state->position.z;
+  gate_state.vx = state->velocity.x;
+  gate_state.vy = state->velocity.y;
+  gate_state.vz = state->velocity.z;
+  gate_state.qx = state->attitudeQuaternion.x;
+  gate_state.qy = state->attitudeQuaternion.y;
+  gate_state.qz = state->attitudeQuaternion.z;
+  gate_state.qw = state->attitudeQuaternion.w;
+  gate_state.wx = radians(sensors->gyro.x);
+  gate_state.wy = radians(sensors->gyro.y);
+  gate_state.wz = radians(sensors->gyro.z);
+
+  float corners[GATE8_N_CORNERS];
+  uint32_t age_ms = 0;
+  // No corner data at all -> let the commander hold (don't engage gate path).
+  if (!gate8LinkGetLatest(corners, &age_ms)) return false;
+  // Project; gate_vis is a well-formed invalid packet on failure. We still run
+  // the core on invalid packets so terminal-commit can fly through, but only
+  // once we have ever had a valid fix (else the gate center is uninitialized).
+  if (gate_pnp_project(corners, age_ms, &gate_state, &gate_vis)) {
+    gate_have_fix = 1;
+  }
+  if (!gate_have_fix) return false;
+
+  memset(&gate_cfg, 0, sizeof(gate_cfg));
+  gate_cfg.mode = GATE_CONTROL_TERMINAL_COMMIT;
+  gate_cfg.gate_x = g_gate_center_x;
+  gate_cfg.gate_y = g_gate_center_y;
+  gate_cfg.gate_z = g_gate_center_z;
+  gate_cfg.safe_half_width = 0.5f * g_gate_width_m;
+  gate_cfg.safe_half_height = 0.5f * g_gate_height_m;
+  gate_cfg.target_speed = gate_target_speed;
+  gate_cfg.invalid_packet_speed = 0.0f;  // stall if gate lost without a valid commit
+  gate_cfg.terminal_commit_speed = gate_tc_speed;
+  gate_cfg.terminal_commit_max_age_s = gate_tc_max_age_s;
+  gate_cfg.terminal_commit_distance_m = gate_tc_distance;
+  gate_cfg.terminal_commit_min_margin_m = gate_tc_min_margin;
+  gate_cfg.terminal_commit_center_tolerance_m = gate_tc_center_tol;
+  gate_cfg.terminal_commit_bound_shrink_m = 0.0f;
+
+  MotorCommand mc = gate_tinympc_step(&gate_state, &gate_vis, &gate_cfg, GATE_CTRL_DT);
+  gate_source = (uint8_t)mc.control_source;
+  result = info.status_val * info.iter;
+  gate_engaged = 1;
+  return true;
+}
+
 // Half-space constraint function removed for basic functionality test
 
 void controllerOutOfTreeInit(void) { 
@@ -304,8 +432,13 @@ void controllerOutOfTreeInit(void) {
   0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
   -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
-  /* End of MPC initialization */  
-  step = 0;  
+  /* Register the gate-vision MPC solver bridge and reset its state machine. */
+  gate_tinympc_reset();
+  gate_tinympc_set_solver(firmwareGateSolve);
+  gate_have_fix = 0;
+
+  /* End of MPC initialization */
+  step = 0;
   traj_iter = 0;
   
   if (en_traj) {
@@ -330,16 +463,25 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   updateInitialState(sensors, state);
 
   /* Controller rate */
-  if (RATE_DO_EXECUTE(MPC_RATE, tick)) { 
-    // Get command reference
-    updateHorizonReference(setpoint);
+  if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
+    // Gate-vision MPC: when enabled and a valid gate is seen, runGateMpc()
+    // builds the gate reference and runs the solve itself. Otherwise fall back
+    // to the normal commander/trajectory reference + solve.
+    bool gate_ran = false;
+    if (gateEnable) {
+      gate_ran = runGateMpc(sensors, state);
+    }
+    if (!gate_ran) {
+      // Get command reference
+      updateHorizonReference(setpoint);
 
-    /* MPC solve */
-    // Solve optimization problem using ADMM
-    tiny_UpdateLinearCost(&work);
-    tiny_SolveAdmm(&work);
- 
-    result =  info.status_val * info.iter;
+      /* MPC solve */
+      // Solve optimization problem using ADMM
+      tiny_UpdateLinearCost(&work);
+      tiny_SolveAdmm(&work);
+
+      result =  info.status_val * info.iter;
+    }
     
     // Detailed logging every 0.5 seconds
     static uint32_t mpc_log_counter = 0;
