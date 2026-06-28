@@ -40,6 +40,14 @@ extern float g_gate_cy;
  * convention differs (verify on hardware). */
 extern float g_gate_img_w;
 extern float g_gate_img_h;
+extern float g_gate_corner_h;   /* net-input frame height the GAP8 corners live in (96) */
+
+/* Debug: last-projection diagnostics (see gate_pnp.c for reason codes). */
+extern float    g_gate_dbg_width;
+extern float    g_gate_dbg_height;
+extern float    g_gate_dbg_range;
+extern uint32_t g_gate_dbg_age_ms;
+extern uint8_t  g_gate_dbg_reason;
 /* Physical gate aperture size, meters (outer corner-to-corner span). */
 extern float g_gate_width_m;
 extern float g_gate_height_m;

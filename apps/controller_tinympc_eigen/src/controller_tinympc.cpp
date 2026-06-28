@@ -82,12 +82,25 @@ static inline struct vec quat2rp(struct quat q) {
 #include "gate_tinympc_core.h"  // gate fallback state machine + reference selection
 #include "gate_pnp.h"           // 2-DOF corner -> metric gate projection
 
+// gateEnable is defined further down (inside the extern "C" block, C linkage).
+// Forward-declare it so appMain can gate the UART receiver on it.
+extern "C" uint8_t gateEnable;
+
 void appMain() {
   DEBUG_PRINT("Waiting for activation ...\n");
 
-  gate8LinkInit();        // start the AI-deck UART corner receiver
+  // Defer the AI-deck UART receiver until the gate path is enabled. uart1Init()
+  // reconfigures USART3 (the deck UART) and conflicts with the AI-deck/CPX deck
+  // driver; doing it unconditionally at boot wedges the system before the radio
+  // task comes up (no CRTP link). Mirror the existing rule of guarding deck I/O
+  // behind an enable param: start the link once, lazily, when visMpc.enable=1.
+  bool gate8_link_started = false;
 
   while(1) {
+    if (!gate8_link_started && gateEnable) {
+      gate8LinkInit();    // start the AI-deck UART corner receiver
+      gate8_link_started = true;
+    }
     vTaskDelay(M2T(2000));
   }
 }
@@ -157,8 +170,10 @@ static tiny_AdmmWorkspace work;
 static uint64_t startTimestamp;
 // static bool isInit = false;  // fix for tracking problem - UNUSED, commented out
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
-static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
-// static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
+// cf21bl Brushless: per-motor hover thrust fraction = m*g/(4*THRUST_MAX)
+//                  = 0.0393*9.81/(4*0.1625) = 0.5931 (normalized, 1.0 = THRUST_MAX).
+static float u_hover[4] = {0.5931f, 0.5931f, 0.5931f, 0.5931f};  // cf21bl
+// static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};    // cf1 (brushed)
 static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = false;  // Default to commander/setpoint control on main
@@ -185,10 +200,19 @@ float   gate_tc_distance = 0.9f;    // max range to allow commit [m]
 float   gate_tc_center_tol = 0.15f; // max lateral/vertical error to commit [m]
 float   gate_tc_min_margin = 0.10f; // min aperture margin to commit [m]
 float   gate_tc_max_age_s = 1.0f;   // max age of last estimate to commit [s]
+// Live flight-tuning knobs (PARAM group visMpc), no reflash needed:
+float   ctrlGainScale = 1.0f;       // PARAM: scale on the MPC input correction (1=full, <1 softer/safer)
+float   ctrlUHover    = 0.5931f;    // PARAM: per-motor hover thrust fraction trim (1.0 = THRUST_MAX)
+float   ctrlGateLookahead = 0.5f;   // PARAM: gate-approach lookahead [m]; bigger = stronger forward/lateral pull
 static GateControllerConfig gate_cfg;
 static GateVisionPacket     gate_vis;
 static DroneState           gate_state;
 static uint8_t              gate_have_fix = 0; // set once a valid gate is seen
+// Latched gate world pose: captured on first engage (estimate is cleanest when
+// far/stable), flown to as a FIXED target so close-range estimate jitter (the
+// gate filling the frame) can't throw the approach off. Cleared when disengaged.
+static bool  gate_latch_valid = false;
+static float gate_lx = 0.0f, gate_ly = 0.0f, gate_lz = 0.0f;
 
 // Basic mode - no obstacle avoidance constraints
 
@@ -289,22 +313,31 @@ static bool firmwareGateSolve(const DroneState *st, const GateTinyMpcReference *
                               GateControllerDebug *dbg) {
   (void)dbg;
   const float speed = ref->target_speed_mps;
-  float denom = cfg->gate_x;
-  if (denom < 1e-3f) denom = 1e-3f;
-  const float x_cap = cfg->gate_x + 0.85f;
+  // Latch the gate world pose on first engage (cleanest estimate, far/stable).
+  if (!gate_latch_valid) {
+    gate_lx = cfg->gate_x; gate_ly = ref->gate_pose_m[1]; gate_lz = ref->gate_pose_m[2];
+    gate_latch_valid = true;
+  }
+  // Straight-line approach to a through-point 0.5 m past the LATCHED gate, at
+  // `speed`. A minimum lookahead (independent of speed) gives the short horizon
+  // decisive authority to BOTH advance and center (x, y, z) on the fixed target,
+  // instead of chasing the jittery close-range live estimate.
+  const float tx = gate_lx + 0.5f, ty = gate_ly, tz = gate_lz;
+  float dx = tx - st->x, dy = ty - st->y, dz = tz - st->z;
+  float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+  if (dist < 1e-3f) dist = 1e-3f;
+  const float ux = dx/dist, uy = dy/dist, uz = dz/dist;
   for (int i = 0; i < NHORIZON; ++i) {
-    const float t = GATE_REF_DT * (float)i;
-    float desired_x = st->x + speed * t;
-    if (desired_x < st->x) desired_x = st->x;
-    if (desired_x > x_cap) desired_x = x_cap;
-    float progress = desired_x / denom;
-    if (progress < 0.0f) progress = 0.0f;
-    if (progress > 1.0f) progress = 1.0f;
+    float la = speed * GATE_REF_DT * (float)i;   // distance along the line at step i
+    if (la < ctrlGateLookahead) la = ctrlGateLookahead;  // min lookahead -> decisive pull (live param)
+    if (la > dist) la = dist;
     for (int j = 0; j < NSTATES; ++j) Xref[i](j) = 0.0f;
-    Xref[i](0) = desired_x;
-    Xref[i](1) = st->y + progress * (ref->gate_pose_m[1] - st->y);
-    Xref[i](2) = st->z + progress * (ref->gate_pose_m[2] - st->z);
-    Xref[i](6) = speed;
+    Xref[i](0) = st->x + ux*la;
+    Xref[i](1) = st->y + uy*la;
+    Xref[i](2) = st->z + uz*la;
+    Xref[i](6) = ux*speed;
+    Xref[i](7) = uy*speed;
+    Xref[i](8) = uz*speed;
     if (i < NHORIZON - 1) {
       for (int j = 0; j < NINPUTS; ++j) Uref[i](j) = 0.0f;
     }
@@ -385,7 +418,8 @@ void controllerOutOfTreeInit(void) {
 
   // Precompute/Cache
   // #include "params_500hz.h"
-  #include "params_100hz.h"  // Original gains (stable)
+  // #include "params_100hz.h"        // brushed cf2 gains (original)
+  #include "params_brushless.h"       // cf21bl Brushless gains (regenerated, rho=250)
   // #include "params_constrained.h"
 
   // End of Precompute/Cache
@@ -470,6 +504,8 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     bool gate_ran = false;
     if (gateEnable) {
       gate_ran = runGateMpc(sensors, state);
+    } else {
+      gate_latch_valid = false;   // clear latch when off -> re-latch fresh on next engage
     }
     if (!gate_ran) {
       // Get command reference
@@ -505,19 +541,31 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // pos_log_counter++;
   }
 
-  /* Output control — pure MPC, apply projected ADMM solution directly */
+  /* Output control. Convert the MPC per-motor thrust solution to SI thrust+torque
+   * and let powerDistributionForceTorque map it to the brushless motors -- the
+   * stock, hardware-verified brushless path (NOT raw PWM, which is brushed-cf2).
+   * Per-motor force f_i = (ZU_i + u_hover_i) * THRUST_MAX [N]; u is normalized so
+   * 1.0 = THRUST_MAX, matching the regenerated brushless gains (params_brushless.h).
+   * The torque mixing is the exact inverse of powerDistributionForceTorque
+   * (roll[-,-,+,+] pitch[-,+,+,-] yaw[-,+,-,+]); round-trips to f_i on the motors. */
   if (setpoint->mode.z == modeDisable) {
-    control->normalizedForces[0] = 0.0f;
-    control->normalizedForces[1] = 0.0f;
-    control->normalizedForces[2] = 0.0f;
-    control->normalizedForces[3] = 0.0f;
+    control->thrustSi = 0.0f;
+    control->torqueX = 0.0f; control->torqueY = 0.0f; control->torqueZ = 0.0f;
   } else {
-    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
-    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
-    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
-    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
+    const float Tmax = 0.1625f;               // cf21bl THRUST_MAX (N per motor)
+    const float arm  = 0.70710678f * 0.050f;  // 0.707 * ARM_LENGTH (matches power dist)
+    const float ttq  = 0.004899994f;          // THRUST2TORQUE
+    // ctrlGainScale softens/sharpens the correction; ctrlUHover trims hover. Both live PARAMs.
+    const float f0 = (ctrlGainScale * ZU_new[0](0) + ctrlUHover) * Tmax;
+    const float f1 = (ctrlGainScale * ZU_new[0](1) + ctrlUHover) * Tmax;
+    const float f2 = (ctrlGainScale * ZU_new[0](2) + ctrlUHover) * Tmax;
+    const float f3 = (ctrlGainScale * ZU_new[0](3) + ctrlUHover) * Tmax;
+    control->thrustSi = f0 + f1 + f2 + f3;
+    control->torqueX  = arm * (-f0 - f1 + f2 + f3);
+    control->torqueY  = arm * (-f0 + f1 + f2 - f3);
+    control->torqueZ  = ttq * (-f0 + f1 - f2 + f3);
   }
-  control->controlMode = controlModePWM;
+  control->controlMode = controlModeForceTorque;
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
 
   // control->normalizedForces[0] = 0.0f;
