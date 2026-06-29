@@ -52,6 +52,7 @@ extern "C" {
 #include "num.h"
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
+#include "estimator.h"         // estimatorEnqueuePosition (vision landmark fusion)
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
@@ -85,6 +86,7 @@ static inline struct vec quat2rp(struct quat q) {
 // gateEnable is defined further down (inside the extern "C" block, C linkage).
 // Forward-declare it so appMain can gate the UART receiver on it.
 extern "C" uint8_t gateEnable;
+extern "C" uint8_t fuseEnable;
 
 void appMain() {
   DEBUG_PRINT("Waiting for activation ...\n");
@@ -97,8 +99,8 @@ void appMain() {
   bool gate8_link_started = false;
 
   while(1) {
-    if (!gate8_link_started && gateEnable) {
-      gate8LinkInit();    // start the AI-deck UART corner receiver
+    if (!gate8_link_started && (gateEnable || fuseEnable)) {
+      gate8LinkInit();    // start the AI-deck UART corner receiver (servo or fusion)
       gate8_link_started = true;
     }
     vTaskDelay(M2T(2000));
@@ -113,6 +115,7 @@ void appMain() {
 
 /* Include trajectory to track */
 #include "traj_fig8_12.h"
+#include "traj_circuit.h"   // two-gate racetrack (world pos/vel + heading) for the chart controller
 // #include "traj_circle_500hz.h"  // Large circle (1m radius)
 // #include "traj_circle_small.h"  // Small circle (0.5m radius)
 // #include "traj_perching.h"
@@ -204,6 +207,43 @@ float   gate_tc_max_age_s = 1.0f;   // max age of last estimate to commit [s]
 float   ctrlGainScale = 1.0f;       // PARAM: scale on the MPC input correction (1=full, <1 softer/safer)
 float   ctrlUHover    = 0.5931f;    // PARAM: per-motor hover thrust fraction trim (1.0 = THRUST_MAX)
 float   ctrlGateLookahead = 0.5f;   // PARAM: gate-approach lookahead [m]; bigger = stronger forward/lateral pull
+// --- Vision landmark fusion (visMpc PARAM group): use the gate as a KNOWN
+// landmark to correct Flow-deck drift via the EKF. The trajectory/MPC are
+// untouched; only the estimator gets the correction. ---
+uint8_t fuseEnable = 0;             // PARAM: run the fusion read + compute the live drift (LOG)
+uint8_t fuseInject = 0;            // PARAM: actually estimatorEnqueuePosition() the correction
+float   fuseStd    = 0.10f;         // PARAM: injected position measurement std-dev [m]
+float   fuseMaxInnov = 0.75f;       // PARAM: reject corrections larger than this [m] (outlier gate)
+float   fuseGateWX = 0.0f;          // PARAM: surveyed gate-A center world pose (takeoff-origin frame)
+float   fuseGateWY = 0.0f;
+float   fuseGateWZ = 0.0f;
+// Two-gate circuit: gate B world pose + heading-association window. When circuitEnable,
+// fusion picks which gate a detection belongs to by the chart heading (frameYaw, which is
+// drift-immune): heading ~+x => gate A, ~-x (|h|~pi) => gate B, mid-turn => NO gate framed
+// (reject, avoids associating a phantom/partial view). When !circuitEnable, single-gate
+// (gate A) as before. This is the phantom-gate safeguard: wrong-heading or far-from-expected
+// detections never reach the EKF.
+float   fuseGateBX = 0.0f;          // PARAM: surveyed gate-B center world pose
+float   fuseGateBY = 0.0f;
+float   fuseGateBZ = 0.0f;
+float   fuseYawWin = 0.60f;         // PARAM: heading half-window [rad] for gate A/B association (~34 deg)
+float   fuseYawRateMax = 0.10f;     // PARAM: only inject fusion when scheduled |yaw rate| < this [rad/s] (settled on a straight)
+float   g_fuse_dx = 0.0f, g_fuse_dy = 0.0f, g_fuse_dz = 0.0f;  // LOG: live drift = gate_world - g_gate_center
+uint32_t g_fuse_n = 0;              // LOG: number of injected fixes
+uint8_t  g_fuse_gate = 0;           // LOG: which gate the last detection associated to (0=none/rejected,1=A,2=B)
+
+// --- Yaw-compensated "chart" circuit mode (visMpc.circuit). The controller solves
+// in a frame rotated by -frameYaw (the desired heading), so the fixed-gain linear
+// MPC always sees a ~yaw-0 problem while the drone physically yaws around the track.
+// Ported from tinympc-vision render_two_gate_circle_demo (_controller_state). ---
+uint8_t circuitEnable = 0;          // PARAM: 1 = fly traj_circuit.h via the chart
+float frameYaw = 0.0f;              // LOG: current chart heading [rad] (CIRC_YAW[idx])
+uint32_t circ_idx = 0;             // LOG: index into CIRC_* arrays (lap progress)
+// CIRC_* is sampled at dt=0.02 (50 Hz) but the MPC runs at MPC_RATE=100 Hz, so
+// circ_idx must advance only once per `circStride` ticks to play the path at its
+// designed speed (stride 2 = 50 Hz = 1x). Larger stride => slower lap (more yaw
+// margin); e.g. stride 4 ~= 0.5x ~0.2 m/s. PARAM: visMpc.circStr.
+uint8_t circStride = 2;
 static GateControllerConfig gate_cfg;
 static GateVisionPacket     gate_vis;
 static DroneState           gate_state;
@@ -217,24 +257,36 @@ static float gate_lx = 0.0f, gate_ly = 0.0f, gate_lz = 0.0f;
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
-  x0(0) = state->position.x;
-  x0(1) = state->position.y;
-  x0(2) = state->position.z;
-  // Body velocity error, [m/s]                          
-  x0(6) = state->velocity.x;
-  x0(7) = state->velocity.y;
-  x0(8) = state->velocity.z;
-  // Angular rate error, [rad/s]
-  x0(9)  = radians(sensors->gyro.x);   
+  // Angular rate (body frame; chart-invariant)
+  x0(9)  = radians(sensors->gyro.x);
   x0(10) = radians(sensors->gyro.y);
   x0(11) = radians(sensors->gyro.z);
   attitude = mkquat(
     state->attitudeQuaternion.x,
     state->attitudeQuaternion.y,
     state->attitudeQuaternion.z,
-    state->attitudeQuaternion.w);  // current attitude
-  phi = quat2rp(qnormalize(attitude));  // quaternion to Rodriquez parameters  
-  // Attitude error
+    state->attitudeQuaternion.w);  // current world attitude
+  if (circuitEnable) {
+    // Chart: rotate the WORLD state by -frameYaw so the controller sees a ~yaw-0
+    // problem. pos/vel xy rotated; attitude = R_z(-frameYaw) * q (yaw removed).
+    const float c = cosf(-frameYaw), s = sinf(-frameYaw);
+    x0(0) = c * state->position.x - s * state->position.y;
+    x0(1) = s * state->position.x + c * state->position.y;
+    x0(2) = state->position.z;
+    x0(6) = c * state->velocity.x - s * state->velocity.y;
+    x0(7) = s * state->velocity.x + c * state->velocity.y;
+    x0(8) = state->velocity.z;
+    struct quat qframe = rpy2quat(mkvec(0.0f, 0.0f, -frameYaw));
+    phi = quat2rp(qnormalize(qqmul(qframe, attitude)));  // chart (yaw-removed) attitude
+  } else {
+    x0(0) = state->position.x;
+    x0(1) = state->position.y;
+    x0(2) = state->position.z;
+    x0(6) = state->velocity.x;
+    x0(7) = state->velocity.y;
+    x0(8) = state->velocity.z;
+    phi = quat2rp(qnormalize(attitude));  // world attitude -> Rodrigues
+  }
   x0(3) = phi.x;
   x0(4) = phi.y;
   x0(5) = phi.z;
@@ -411,6 +463,72 @@ static bool runGateMpc(const sensorData_t *sensors, const state_t *state) {
   return true;
 }
 
+// Vision landmark fusion: when the gate (a KNOWN surveyed landmark) is seen,
+// gate_pnp computes its world position FROM the drifted estimate. The mismatch
+// (surveyed - computed) is exactly the estimate's drift, so corrected drone pos
+// = estimate + drift; we feed that to the EKF. Control/trajectory are untouched.
+// Throttled to ~10 Hz; only injects when fuseInject and the innovation is sane.
+static void runGateFusion(const sensorData_t *sensors, const state_t *state) {
+  gate_state.x = state->position.x;  gate_state.y = state->position.y;  gate_state.z = state->position.z;
+  gate_state.vx = state->velocity.x; gate_state.vy = state->velocity.y; gate_state.vz = state->velocity.z;
+  gate_state.qx = state->attitudeQuaternion.x; gate_state.qy = state->attitudeQuaternion.y;
+  gate_state.qz = state->attitudeQuaternion.z; gate_state.qw = state->attitudeQuaternion.w;
+  gate_state.wx = radians(sensors->gyro.x); gate_state.wy = radians(sensors->gyro.y); gate_state.wz = radians(sensors->gyro.z);
+
+  float corners[GATE8_N_CORNERS]; uint32_t age_ms = 0;
+  if (!gate8LinkGetLatest(corners, &age_ms)) return;
+  if (!gate_pnp_project(corners, age_ms, &gate_state, &gate_vis)) return;  // need a clean valid fix
+
+  // --- Data association: which surveyed gate does this detection belong to? ---
+  // Use the chart heading (frameYaw) when flying the circuit: it is the scheduled
+  // heading, so it is immune to the very estimator drift we are trying to correct.
+  float gx_known = fuseGateWX, gy_known = fuseGateWY, gz_known = fuseGateWZ;
+  if (circuitEnable) {
+    float h = frameYaw;                                   // wrap to [-pi, pi]
+    while (h >  M_PI_F) h -= 2.0f * M_PI_F;
+    while (h < -M_PI_F) h += 2.0f * M_PI_F;
+    const float ah = fabsf(h);
+    if (ah < fuseYawWin) {                                // heading ~ +x  => gate A ahead
+      g_fuse_gate = 1; gx_known = fuseGateWX; gy_known = fuseGateWY; gz_known = fuseGateWZ;
+    } else if (ah > M_PI_F - fuseYawWin) {                // heading ~ -x  => gate B ahead
+      g_fuse_gate = 2; gx_known = fuseGateBX; gy_known = fuseGateBY; gz_known = fuseGateBZ;
+    } else {                                              // mid-turn: no gate framed -> reject
+      g_fuse_gate = 0; g_fuse_dx = g_fuse_dy = g_fuse_dz = 0.0f; return;
+    }
+  } else {
+    g_fuse_gate = 1;                                      // single-gate (legacy) path
+  }
+
+  // (surveyed gate world) - (gate world computed from the drifted estimate) = drift.
+  const float dx = gx_known - g_gate_center_x;
+  const float dy = gy_known - g_gate_center_y;
+  const float dz = gz_known - g_gate_center_z;
+  g_fuse_dx = dx; g_fuse_dy = dy; g_fuse_dz = dz;   // logged even when not injecting (bring-up)
+
+  if (!fuseInject) return;
+  // Only inject when SETTLED ON A STRAIGHT (scheduled yaw rate ~0). During a turn the chart
+  // rotates every position error by the heading (~150 deg), so even a small correction gets
+  // amplified into a lunge. The heading window alone lets a fix in at ~145 deg (still turning);
+  // this also requires the yaw to have stopped. On the straights CIRC_YAW is constant -> rate 0.
+  if (circuitEnable) {
+    const uint32_t kk = (circ_idx + 1 < CIRC_N) ? (circ_idx + 1) : circ_idx;
+    const float sched_yawrate = fabsf(CIRC_YAW[kk] - CIRC_YAW[circ_idx]) / 0.02f;
+    if (sched_yawrate > fuseYawRateMax) return;   // mid-turn / not yet settled -> don't inject
+  }
+  // Innovation gate doubles as the association sanity check: a real detection of the
+  // expected gate sits within fuseMaxInnov of its surveyed pose; a phantom or a
+  // mis-associated/other gate lands far away and is rejected here.
+  if (fabsf(dx) > fuseMaxInnov || fabsf(dy) > fuseMaxInnov || fabsf(dz) > fuseMaxInnov) return;  // outlier gate
+  positionMeasurement_t pos;
+  pos.x = state->position.x + dx;
+  pos.y = state->position.y + dy;
+  pos.z = state->position.z + dz;
+  pos.stdDev = fuseStd;
+  pos.source = MeasurementSourceLocationService;
+  estimatorEnqueuePosition(&pos);
+  g_fuse_n++;
+}
+
 // Half-space constraint function removed for basic functionality test
 
 void controllerOutOfTreeInit(void) { 
@@ -482,6 +600,45 @@ void controllerOutOfTreeInit(void) {
   }
 }
 
+// Build the horizon reference for the racetrack IN THE CHART (rotated by -frameYaw):
+// world pos/vel rotated into the heading-aligned frame, chart-yaw = (heading-frameYaw).
+// Advances circ_idx one trajectory point per MPC step; holds at the end of the lap.
+static void buildCircuitReference(void) {
+  const float c = cosf(-frameYaw), s = sinf(-frameYaw);
+  for (int i = 0; i < NHORIZON; ++i) {
+    uint32_t k = circ_idx + (uint32_t)i;
+    if (k >= CIRC_N) k = CIRC_N - 1;                 // hold at the end of the lap
+    const float wx = CIRC_POS[k][0], wy = CIRC_POS[k][1], wz = CIRC_POS[k][2];
+    const float vx = CIRC_VEL[k][0], vy = CIRC_VEL[k][1], vz = CIRC_VEL[k][2];
+    for (int j = 0; j < NSTATES; ++j) Xref[i](j) = 0.0f;
+    Xref[i](0) = c * wx - s * wy;                    // chart position
+    Xref[i](1) = s * wx + c * wy;
+    Xref[i](2) = wz;
+    Xref[i](5) = 0.5f * (CIRC_YAW[k] - frameYaw);    // chart yaw (half-angle); tilt ff = 0
+    Xref[i](6) = c * vx - s * vy;                    // chart velocity
+    Xref[i](7) = s * vx + c * vy;
+    Xref[i](8) = vz;
+    // Yaw-RATE feedforward (omega_z): command the schedule's yaw rate so the drone turns
+    // AT the right rate, not just chasing yaw-position error -> kills the ramp lag (which
+    // grew chart_yaw to ~44 deg through the turn). Re-added now that the engage-yaw crash
+    // is fixed by the short hover. Body yaw rate is frame-invariant; dt = 0.02 s.
+    const uint32_t k1 = (k + 1 < CIRC_N) ? (k + 1) : k;
+    Xref[i](11) = (CIRC_YAW[k1] - CIRC_YAW[k]) / 0.02f;
+    if (i < NHORIZON - 1) {
+      for (int j = 0; j < NINPUTS; ++j) Uref[i](j) = 0.0f;
+    }
+  }
+  tiny_SetStateReference(&work, Xref);
+  tiny_SetInputReference(&work, Uref);
+  // Advance the base index at 50 Hz / circStride (MPC ticks at 100 Hz), so the
+  // 0.02 s-sampled path plays at its designed wall-clock speed instead of 2x.
+  static uint8_t stride_count = 0;
+  if (++stride_count >= (circStride ? circStride : 1)) {
+    stride_count = 0;
+    if (circ_idx + 1 + NHORIZON < CIRC_N) circ_idx++;  // advance, hold near the end
+  }
+}
+
 bool controllerOutOfTreeTest() {
   // Always return true
   return true;
@@ -494,7 +651,19 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   /* Get current state (initial state for MPC) */
   // delta_x = x - x_bar; x_bar = 0
   // Positon error, [m]
+  // Set the chart heading for THIS step before building x0 (circuit mode).
+  if (circuitEnable) {
+    frameYaw = CIRC_YAW[circ_idx < CIRC_N ? circ_idx : (CIRC_N - 1)];
+  } else {
+    frameYaw = 0.0f; circ_idx = 0;   // re-start the lap fresh on next enable
+  }
   updateInitialState(sensors, state);
+
+  /* Vision landmark fusion (~10 Hz): correct estimator drift from the known gate.
+   * Runs independently of the control path (trajectory/commander/servo). */
+  if (fuseEnable && RATE_DO_EXECUTE(10, tick)) {
+    runGateFusion(sensors, state);
+  }
 
   /* Controller rate */
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
@@ -502,21 +671,29 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // builds the gate reference and runs the solve itself. Otherwise fall back
     // to the normal commander/trajectory reference + solve.
     bool gate_ran = false;
-    if (gateEnable) {
-      gate_ran = runGateMpc(sensors, state);
-    } else {
-      gate_latch_valid = false;   // clear latch when off -> re-latch fresh on next engage
-    }
-    if (!gate_ran) {
-      // Get command reference
-      updateHorizonReference(setpoint);
-
-      /* MPC solve */
-      // Solve optimization problem using ADMM
+    if (circuitEnable) {
+      // Yaw-compensated racetrack: build the chart reference and solve.
+      buildCircuitReference();
       tiny_UpdateLinearCost(&work);
       tiny_SolveAdmm(&work);
+      result = info.status_val * info.iter;
+    } else {
+      if (gateEnable) {
+        gate_ran = runGateMpc(sensors, state);
+      } else {
+        gate_latch_valid = false;   // clear latch when off -> re-latch fresh on next engage
+      }
+      if (!gate_ran) {
+        // Get command reference
+        updateHorizonReference(setpoint);
 
-      result =  info.status_val * info.iter;
+        /* MPC solve */
+        // Solve optimization problem using ADMM
+        tiny_UpdateLinearCost(&work);
+        tiny_SolveAdmm(&work);
+
+        result =  info.status_val * info.iter;
+      }
     }
     
     // Detailed logging every 0.5 seconds

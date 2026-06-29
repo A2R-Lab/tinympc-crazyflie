@@ -23,6 +23,27 @@ extern float   gate_tc_max_age_s;
 extern float   ctrlGainScale;
 extern float   ctrlUHover;
 extern float   ctrlGateLookahead;
+extern uint8_t fuseEnable;
+extern uint8_t fuseInject;
+extern float   fuseStd;
+extern float   fuseMaxInnov;
+extern float   fuseGateWX;
+extern float   fuseGateWY;
+extern float   fuseGateWZ;
+extern float   fuseGateBX;
+extern float   fuseGateBY;
+extern float   fuseGateBZ;
+extern float   fuseYawWin;
+extern float   fuseYawRateMax;
+extern uint8_t g_fuse_gate;
+extern float   g_fuse_dx;
+extern float   g_fuse_dy;
+extern float   g_fuse_dz;
+extern uint32_t g_fuse_n;
+extern uint8_t  circuitEnable;
+extern float    frameYaw;
+extern uint32_t circ_idx;
+extern uint8_t  circStride;
 
 /**
  * Gate-vision MPC tunables. enable=0 by default (the controller falls back to the
@@ -55,6 +76,20 @@ PARAM_ADD(PARAM_FLOAT,  tcAge,  &gate_tc_max_age_s)
 PARAM_ADD(PARAM_FLOAT,  gnScale, &ctrlGainScale)
 PARAM_ADD(PARAM_FLOAT,  uHov,    &ctrlUHover)
 PARAM_ADD(PARAM_FLOAT,  lookah,  &ctrlGateLookahead)
+PARAM_ADD(PARAM_UINT8,  fuse,    &fuseEnable)
+PARAM_ADD(PARAM_UINT8,  fuseInj, &fuseInject)
+PARAM_ADD(PARAM_FLOAT,  fuseStd, &fuseStd)
+PARAM_ADD(PARAM_FLOAT,  fuseMax, &fuseMaxInnov)
+PARAM_ADD(PARAM_FLOAT,  gWX,     &fuseGateWX)
+PARAM_ADD(PARAM_FLOAT,  gWY,     &fuseGateWY)
+PARAM_ADD(PARAM_FLOAT,  gWZ,     &fuseGateWZ)
+PARAM_ADD(PARAM_FLOAT,  gBX,     &fuseGateBX)
+PARAM_ADD(PARAM_FLOAT,  gBY,     &fuseGateBY)
+PARAM_ADD(PARAM_FLOAT,  gBZ,     &fuseGateBZ)
+PARAM_ADD(PARAM_FLOAT,  yawWin,  &fuseYawWin)
+PARAM_ADD(PARAM_FLOAT,  yawRtMx, &fuseYawRateMax)
+PARAM_ADD(PARAM_UINT8,  circuit, &circuitEnable)
+PARAM_ADD(PARAM_UINT8,  circStr, &circStride)
 PARAM_GROUP_STOP(visMpc)
 
 /**
@@ -76,4 +111,14 @@ LOG_ADD(LOG_FLOAT,  dbgW,   &g_gate_dbg_width)
 LOG_ADD(LOG_FLOAT,  dbgH,   &g_gate_dbg_height)
 LOG_ADD(LOG_FLOAT,  dbgR,   &g_gate_dbg_range)
 LOG_ADD(LOG_UINT32, age,    &g_gate_dbg_age_ms)
+/* Vision fusion: live drift = surveyed gate - computed gate (the EKF correction),
+ * logged even when not injecting; fn = number of fixes injected. */
+LOG_ADD(LOG_FLOAT,  fdx,    &g_fuse_dx)
+LOG_ADD(LOG_FLOAT,  fdy,    &g_fuse_dy)
+LOG_ADD(LOG_FLOAT,  fdz,    &g_fuse_dz)
+LOG_ADD(LOG_UINT32, fn,     &g_fuse_n)
+LOG_ADD(LOG_UINT8,  fGate,  &g_fuse_gate)
+/* Chart circuit: current chart heading + lap progress index. */
+LOG_ADD(LOG_FLOAT,  frmYaw, &frameYaw)
+LOG_ADD(LOG_UINT32, circIdx,&circ_idx)
 LOG_GROUP_STOP(gateMpc)
