@@ -21,6 +21,9 @@ extern float   gate_tc_center_tol;
 extern float   gate_tc_min_margin;
 extern float   gate_tc_max_age_s;
 extern float   ctrlGainScale;
+extern float   ctrlGnColl;
+extern float   ctrlGnAtt;
+extern uint8_t ctrlCollPrio;
 extern float   ctrlUHover;
 extern float   ctrlGateLookahead;
 extern uint8_t fuseEnable;
@@ -44,6 +47,23 @@ extern uint8_t  circuitEnable;
 extern float    frameYaw;
 extern uint32_t circ_idx;
 extern uint8_t  circStride;
+extern uint8_t  circMan;
+extern float    circYawMan;
+extern uint8_t  actualYawFrame;
+extern float    circDmax;
+extern float    yawKi;
+extern float    yawImax;
+extern float    g_yaw_i;
+extern float    g_chart_yaw;
+extern uint8_t  g_motor_sat;
+extern float    g_torque_z;
+extern float    g_gyro_z;
+extern float    g_thrust;
+extern float    g_fmax;
+extern float    g_fmin;
+extern float    g_f0, g_f1, g_f2, g_f3;
+extern uint8_t  yawTest;
+extern float    yawTestTau;
 
 /**
  * Gate-vision MPC tunables. enable=0 by default (the controller falls back to the
@@ -74,6 +94,9 @@ PARAM_ADD(PARAM_FLOAT,  tcTol,  &gate_tc_center_tol)
 PARAM_ADD(PARAM_FLOAT,  tcMrg,  &gate_tc_min_margin)
 PARAM_ADD(PARAM_FLOAT,  tcAge,  &gate_tc_max_age_s)
 PARAM_ADD(PARAM_FLOAT,  gnScale, &ctrlGainScale)
+PARAM_ADD(PARAM_FLOAT,  gnColl,  &ctrlGnColl)
+PARAM_ADD(PARAM_FLOAT,  gnAtt,   &ctrlGnAtt)
+PARAM_ADD(PARAM_UINT8,  collPr,  &ctrlCollPrio)
 PARAM_ADD(PARAM_FLOAT,  uHov,    &ctrlUHover)
 PARAM_ADD(PARAM_FLOAT,  lookah,  &ctrlGateLookahead)
 PARAM_ADD(PARAM_UINT8,  fuse,    &fuseEnable)
@@ -90,6 +113,14 @@ PARAM_ADD(PARAM_FLOAT,  yawWin,  &fuseYawWin)
 PARAM_ADD(PARAM_FLOAT,  yawRtMx, &fuseYawRateMax)
 PARAM_ADD(PARAM_UINT8,  circuit, &circuitEnable)
 PARAM_ADD(PARAM_UINT8,  circStr, &circStride)
+PARAM_ADD(PARAM_UINT8,  circMan, &circMan)
+PARAM_ADD(PARAM_FLOAT,  circYaw, &circYawMan)
+PARAM_ADD(PARAM_UINT8,  yawFrame, &actualYawFrame)
+PARAM_ADD(PARAM_FLOAT,  circDmax, &circDmax)
+PARAM_ADD(PARAM_UINT8,  yawTest, &yawTest)
+PARAM_ADD(PARAM_FLOAT,  yawTau,  &yawTestTau)
+PARAM_ADD(PARAM_FLOAT,  yawKi,   &yawKi)
+PARAM_ADD(PARAM_FLOAT,  yawImax, &yawImax)
 PARAM_GROUP_STOP(visMpc)
 
 /**
@@ -121,4 +152,20 @@ LOG_ADD(LOG_UINT8,  fGate,  &g_fuse_gate)
 /* Chart circuit: current chart heading + lap progress index. */
 LOG_ADD(LOG_FLOAT,  frmYaw, &frameYaw)
 LOG_ADD(LOG_UINT32, circIdx,&circ_idx)
+/* Yaw integrator: chart_yaw error [rad] and the make-up torque [N*m] it is applying. */
+LOG_ADD(LOG_FLOAT,  chYaw,  &g_chart_yaw)
+LOG_ADD(LOG_FLOAT,  yawI,   &g_yaw_i)
+LOG_ADD(LOG_UINT8,  satM,   &g_motor_sat)
+/* Cause/effect: commanded yaw torque (the control signal) vs measured body yaw rate. */
+LOG_ADD(LOG_FLOAT,  tauZ,   &g_torque_z)
+LOG_ADD(LOG_FLOAT,  gyroZ,  &g_gyro_z)
+/* Thrust headroom: is a sink command-saturated (control) or voltage-limited (power)? */
+LOG_ADD(LOG_FLOAT,  thrust, &g_thrust)
+LOG_ADD(LOG_FLOAT,  fmax,   &g_fmax)
+LOG_ADD(LOG_FLOAT,  fmin,   &g_fmin)
+/* Per-motor forces [N]: one hot + others low = allocation; all four hot = thrust wall. */
+LOG_ADD(LOG_FLOAT,  f0,     &g_f0)
+LOG_ADD(LOG_FLOAT,  f1,     &g_f1)
+LOG_ADD(LOG_FLOAT,  f2,     &g_f2)
+LOG_ADD(LOG_FLOAT,  f3,     &g_f3)
 LOG_GROUP_STOP(gateMpc)
