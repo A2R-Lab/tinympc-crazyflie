@@ -79,7 +79,7 @@ extern "C"
 #include "quadrotor_50hz_params_constrained.hpp"
 
 // Trajectory
-#define USE_FIGURE8_TRAJECTORY 0
+#define USE_FIGURE8_TRAJECTORY 1
 #if USE_FIGURE8_TRAJECTORY
 #include "traj_fig8_12.h"
 #else
@@ -176,6 +176,9 @@ static bool enable_traj = true;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
+static const bool enable_tinympc_reference_yaw = false;
+static const bool enable_pid_face_forward_yaw = true;
+static const float tinympc_yaw_singularity_limit_deg = 175.0f;
 static const int traj_source_rate =
 #if USE_FIGURE8_TRAJECTORY
     100;
@@ -203,8 +206,10 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 0; // Disabled for figure-8 trajectory test
-static uint8_t enable_psd = 0; // Disabled for figure-8 trajectory test
+static float trajectory_heading_yaw_deg = 0.0f;
+static float mpc_heading_yaw_deg = 0.0f;
+static uint8_t enable_obs_constraint = 0; // Disabled for trajectory debug test
+static uint8_t enable_psd = 0; // Disabled for trajectory debug test
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -252,6 +257,17 @@ static inline tinytype yaw_degrees_to_rp(float yaw_deg)
   return tinytype(tanf(radians(yaw_deg) * 0.5f));
 }
 
+static inline tinytype safe_yaw_degrees_to_rp(float yaw_deg)
+{
+  if (yaw_deg > tinympc_yaw_singularity_limit_deg) {
+    yaw_deg = tinympc_yaw_singularity_limit_deg;
+  }
+  if (yaw_deg < -tinympc_yaw_singularity_limit_deg) {
+    yaw_deg = -tinympc_yaw_singularity_limit_deg;
+  }
+  return yaw_degrees_to_rp(yaw_deg);
+}
+
 static inline float rp_to_yaw_degrees(tinytype rx, tinytype ry, tinytype rz)
 {
   const float x = (float)rx;
@@ -265,6 +281,17 @@ static inline float rp_to_yaw_degrees(tinytype rx, tinytype ry, tinytype rz)
   const float yaw = atan2f(2.0f * (qw*qz + qx*qy),
                            1.0f - 2.0f * (qy*qy + qz*qz));
   return degrees(yaw);
+}
+
+static inline float wrap_degrees(float yaw_deg)
+{
+  while (yaw_deg > 180.0f) {
+    yaw_deg -= 360.0f;
+  }
+  while (yaw_deg < -180.0f) {
+    yaw_deg += 360.0f;
+  }
+  return yaw_deg;
 }
 
 static inline int clamp_int(int value, int low, int high)
@@ -292,6 +319,16 @@ static inline tinytype trajectory_state_value(int ref_idx, int state_idx)
 #endif
 }
 
+static inline float trajectory_heading_yaw_degrees(int ref_idx, float fallback_yaw_deg)
+{
+  const float vx = (float)trajectory_state_value(ref_idx, 6);
+  const float vy = (float)trajectory_state_value(ref_idx, 7);
+  if ((vx * vx + vy * vy) < 1e-6f) {
+    return fallback_yaw_deg;
+  }
+  return wrap_degrees(degrees(atan2f(vy, vx)));
+}
+
 static inline tinytype trajectory_input_value(int ref_idx, int input_idx)
 {
 #if USE_FIGURE8_TRAJECTORY
@@ -307,10 +344,14 @@ static inline tinytype trajectory_input_value(int ref_idx, int input_idx)
 static void load_trajectory_reference(int ref_idx)
 {
   const int x_idx = clamp_int(ref_idx, 0, traj_data_length - 1);
+  trajectory_heading_yaw_deg = trajectory_heading_yaw_degrees(x_idx, trajectory_heading_yaw_deg);
 
   for (int i = 0; i < NHORIZON; ++i) {
     for (int j = 0; j < NSTATES; ++j) {
       params.Xref(j, i) = trajectory_state_value(x_idx, j);
+    }
+    if (enable_tinympc_reference_yaw) {
+      params.Xref(5, i) = safe_yaw_degrees_to_rp(trajectory_heading_yaw_deg);
     }
     if (i < NHORIZON - 1) {
       for (int j = 0; j < NINPUTS; ++j) {
@@ -425,6 +466,12 @@ void controllerOutOfTreeInit(void)
   }
   // Xref_origin(5) = yaw_degrees_to_rp(yaw_test_deg);
   // Xref_end(5) = yaw_degrees_to_rp(yaw_test_deg);
+  trajectory_heading_yaw_deg = trajectory_heading_yaw_degrees(0, 0.0f);
+  if (enable_tinympc_reference_yaw) {
+    Xref_origin(5) = safe_yaw_degrees_to_rp(trajectory_heading_yaw_deg);
+    Xref_end(5) = safe_yaw_degrees_to_rp(trajectory_heading_yaw_degrees(traj_data_length - 1, trajectory_heading_yaw_deg));
+  }
+  mpc_heading_yaw_deg = trajectory_heading_yaw_deg;
   load_trajectory_reference(0);
 
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
@@ -765,9 +812,10 @@ static void tinympcControllerTask(void *parameters)
       mpc_setpoint_task = problem.x.col(NHORIZON-1);
       
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("setpoint: x=%.2f z=%.2f yaw=%.1f\n",
+        DEBUG_PRINT("setpoint: x=%.2f z=%.2f mpc_yaw=%.1f ref_yaw=%.1f\n",
                     (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2),
-                    (double)rp_to_yaw_degrees(mpc_setpoint_task(3), mpc_setpoint_task(4), mpc_setpoint_task(5)));
+                    (double)rp_to_yaw_degrees(mpc_setpoint_task(3), mpc_setpoint_task(4), mpc_setpoint_task(5)),
+                    (double)trajectory_heading_yaw_deg);
       }
 
       // Skip event triggers for now to simplify debugging
@@ -776,6 +824,7 @@ static void tinympcControllerTask(void *parameters)
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
       mpc_setpoint = mpc_setpoint_task;
+      mpc_heading_yaw_deg = trajectory_heading_yaw_deg;
       init_vel_z = problem.x(8, 0);
       mpc_has_run = true; // Mark that MPC has computed at least once
       xSemaphoreGive(dataMutex);
@@ -822,6 +871,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     mpc_setpoint(1) = state->position.y;
     mpc_setpoint(2) = state->position.z;
     mpc_setpoint(5) = yaw_degrees_to_rp(state->attitude.yaw);
+    mpc_heading_yaw_deg = state->attitude.yaw;
     DEBUG_PRINT("OOT activated at z=%.2f\n", (double)state->position.z);
   }
   last_controller_tick = tick;
@@ -840,7 +890,9 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       mpc_setpoint_pid.position.x = mpc_setpoint(0);
       mpc_setpoint_pid.position.y = mpc_setpoint(1);
       mpc_setpoint_pid.position.z = mpc_setpoint(2);
-      mpc_setpoint_pid.attitude.yaw = rp_to_yaw_degrees(mpc_setpoint(3), mpc_setpoint(4), mpc_setpoint(5));
+      mpc_setpoint_pid.attitude.yaw = enable_pid_face_forward_yaw
+          ? mpc_heading_yaw_deg
+          : rp_to_yaw_degrees(mpc_setpoint(3), mpc_setpoint(4), mpc_setpoint(5));
     } else {
       // Hold current position until MPC is ready
       mpc_setpoint_pid.position.x = state->position.x;
