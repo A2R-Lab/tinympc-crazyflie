@@ -43,6 +43,7 @@ extern "C"
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 
 #include "app.h"
 #include "config.h"
@@ -78,20 +79,25 @@ extern "C"
 #include "quadrotor_50hz_params_constrained.hpp"
 
 // Trajectory
+#define USE_FIGURE8_TRAJECTORY 0
+#if USE_FIGURE8_TRAJECTORY
+#include "traj_fig8_12.h"
+#else
 // #include "quadrotor_100hz_ref_hover.hpp"
-// #include "quadrotor_50hz_ref_circle.hpp"
+#include "quadrotor_50hz_ref_circle.hpp"
 // #include "quadrotor_50hz_ref_circle_2_5s.hpp"
 // #include "quadrotor_50hz_line_5s.hpp"
 // #include "quadrotor_50hz_line_8s.hpp"
-#include "quadrotor_50hz_line_9s_xyz.hpp"
+//#include "quadrotor_50hz_line_9s_xyz.hpp"
+#endif
 
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "MPCTASK"
 #include "debug.h"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
-// #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
-#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period for PSD
+#define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
+// #define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period for PSD
 // #define MPC_RATE RATE_100_HZ
 //#define MPC_RATE 10
 #define LOWLEVEL_RATE RATE_500_HZ
@@ -170,10 +176,23 @@ static bool enable_traj = true;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
-static float traj_speed = 0.2f; // m/s
-static float traj_dist = 1.0f;  // m
-static float traj_height = 0.5f;
-static float traj_hold_time = 2.0f; // seconds
+static const int traj_source_rate =
+#if USE_FIGURE8_TRAJECTORY
+    100;
+static const int traj_data_length = sizeof(X_ref_data) / sizeof(X_ref_data[0]);
+static const int traj_input_length = sizeof(U_ref_data) / sizeof(U_ref_data[0]);
+#else
+    50;
+static const int traj_data_length = NTOTAL;
+#endif
+// TinyMPC yaw-test code disabled for figure-8 testing.
+// static uint8_t enable_tinympc_yaw_test = 1;
+// static float yaw_test_deg = 90.0f; // TinyMPC yaw maneuver, in degrees
+// static float yaw_test_ramp_time = 1.5f;
+// static float yaw_test_origin_deg = 0.0f;
+// static float yaw_test_hold_x = 0.0f;
+// static float yaw_test_hold_y = 0.0f;
+// static float yaw_test_hold_z = 0.0f;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 // static int mpc_steps_taken = 0;
@@ -184,8 +203,8 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
-static uint8_t enable_psd = 1; // PSD enabled (runs every 5 ADMM iters)
+static uint8_t enable_obs_constraint = 0; // Disabled for figure-8 trajectory test
+static uint8_t enable_psd = 0; // Disabled for figure-8 trajectory test
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -226,6 +245,79 @@ static inline struct vec quat_2_rp(quaternion_t q)
   v.y = q.y / q.w;
   v.z = q.z / q.w;
   return v;
+}
+
+static inline tinytype yaw_degrees_to_rp(float yaw_deg)
+{
+  return tinytype(tanf(radians(yaw_deg) * 0.5f));
+}
+
+static inline float rp_to_yaw_degrees(tinytype rx, tinytype ry, tinytype rz)
+{
+  const float x = (float)rx;
+  const float y = (float)ry;
+  const float z = (float)rz;
+  const float inv_norm = 1.0f / sqrtf(1.0f + x*x + y*y + z*z);
+  const float qx = x * inv_norm;
+  const float qy = y * inv_norm;
+  const float qz = z * inv_norm;
+  const float qw = inv_norm;
+  const float yaw = atan2f(2.0f * (qw*qz + qx*qy),
+                           1.0f - 2.0f * (qy*qy + qz*qz));
+  return degrees(yaw);
+}
+
+static inline int clamp_int(int value, int low, int high)
+{
+  if (value < low) {
+    return low;
+  }
+  if (value > high) {
+    return high;
+  }
+  return value;
+}
+
+static inline int traj_ref_index_from_step(int step)
+{
+  return clamp_int((step * traj_source_rate) / MPC_RATE, 0, traj_data_length - 1);
+}
+
+static inline tinytype trajectory_state_value(int ref_idx, int state_idx)
+{
+#if USE_FIGURE8_TRAJECTORY
+  return (tinytype)X_ref_data[ref_idx][state_idx];
+#else
+  return Xref_data[ref_idx * NSTATES + state_idx];
+#endif
+}
+
+static inline tinytype trajectory_input_value(int ref_idx, int input_idx)
+{
+#if USE_FIGURE8_TRAJECTORY
+  const int u_idx = clamp_int(ref_idx, 0, traj_input_length - 1);
+  return (tinytype)U_ref_data[u_idx][input_idx];
+#else
+  (void)ref_idx;
+  (void)input_idx;
+  return 0.0f;
+#endif
+}
+
+static void load_trajectory_reference(int ref_idx)
+{
+  const int x_idx = clamp_int(ref_idx, 0, traj_data_length - 1);
+
+  for (int i = 0; i < NHORIZON; ++i) {
+    for (int j = 0; j < NSTATES; ++j) {
+      params.Xref(j, i) = trajectory_state_value(x_idx, j);
+    }
+    if (i < NHORIZON - 1) {
+      for (int j = 0; j < NINPUTS; ++j) {
+        params.Uref(j, i) = trajectory_input_value(x_idx, j);
+      }
+    }
+  }
 }
 
 static inline void fill_hold_setpoint(setpoint_t *sp, const state_t *state)
@@ -326,10 +418,14 @@ void controllerOutOfTreeInit(void)
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints (1 to use rho corresponding to active constraints)
 
-  // Initialize straight-line reference (generated, not from table)
-  Xref_origin << 0, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-  Xref_end << traj_dist, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-  params.Xref = Xref_origin.replicate<1, NHORIZON>();
+  // Initialize reference from the selected trajectory table.
+  for (int j = 0; j < NSTATES; ++j) {
+    Xref_origin(j) = trajectory_state_value(0, j);
+    Xref_end(j) = trajectory_state_value(traj_data_length - 1, j);
+  }
+  // Xref_origin(5) = yaw_degrees_to_rp(yaw_test_deg);
+  // Xref_end(5) = yaw_degrees_to_rp(yaw_test_deg);
+  load_trajectory_reference(0);
 
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
   mpc_setpoint = Xref_origin;
@@ -337,7 +433,10 @@ void controllerOutOfTreeInit(void)
   enable_traj = true;
   mpc_has_run = false;
   traj_index = 0;
-  max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
+  max_traj_index = ((traj_data_length - 1) * MPC_RATE) / traj_source_rate;
+  // if (enable_tinympc_yaw_test) {
+  //   max_traj_index = (int)((yaw_test_ramp_time + traj_hold_time) * MPC_RATE);
+  // }
 
   // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
   // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
@@ -371,31 +470,43 @@ void controllerOutOfTreeInit(void)
 
 static void UpdateHorizonReference(const setpoint_t *setpoint)
 {
+  // if (enable_tinympc_yaw_test)
+  // {
+  //   const float dt = 1.0f / MPC_RATE;
+  //   const float base_t = traj_index * dt;
+  //   for (int i = 0; i < NHORIZON; ++i) {
+  //     float alpha = (base_t + i * dt) / yaw_test_ramp_time;
+  //     if (alpha > 1.0f) {
+  //       alpha = 1.0f;
+  //     }
+  //     const float yaw_ref_deg = yaw_test_origin_deg + yaw_test_deg * alpha;
+  //     params.Xref.col(i) = tiny_VectorNx::Zero();
+  //     params.Xref(0, i) = yaw_test_hold_x;
+  //     params.Xref(1, i) = yaw_test_hold_y;
+  //     params.Xref(2, i) = yaw_test_hold_z;
+  //     params.Xref(5, i) = yaw_degrees_to_rp(yaw_ref_deg);
+  //   }
+
+  //   if (traj_index < max_traj_index) {
+  //     traj_index++;
+  //   }
+  //   return;
+  // }
+
   if (enable_traj)
   {
-    const float dt = 1.0f / MPC_RATE;
-    const float travel_time = traj_dist / traj_speed;
-    const float base_t = traj_index * dt;
-    for (int i = 0; i < NHORIZON; ++i) {
-      float t = base_t + i * dt;
-      float x = (t < travel_time) ? (traj_speed * t) : traj_dist;
-      params.Xref(0, i) = x;
-      params.Xref(1, i) = 0.0f;
-      params.Xref(2, i) = traj_height;
-    }
+    load_trajectory_reference(traj_ref_index_from_step(traj_index));
 
     if (traj_index < max_traj_index) {
       traj_index++;
     } else {
-      // Trajectory done - disable trajectory to trigger motor kill
       static bool traj_done_msg = false;
       if (!traj_done_msg) {
         DEBUG_PRINT("TRAJ DONE: idx=%d, max=%d\n", traj_index, max_traj_index);
         traj_done_msg = true;
       }
-      enable_traj = false;
       enable_obs_constraint = 0;
-      params.Xref = Xref_end.replicate<1, NHORIZON>();
+      load_trajectory_reference(traj_data_length - 1);
     }
   }
   else
@@ -654,7 +765,9 @@ static void tinympcControllerTask(void *parameters)
       mpc_setpoint_task = problem.x.col(NHORIZON-1);
       
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("setpoint: x=%.2f z=%.2f\n", (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2));
+        DEBUG_PRINT("setpoint: x=%.2f z=%.2f yaw=%.1f\n",
+                    (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2),
+                    (double)rp_to_yaw_degrees(mpc_setpoint_task(3), mpc_setpoint_task(4), mpc_setpoint_task(5)));
       }
 
       // Skip event triggers for now to simplify debugging
@@ -662,8 +775,8 @@ static void tinympcControllerTask(void *parameters)
 
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
-      memcpy(&mpc_setpoint, &mpc_setpoint_task, sizeof(tiny_VectorNx));
-      memcpy(&init_vel_z, &problem.x.col(0)(8), sizeof(float));
+      mpc_setpoint = mpc_setpoint_task;
+      init_vel_z = problem.x(8, 0);
       mpc_has_run = true; // Mark that MPC has computed at least once
       xSemaphoreGive(dataMutex);
     }
@@ -698,11 +811,17 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   if (controller_reactivated) {
     controller_activate_tick = tick;
     mpc_has_run = false;
+    traj_index = 0;
+    // yaw_test_origin_deg = state->attitude.yaw;
+    // yaw_test_hold_x = state->position.x;
+    // yaw_test_hold_y = state->position.y;
+    // yaw_test_hold_z = state->position.z;
     // Initialize to current state to avoid a bad setpoint on first switch
     mpc_setpoint = tiny_VectorNx::Zero();
     mpc_setpoint(0) = state->position.x;
     mpc_setpoint(1) = state->position.y;
     mpc_setpoint(2) = state->position.z;
+    mpc_setpoint(5) = yaw_degrees_to_rp(state->attitude.yaw);
     DEBUG_PRINT("OOT activated at z=%.2f\n", (double)state->position.z);
   }
   last_controller_tick = tick;
@@ -721,7 +840,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       mpc_setpoint_pid.position.x = mpc_setpoint(0);
       mpc_setpoint_pid.position.y = mpc_setpoint(1);
       mpc_setpoint_pid.position.z = mpc_setpoint(2);
-      mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
+      mpc_setpoint_pid.attitude.yaw = rp_to_yaw_degrees(mpc_setpoint(3), mpc_setpoint(4), mpc_setpoint(5));
     } else {
       // Hold current position until MPC is ready
       mpc_setpoint_pid.position.x = state->position.x;
@@ -736,7 +855,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     //   // DEBUG_PRINT("x: %.4f\n", setpoint->position.x);
     // }
 
-    // Kill motors if trajectory finished (enable_traj goes false)
+    // Keep motor-kill behavior available if a future mode explicitly disables trajectory tracking.
     if (!enable_traj && mpc_has_run) {
       static bool landed_msg = false;
       if (!landed_msg) {
