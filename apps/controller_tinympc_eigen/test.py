@@ -32,10 +32,14 @@ def main():
 
     cf = Crazyflie(rw_cache="./cf_cache")
     with SyncCrazyflie(args.uri, cf=cf) as scf:
-        scf.cf.param.set_value("commander/enHighLevel", "1")
+        scf.cf.param.set_value("commander.enHighLevel", "1")
 
         # PID for takeoff
-        scf.cf.param.set_value("stabilizer/controller", "1")
+        scf.cf.param.set_value("stabilizer.controller", "1")
+
+        # Arm (required by recent firmware; harmless when arming is disabled).
+        scf.cf.platform.send_arming_request(True)
+        time.sleep(1.0)
 
         hlc = HighLevelCommander(scf.cf)
         hlc.takeoff(args.takeoff_height, args.takeoff_time)
@@ -45,7 +49,7 @@ def main():
         time.sleep(args.hover_time + 0.5)
 
         print("Switching to OOT controller 6...")
-        scf.cf.param.set_value("stabilizer/controller", "6")
+        scf.cf.param.set_value("stabilizer.controller", "6")
         time.sleep(args.post_switch_hold)
 
         input("Press Enter to land immediately...")

@@ -46,6 +46,7 @@ extern "C" {
 #include "task.h"
 
 #include "controller.h"
+#include "controller_pid.h"   // stock PID cascade -- the cascade output feeds this
 #include "physicalConstants.h"
 #include "log.h"
 #include "param.h"
@@ -79,6 +80,13 @@ static inline struct vec quat2rp(struct quat q) {
 static inline struct quat rp2quat(struct vec r) {
   // Inverse of quat2rp: given Rodrigues r = q_v/q_w, rebuild the unit quaternion.
   return qnormalize(quatvw(r, 1.0f));
+}
+
+// Wrap an angle to (-180, 180] degrees.
+static inline float wrap_deg(float d) {
+  while (d >  180.0f) d -= 360.0f;
+  while (d < -180.0f) d += 360.0f;
+  return d;
 }
 
 // Edit the debug name to get nice debug prints
@@ -175,6 +183,20 @@ static struct vec phi;
 static struct quat q_meas;   // measured attitude, stashed by updateInitialState
 static struct quat q_ref0;   // reference-attitude frame for the multiplicative error
 
+// --- Cascade output (ishaan/debug-traj approach): TinyMPC plans position; the stock
+// Crazyflie PID does all low-level attitude/rate/motor control, INCLUDING yaw (which it
+// handles robustly at any angle). The MPC itself never tracks yaw. mpc_setpoint_pid is
+// the position + heading setpoint handed to controllerPid every tick; the heading is the
+// trajectory's velocity direction (face-forward). ---
+static setpoint_t mpc_setpoint_pid;
+static float mpc_heading_yaw_deg = 0.0f;   // heading commanded to the PID [deg]
+static bool  mpc_has_run = false;          // hold current pose until the first MPC solve
+static const bool enable_pid_face_forward_yaw = true;
+// Let cfclient command yaw live (Parameters tab, group visYaw). useRef=1 overrides the
+// heading with yawRefDeg; non-static so the C param file links against them.
+uint8_t yawUseRef = 0;      // PARAM: 1 = command heading from yawRefDeg below
+float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawUseRef=1
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -224,6 +246,12 @@ void updateHorizonReference(const setpoint_t *setpoint) {
           }
         }
       }
+      // Face-forward heading: yaw along the reference velocity direction. Handled by the
+      // stock PID (not the MPC); held at the previous value when nearly stationary.
+      float vx = X_ref_data[traj_idx][6], vy = X_ref_data[traj_idx][7];
+      if (vx * vx + vy * vy > 1e-6f) {
+        mpc_heading_yaw_deg = wrap_deg(atan2f(vy, vx) * (180.0f / M_PI_F));
+      }
     }
   }
   else {
@@ -241,6 +269,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
                         radians(setpoint->attitude.yaw));
     attitude = rpy2quat(desired_rpy);
     q_ref0 = qnormalize(attitude);  // desired attitude = reference frame for the error
+    mpc_heading_yaw_deg = setpoint->attitude.yaw;  // hover: face the commanded yaw [deg]
     xg(3) = 0.0f;                   // identity attitude in the q_ref0 frame
     xg(4) = 0.0f;
     xg(5) = 0.0f;
@@ -320,6 +349,8 @@ void controllerOutOfTreeInit(void) {
   /* End of MPC initialization */
   step = 0;
   traj_iter = 0;
+  mpc_has_run = false;
+  controllerPidInit();   // the cascade output drives the stock PID -- init its state
   q_ref0 = qeye();  // level reference until the first updateHorizonReference
 
   if (en_traj) {
@@ -361,6 +392,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // Solve optimization problem using ADMM
     tiny_UpdateLinearCost(&work);
     tiny_SolveAdmm(&work);
+    mpc_has_run = true;   // Xhrz now holds a valid plan for the cascade output
 
     result =  info.status_val * info.iter;
 
@@ -386,25 +418,43 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // pos_log_counter++;
   }
 
-  /* Output control — pure MPC, apply projected ADMM solution directly */
-  if (setpoint->mode.z == modeDisable) {
-    control->normalizedForces[0] = 0.0f;
-    control->normalizedForces[1] = 0.0f;
-    control->normalizedForces[2] = 0.0f;
-    control->normalizedForces[3] = 0.0f;
-  } else {
-    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
-    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
-    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
-    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
+  /* Output: CASCADE (ishaan/debug-traj). Hand the MPC's planned position + face-forward
+     heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
+     control -- including yaw, which it handles robustly at any angle. */
+  if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
+    if (setpoint->mode.z == modeDisable) {
+      // Not commanded to fly -> motors off.
+      control->normalizedForces[0] = 0.0f;
+      control->normalizedForces[1] = 0.0f;
+      control->normalizedForces[2] = 0.0f;
+      control->normalizedForces[3] = 0.0f;
+      control->controlMode = controlModePWM;
+    } else {
+      memset(&mpc_setpoint_pid, 0, sizeof(mpc_setpoint_pid));
+      mpc_setpoint_pid.mode.x   = modeAbs;
+      mpc_setpoint_pid.mode.y   = modeAbs;
+      mpc_setpoint_pid.mode.z   = modeAbs;
+      mpc_setpoint_pid.mode.yaw = modeAbs;
+      if (mpc_has_run) {
+        // Track the MPC's horizon-end planned position; yaw = face-forward heading.
+        mpc_setpoint_pid.position.x = Xhrz[NHORIZON - 1](0);
+        mpc_setpoint_pid.position.y = Xhrz[NHORIZON - 1](1);
+        mpc_setpoint_pid.position.z = Xhrz[NHORIZON - 1](2);
+        mpc_setpoint_pid.attitude.yaw = yawUseRef
+            ? yawRefDeg                                   // cfclient override
+            : (enable_pid_face_forward_yaw
+                 ? mpc_heading_yaw_deg
+                 : (quat2rpy(q_meas).z * (180.0f / M_PI_F)));
+      } else {
+        // Before the first solve: hold current pose so we don't dive on the switch.
+        mpc_setpoint_pid.position.x = state->position.x;
+        mpc_setpoint_pid.position.y = state->position.y;
+        mpc_setpoint_pid.position.z = state->position.z;
+        mpc_setpoint_pid.attitude.yaw = quat2rpy(q_meas).z * (180.0f / M_PI_F);
+      }
+      controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
+    }
   }
-  control->controlMode = controlModePWM;
-  // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
-
-  // control->normalizedForces[0] = 0.0f;
-  // control->normalizedForces[1] = 0.0f;
-  // control->normalizedForces[2] = 0.0f;
-  // control->normalizedForces[3] = 0.0f;
 }
 
 /**
