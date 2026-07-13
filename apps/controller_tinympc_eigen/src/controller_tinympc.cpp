@@ -54,6 +54,9 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 
+#include "gate8_link.h"   // AI-deck gate-corner UART receiver
+#include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
+
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
 #include "tinympc/tinympc.h"
@@ -197,6 +200,11 @@ static const bool enable_pid_face_forward_yaw = true;
 uint8_t yawUseRef = 0;      // PARAM: 1 = command heading from yawRefDeg below
 float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawUseRef=1
 
+// --- Gate vision (Stage 1: perception only, does NOT affect control) ---
+// Poll the AI-deck corner link, project to a world-frame gate center, and let the
+// visGate LOG group expose it. Params/logs live in gate_pnp_params.c.
+static GateVisionPacket g_gate_vision;
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -294,6 +302,25 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 
 // Half-space constraint function removed for basic functionality test
 
+// Stage 1: poll the AI-deck corner link and project to a world-frame gate center.
+// Updates the g_gate_* globals (logged via visGate); does not touch control.
+static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
+  float corners[GATE8_N_CORNERS];
+  uint32_t age_ms = 0;
+  if (!gate8LinkGetLatest(corners, &age_ms)) {
+    g_gate_valid = 0;   // no corner data received yet
+    return;
+  }
+  DroneState ds;
+  ds.x  = state->position.x;  ds.y  = state->position.y;  ds.z  = state->position.z;
+  ds.vx = state->velocity.x;  ds.vy = state->velocity.y;  ds.vz = state->velocity.z;
+  ds.qx = state->attitudeQuaternion.x;  ds.qy = state->attitudeQuaternion.y;
+  ds.qz = state->attitudeQuaternion.z;  ds.qw = state->attitudeQuaternion.w;
+  ds.wx = radians(sensors->gyro.x);  ds.wy = radians(sensors->gyro.y);  ds.wz = radians(sensors->gyro.z);
+  // Writes g_gate_center_x/y/z, g_gate_range_m, g_gate_valid, and the dbg globals.
+  gate_pnp_project(corners, age_ms, &ds, &g_gate_vision);
+}
+
 void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
 
@@ -351,6 +378,13 @@ void controllerOutOfTreeInit(void) {
   traj_iter = 0;
   mpc_has_run = false;
   controllerPidInit();   // the cascade output drives the stock PID -- init its state
+  // Bring up the AI-deck corner UART link once (re-selecting the controller must not
+  // start a second RX task / re-init the UART).
+  static bool s_gate_link_init = false;
+  if (!s_gate_link_init) {
+    gate8LinkInit();
+    s_gate_link_init = true;
+  }
   q_ref0 = qeye();  // level reference until the first updateHorizonReference
 
   if (en_traj) {
@@ -373,6 +407,13 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   // delta_x = x - x_bar; x_bar = 0
   // Positon error, [m]
   updateInitialState(sensors, state);
+
+  // Stage 1: gate perception at 50 Hz. Corners arrive slower than the control loop, so
+  // projecting every tick just wastes CPU (the stabilizer loop is already near budget).
+  // Perception only -- does not affect control.
+  if (RATE_DO_EXECUTE(RATE_50_HZ, tick)) {
+    pollGateVision(state, sensors);
+  }
 
   /* Controller rate */
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) {

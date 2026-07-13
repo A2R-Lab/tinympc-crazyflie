@@ -1,0 +1,75 @@
+/*
+ * gate_pnp_params.c
+ * PARAM/LOG plumbing for the gate-vision projection (Stage 1: perception only).
+ * (PARAM/LOG macros don't compile in the C++ controller TU.) The g_gate_*
+ * storage is DEFINED in gate_pnp.c; this file only exposes it.
+ *
+ * visGate PARAM group -- camera/gate/mount tunables. Defaults match the AI-deck
+ * calibration and the training gate size, but the mount extrinsics and gate size
+ * MUST be verified against the physical setup.
+ * visGate LOG group -- the recovered world-frame gate center + validity + the
+ * projection debug (why it bailed). Watch gx/gy/gz while holding a gate in view.
+ */
+#include "param.h"
+#include "log.h"
+#include <stdint.h>
+
+/* Tunables (defined in gate_pnp.c). */
+extern float g_gate_fx;
+extern float g_gate_fy;
+extern float g_gate_cx;
+extern float g_gate_cy;
+extern float g_gate_img_w;
+extern float g_gate_img_h;
+extern float g_gate_corner_h;
+extern float g_gate_width_m;
+extern float g_gate_height_m;
+extern float g_gate_mount_fwd_m;
+extern float g_gate_mount_up_m;
+extern float g_gate_mount_pitch_rad;
+extern float g_gate_min_range_m;
+extern float g_gate_max_range_m;
+extern uint32_t g_gate_max_age_ms;
+
+/* Outputs (defined in gate_pnp.c). */
+extern float g_gate_center_x;
+extern float g_gate_center_y;
+extern float g_gate_center_z;
+extern float g_gate_range_m;
+extern uint8_t g_gate_valid;
+extern float g_gate_dbg_width;
+extern float g_gate_dbg_height;
+extern float g_gate_dbg_range;
+extern uint32_t g_gate_dbg_age_ms;
+extern uint8_t g_gate_dbg_reason;
+
+PARAM_GROUP_START(visGate)
+PARAM_ADD(PARAM_FLOAT,  fx,     &g_gate_fx)
+PARAM_ADD(PARAM_FLOAT,  fy,     &g_gate_fy)
+PARAM_ADD(PARAM_FLOAT,  cx,     &g_gate_cx)
+PARAM_ADD(PARAM_FLOAT,  cy,     &g_gate_cy)
+PARAM_ADD(PARAM_FLOAT,  imgW,   &g_gate_img_w)
+PARAM_ADD(PARAM_FLOAT,  imgH,   &g_gate_img_h)
+PARAM_ADD(PARAM_FLOAT,  crnH,   &g_gate_corner_h)
+PARAM_ADD(PARAM_FLOAT,  gateW,  &g_gate_width_m)
+PARAM_ADD(PARAM_FLOAT,  gateH,  &g_gate_height_m)
+PARAM_ADD(PARAM_FLOAT,  mntFwd, &g_gate_mount_fwd_m)
+PARAM_ADD(PARAM_FLOAT,  mntUp,  &g_gate_mount_up_m)
+PARAM_ADD(PARAM_FLOAT,  mntPit, &g_gate_mount_pitch_rad)
+PARAM_ADD(PARAM_FLOAT,  rMin,   &g_gate_min_range_m)
+PARAM_ADD(PARAM_FLOAT,  rMax,   &g_gate_max_range_m)
+PARAM_ADD(PARAM_UINT32, maxAge, &g_gate_max_age_ms)
+PARAM_GROUP_STOP(visGate)
+
+LOG_GROUP_START(visGate)
+LOG_ADD(LOG_FLOAT,  gx,     &g_gate_center_x)   /* world-frame gate center */
+LOG_ADD(LOG_FLOAT,  gy,     &g_gate_center_y)
+LOG_ADD(LOG_FLOAT,  gz,     &g_gate_center_z)
+LOG_ADD(LOG_FLOAT,  range,  &g_gate_range_m)
+LOG_ADD(LOG_UINT8,  valid,  &g_gate_valid)
+LOG_ADD(LOG_FLOAT,  dbgW,   &g_gate_dbg_width)
+LOG_ADD(LOG_FLOAT,  dbgH,   &g_gate_dbg_height)
+LOG_ADD(LOG_FLOAT,  dbgR,   &g_gate_dbg_range)
+LOG_ADD(LOG_UINT32, dbgAge, &g_gate_dbg_age_ms)
+LOG_ADD(LOG_UINT8,  reason, &g_gate_dbg_reason)  /* 0=ok 1=stale 2=degenerate 3=far 4=near 5=null */
+LOG_GROUP_STOP(visGate)
