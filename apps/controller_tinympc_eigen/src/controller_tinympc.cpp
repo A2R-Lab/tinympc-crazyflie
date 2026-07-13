@@ -226,6 +226,42 @@ float   g_gate_tz = 0.0f;
 static float gate_lx = 0.0f, gate_ly = 0.0f, gate_lz = 0.0f;   // latched gate center (world)
 static float gate_dirx = 1.0f, gate_diry = 0.0f;               // latched approach unit dir (xy)
 
+// --- Stage 3: two-gate racetrack circuit (surveyed) ---
+// Fly a repeating oval through two SURVEYED gate world positions. The path is an
+// ellipse with the two gate centers at the ends of its major axis and semi-minor axis
+// = loopWidth, so the drone passes through both gates each lap and loops around the
+// sides. Enter gA*/gB* (world frame, relative to takeoff origin) by hand. circEn=1
+// engages it (overrides the commander setpoint); the MPC tracks the moving target and
+// the stock PID does low-level + face-forward yaw (tangent to the loop). Flown on
+// odometry -- vision drift correction is a later stage. Non-static for the C param file.
+uint8_t circEn      = 0;      // PARAM: 1 = fly the two-gate circuit
+float   gAx = 0.0f, gAy = 0.0f, gAz = 0.5f;   // PARAM: gate A center (world) [m]
+float   gBx = 0.0f, gBy = 0.0f, gBz = 0.5f;   // PARAM: gate B center (world) [m]
+float   loopWidth   = 0.5f;   // PARAM: oval half-width (semi-minor axis) [m]
+float   circSpeed   = 0.3f;   // PARAM: circuit tangential speed [m/s]
+float   g_circ_phase = 0.0f;  // LOG: current loop phase [rad]
+static float circ_phase = 0.0f;
+static uint8_t circ_armed = 0;
+
+// Ellipse circuit point: gate A/B at the major-axis ends, semi-minor = loopWidth.
+// Fills world position P[3] and (non-unit) tangent T[3]=dP/dtheta at phase theta.
+static inline void circuitPoint(float theta, float P[3], float T[3]) {
+  float ux = gBx - gAx, uy = gBy - gAy;
+  float L = sqrtf(ux * ux + uy * uy);
+  if (L < 1e-3f) L = 1e-3f;
+  ux /= L; uy /= L;                       // major-axis unit (A->B)
+  float a  = 0.5f * L;                     // semi-major
+  float nx = -uy, ny = ux;                 // left perpendicular (semi-minor axis)
+  float mx = 0.5f * (gAx + gBx), my = 0.5f * (gAy + gBy);
+  float c = cosf(theta), s = sinf(theta);
+  P[0] = mx + a * c * ux + loopWidth * s * nx;
+  P[1] = my + a * c * uy + loopWidth * s * ny;
+  P[2] = 0.5f * (gAz + gBz) - 0.5f * (gAz - gBz) * c;   // theta=pi -> A.z, 0 -> B.z
+  T[0] = -a * s * ux + loopWidth * c * nx;
+  T[1] = -a * s * uy + loopWidth * c * ny;
+  T[2] = 0.5f * (gAz - gBz) * s;
+}
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -287,8 +323,40 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     bool  gate_cmd = false;
     float ref_yaw_deg, ref_roll_deg, ref_pitch_deg;
 
-    // --- Stage 2: gate navigation override (fly through the detected gate) ---
-    if (gateNavEn) {
+    // --- Stage 3: two-gate racetrack circuit override (highest priority) ---
+    if (circEn) {
+      if (!circ_armed) {
+        // Join the loop at the phase whose point is nearest the drone (smooth entry).
+        float best = 1e30f;
+        for (int k = 0; k < 48; k++) {
+          float th = (2.0f * M_PI_F * k) / 48.0f;
+          float Pk[3], Tk[3]; circuitPoint(th, Pk, Tk);
+          float dx = Pk[0] - x0(0), dy = Pk[1] - x0(1);
+          float d = dx * dx + dy * dy;
+          if (d < best) { best = d; circ_phase = th; }
+        }
+        circ_armed = 1;
+      }
+      float P[3], T[3];
+      circuitPoint(circ_phase, P, T);
+      float Tn = sqrtf(T[0]*T[0] + T[1]*T[1] + T[2]*T[2]);
+      if (Tn < 1e-6f) Tn = 1e-6f;
+      circ_phase += circSpeed * (1.0f / 100.0f) / Tn;   // advance ~const speed (dt=1/MPC_RATE)
+      while (circ_phase >= 2.0f * M_PI_F) circ_phase -= 2.0f * M_PI_F;
+      xg(0) = P[0]; xg(1) = P[1]; xg(2) = P[2];
+      xg(6) = circSpeed * T[0] / Tn; xg(7) = circSpeed * T[1] / Tn; xg(8) = circSpeed * T[2] / Tn;
+      xg(9) = 0.0f; xg(10) = 0.0f; xg(11) = 0.0f;
+      ref_yaw_deg  = wrap_deg(atan2f(T[1], T[0]) * (180.0f / M_PI_F));  // face along the loop
+      ref_roll_deg = 0.0f; ref_pitch_deg = 0.0f;
+      g_gate_tx = P[0]; g_gate_ty = P[1]; g_gate_tz = P[2];  // reuse the target logs
+      g_circ_phase = circ_phase;
+      gate_cmd = true;
+    } else {
+      circ_armed = 0;   // re-arm nearest-phase entry on next enable
+    }
+
+    // --- Stage 2: single-gate navigation override (fly through the detected gate) ---
+    if (!gate_cmd && gateNavEn) {
       // Latch a fresh valid detection: gate center + approach direction (drone->gate).
       if (!g_gate_latched && g_gate_valid) {
         float dx = g_gate_center_x - x0(0);

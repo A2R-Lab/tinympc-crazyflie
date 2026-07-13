@@ -52,6 +52,14 @@ extern float   g_gate_tx;
 extern float   g_gate_ty;
 extern float   g_gate_tz;
 
+/* Stage 3 two-gate circuit (defined in controller_tinympc.cpp). */
+extern uint8_t circEn;
+extern float   gAx, gAy, gAz;
+extern float   gBx, gBy, gBz;
+extern float   loopWidth;
+extern float   circSpeed;
+extern float   g_circ_phase;
+
 PARAM_GROUP_START(visGate)
 PARAM_ADD(PARAM_FLOAT,  fx,     &g_gate_fx)
 PARAM_ADD(PARAM_FLOAT,  fy,     &g_gate_fy)
@@ -77,6 +85,20 @@ PARAM_ADD(PARAM_FLOAT, through, &gateThrough)
 PARAM_ADD(PARAM_FLOAT, speed,   &gateSpeed)
 PARAM_GROUP_STOP(gateNav)
 
+/* Stage 3 two-gate racetrack circuit. en=0 by default -> commander/hover unchanged.
+ * Enter gAx..gBz as the two gate world positions (relative to takeoff origin). */
+PARAM_GROUP_START(circuit)
+PARAM_ADD(PARAM_UINT8, en,    &circEn)
+PARAM_ADD(PARAM_FLOAT, gAx,   &gAx)
+PARAM_ADD(PARAM_FLOAT, gAy,   &gAy)
+PARAM_ADD(PARAM_FLOAT, gAz,   &gAz)
+PARAM_ADD(PARAM_FLOAT, gBx,   &gBx)
+PARAM_ADD(PARAM_FLOAT, gBy,   &gBy)
+PARAM_ADD(PARAM_FLOAT, gBz,   &gBz)
+PARAM_ADD(PARAM_FLOAT, loopW, &loopWidth)
+PARAM_ADD(PARAM_FLOAT, speed, &circSpeed)
+PARAM_GROUP_STOP(circuit)
+
 LOG_GROUP_START(visGate)
 LOG_ADD(LOG_FLOAT,  gx,     &g_gate_center_x)   /* world-frame gate center */
 LOG_ADD(LOG_FLOAT,  gy,     &g_gate_center_y)
@@ -93,4 +115,5 @@ LOG_ADD(LOG_UINT8,  ltch,   &g_gate_latched)
 LOG_ADD(LOG_FLOAT,  tx,     &g_gate_tx)
 LOG_ADD(LOG_FLOAT,  ty,     &g_gate_ty)
 LOG_ADD(LOG_FLOAT,  tz,     &g_gate_tz)
+LOG_ADD(LOG_FLOAT,  phase,  &g_circ_phase)   /* Stage 3 circuit loop phase [rad] */
 LOG_GROUP_STOP(visGate)
