@@ -43,6 +43,15 @@ extern float g_gate_dbg_range;
 extern uint32_t g_gate_dbg_age_ms;
 extern uint8_t g_gate_dbg_reason;
 
+/* Stage 2 gate navigation (defined in controller_tinympc.cpp). */
+extern uint8_t gateNavEn;
+extern float   gateThrough;
+extern float   gateSpeed;
+extern uint8_t g_gate_latched;
+extern float   g_gate_tx;
+extern float   g_gate_ty;
+extern float   g_gate_tz;
+
 PARAM_GROUP_START(visGate)
 PARAM_ADD(PARAM_FLOAT,  fx,     &g_gate_fx)
 PARAM_ADD(PARAM_FLOAT,  fy,     &g_gate_fy)
@@ -61,6 +70,13 @@ PARAM_ADD(PARAM_FLOAT,  rMax,   &g_gate_max_range_m)
 PARAM_ADD(PARAM_UINT32, maxAge, &g_gate_max_age_ms)
 PARAM_GROUP_STOP(visGate)
 
+/* Stage 2 gate navigation tunables. navEn=0 by default -> commander/hover unchanged. */
+PARAM_GROUP_START(gateNav)
+PARAM_ADD(PARAM_UINT8, navEn,   &gateNavEn)
+PARAM_ADD(PARAM_FLOAT, through, &gateThrough)
+PARAM_ADD(PARAM_FLOAT, speed,   &gateSpeed)
+PARAM_GROUP_STOP(gateNav)
+
 LOG_GROUP_START(visGate)
 LOG_ADD(LOG_FLOAT,  gx,     &g_gate_center_x)   /* world-frame gate center */
 LOG_ADD(LOG_FLOAT,  gy,     &g_gate_center_y)
@@ -72,4 +88,9 @@ LOG_ADD(LOG_FLOAT,  dbgH,   &g_gate_dbg_height)
 LOG_ADD(LOG_FLOAT,  dbgR,   &g_gate_dbg_range)
 LOG_ADD(LOG_UINT32, dbgAge, &g_gate_dbg_age_ms)
 LOG_ADD(LOG_UINT8,  reason, &g_gate_dbg_reason)  /* 0=ok 1=stale 2=degenerate 3=far 4=near 5=null */
+/* Stage 2 gate navigation: latched flag + world through-point target. */
+LOG_ADD(LOG_UINT8,  ltch,   &g_gate_latched)
+LOG_ADD(LOG_FLOAT,  tx,     &g_gate_tx)
+LOG_ADD(LOG_FLOAT,  ty,     &g_gate_ty)
+LOG_ADD(LOG_FLOAT,  tz,     &g_gate_tz)
 LOG_GROUP_STOP(visGate)

@@ -205,6 +205,27 @@ float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawU
 // visGate LOG group expose it. Params/logs live in gate_pnp_params.c.
 static GateVisionPacket g_gate_vision;
 
+// --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
+// When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
+// valid detection, latch the world gate center and the approach direction (drone->gate
+// at latch time), then steer the MPC toward a through-point `gateThrough` metres PAST
+// the center along that direction, facing the gate. This flies a straight line through
+// the gate center. Latching commits the target so the path doesn't wander as the vision
+// estimate degrades on close approach; it re-arms once the drone passes the gate.
+// The MPC plans position to the through-point and the stock PID does low-level + yaw
+// (face the gate) -- reusing the cascade unchanged. Params/logs in gate_pnp_params.c.
+// NOTE: gate_pnp gives only the gate CENTER (no gate-plane normal), so "through" is
+// along the drone's line of sight -- correct head-on, approximate for angled gates.
+uint8_t gateNavEn   = 0;      // PARAM: 1 = navigate through the detected gate
+float   gateThrough = 0.5f;   // PARAM: through-point distance past the gate center [m]
+float   gateSpeed   = 0.3f;   // PARAM: approach speed toward the gate [m/s]
+uint8_t g_gate_latched = 0;   // LOG: 1 = a gate target is currently latched
+float   g_gate_tx = 0.0f;     // LOG: through-point target x/y/z (world)
+float   g_gate_ty = 0.0f;
+float   g_gate_tz = 0.0f;
+static float gate_lx = 0.0f, gate_ly = 0.0f, gate_lz = 0.0f;   // latched gate center (world)
+static float gate_dirx = 1.0f, gate_diry = 0.0f;               // latched approach unit dir (xy)
+
 // Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -263,28 +284,64 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     }
   }
   else {
-    xg(0)  = setpoint->position.x;
-    xg(1)  = setpoint->position.y;
-    xg(2)  = setpoint->position.z;
-    xg(6)  = setpoint->velocity.x;
-    xg(7)  = setpoint->velocity.y;
-    xg(8)  = setpoint->velocity.z;
-    xg(9)  = radians(setpoint->attitudeRate.roll);
-    xg(10) = radians(setpoint->attitudeRate.pitch);
-    xg(11) = radians(setpoint->attitudeRate.yaw);
-    desired_rpy = mkvec(radians(setpoint->attitude.roll),
-                        radians(setpoint->attitude.pitch),
-                        radians(setpoint->attitude.yaw));
+    bool  gate_cmd = false;
+    float ref_yaw_deg, ref_roll_deg, ref_pitch_deg;
+
+    // --- Stage 2: gate navigation override (fly through the detected gate) ---
+    if (gateNavEn) {
+      // Latch a fresh valid detection: gate center + approach direction (drone->gate).
+      if (!g_gate_latched && g_gate_valid) {
+        float dx = g_gate_center_x - x0(0);
+        float dy = g_gate_center_y - x0(1);
+        float d  = sqrtf(dx * dx + dy * dy);
+        if (d > 1e-3f) {
+          gate_lx = g_gate_center_x; gate_ly = g_gate_center_y; gate_lz = g_gate_center_z;
+          gate_dirx = dx / d; gate_diry = dy / d;
+          g_gate_latched = 1;
+        }
+      }
+      if (g_gate_latched) {
+        // Target the through-point past the gate center, moving along the approach dir.
+        g_gate_tx = gate_lx + gateThrough * gate_dirx;
+        g_gate_ty = gate_ly + gateThrough * gate_diry;
+        g_gate_tz = gate_lz;
+        xg(0) = g_gate_tx; xg(1) = g_gate_ty; xg(2) = g_gate_tz;
+        xg(6) = gateSpeed * gate_dirx; xg(7) = gateSpeed * gate_diry; xg(8) = 0.0f;
+        xg(9) = 0.0f; xg(10) = 0.0f; xg(11) = 0.0f;
+        ref_yaw_deg  = wrap_deg(atan2f(gate_diry, gate_dirx) * (180.0f / M_PI_F));
+        ref_roll_deg = 0.0f; ref_pitch_deg = 0.0f;   // level; PID owns yaw
+        gate_cmd = true;
+        // Re-arm once the drone passes the gate center along the approach direction.
+        float px = x0(0) - gate_lx, py = x0(1) - gate_ly;
+        if (px * gate_dirx + py * gate_diry > 0.0f) g_gate_latched = 0;
+      }
+    }
+
+    if (!gate_cmd) {
+      // Commander/hover setpoint (unchanged behavior when gate nav is off/unlatched).
+      xg(0)  = setpoint->position.x;
+      xg(1)  = setpoint->position.y;
+      xg(2)  = setpoint->position.z;
+      xg(6)  = setpoint->velocity.x;
+      xg(7)  = setpoint->velocity.y;
+      xg(8)  = setpoint->velocity.z;
+      xg(9)  = radians(setpoint->attitudeRate.roll);
+      xg(10) = radians(setpoint->attitudeRate.pitch);
+      xg(11) = radians(setpoint->attitudeRate.yaw);
+      ref_yaw_deg   = setpoint->attitude.yaw;
+      ref_roll_deg  = setpoint->attitude.roll;
+      ref_pitch_deg = setpoint->attitude.pitch;
+    }
+
+    desired_rpy = mkvec(radians(ref_roll_deg), radians(ref_pitch_deg), radians(ref_yaw_deg));
     attitude = rpy2quat(desired_rpy);
     q_ref0 = qnormalize(attitude);  // desired attitude = reference frame for the error
-    mpc_heading_yaw_deg = setpoint->attitude.yaw;  // hover: face the commanded yaw [deg]
+    mpc_heading_yaw_deg = ref_yaw_deg;             // heading fed to the stock PID [deg]
     xg(3) = 0.0f;                   // identity attitude in the q_ref0 frame
     xg(4) = 0.0f;
     xg(5) = 0.0f;
     tiny_SetGoalState(&work, Xref, &xg);
     tiny_SetGoalInput(&work, Uref, &ug);
-    // // xg(1) = 1.0;
-    // // xg(2) = 2.0;
   }
   // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref[0](2)));
 
