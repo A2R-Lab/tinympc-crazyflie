@@ -184,6 +184,41 @@ Prints, and writes per-frame to the output CSV:
 - **Camera vs odometry line** → whether a vision fix is actually better than dead-reckoning
   at that point in the flight (the whole reason for fusing it).
 
+## Bonus: let mocap set the gates (skip the tape survey)
+
+The drone already builds the whole loop **onboard** from two gate centres (`circuitPoint()`
+in `controller_tinympc.cpp`, params `circuit.gAx..gBz` + `circuit.loopW`). Normally those
+come from tape (`--gate1/--spacing/--gatez`). `--gates-from-mocap` sources them from mocap
+instead — so if you move or **raise** the gates, you don't re-measure, and the height is
+exact:
+
+```bash
+# on tiger, inside the ROS2 container (rclpy + bridge up), drone parked on its mark:
+./tinympc_circuit_run.py --laps 5 --inject 0 --gates-from-mocap \
+    --drone-topic /optitrack/drone/pose \
+    --gate-topics /optitrack/gate_1/pose /optitrack/gate_2/pose \
+    --out cam_accuracy_01.csv
+```
+
+At the estimator reset it snapshots the mocap drone + gate poses, transforms the gate
+centres into the reset frame (`gate_reset = Rz(−yaw0)·(gate_mocap − p0)`, the same
+transform the accuracy comparison uses), pushes `circuit.gAx..gBz` + `loopW`, and reprints
+the plan. `--gate-topics` order = gate **A** then **B**. The gate rigid-body pivots are
+already centered on the opening (from the labeling setup), so the mocap position *is* the
+gate centre the trajectory wants.
+
+Preview what mocap sees without flying (drone parked = the reset pose):
+```bash
+./mocap_gates.py --drone-topic /optitrack/drone/pose \
+    --gate-topics /optitrack/gate_1/pose /optitrack/gate_2/pose
+```
+Prints each gate in the reset frame and the exact `circuit.g*` it would push.
+
+> This replaces only the *survey*; the trajectory is still generated onboard. It does not
+> feed mocap into the estimator — flight positioning stays vision/odometry, so a
+> `--gates-from-mocap` run is still a valid camera-accuracy capture (the meta records
+> `gates_source: mocap`).
+
 ## Notes / gotchas
 - The comparison needs the `host_t` column and the `*.meta.json` sidecar — both are
   produced by the updated `tinympc_circuit_run.py`. Older CSVs (drone-clock only) can't be

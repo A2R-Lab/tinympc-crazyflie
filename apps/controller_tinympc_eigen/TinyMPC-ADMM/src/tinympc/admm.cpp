@@ -156,22 +156,27 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       // ADMM update: y = y + x
       work->soln->YX[k] = work->soln->YX[k] + work->soln->X[k];
       
-      // Half-space projection for obstacle avoidance (position only)
-      // Match eigen_task: full projection without clamping
-      if (work->data->en_hs[k]) {
-        Eigen::Vector3f y_pos = work->soln->YX[k].head(3);
-        Eigen::Vector3f a = work->data->a_hs[k];
-        float b = work->data->b_hs[k];
-        // Compute distance to half-space boundary: a^T * y - b
-        float dist = a.dot(y_pos) - b;
-        if (dist > 0) {
-          // Project fully onto half-space: z = y - dist * a (since ||a|| = 1)
-          Eigen::Vector3f z_pos = y_pos - dist * a;
-          work->ZX_new[k] = work->soln->YX[k];
-          work->ZX_new[k].head(3) = z_pos;
-        } else {
-          work->ZX_new[k] = work->soln->YX[k];
+      // Half-space projection for obstacle avoidance (position only).
+      // Multiple active planes are applied with one sequential projection pass.
+      bool has_hs = false;
+      for (int h = 0; h < MAX_HS; ++h) {
+        has_hs = has_hs || (work->data->en_hs[k][h] != 0);
+      }
+      if (has_hs) {
+        work->ZX_new[k] = work->soln->YX[k];
+        Eigen::Vector3f z_pos = work->ZX_new[k].head(3);
+        for (int h = 0; h < MAX_HS; ++h) {
+          if (!work->data->en_hs[k][h]) {
+            continue;
+          }
+          Eigen::Vector3f a = work->data->a_hs[k][h];
+          float b = work->data->b_hs[k][h];
+          float dist = a.dot(z_pos) - b;
+          if (dist > 0) {
+            z_pos = z_pos - dist * a;
+          }
         }
+        work->ZX_new[k].head(3) = z_pos;
       } else {
         // Box constraint fallback (original behavior)
         work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx)); 

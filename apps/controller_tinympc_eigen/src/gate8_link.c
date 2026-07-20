@@ -88,7 +88,8 @@ void gate8LinkInit(void) {
   DEBUG_PRINT("gate8 link: UART1/USART3@%d started\n", GATE8_BAUD);
 }
 
-bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms) {
+bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
+                           uint32_t *out_sample) {
   uint32_t s1, s2, rxTick;
   do {
     s1 = g_seq;
@@ -101,7 +102,15 @@ bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms) {
 
   if (g_rxOk == 0) return false;
   if (out_age_ms) *out_age_ms = (xTaskGetTickCount() - rxTick) * portTICK_PERIOD_MS;
+  /* g_seq advances by 2 per accepted message and is captured inside the seqlock,
+   * so it identifies the sample just copied (unlike g_rxOk, which is bumped after
+   * the lock is released). */
+  if (out_sample) *out_sample = s1 >> 1;
   return true;
+}
+
+bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms) {
+  return gate8LinkGetLatestSeq(corners, out_age_ms, 0);
 }
 
 /* LOG: corners and link health in cfclient. */

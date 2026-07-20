@@ -53,6 +53,7 @@ extern "C" {
 #include "num.h"
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
+#include "estimator.h"         // estimatorEnqueuePosition (Stage 4: vision -> EKF)
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
 #include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
@@ -227,18 +228,35 @@ static float gate_lx = 0.0f, gate_ly = 0.0f, gate_lz = 0.0f;   // latched gate c
 static float gate_dirx = 1.0f, gate_diry = 0.0f;               // latched approach unit dir (xy)
 
 // --- Stage 3: two-gate racetrack circuit (surveyed) ---
-// Fly a repeating oval through two SURVEYED gate world positions. The path is an
+// Fly a repeating loop through two SURVEYED gate world positions. The path is an
 // ellipse with the two gate centers at the ends of its major axis and semi-minor axis
 // = loopWidth, so the drone passes through both gates each lap and loops around the
-// sides. Enter gA*/gB* (world frame, relative to takeoff origin) by hand. circEn=1
-// engages it (overrides the commander setpoint); the MPC tracks the moving target and
-// the stock PID does low-level + face-forward yaw (tangent to the loop). Flown on
-// odometry -- vision drift correction is a later stage. Non-static for the C param file.
+// sides. circEn=1 engages it (overrides the commander setpoint); the MPC tracks the
+// moving target and the stock PID does low-level + face-forward yaw (tangent to the
+// loop).
+//
+// Default preset (world frame = takeoff origin, +x forward, +y left, +z up): gate A is
+// 1 m in front and 0.5 m up; gate B is 1.5 m to the RIGHT of A (-y), same height, same
+// plane (both at x=1). loopWidth = 0.75 = half the gate spacing makes the ellipse a
+// true CIRCLE of radius 0.75 m centred at (1, -0.75): the drone crosses the gate plane
+// perpendicularly at each gate (through B heading +x, around the front, back through A
+// heading -x), which is what the gate detector needs to see them head-on.
+// Non-static for the C param file.
 uint8_t circEn      = 0;      // PARAM: 1 = fly the two-gate circuit
-float   gAx = 0.0f, gAy = 0.0f, gAz = 0.5f;   // PARAM: gate A center (world) [m]
-float   gBx = 0.0f, gBy = 0.0f, gBz = 0.5f;   // PARAM: gate B center (world) [m]
-float   loopWidth   = 0.5f;   // PARAM: oval half-width (semi-minor axis) [m]
+float   gAx = 1.0f, gAy =  0.0f, gAz = 0.5f;   // PARAM: gate A center (world) [m]
+float   gBx = 1.0f, gBy = -1.5f, gBz = 0.5f;   // PARAM: gate B center (world) [m]
+float   loopWidth   = 0.75f;  // PARAM: loop half-width (semi-minor axis) [m]; 0.75 = circle
 float   circSpeed   = 0.3f;   // PARAM: circuit tangential speed [m/s]
+// Which way round the loop. The phase always ADVANCES, so this picks the sense by
+// flipping the semi-minor axis, and with it the direction each gate is flown through.
+// +1: from the takeoff origin the drone joins the loop heading FORWARD and reaches gate A
+//     (the near one, 1 m in front) after ~45 deg of arc -- through A in +x, around the
+//     front, back through B in -x, around the back. This is the sane one.
+// -1: the mirror image. From the origin the join sends the drone BACKWARD, away from the
+//     gates and around the back arc, reaching the far gate B only after 120 deg of arc --
+//     it turns its back on a gate that is directly in front of it. (This was the original
+//     default and it is why the drone flew backwards on engage.)
+int8_t  circDir     = 1;      // PARAM: +1 / -1 = which way round the loop
 float   g_circ_phase = 0.0f;  // LOG: current loop phase [rad]
 static float circ_phase = 0.0f;
 static uint8_t circ_armed = 0;
@@ -251,7 +269,8 @@ static inline void circuitPoint(float theta, float P[3], float T[3]) {
   if (L < 1e-3f) L = 1e-3f;
   ux /= L; uy /= L;                       // major-axis unit (A->B)
   float a  = 0.5f * L;                     // semi-major
-  float nx = -uy, ny = ux;                 // left perpendicular (semi-minor axis)
+  const float dir = (circDir >= 0) ? 1.0f : -1.0f;
+  float nx = dir * uy, ny = -dir * ux;     // semi-minor axis; its sign is the loop sense
   float mx = 0.5f * (gAx + gBx), my = 0.5f * (gAy + gBy);
   float c = cosf(theta), s = sinf(theta);
   P[0] = mx + a * c * ux + loopWidth * s * nx;
@@ -260,6 +279,224 @@ static inline void circuitPoint(float theta, float P[3], float T[3]) {
   T[0] = -a * s * ux + loopWidth * c * nx;
   T[1] = -a * s * uy + loopWidth * c * ny;
   T[2] = 0.5f * (gAz - gBz) * s;
+}
+
+// Unit normal of the gate plane, in xy. Both gates are surveyed as lying in one plane,
+// so the A->B line spans it and the normal is that line rotated 90 deg. This is also the
+// direction the drone crosses each gate in (the loop tangent at the major-axis ends), so
+// a gate seen along +/-n is seen head-on. Derived from the survey -- no extra param.
+static inline void gatePlaneNormal(float *nx, float *ny) {
+  float ux = gBx - gAx, uy = gBy - gAy;
+  float L = sqrtf(ux * ux + uy * uy);
+  if (L < 1e-3f) { *nx = 1.0f; *ny = 0.0f; return; }
+  *nx = -uy / L; *ny = ux / L;
+}
+
+// --- Stage 4: vision -> EKF, weighted by where we are on the trajectory ---
+//
+// The gates are SURVEYED landmarks, so a sighting of one is really a measurement of the
+// DRONE: gate_pnp gives the drone->gate offset in world axes (g_gate_rel, which depends
+// on attitude but not on the drifting position estimate), hence
+//     drone_position = gate_surveyed - g_gate_rel
+// which is enqueued as an absolute position measurement. That is the correction for the
+// Flow-deck's unbounded odometry drift; the MPC and the trajectory are untouched.
+//
+// The weight (how hard the EKF is allowed to pull on a fix) is scheduled by trajectory
+// phase, which is the point of this stage. For each surveyed gate we ask what the PLAN
+// says: from the planned pose on the loop, is that gate framed by the camera (inside the
+// FOV cone), is it near enough to range reliably, and is it being viewed square-on rather
+// than edge-on? Their product is the expected visibility w in [0,1] -- ~1 on the approach
+// legs, ~0 on the far side of the loop where no gate can be in shot. It is computed from
+// the SCHEDULED pose, not the estimated one, so it cannot be corrupted by the very drift
+// we are trying to correct. w then does two jobs:
+//   - data association: the gate with the higher w is the one we must be looking at;
+//   - weighting: stdDev = sigma(range) / w. On an approach leg w~1 and the fix is trusted
+//     to a few cm; where the plan says no gate is visible, w floors at visWFloor (0.02),
+//     inflating stdDev ~50x (variance ~2500x) so a stray detection moves the EKF by
+//     essentially nothing, exactly as if it had been ignored.
+// A detection that survives all that still has to pass an innovation gate (visMaxIn), so
+// a mis-associated or phantom gate can never yank the state across the room.
+//
+// Bring-up is deliberately two-stage: visEn=1 computes and LOGS the correction without
+// touching the estimator; visInj=1 actually feeds the EKF. Fly the first, then the second.
+// Non-static for the C param file (PARAM/LOG macros don't compile in this C++ TU).
+uint8_t visFuseEn   = 0;      // PARAM: 1 = run the fusion + log the correction
+uint8_t visFuseInj  = 0;      // PARAM: 1 = actually enqueue the fix into the EKF
+uint8_t visUseSched = 1;      // PARAM: 1 = weight/associate from the PLANNED loop pose
+                              //        0 = from the estimated pose (bench / no circuit)
+float   visStd0     = 0.05f;  // PARAM: position-fix noise, constant term [m]
+float   visStdR     = 0.05f;  // PARAM: ... plus this * range^2 (size-based range error
+                              //        grows quadratically) [m/m^2]
+float   visFovDeg   = 40.0f;  // PARAM: camera half-FOV used for the framing weight [deg]
+float   visIncMin   = 0.35f;  // PARAM: min |cos| between line-of-sight and gate normal
+                              //        (~70 deg off-normal) before the gate is edge-on
+float   visRGood    = 1.2f;   // PARAM: full range weight out to here [m]
+float   visRFar     = 3.0f;   // PARAM: ... falling to zero at this range [m]
+float   visWFloor   = 0.02f;  // PARAM: weight floor -> "almost nothing" off-schedule
+float   visWCut     = 0.01f;  // PARAM: below this expected visibility, drop the fix
+float   visMaxIn    = 0.75f;  // PARAM: reject corrections larger than this [m]
+float    g_vf_w     = 0.0f;   // LOG: current scheduled visibility weight [0..1]
+uint8_t  g_vf_gate  = 0;      // LOG: associated gate (0=none, 1=A, 2=B)
+float    g_vf_std   = 0.0f;   // LOG: stdDev handed to the EKF [m]
+float    g_vf_dx    = 0.0f;   // LOG: correction applied (implied pos - estimated pos) [m]
+float    g_vf_dy    = 0.0f;
+float    g_vf_dz    = 0.0f;
+float    g_vf_expr  = 0.0f;   // LOG: expected range to the associated gate [m]
+float    g_vf_expa  = 0.0f;   // LOG: expected off-axis angle to it [deg]
+uint32_t g_vf_n     = 0;      // LOG: fixes injected
+uint32_t g_vf_rej   = 0;      // LOG: detections rejected (no gate scheduled / innovation)
+
+// Fresh-sample tracking: an EKF must see each vision frame at most ONCE. Fusing a frame
+// the camera has not refreshed would double-count the same evidence and make the filter
+// over-confident, so the corner link's sample counter is latched and only advances fuse.
+static uint32_t gate_sample_seen = 0xFFFFFFFFu;
+static bool     gate_sample_fresh = false;
+
+// Expected visibility of one gate from a given pose: the product of a framing term (gate
+// inside the FOV cone), an incidence term (gate square-on, not edge-on) and a range term
+// (near enough for the apparent-size range estimate to mean anything). Each is 1 when
+// ideal and ramps smoothly to 0, so the weight has no cliffs for the EKF to step off.
+static float gateVisibility(float px, float py, float pz, float yaw_rad,
+                            float gx, float gy, float gz,
+                            float nx, float ny,
+                            float *out_range_m, float *out_offaxis_deg) {
+  const float dx = gx - px, dy = gy - py, dz = gz - pz;
+  const float rxy = sqrtf(dx * dx + dy * dy);
+  const float r   = sqrtf(rxy * rxy + dz * dz);
+  if (out_range_m) *out_range_m = r;
+  if (out_offaxis_deg) *out_offaxis_deg = 180.0f;
+  if (r < 1e-3f || rxy < 1e-3f) return 0.0f;   // on top of it: nothing framed
+
+  // Framing: angle between the camera boresight (body +x, pitched down by the mount) and
+  // the line of sight. Roll/pitch of the airframe are small on this loop, so the planned
+  // heading + mount pitch is enough to say what is in shot.
+  const float cp = cosf(g_gate_mount_pitch_rad), sp = sinf(g_gate_mount_pitch_rad);
+  const float bx = cosf(yaw_rad) * cp, by = sinf(yaw_rad) * cp, bz = -sp;
+  float cos_off = (bx * dx + by * dy + bz * dz) / r;
+  if (cos_off >  1.0f) cos_off =  1.0f;
+  if (cos_off < -1.0f) cos_off = -1.0f;
+  const float off = acosf(cos_off);                       // off-axis angle [rad]
+  if (out_offaxis_deg) *out_offaxis_deg = off * (180.0f / M_PI_F);
+  const float fov = radians(visFovDeg) > 1e-3f ? radians(visFovDeg) : 1e-3f;
+  float w_fov = 1.0f - off / fov;                          // 1 on-axis, 0 at the edge
+  if (w_fov <= 0.0f) return 0.0f;
+  if (w_fov > 1.0f) w_fov = 1.0f;
+
+  // Incidence: a gate viewed edge-on projects to a sliver, and the apparent-size range
+  // estimate (and the corner detector itself) fall apart. |cos| -- either face counts.
+  float cinc = fabsf((dx * nx + dy * ny) / rxy);
+  const float imin = (visIncMin < 0.99f) ? visIncMin : 0.99f;
+  float w_inc = (cinc - imin) / (1.0f - imin);
+  if (w_inc <= 0.0f) return 0.0f;
+  if (w_inc > 1.0f) w_inc = 1.0f;
+
+  // Range: full weight while close, fading out to visRFar. Beyond it the gate is a few
+  // pixels wide and the range estimate is noise.
+  float w_rng;
+  if (visRFar <= visRGood) {
+    w_rng = (r <= visRFar) ? 1.0f : 0.0f;
+  } else {
+    w_rng = (visRFar - r) / (visRFar - visRGood);
+    if (w_rng > 1.0f) w_rng = 1.0f;
+    if (w_rng < 0.0f) w_rng = 0.0f;
+  }
+  if (w_rng <= 0.0f) return 0.0f;
+
+  return w_fov * w_inc * w_rng;
+}
+
+// Fuse the latest gate sighting into the EKF, weighted by the scheduled visibility above.
+// Runs at the perception rate; consumes each corner frame at most once.
+static void fuseGateIntoEkf(const state_t *state) {
+  if (!visFuseEn) {
+    g_vf_w = 0.0f; g_vf_gate = 0; g_vf_std = 0.0f;
+    gate_sample_fresh = false;   // don't fuse a frame that went stale while disabled
+    return;
+  }
+
+  // Pose the WEIGHT is computed from. On the circuit this is the planned point on the
+  // loop and its tangent heading: the schedule is what "this part of the trajectory"
+  // means, and unlike the estimate it cannot have drifted. Off the circuit (bench, hover)
+  // fall back to the estimate -- fine there, since drift is what we are measuring, not
+  // something the weight has to be robust to.
+  float px, py, pz, yaw;
+  if (circEn && visUseSched && circ_armed) {
+    float P[3], T[3];
+    circuitPoint(circ_phase, P, T);
+    px = P[0]; py = P[1]; pz = P[2];
+    yaw = atan2f(T[1], T[0]);
+  } else {
+    px = state->position.x; py = state->position.y; pz = state->position.z;
+    yaw = quat2rpy(q_meas).z;
+  }
+
+  // Association: score both surveyed gates from that pose; the better-framed one is the
+  // gate a detection must belong to. On this loop the two are never both in shot, so the
+  // winner is unambiguous -- and when neither scores, nothing should be visible at all.
+  float nx, ny;
+  gatePlaneNormal(&nx, &ny);
+  float rA, aA, rB, aB;
+  const float wA = gateVisibility(px, py, pz, yaw, gAx, gAy, gAz, nx, ny, &rA, &aA);
+  const float wB = gateVisibility(px, py, pz, yaw, gBx, gBy, gBz, nx, ny, &rB, &aB);
+
+  float w, sel_x, sel_y, sel_z;
+  if (wB > wA) {
+    w = wB; sel_x = gBx; sel_y = gBy; sel_z = gBz;
+    g_vf_gate = 2; g_vf_expr = rB; g_vf_expa = aB;
+  } else {
+    w = wA; sel_x = gAx; sel_y = gAy; sel_z = gAz;
+    g_vf_gate = 1; g_vf_expr = rA; g_vf_expa = aA;
+  }
+  g_vf_w = w;
+  if (w < visWCut) g_vf_gate = 0;          // the plan says neither gate can be in shot
+
+  // Only ever act on a corner frame the camera has actually refreshed (see above).
+  if (!gate_sample_fresh) return;
+  gate_sample_fresh = false;
+  if (!g_gate_valid) return;               // this frame produced no usable gate fix
+
+  if (w < visWCut) {                       // nothing should be visible here, so whatever
+    g_vf_rej++;                            // the detector saw is not a gate -- drop it
+    return;
+  }
+  const float w_eff = (w > visWFloor) ? w : visWFloor;   // floor -> "almost nothing"
+
+  // The measurement: a surveyed landmark minus the measured offset to it IS the drone.
+  const float ix = sel_x - g_gate_rel_x;
+  const float iy = sel_y - g_gate_rel_y;
+  const float iz = sel_z - g_gate_rel_z;
+  const float dx = ix - state->position.x;
+  const float dy = iy - state->position.y;
+  const float dz = iz - state->position.z;
+  g_vf_dx = dx; g_vf_dy = dy; g_vf_dz = dz;
+
+  // Innovation gate: a true sighting of the expected gate lands near the current estimate
+  // (drift is slow). Anything further out is a mis-association or a phantom -- drop it
+  // rather than let it teleport the state.
+  if (sqrtf(dx * dx + dy * dy + dz * dz) > visMaxIn) {
+    g_vf_rej++;
+    return;
+  }
+
+  // Noise model: range comes from apparent size, so its error grows ~quadratically with
+  // range; the schedule weight then scales it.
+  const float r = g_gate_range_m;
+  float sigma = visStd0 + visStdR * r * r;
+  if (sigma < 0.01f) sigma = 0.01f;
+  float std = sigma / w_eff;
+  if (std > 10.0f) std = 10.0f;            // keep the EKF's arithmetic sane
+  g_vf_std = std;
+
+  if (!visFuseInj) return;                 // bring-up: computed and logged, not applied
+
+  positionMeasurement_t pos;
+  pos.x = ix;
+  pos.y = iy;
+  pos.z = iz;
+  pos.stdDev = std;
+  pos.source = MeasurementSourceLocationService;
+  estimatorEnqueuePosition(&pos);
+  g_vf_n++;
 }
 
 // Basic mode - no obstacle avoidance constraints
@@ -432,9 +669,16 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   float corners[GATE8_N_CORNERS];
   uint32_t age_ms = 0;
-  if (!gate8LinkGetLatest(corners, &age_ms)) {
+  uint32_t sample = 0;
+  if (!gate8LinkGetLatestSeq(corners, &age_ms, &sample)) {
     g_gate_valid = 0;   // no corner data received yet
     return;
+  }
+  // Flag a corner frame the camera has actually refreshed, so Stage 4 fuses each one at
+  // most once (the poll runs at 50 Hz, well above the camera's frame rate).
+  if (sample != gate_sample_seen) {
+    gate_sample_seen = sample;
+    gate_sample_fresh = true;
   }
   DroneState ds;
   ds.x  = state->position.x;  ds.y  = state->position.y;  ds.z  = state->position.z;
@@ -538,6 +782,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   // Perception only -- does not affect control.
   if (RATE_DO_EXECUTE(RATE_50_HZ, tick)) {
     pollGateVision(state, sensors);
+    // Stage 4: turn a sighting of a surveyed gate into an absolute position fix for the
+    // EKF, weighted by whether the trajectory says that gate should be in shot right now.
+    // Corrects Flow-deck drift; the control path below is untouched by it.
+    fuseGateIntoEkf(state);
   }
 
   /* Controller rate */

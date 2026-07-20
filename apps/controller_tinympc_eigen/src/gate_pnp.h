@@ -51,10 +51,18 @@ extern uint8_t  g_gate_dbg_reason;
 /* Physical gate aperture size, meters (outer corner-to-corner span). */
 extern float g_gate_width_m;
 extern float g_gate_height_m;
-/* Camera mount relative to body: forward/up offset (m) and downward pitch (rad). */
+/* Camera mount relative to body: forward/up offset (m), downward pitch and left yaw (rad).
+ * pitch/yaw are the boresight trims: they absorb the camera not looking exactly down the
+ * body +x axis (physical mount slop, or a principal point that isn't where the intrinsics
+ * claim). Both are pure bearing corrections -- they rotate the measured drone->gate vector
+ * and do NOT touch the range. Calibrate them by parking the drone a measured distance
+ * square-on to a gate and trimming until visFuse.dy (yaw) and visFuse.dz (pitch) read 0;
+ * an uncorrected boresight bias of a few degrees is metres of position error by the time
+ * it reaches the EKF. */
 extern float g_gate_mount_fwd_m;
 extern float g_gate_mount_up_m;
-extern float g_gate_mount_pitch_rad;
+extern float g_gate_mount_pitch_rad;   /* + = camera tilted DOWN from body +x */
+extern float g_gate_mount_yaw_rad;     /* + = camera tilted LEFT of body +x  */
 /* Validity gating. */
 extern float g_gate_min_range_m;
 extern float g_gate_max_range_m;
@@ -66,6 +74,16 @@ extern float g_gate_center_y;
 extern float g_gate_center_z;
 extern float g_gate_range_m;
 extern uint8_t g_gate_valid;
+
+/* Drone -> gate offset, rotated into the world frame but NOT added to the drone
+ * position (i.e. g_gate_center = drone position + g_gate_rel). This is the part of
+ * the estimate the camera actually measures; it depends on attitude but not on the
+ * (drifting) position estimate. Given a SURVEYED gate, it turns a sighting into a
+ * drone-position measurement: drone = gate_surveyed - g_gate_rel. See the EKF
+ * fusion in controller_tinympc.cpp. */
+extern float g_gate_rel_x;
+extern float g_gate_rel_y;
+extern float g_gate_rel_z;
 
 /*
  * Project the corners into `out` (world frame). Returns true and sets out->valid
