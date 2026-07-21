@@ -89,6 +89,24 @@ class HalfspaceConstraint:
     age_frames: int = 0
 
 
+@dataclass(frozen=True)
+class ReferenceTrajectory:
+    t: np.ndarray
+    pos: np.ndarray
+    vel: np.ndarray
+
+    def sample(self, query_t: float) -> tuple[np.ndarray, np.ndarray]:
+        tt = np.asarray(self.t, dtype=np.float64)
+        q = float(np.clip(float(query_t), float(tt[0]), float(tt[-1])))
+        pos = np.asarray([np.interp(q, tt, self.pos[:, axis]) for axis in range(3)], dtype=np.float64)
+        vel = np.asarray([np.interp(q, tt, self.vel[:, axis]) for axis in range(3)], dtype=np.float64)
+        return pos, vel
+
+    @property
+    def final_position(self) -> np.ndarray:
+        return np.asarray(self.pos[-1], dtype=np.float64)
+
+
 class AdmmHostSolver:
     NSTATES = 12
     NINPUTS = 4
@@ -237,6 +255,10 @@ def parse_args() -> argparse.Namespace:
                     help="in ADMM mode, cap forward velocity to scale*constraint_slack/lookahead; <=0 disables")
     ap.add_argument("--admm-safety-filter", action=argparse.BooleanOptionalAction, default=False,
                     help="after ADMM, project the command lookahead back into the active half-space")
+    ap.add_argument("--trajectory-file", type=Path, default=None,
+                    help="CSV trajectory with columns t,x,y,z and optional vx,vy,vz; defaults to the gate target")
+    ap.add_argument("--goal-tolerance", type=float, default=0.18,
+                    help="position tolerance for considering a trajectory final waypoint reached [m]")
     ap.add_argument("--gate-x", type=float, default=3.0)
     ap.add_argument("--gate-y", type=float, default=0.0)
     ap.add_argument("--gate-z", type=float, default=1.1)
@@ -270,6 +292,7 @@ def main() -> int:
         half_height=0.50,
         drone_radius=0.03,
     )
+    trajectory = _load_reference_trajectory(args, geometry)
     env_config = GymPybulletGateEnvConfig(
         dt=float(args.dt),
         image_size=int(args.image_size),
@@ -301,6 +324,7 @@ def main() -> int:
     )
     rows: list[list[object]] = []
     horizon_rows: list[list[object]] = []
+    plan_rows: list[list[object]] = []
     summary: dict[str, Any] = {}
     rng = np.random.default_rng(int(args.seed))
 
@@ -350,11 +374,11 @@ def main() -> int:
                 constraints = [_inactive_constraint("stale_depth")]
                 stale_disabled_count += 1
             constraint = constraints[0] if constraints else _inactive_constraint("no_depth")
-            nominal_velocity = _nominal_velocity(state, geometry, args)
+            nominal_velocity = _nominal_velocity(state, t, trajectory, args)
             solver_info: dict[str, Any] = {}
             if admm_solver is not None:
                 x0_solver = _solver_state(env, state)
-                x_ref = _reference_trajectory(x0_solver, geometry, constraint, args)
+                x_ref = _reference_trajectory(x0_solver, t, trajectory, constraint, args)
                 solver_info = admm_solver.solve(
                     x0=x0_solver,
                     x_ref=x_ref,
@@ -390,11 +414,13 @@ def main() -> int:
             obstacle_collision = bool(obstacle_collision or clearance < 0.0)
             env_collision = bool(env_collision or info.get("collision", False))
             collision = bool(obstacle_collision or env_collision)
-            reached_goal = bool(reached_goal or next_state[0] >= float(args.gate_x))
+            goal_error = float(np.linalg.norm(next_state[:3] - trajectory.final_position))
+            reached_goal = bool(reached_goal or (t >= float(trajectory.t[-1]) and goal_error <= float(args.goal_tolerance)))
             if constraint.active:
                 active_count += 1
             rows.append(_log_row(step, t, state, next_state, nominal_velocity, command_velocity, accel, constraint, violation, clearance, info, solver_info))
             _append_horizon_rows(horizon_rows, step, t, constraint, args)
+            _append_plan_rows(plan_rows, step, t, solver_info)
             if collision or reached_goal:
                 break
             held_age_steps += 1
@@ -422,7 +448,13 @@ def main() -> int:
             "collision": bool(collision),
             "obstacle_collision": bool(obstacle_collision),
             "env_collision": bool(env_collision),
+            "reached_goal": bool(reached_goal),
             "reached_goal_x": bool(reached_goal),
+            "goal": {
+                "x": float(trajectory.final_position[0]),
+                "y": float(trajectory.final_position[1]),
+                "z": float(trajectory.final_position[2]),
+            },
             "min_obstacle_clearance_m": float(min_clearance),
             "min_z_m": float(min_z),
             "final_state": final_state.astype(float).tolist(),
@@ -440,6 +472,7 @@ def main() -> int:
 
     _write_log(args.out / "closed_loop.csv", rows)
     _write_horizon(args.out / "constraints.csv", horizon_rows)
+    _write_plan(args.out / "planned_horizon.csv", plan_rows)
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
     print(f"wrote logs to {args.out}")
@@ -466,6 +499,53 @@ def _parse_obstacles(raw_obstacles: list[str] | None) -> list[BoxObstacle]:
             )
         )
     return out
+
+
+def _load_reference_trajectory(args: argparse.Namespace, geometry: GateGeometry) -> ReferenceTrajectory:
+    if args.trajectory_file is None:
+        duration = max(float(args.duration), float(args.dt))
+        return ReferenceTrajectory(
+            t=np.asarray([0.0, duration], dtype=np.float64),
+            pos=np.asarray(
+                [
+                    [float(args.initial_x), float(args.initial_y), float(args.initial_z)],
+                    [float(args.gate_x), float(geometry.gate_y), float(geometry.gate_z)],
+                ],
+                dtype=np.float64,
+            ),
+            vel=np.asarray(
+                [
+                    [float(args.target_speed), 0.0, 0.0],
+                    [float(args.target_speed), 0.0, 0.0],
+                ],
+                dtype=np.float64,
+            ),
+        )
+
+    with args.trajectory_file.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise SystemExit(f"empty trajectory file: {args.trajectory_file}")
+    missing = {"t", "x", "y", "z"} - set(rows[0])
+    if missing:
+        raise SystemExit(f"trajectory file {args.trajectory_file} missing columns: {sorted(missing)}")
+
+    t = np.asarray([float(row["t"]) for row in rows], dtype=np.float64)
+    pos = np.asarray([[float(row["x"]), float(row["y"]), float(row["z"])] for row in rows], dtype=np.float64)
+    if np.any(~np.isfinite(t)) or np.any(~np.isfinite(pos)):
+        raise SystemExit(f"trajectory file {args.trajectory_file} contains non-finite t/x/y/z")
+    if len(t) < 2 or np.any(np.diff(t) <= 0.0):
+        raise SystemExit(f"trajectory file {args.trajectory_file} must contain at least two rows with strictly increasing t")
+
+    if all(col in rows[0] for col in ("vx", "vy", "vz")):
+        vel = np.asarray([[float(row["vx"]), float(row["vy"]), float(row["vz"])] for row in rows], dtype=np.float64)
+    else:
+        vel = np.zeros_like(pos)
+        for axis in range(3):
+            vel[:, axis] = np.gradient(pos[:, axis], t)
+    if np.any(~np.isfinite(vel)):
+        raise SystemExit(f"trajectory file {args.trajectory_file} contains non-finite velocity")
+    return ReferenceTrajectory(t=t, pos=pos, vel=vel)
 
 
 def _build_admm_host_library(force: bool = False) -> Path:
@@ -719,16 +799,23 @@ def _constraint_from_hit(
     )
 
 
-def _nominal_velocity(state: np.ndarray, geometry: GateGeometry, args: argparse.Namespace) -> np.ndarray:
+def _nominal_velocity(
+    state: np.ndarray,
+    t: float,
+    trajectory: ReferenceTrajectory,
+    args: argparse.Namespace,
+) -> np.ndarray:
     pos = np.asarray(state[:3], dtype=np.float64)
+    ref_pos, ref_vel = trajectory.sample(float(t) + float(args.lookahead_s))
     velocity = np.asarray(
         [
-            float(args.target_speed),
-            float(args.lateral_kp) * (float(geometry.gate_y) - pos[1]),
-            float(args.vertical_kp) * (float(geometry.gate_z) - pos[2]),
+            ref_vel[0] + float(args.lateral_kp) * (ref_pos[0] - pos[0]),
+            ref_vel[1] + float(args.lateral_kp) * (ref_pos[1] - pos[1]),
+            ref_vel[2] + float(args.vertical_kp) * (ref_pos[2] - pos[2]),
         ],
         dtype=np.float64,
     )
+    velocity[0] = float(np.clip(velocity[0], 0.05, float(args.max_forward_speed)))
     velocity[1] = float(np.clip(velocity[1], -float(args.max_lateral_speed), float(args.max_lateral_speed)))
     velocity[2] = float(np.clip(velocity[2], -0.7, 0.7))
     return velocity
@@ -746,23 +833,21 @@ def _solver_state(env: GymPybulletGateEnv, state: np.ndarray) -> np.ndarray:
 
 def _reference_trajectory(
     x0: np.ndarray,
-    geometry: GateGeometry,
+    t: float,
+    trajectory: ReferenceTrajectory,
     constraint: HalfspaceConstraint,
     args: argparse.Namespace,
 ) -> np.ndarray:
     x_ref = np.zeros((AdmmHostSolver.NHORIZON, AdmmHostSolver.NSTATES), dtype=np.float64)
-    y_ref = float(geometry.gate_y)
-    if constraint.active and float(args.admm_reference_sidestep) > 0.0:
-        obstacle_side = float(constraint.obstacle_center[1] - x0[1])
-        side = -math.copysign(1.0, obstacle_side) if abs(obstacle_side) > 1e-3 else -1.0
-        y_ref += side * float(args.admm_reference_sidestep)
     for k in range(AdmmHostSolver.NHORIZON):
-        x_ref[k, 0] = float(args.gate_x)
-        x_ref[k, 1] = y_ref
-        x_ref[k, 2] = float(geometry.gate_z)
-        x_ref[k, 6] = float(args.target_speed)
-        x_ref[k, 7] = 0.0
-        x_ref[k, 8] = 0.0
+        ref_pos, ref_vel = trajectory.sample(float(t) + k * float(args.dt))
+        if constraint.active and float(args.admm_reference_sidestep) > 0.0:
+            obstacle_side = float(constraint.obstacle_center[1] - x0[1])
+            side = -math.copysign(1.0, obstacle_side) if abs(obstacle_side) > 1e-3 else -1.0
+            ref_pos = ref_pos.copy()
+            ref_pos[1] += side * float(args.admm_reference_sidestep)
+        x_ref[k, 0:3] = ref_pos
+        x_ref[k, 6:9] = ref_vel
     return x_ref
 
 
@@ -846,6 +931,31 @@ def _append_horizon_rows(
                 f"{constraint.confidence:.6f}",
                 constraint.obstacle_name,
                 constraint.status,
+            ]
+        )
+
+
+def _append_plan_rows(
+    rows: list[list[object]],
+    step: int,
+    t: float,
+    solver_info: dict[str, Any],
+) -> None:
+    if solver_info.get("states") is None:
+        return
+    states = np.asarray(solver_info["states"], dtype=np.float64).reshape(AdmmHostSolver.NHORIZON, AdmmHostSolver.NSTATES)
+    for k, state in enumerate(states):
+        rows.append(
+            [
+                step,
+                f"{t:.9f}",
+                k,
+                f"{float(state[0]):.9f}",
+                f"{float(state[1]):.9f}",
+                f"{float(state[2]):.9f}",
+                f"{float(state[6]):.9f}",
+                f"{float(state[7]):.9f}",
+                f"{float(state[8]):.9f}",
             ]
         )
 
@@ -979,6 +1089,13 @@ def _write_horizon(path: Path, rows: list[list[object]]) -> None:
                 "status",
             ]
         )
+        writer.writerows(rows)
+
+
+def _write_plan(path: Path, rows: list[list[object]]) -> None:
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "t", "k", "x", "y", "z", "vx", "vy", "vz"])
         writer.writerows(rows)
 
 

@@ -24,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--cases", type=int, default=24)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--duration", type=float, default=8.0)
+    ap.add_argument("--trajectory-file", type=Path, default=None,
+                    help="CSV reference trajectory passed to each run")
     ap.add_argument("--control-mode", choices=["admm", "projection"], default="admm")
     ap.add_argument("--include-baseline", action="store_true",
                     help="also run every scenario with --no-avoidance")
@@ -80,7 +82,7 @@ def main() -> int:
             status = "PASS" if result.get("passed") else "FAIL"
             print(
                 f"{status} case={case_idx:03d} variant={variant} "
-                f"collision={result.get('collision')} reached={result.get('reached_goal_x')} "
+                f"collision={result.get('collision')} reached={result.get('reached_goal')} "
                 f"clearance={result.get('min_obstacle_clearance_m')}"
             )
 
@@ -131,6 +133,8 @@ def _run_case(
     ]
     for obstacle in scenario["obstacles"]:
         command.extend(["--obstacle", _format_obstacle(obstacle)])
+    if args.trajectory_file is not None:
+        command.extend(["--trajectory-file", str(args.trajectory_file)])
     if no_avoidance:
         command.append("--no-avoidance")
     if args.admm_reference_sidestep is not None:
@@ -168,7 +172,9 @@ def _run_case(
             return result
         summary = json.loads((case_out / "summary.json").read_text())
         result.update(summary)
-        result["passed"] = bool((not summary.get("collision", True)) and summary.get("reached_goal_x", False))
+        reached_goal = bool(summary.get("reached_goal", summary.get("reached_goal_x", False)))
+        result["reached_goal"] = reached_goal
+        result["passed"] = bool((not summary.get("collision", True)) and reached_goal)
         return result
     except Exception as exc:
         result["returncode"] = -1
@@ -222,7 +228,7 @@ def _summarize(results: list[dict[str, Any]], args: argparse.Namespace) -> dict[
             "collisions": sum(1 for r in rows if r.get("collision")),
             "obstacle_collisions": sum(1 for r in rows if r.get("obstacle_collision")),
             "env_collisions": sum(1 for r in rows if r.get("env_collision")),
-            "reached_goal": sum(1 for r in rows if r.get("reached_goal_x")),
+            "reached_goal": sum(1 for r in rows if r.get("reached_goal", r.get("reached_goal_x"))),
             "failed_processes": sum(1 for r in rows if int(r.get("returncode", 0)) != 0),
             "min_clearance_m": min(clearances) if clearances else None,
             "median_clearance_m": float(np.median(clearances)) if clearances else None,
@@ -245,6 +251,7 @@ def _write_results(path: Path, rows: list[dict[str, Any]]) -> None:
         "collision",
         "obstacle_collision",
         "env_collision",
+        "reached_goal",
         "reached_goal_x",
         "min_obstacle_clearance_m",
         "min_z_m",
