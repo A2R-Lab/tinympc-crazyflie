@@ -8,6 +8,7 @@
  * macros compile.
  */
 #include "gate8_link.h"
+#include "flowdeck_obstacle_link.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -21,6 +22,7 @@
 
 #define GATE8_BAUD       115200
 #define GATE8_PAYLOAD_N  ((int)(sizeof(gate8_payload_t) + sizeof(uint32_t)))  /* payload + crc */
+#define FLOW_OBS_PAYLOAD_N ((int)(sizeof(flow_obstacle_payload_t) + sizeof(uint32_t)))
 
 /* Published state. Seqlock: RX task writes, controller and LOG read. */
 static volatile uint32_t g_seq      = 0;   /* odd while writing, even when stable */
@@ -46,36 +48,66 @@ static void gate8PublishCorners(const gate8_msg_t *msg) {
   g_rxOk++;
 }
 
+static bool headerMatches(const uint8_t window[GATE8_HEADER_LEN], const char *header) {
+  return memcmp(window, header, GATE8_HEADER_LEN) == 0;
+}
+
+static bool readBytes(uint8_t *dst, int n) {
+  for (int i = 0; i < n; i++) {
+    if (!uart1GetDataWithDefaultTimeout(dst++)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static void gate8RxTask(void *arg) {
   (void)arg;
   gate8_msg_t msg;
+  flow_obstacle_msg_t flow_msg;
+  uint8_t sync[GATE8_HEADER_LEN] = {0};
 
   while (1) {
-    /* Sync to the 4-byte header, one byte at a time, resync on mismatch. */
-    int matched = 0;
-    while (matched < GATE8_HEADER_LEN) {
+    /* Sync to either 4-byte header. The AI-deck UART is shared by gate corners
+     * and obstacle-flow sectors, so one RX task must dispatch both message types. */
+    bool is_gate = false;
+    bool is_flow = false;
+    while (!is_gate && !is_flow) {
       uint8_t b;
-      if (!uart1GetDataWithDefaultTimeout(&b)) { matched = 0; continue; }
+      if (!uart1GetDataWithDefaultTimeout(&b)) { continue; }
       g_rawBytes++;
-      if (b == (uint8_t)GATE8_MSG_HEADER[matched]) {
-        matched++;
-      } else {
-        matched = (b == (uint8_t)GATE8_MSG_HEADER[0]) ? 1 : 0;
+      memmove(sync, sync + 1, GATE8_HEADER_LEN - 1);
+      sync[GATE8_HEADER_LEN - 1] = b;
+      is_gate = headerMatches(sync, GATE8_MSG_HEADER);
+      is_flow = headerMatches(sync, FLOW_OBS_MSG_HEADER);
+    }
+
+    if (is_flow) {
+      memcpy(flow_msg.header, FLOW_OBS_MSG_HEADER, FLOW_OBS_HEADER_LEN);
+      if (!readBytes((uint8_t *)&flow_msg.p, FLOW_OBS_PAYLOAD_N)) {
+        flowObstacleLinkNoteBadRx();
+        continue;
       }
+      uint32_t crc = crc32CalculateBuffer(&flow_msg, FLOW_OBS_HEADER_LEN + sizeof(flow_obstacle_payload_t));
+      if (crc != flow_msg.checksum) {
+        flowObstacleLinkNoteCrcErr();
+        continue;
+      }
+      flowObstacleLinkPublishFromRx(&flow_msg);
+      continue;
     }
+
     memcpy(msg.header, GATE8_MSG_HEADER, GATE8_HEADER_LEN);
-
-    /* Read payload + checksum into the struct right after the header. */
-    uint8_t *dst = (uint8_t *)&msg.p;
-    bool ok = true;
-    for (int i = 0; i < GATE8_PAYLOAD_N; i++) {
-      if (!uart1GetDataWithDefaultTimeout(dst++)) { ok = false; break; }
+    if (!readBytes((uint8_t *)&msg.p, GATE8_PAYLOAD_N)) {
+      g_badRx++;
+      continue;
     }
-    if (!ok) { g_badRx++; continue; }
 
-    /* Validate CRC32 over header + payload. */
     uint32_t crc = crc32CalculateBuffer(&msg, GATE8_HEADER_LEN + sizeof(gate8_payload_t));
-    if (crc != msg.checksum) { g_crcErr++; continue; }
+    if (crc != msg.checksum) {
+      g_crcErr++;
+      continue;
+    }
 
     gate8PublishCorners(&msg);
   }
@@ -83,9 +115,10 @@ static void gate8RxTask(void *arg) {
 
 void gate8LinkInit(void) {
   uart1Init(GATE8_BAUD);   /* USART3, the GAP8 deck UART */
+  flowObstacleLinkInit();
   xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
               NULL, tskIDLE_PRIORITY + 2, NULL);
-  DEBUG_PRINT("gate8 link: UART1/USART3@%d started\n", GATE8_BAUD);
+  DEBUG_PRINT("vision link: UART1/USART3@%d started\n", GATE8_BAUD);
 }
 
 bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,

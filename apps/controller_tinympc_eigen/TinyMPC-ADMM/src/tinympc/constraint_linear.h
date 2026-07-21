@@ -12,6 +12,15 @@ enum tiny_ErrorCode tiny_SetInputBound(tiny_AdmmWorkspace* work, Eigen::MatrixMf
 
 enum tiny_ErrorCode tiny_SetStateBound(tiny_AdmmWorkspace* work, Eigen::MatrixNf* Acx, Eigen::VectorNf* lcx, Eigen::VectorNf* ucx);
 
+enum tiny_ErrorCode tiny_ClearPositionHalfspaces(tiny_AdmmWorkspace* work);
+
+enum tiny_ErrorCode tiny_SetPositionHalfspace(tiny_AdmmWorkspace* work,
+                                              int k,
+                                              int h,
+                                              const Eigen::Vector3f* a,
+                                              float b,
+                                              int enable);
+
 // enum tiny_ErrorCode tiny_ProjectInput(tiny_AdmmWorkspace* work);
 
 int IsConstrained(tiny_AdmmWorkspace* work);

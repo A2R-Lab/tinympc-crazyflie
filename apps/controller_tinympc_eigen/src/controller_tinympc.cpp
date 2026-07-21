@@ -56,6 +56,7 @@ extern "C" {
 #include "estimator.h"         // estimatorEnqueuePosition (Stage 4: vision -> EKF)
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
+#include "flowdeck_obstacle_link.h"  // AI-deck obstacle-flow sector receiver
 #include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
@@ -205,6 +206,36 @@ float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawU
 // Poll the AI-deck corner link, project to a world-frame gate center, and let the
 // visGate LOG group expose it. Params/logs live in gate_pnp_params.c.
 static GateVisionPacket g_gate_vision;
+
+// --- Obstacle flow -> TinyMPC half-space constraints ---
+// Defaults are log-only and disabled for control: the first firmware step should prove
+// sector timing/geometry before letting the hard ADMM projection affect flight.
+uint8_t obsEnable = 0;       // PARAM: master enable for obstacle half-space generation
+uint8_t obsLogOnly = 1;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
+float   obsMinConf = 0.35f;
+float   obsMinDepth = 0.25f;
+float   obsMaxDepth = 4.0f;
+uint32_t obsMaxAgeMs = 150;
+uint32_t obsHoldMs = 120;
+float   obsSwitchRatio = 0.75f;
+float   obsMarginMin = 0.30f;
+float   obsMarginSlack = 0.20f;
+uint8_t obsKStart = 3;
+
+uint8_t  g_obs_active = 0;
+uint8_t  g_obs_applied = 0;
+uint8_t  g_obs_sector = 0;
+uint32_t g_obs_age_ms = 0;
+uint32_t g_obs_sample = 0;
+float    g_obs_depth_m = 0.0f;
+float    g_obs_conf = 0.0f;
+float    g_obs_azimuth = 0.0f;
+float    g_obs_a0 = 0.0f;
+float    g_obs_a1 = 0.0f;
+float    g_obs_a2 = 0.0f;
+float    g_obs_b = 0.0f;
+float    g_obs_margin = 0.0f;
+float    g_obs_violation = 0.0f;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -690,6 +721,158 @@ static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   gate_pnp_project(corners, age_ms, &ds, &g_gate_vision);
 }
 
+static bool pickObstacleSector(const flow_obstacle_payload_t *payload,
+                               int *out_idx,
+                               float *out_depth,
+                               float *out_conf,
+                               float *out_azimuth) {
+  if (!payload || payload->n_sectors == 0 || (payload->flags & 0x03u)) {
+    return false;
+  }
+
+  bool found = false;
+  float best_score = 1e30f;
+  const uint8_t n = (payload->n_sectors <= FLOW_OBS_SECT_MAX) ? payload->n_sectors : FLOW_OBS_SECT_MAX;
+  for (uint8_t i = 0; i < n; ++i) {
+    const float inv_depth = payload->sector[i].inv_depth;
+    const float conf = payload->sector[i].confidence;
+    if (!(inv_depth > 1e-6f) || !(conf >= obsMinConf)) {
+      continue;
+    }
+    const float depth = 1.0f / inv_depth;
+    if (!(depth >= obsMinDepth && depth <= obsMaxDepth)) {
+      continue;
+    }
+    const float conf_floor = (conf > 0.05f) ? conf : 0.05f;
+    const float score = depth / conf_floor;
+    if (score < best_score) {
+      best_score = score;
+      *out_idx = i;
+      *out_depth = depth;
+      *out_conf = conf;
+      *out_azimuth = payload->sector[i].azimuth_rad;
+      found = true;
+    }
+  }
+  return found;
+}
+
+static void cameraSectorRayBody(float azimuth, struct vec *out_body) {
+  const float sa = sinf(azimuth);
+  const float ca = cosf(azimuth);
+
+  float bx = ca;       // camera z forward -> body +x
+  float by = -sa;      // camera x right   -> body -y
+  float bz = 0.0f;     // center-row sector
+
+  const float cp = cosf(g_gate_mount_pitch_rad);
+  const float sp = sinf(g_gate_mount_pitch_rad);
+  const float bx_t = cp * bx + sp * bz;
+  const float bz_t = -sp * bx + cp * bz;
+  bx = bx_t;
+  bz = bz_t;
+
+  const float cy = cosf(g_gate_mount_yaw_rad);
+  const float sy = sinf(g_gate_mount_yaw_rad);
+  const float bx_y = cy * bx - sy * by;
+  const float by_y = sy * bx + cy * by;
+  *out_body = vnormalize(mkvec(bx_y, by_y, bz));
+}
+
+static void updateObstacleHalfspace(const state_t *state) {
+  tiny_ClearPositionHalfspaces(&work);
+  stgs.en_cstr_states = 0;
+  g_obs_active = 0;
+  g_obs_applied = 0;
+  g_obs_violation = 0.0f;
+
+  flow_obstacle_payload_t payload;
+  uint32_t age_ms = 0;
+  uint32_t sample = 0;
+  bool have_latest = flowObstacleLinkGetLatest(&payload, &age_ms, &sample);
+  if (have_latest) {
+    g_obs_age_ms = age_ms;
+    g_obs_sample = sample;
+  }
+
+  static uint8_t held_active = 0;
+  static uint32_t held_tick = 0;
+  static int held_sector = 0;
+  static float held_depth = 0.0f;
+  static float held_conf = 0.0f;
+  static float held_azimuth = 0.0f;
+
+  int sector = 0;
+  float depth = 0.0f;
+  float conf = 0.0f;
+  float azimuth = 0.0f;
+  if (have_latest && age_ms <= obsMaxAgeMs &&
+      pickObstacleSector(&payload, &sector, &depth, &conf, &azimuth)) {
+    const bool should_switch = !held_active ||
+        depth < obsSwitchRatio * ((held_depth > 1e-3f) ? held_depth : depth);
+    if (should_switch) {
+      held_active = 1;
+      held_sector = sector;
+      held_depth = depth;
+      held_conf = conf;
+      held_azimuth = azimuth;
+      held_tick = xTaskGetTickCount();
+    }
+  }
+
+  const uint32_t held_age_ms = (xTaskGetTickCount() - held_tick) * portTICK_PERIOD_MS;
+  if (!held_active || held_age_ms > obsHoldMs) {
+    held_active = 0;
+    g_obs_depth_m = 0.0f;
+    g_obs_conf = 0.0f;
+    g_obs_sector = 0;
+    return;
+  }
+
+  struct vec d_body;
+  cameraSectorRayBody(held_azimuth, &d_body);
+  struct vec d_world = vnormalize(qvrot(q_meas, d_body));
+  struct vec n = vneg(d_world);
+
+  float margin = obsMarginMin + (1.0f - held_conf) * obsMarginSlack;
+  const float max_margin = 0.8f * held_depth;
+  if (margin > max_margin) {
+    margin = max_margin;
+  }
+  if (margin < 0.0f) {
+    margin = 0.0f;
+  }
+
+  const struct vec p = mkvec(state->position.x, state->position.y, state->position.z);
+  const struct vec p_obst = vadd(p, vscl(held_depth, d_world));
+  const float b = vdot(n, p_obst) - margin;
+
+  g_obs_active = 1;
+  g_obs_sector = (uint8_t)held_sector;
+  g_obs_depth_m = held_depth;
+  g_obs_conf = held_conf;
+  g_obs_azimuth = held_azimuth;
+  g_obs_a0 = n.x;
+  g_obs_a1 = n.y;
+  g_obs_a2 = n.z;
+  g_obs_b = b;
+  g_obs_margin = margin;
+  g_obs_violation = vdot(n, p) - b;
+
+  if (!obsEnable || obsLogOnly) {
+    return;
+  }
+
+  const uint8_t k_start = (obsKStart < NHORIZON) ? obsKStart : (NHORIZON - 1);
+  Eigen::Vector3f a;
+  a << n.x, n.y, n.z;
+  for (int k = k_start; k < NHORIZON; ++k) {
+    tiny_SetPositionHalfspace(&work, k, 0, &a, b, 1);
+  }
+  stgs.en_cstr_states = 1;
+  g_obs_applied = 1;
+}
+
 void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
 
@@ -723,13 +906,14 @@ void controllerOutOfTreeInit(void) {
   ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
   lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
+  tiny_ClearPositionHalfspaces(&work);
 
   tiny_UpdateLinearCost(&work);
 
   /* Solver settings */
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
-  stgs.en_cstr_states = 0;  // No state constraints for basic test
+  stgs.en_cstr_states = 0;  // Obstacle state constraints are opt-in via obs params.
   stgs.max_iter = 2;        // Original working value
   stgs.verbose = 0;
   stgs.check_termination = 0;
@@ -804,6 +988,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
     /* MPC solve */
     // Solve optimization problem using ADMM
+    updateObstacleHalfspace(state);
     tiny_UpdateLinearCost(&work);
     tiny_SolveAdmm(&work);
     mpc_has_run = true;   // Xhrz now holds a valid plan for the cascade output

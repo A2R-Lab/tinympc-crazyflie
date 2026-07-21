@@ -179,7 +179,11 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
         work->ZX_new[k].head(3) = z_pos;
       } else {
         // Box constraint fallback (original behavior)
-        work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx)); 
+        if (work->data->ucx && work->data->lcx) {
+          work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx));
+        } else {
+          work->ZX_new[k] = work->soln->YX[k];
+        }
       }
       
       // Dual update: y = y - z

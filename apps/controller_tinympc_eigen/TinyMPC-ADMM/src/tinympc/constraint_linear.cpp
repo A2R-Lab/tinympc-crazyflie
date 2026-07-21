@@ -22,6 +22,47 @@ enum tiny_ErrorCode tiny_SetStateBound(tiny_AdmmWorkspace* work, Eigen::MatrixNf
   return TINY_NO_ERROR;
 }
 
+enum tiny_ErrorCode tiny_ClearPositionHalfspaces(tiny_AdmmWorkspace* work) {
+  for (int k = 0; k < NHORIZON; ++k) {
+    for (int h = 0; h < MAX_HS; ++h) {
+      work->data->a_hs[k][h].setZero();
+      work->data->b_hs[k][h] = 0.0f;
+      work->data->en_hs[k][h] = 0;
+    }
+  }
+  return TINY_NO_ERROR;
+}
+
+enum tiny_ErrorCode tiny_SetPositionHalfspace(tiny_AdmmWorkspace* work,
+                                              int k,
+                                              int h,
+                                              const Eigen::Vector3f* a,
+                                              float b,
+                                              int enable) {
+  if (k < 0 || k >= NHORIZON || h < 0 || h >= MAX_HS) {
+    return TINY_NOT_SUPPORTED;
+  }
+  if (!enable || a == 0) {
+    work->data->a_hs[k][h].setZero();
+    work->data->b_hs[k][h] = 0.0f;
+    work->data->en_hs[k][h] = 0;
+    return TINY_NO_ERROR;
+  }
+
+  const float norm = a->norm();
+  if (norm < 1e-6f) {
+    work->data->a_hs[k][h].setZero();
+    work->data->b_hs[k][h] = 0.0f;
+    work->data->en_hs[k][h] = 0;
+    return TINY_NO_ERROR;
+  }
+
+  work->data->a_hs[k][h] = (*a) / norm;
+  work->data->b_hs[k][h] = b / norm;
+  work->data->en_hs[k][h] = 1;
+  return TINY_NO_ERROR;
+}
+
 // enum tiny_ErrorCode tiny_ProjectInput(tiny_AdmmWorkspace* work) {
 //   int n = work->data->model[0].ninputs;
 //   int N = work->data->model[0].ninputs;
