@@ -971,11 +971,11 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;  // Obstacle state constraints are opt-in via obs params.
-  stgs.max_iter = 2;        // Keep the stabilizer callback within its timing budget.
+  stgs.max_iter = 5;        // Match demo-2 hardcoded-obstacle solve depth.
   stgs.verbose = 0;
   stgs.check_termination = 0;
-  stgs.tol_abs_dual = 5e-2;
-  stgs.tol_abs_prim = 5e-2;
+  stgs.tol_abs_dual = 1e-3f;
+  stgs.tol_abs_prim = 1e-3f;
 
   Klqr <<
   -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
