@@ -164,8 +164,10 @@ static bool mpc_has_run = false; // Flag to track if MPC has computed at least o
 static int traj_index = 0;
 static int max_traj_index = 0;
 static const int figure8_waypoint_count = 892; // 892 unique samples, followed by 4 wrap samples
-static_assert((sizeof(X_ref_data) / sizeof(X_ref_data[0])) >= figure8_waypoint_count * 3,
-              "Figure-eight trajectory table is too short");
+static const int figure8_heading_lookahead = 4;
+static_assert((sizeof(X_ref_data) / sizeof(X_ref_data[0])) >=
+                  (figure8_waypoint_count + figure8_heading_lookahead) * 3,
+              "Figure-eight trajectory table needs wrap samples for heading");
 static float traj_height = 0.5f;
 static float landing_time = 2.5f;             // Controlled descent duration
 static float landing_settle_time = 1.0f;      // Time at landing height before disarming
@@ -183,6 +185,20 @@ static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
 static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
 
+// The figure eight is expressed in a local frame whose origin is captured when
+// controller 6 is first activated. Yaw is handled by the Crazyflie PID rather
+// than by the linear MPC model.
+static bool trajectory_frame_initialized = false;
+static float trajectory_origin_x = 0.0f;
+static float trajectory_origin_y = 0.0f;
+static float mpc_yaw_setpoint = 0.0f;
+static float mpc_yaw_setpoint_task = 0.0f;
+static bool yaw_alignment_complete = false;
+static int yaw_alignment_stable_steps = 0;
+static const float yaw_alignment_tolerance_deg = 8.0f;
+static const int yaw_alignment_required_steps = 10; // 0.2 s at 50 Hz
+static const float yaw_alignment_max_rate_deg_s = 30.0f;
+
 // Two obstacle disks, one at each outer tip of the figure eight.
 static const int obstacle_count = 2;
 static Eigen::Matrix<tinytype, 3, 1> obs_centers[obstacle_count];
@@ -193,6 +209,27 @@ static const float obs_physical_radius = 0.18f;
 static const float obs_safety_margin = 0.10f;
 static const float obs_constraint_radius = obs_physical_radius + obs_safety_margin;
 static const float obs_activation_margin = 0.12f;
+
+static inline float wrap_degrees(float angle)
+{
+  while (angle > 180.0f) angle -= 360.0f;
+  while (angle < -180.0f) angle += 360.0f;
+  return angle;
+}
+
+static float figure8HeadingDegrees(const int sample_index)
+{
+  int index = sample_index;
+  if (index < 0) index = 0;
+  if (index >= figure8_waypoint_count) index = figure8_waypoint_count - 1;
+
+  // The trajectory header contains wrap samples after the 892 unique points,
+  // allowing a forward tangent even at the end of the closed curve.
+  const int ahead = index + figure8_heading_lookahead;
+  const float dx = X_ref_data[3 * ahead] - X_ref_data[3 * index];
+  const float dy = X_ref_data[3 * ahead + 1] - X_ref_data[3 * index + 1];
+  return wrap_degrees(degrees(atan2f(dy, dx)));
+}
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -322,7 +359,8 @@ void controllerOutOfTreeInit(void)
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints (1 to use rho corresponding to active constraints)
 
-  // The figure eight starts and ends at the origin before descending.
+  // The XY origin is replaced with the activation position when controller 6
+  // first runs. Until then, initialize a safe local-frame reference.
   Xref_origin << 0, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   Xref_end << 0, 0, landing_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
@@ -334,6 +372,11 @@ void controllerOutOfTreeInit(void)
   mpc_has_run = false;
   landing_complete = false;
   traj_index = 0;
+  trajectory_frame_initialized = false;
+  yaw_alignment_complete = false;
+  yaw_alignment_stable_steps = 0;
+  mpc_yaw_setpoint = 0.0f;
+  mpc_yaw_setpoint_task = 0.0f;
   max_traj_index = figure8_waypoint_count +
                    (int)((landing_time + landing_settle_time) * MPC_RATE);
 
@@ -359,18 +402,42 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
 {
   if (enable_traj)
   {
+    const int heading_index = (traj_index < figure8_waypoint_count) ?
+                                  traj_index : (figure8_waypoint_count - 1);
+    mpc_yaw_setpoint_task = figure8HeadingDegrees(heading_index);
+
+    // Face the first direction of travel before translating. This makes a
+    // forward-looking camera point down the path from the first moving sample.
+    if (!yaw_alignment_complete && traj_index == 0) {
+      params.Xref = Xref_origin.replicate<1, NHORIZON>();
+      const float yaw_error = wrap_degrees(mpc_yaw_setpoint_task - state_task.attitude.yaw);
+      if (fabsf(yaw_error) <= yaw_alignment_tolerance_deg) {
+        yaw_alignment_stable_steps++;
+      } else {
+        yaw_alignment_stable_steps = 0;
+      }
+
+      if (yaw_alignment_stable_steps < yaw_alignment_required_steps) {
+        return;
+      }
+
+      yaw_alignment_complete = true;
+      DEBUG_PRINT("YAW ALIGNED: starting figure 8 at %.1f deg\n",
+                  (double)mpc_yaw_setpoint_task);
+    }
+
     for (int i = 0; i < NHORIZON; ++i) {
       const int sample_index = traj_index + i;
       if (sample_index < figure8_waypoint_count) {
-        params.Xref(0, i) = X_ref_data[3 * sample_index];
-        params.Xref(1, i) = X_ref_data[3 * sample_index + 1];
+        params.Xref(0, i) = trajectory_origin_x + X_ref_data[3 * sample_index];
+        params.Xref(1, i) = trajectory_origin_y + X_ref_data[3 * sample_index + 1];
         params.Xref(2, i) = traj_height;
       } else {
         float landing_alpha = (sample_index - figure8_waypoint_count) /
                               (landing_time * MPC_RATE);
         if (landing_alpha > 1.0f) landing_alpha = 1.0f;
-        params.Xref(0, i) = 0.0f;
-        params.Xref(1, i) = 0.0f;
+        params.Xref(0, i) = trajectory_origin_x;
+        params.Xref(1, i) = trajectory_origin_y;
         params.Xref(2, i) = traj_height + landing_alpha * (landing_height - traj_height);
       }
     }
@@ -492,12 +559,13 @@ static void tinympcControllerTask(void *parameters)
       static uint32_t trace_log_count = 0;
       if (!landing_complete && (trace_log_count++ % 5 == 0)) {
         const int trace_index = (traj_index > 0) ? (traj_index - 1) : 0;
-        DEBUG_PRINT("TRACE: idx=%d pos=(%.3f,%.3f,%.3f) ref=(%.3f,%.3f,%.3f)\n",
+        DEBUG_PRINT("TRACE: idx=%d pos=(%.3f,%.3f,%.3f) ref=(%.3f,%.3f,%.3f) yaw=(%.1f,%.1f)\n",
                     trace_index,
                     (double)state_task.position.x, (double)state_task.position.y,
                     (double)state_task.position.z,
                     (double)params.Xref(0, 0), (double)params.Xref(1, 0),
-                    (double)params.Xref(2, 0));
+                    (double)params.Xref(2, 0),
+                    (double)state_task.attitude.yaw, (double)mpc_yaw_setpoint_task);
       }
       
       if (task_loop_count <= 3) {
@@ -601,7 +669,13 @@ static void tinympcControllerTask(void *parameters)
                     (unsigned long)uxTaskGetStackHighWaterMark(NULL));
       }
 
-      mpc_setpoint_task = problem.x.col(NHORIZON-1);
+      // While turning to the initial course, command an exact position hold;
+      // do not let model transients from a large yaw change move the drone.
+      if (!yaw_alignment_complete) {
+        mpc_setpoint_task = Xref_origin;
+      } else {
+        mpc_setpoint_task = problem.x.col(NHORIZON-1);
+      }
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("setpoint: x=%.2f z=%.2f\n", (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2));
@@ -613,6 +687,7 @@ static void tinympcControllerTask(void *parameters)
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
       memcpy(&mpc_setpoint, &mpc_setpoint_task, sizeof(tiny_VectorNx));
+      mpc_yaw_setpoint = mpc_yaw_setpoint_task;
       memcpy(&init_vel_z, &problem.x.col(0)(8), sizeof(float));
       mpc_has_run = true; // Mark that MPC has computed at least once
       xSemaphoreGive(dataMutex);
@@ -648,18 +723,36 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   if (controller_reactivated) {
     controller_activate_tick = tick;
     mpc_has_run = false;
+
+    if (!trajectory_frame_initialized) {
+      trajectory_origin_x = state->position.x;
+      trajectory_origin_y = state->position.y;
+      Xref_origin(0) = trajectory_origin_x;
+      Xref_origin(1) = trajectory_origin_y;
+      Xref_end(0) = trajectory_origin_x;
+      Xref_end(1) = trajectory_origin_y;
+      params.Xref = Xref_origin.replicate<1, NHORIZON>();
+      obs_centers[0] << trajectory_origin_x, trajectory_origin_y + 0.92f, traj_height;
+      obs_centers[1] << trajectory_origin_x, trajectory_origin_y - 0.92f, traj_height;
+      trajectory_frame_initialized = true;
+      DEBUG_PRINT("FIG8 frame: origin=(%.2f,%.2f), initial yaw=%.1f deg\n",
+                  (double)trajectory_origin_x, (double)trajectory_origin_y,
+                  (double)figure8HeadingDegrees(0));
+    }
+
     // Initialize to current state to avoid a bad setpoint on first switch
     mpc_setpoint = tiny_VectorNx::Zero();
     mpc_setpoint(0) = state->position.x;
     mpc_setpoint(1) = state->position.y;
     mpc_setpoint(2) = state->position.z;
-    DEBUG_PRINT("OOT activated at z=%.2f\n", (double)state->position.z);
+    mpc_yaw_setpoint = state->attitude.yaw;
+    DEBUG_PRINT("OOT activated at z=%.2f yaw=%.1f\n",
+                (double)state->position.z, (double)state->attitude.yaw);
   }
   last_controller_tick = tick;
 
   if (RATE_DO_EXECUTE(LOWLEVEL_RATE, tick))
   {
-    mpc_setpoint_pid.mode.yaw = modeAbs;
     mpc_setpoint_pid.mode.x = modeAbs;
     mpc_setpoint_pid.mode.y = modeAbs;
     mpc_setpoint_pid.mode.z = modeAbs;
@@ -668,12 +761,30 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     const bool hold_output =
         (!mpc_has_run) || ((tick - controller_activate_tick) < M2T(200));
     if (!hold_output) {
+      if (!yaw_alignment_complete) {
+        // Use the stock PID's yaw-rate mode to turn safely toward the first
+        // tangent while XY is held. Avoid a single 135-degree absolute step.
+        float yaw_rate = wrap_degrees(mpc_yaw_setpoint - state->attitude.yaw);
+        if (yaw_rate > yaw_alignment_max_rate_deg_s) {
+          yaw_rate = yaw_alignment_max_rate_deg_s;
+        } else if (yaw_rate < -yaw_alignment_max_rate_deg_s) {
+          yaw_rate = -yaw_alignment_max_rate_deg_s;
+        }
+        mpc_setpoint_pid.mode.yaw = modeVelocity;
+        mpc_setpoint_pid.attitudeRate.yaw = yaw_rate;
+      } else {
+        // Same cascade as the working vision branch: TinyMPC supplies XYZ;
+        // the stock Crazyflie PID tracks the face-forward absolute heading.
+        mpc_setpoint_pid.mode.yaw = modeAbs;
+        mpc_setpoint_pid.attitude.yaw = mpc_yaw_setpoint;
+      }
+
       mpc_setpoint_pid.position.x = mpc_setpoint(0);
       mpc_setpoint_pid.position.y = mpc_setpoint(1);
       mpc_setpoint_pid.position.z = mpc_setpoint(2);
-      mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
     } else {
       // Hold current position until MPC is ready
+      mpc_setpoint_pid.mode.yaw = modeAbs;
       mpc_setpoint_pid.position.x = state->position.x;
       mpc_setpoint_pid.position.y = state->position.y;
       mpc_setpoint_pid.position.z = state->position.z;

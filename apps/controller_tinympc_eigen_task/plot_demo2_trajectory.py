@@ -65,19 +65,25 @@ def load_reference(header: Path) -> np.ndarray:
     return points[:FIGURE8_WAYPOINTS, :2]
 
 
-def load_trace(log_file: Path) -> np.ndarray:
+def load_trace(log_file: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     pattern = re.compile(
-        r"TRACE:\s+idx=\d+\s+pos=\("
+        r"TRACE:\s+idx=(\d+)\s+pos=\("
+        r"([-+\d.eE]+),([-+\d.eE]+),([-+\d.eE]+)\)\s+ref=\("
         r"([-+\d.eE]+),([-+\d.eE]+),([-+\d.eE]+)\)"
     )
-    points = []
+    indices = []
+    positions = []
+    references = []
     for line in log_file.read_text(encoding="utf-8").splitlines():
         match = pattern.search(line)
         if match is not None:
-            points.append(tuple(float(value) for value in match.groups()))
-    if not points:
+            values = match.groups()
+            indices.append(int(values[0]))
+            positions.append(tuple(float(value) for value in values[1:4]))
+            references.append(tuple(float(value) for value in values[4:7]))
+    if not positions:
         raise RuntimeError(f"No TRACE positions found in {log_file}")
-    return np.asarray(points)
+    return np.asarray(indices), np.asarray(positions), np.asarray(references)
 
 
 def add_direction_arrow(ax: plt.Axes, path: np.ndarray, index: int) -> None:
@@ -105,9 +111,20 @@ def main() -> None:
 
     reference = load_reference(args.header)
     if args.log is not None:
-        observed_segments = (load_trace(args.log)[:, :2],)
-        actual_label = "Actual path from 10 Hz TRACE log"
-        trace_description = f"Orange: {len(observed_segments[0])} measured samples from {args.log.name}"
+        trace_indices, trace_positions, trace_references = load_trace(args.log)
+        expected_local = np.zeros((len(trace_indices), 2))
+        figure8_mask = trace_indices < FIGURE8_WAYPOINTS
+        expected_local[figure8_mask] = reference[trace_indices[figure8_mask]]
+        # TRACE references are in the activation/world frame. Subtract the
+        # median inferred origin so the path and hard-coded obstacle geometry
+        # are compared in the trajectory's local frame.
+        trajectory_origin = np.median(trace_references[:, :2] - expected_local, axis=0)
+        observed_segments = (trace_positions[:, :2] - trajectory_origin,)
+        actual_label = "Onboard Kalman-estimated path (10 Hz TRACE)"
+        trace_description = (
+            f"Orange: {len(observed_segments[0])} onboard-estimated samples from {args.log.name}; "
+            f"activation origin=({trajectory_origin[0]:.3f}, {trajectory_origin[1]:.3f}) m"
+        )
     else:
         observed_segments = (OBSERVED_TOP, OBSERVED_BOTTOM)
         actual_label = "Previous actual path samples (partial)"
@@ -204,7 +221,7 @@ def main() -> None:
     for arrow_index in (55, 260, 500, 705):
         add_direction_arrow(ax, reference, arrow_index)
 
-    ax.set_title("demo-2: Reference versus measured flight path", fontsize=14)
+    ax.set_title("demo-2: Reference versus onboard-estimated flight path", fontsize=14)
     ax.set_xlabel("x position [m]")
     ax.set_ylabel("y position [m]")
     ax.set_aspect("equal", adjustable="box")
