@@ -27,15 +27,26 @@
 #define FLOW_OBS_CANDIDATE_RADIUS_M 0.25f
 #define FLOW_OBS_CYL_ALPHA 0.20f
 #define FLOW_OBS_CYL_CONF_UP 0.20f
-#define FLOW_OBS_CYL_CONF_DOWN 0.04f
+#define FLOW_OBS_CYL_CONF_DOWN 0.01f
 #define FLOW_OBS_CYL_VALID_CONF 0.50f
+#define FLOW_OBS_CYL_VALID_ACCEPTS 5
 #define FLOW_OBS_CYL_GATE_CONF 0.35f
-#define FLOW_OBS_CYL_GATE_BASE_M 0.45f
-#define FLOW_OBS_CYL_GATE_RANGE_FRAC 0.50f
+#define FLOW_OBS_CYL_GATE_BASE_M 0.25f
+#define FLOW_OBS_CYL_GATE_RANGE_FRAC 0.20f
+#define FLOW_OBS_CYL_GATE_MAX_M 0.50f
 #define FLOW_OBS_CYL_COV_ALPHA 0.15f
 #define FLOW_OBS_CYL_COV_INIT_M2 0.04f
 #define FLOW_OBS_CYL_COV_INFLATE_M2 0.002f
 #define FLOW_OBS_CYL_COV_MAX_M2 4.0f
+#define FLOW_OBS_MAP_CELLS 16
+#define FLOW_OBS_MAP_DECAY 0.999f
+#define FLOW_OBS_MAP_STALE_DECAY 0.995f
+#define FLOW_OBS_MAP_MIN_EVIDENCE 0.03f
+#define FLOW_OBS_MAP_VOTE 0.18f
+#define FLOW_OBS_MAP_MERGE_RADIUS_M 1.10f
+#define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.90f
+#define FLOW_OBS_MAP_VALID_EVIDENCE 0.35f
+#define FLOW_OBS_MAP_CELL_SIGMA_M2 0.01f
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
@@ -83,19 +94,175 @@ static float g_cylWorldY = 0.0f;
 static float g_cylRadius = FLOW_OBS_CANDIDATE_RADIUS_M;
 static float g_cylReject = 0.0f;
 static float g_cylInnov = 0.0f;
+static uint8_t g_cylAccepts = 0;
 static float g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
 static float g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
 static float g_cylCovXY = 0.0f;
+static uint32_t g_lastDepthSample = 0;
+static float g_mapX[FLOW_OBS_MAP_CELLS] = {0};
+static float g_mapY[FLOW_OBS_MAP_CELLS] = {0};
+static float g_mapEvidence[FLOW_OBS_MAP_CELLS] = {0};
+static uint8_t g_mapHits[FLOW_OBS_MAP_CELLS] = {0};
+static float g_mapPeak = 0.0f;
+static uint8_t g_mapActive = 0;
+static uint8_t g_mapBestIdx = 0;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
-static void flowObstacleDecayCylinder(void) {
-  g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
-  if (g_cylConf < 0.0f) {
-    g_cylConf = 0.0f;
+static void flowObstacleDecayMap(float decay) {
+  g_mapActive = 0;
+  g_mapPeak = 0.0f;
+  g_mapBestIdx = 0;
+  for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
+    g_mapEvidence[i] *= decay;
+    if (g_mapEvidence[i] < FLOW_OBS_MAP_MIN_EVIDENCE) {
+      g_mapEvidence[i] = 0.0f;
+      g_mapHits[i] = 0;
+      continue;
+    }
+    g_mapActive++;
+    if (g_mapEvidence[i] > g_mapPeak) {
+      g_mapPeak = g_mapEvidence[i];
+      g_mapBestIdx = i;
+    }
   }
+}
+
+static void flowObstacleVoteMap(float wx, float wy, float weight) {
+  uint8_t weakest_idx = 0;
+  float weakest_ev = g_mapEvidence[0];
+  bool merged = false;
+  const float merge_r2 = FLOW_OBS_MAP_MERGE_RADIUS_M * FLOW_OBS_MAP_MERGE_RADIUS_M;
+
+  for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
+    if (g_mapEvidence[i] < weakest_ev) {
+      weakest_ev = g_mapEvidence[i];
+      weakest_idx = i;
+    }
+    if (g_mapEvidence[i] <= 0.0f) {
+      continue;
+    }
+    const float dx = wx - g_mapX[i];
+    const float dy = wy - g_mapY[i];
+    const float d2 = dx * dx + dy * dy;
+    if (d2 <= merge_r2) {
+      const float proximity = 1.0f - d2 / merge_r2;
+      const float vote = FLOW_OBS_MAP_VOTE * weight * proximity;
+      const float alpha = 0.12f * weight * proximity;
+      g_mapX[i] += alpha * (wx - g_mapX[i]);
+      g_mapY[i] += alpha * (wy - g_mapY[i]);
+      g_mapEvidence[i] += vote;
+      if (g_mapEvidence[i] > 1.0f) {
+        g_mapEvidence[i] = 1.0f;
+      }
+      if (g_mapHits[i] < 255) {
+        g_mapHits[i]++;
+      }
+      merged = true;
+    }
+  }
+
+  if (!merged) {
+    g_mapX[weakest_idx] = wx;
+    g_mapY[weakest_idx] = wy;
+    g_mapEvidence[weakest_idx] = FLOW_OBS_MAP_VOTE * weight;
+    g_mapHits[weakest_idx] = 1;
+  }
+}
+
+static void flowObstacleExtractCylinder(float world_x_m,
+                                        float world_y_m,
+                                        float yaw_rad) {
+  flowObstacleDecayMap(1.0f);
+
+  if (g_mapPeak < FLOW_OBS_MAP_VALID_EVIDENCE) {
+    g_cylConf = g_mapPeak;
+    g_cylValid = 0.0f;
+    g_cylAge += 1.0f;
+    return;
+  }
+
+  const float best_x = g_mapX[g_mapBestIdx];
+  const float best_y = g_mapY[g_mapBestIdx];
+  const float extract_r2 = FLOW_OBS_MAP_EXTRACT_RADIUS_M * FLOW_OBS_MAP_EXTRACT_RADIUS_M;
+  float w_sum = 0.0f;
+  float x_sum = 0.0f;
+  float y_sum = 0.0f;
+  uint8_t support = 0;
+
+  for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
+    if (g_mapEvidence[i] <= 0.0f) {
+      continue;
+    }
+    const float dx = g_mapX[i] - best_x;
+    const float dy = g_mapY[i] - best_y;
+    if (dx * dx + dy * dy > extract_r2) {
+      continue;
+    }
+    const float w = g_mapEvidence[i];
+    w_sum += w;
+    x_sum += w * g_mapX[i];
+    y_sum += w * g_mapY[i];
+    support++;
+  }
+
+  if (w_sum <= 1.0e-3f || support == 0) {
+    g_cylValid = 0.0f;
+    return;
+  }
+
+  const float new_wx = x_sum / w_sum;
+  const float new_wy = y_sum / w_sum;
+  const float old_wx = g_cylWorldX;
+  const float old_wy = g_cylWorldY;
+  g_cylInnov = sqrtf((new_wx - old_wx) * (new_wx - old_wx) +
+                     (new_wy - old_wy) * (new_wy - old_wy));
+  g_cylWorldX = new_wx;
+  g_cylWorldY = new_wy;
+
+  float var_x = FLOW_OBS_MAP_CELL_SIGMA_M2;
+  float var_y = FLOW_OBS_MAP_CELL_SIGMA_M2;
+  float cov_xy = 0.0f;
+  for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
+    if (g_mapEvidence[i] <= 0.0f) {
+      continue;
+    }
+    const float dx_best = g_mapX[i] - best_x;
+    const float dy_best = g_mapY[i] - best_y;
+    if (dx_best * dx_best + dy_best * dy_best > extract_r2) {
+      continue;
+    }
+    const float dx = g_mapX[i] - g_cylWorldX;
+    const float dy = g_mapY[i] - g_cylWorldY;
+    const float w = g_mapEvidence[i] / w_sum;
+    var_x += w * dx * dx;
+    var_y += w * dy * dy;
+    cov_xy += w * dx * dy;
+  }
+  g_cylVarX = var_x;
+  g_cylVarY = var_y;
+  g_cylCovXY = cov_xy;
+
+  const float yaw_c = cosf(yaw_rad);
+  const float yaw_s = sinf(yaw_rad);
+  const float dx_body = g_cylWorldX - world_x_m;
+  const float dy_body = g_cylWorldY - world_y_m;
+  g_cylBodyX = yaw_c * dx_body + yaw_s * dy_body;
+  g_cylBodyY = -yaw_s * dx_body + yaw_c * dy_body;
+  g_cylConf = g_mapPeak;
+  g_cylAccepts = g_mapHits[g_mapBestIdx];
+  g_cylAge = 0.0f;
+  g_cylReject = 0.0f;
+  g_cylValid = (g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
+                g_cylAccepts >= FLOW_OBS_CYL_VALID_ACCEPTS) ? 1.0f : 0.0f;
+}
+
+static void flowObstacleDecayCylinder(float world_x_m,
+                                      float world_y_m,
+                                      float yaw_rad) {
+  flowObstacleDecayMap(FLOW_OBS_MAP_STALE_DECAY);
+  flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
   g_cylAge += 1.0f;
-  g_cylInnov = 0.0f;
   g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
   g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
   if (g_cylVarX > FLOW_OBS_CYL_COV_MAX_M2) {
@@ -104,7 +271,8 @@ static void flowObstacleDecayCylinder(void) {
   if (g_cylVarY > FLOW_OBS_CYL_COV_MAX_M2) {
     g_cylVarY = FLOW_OBS_CYL_COV_MAX_M2;
   }
-  g_cylValid = g_cylConf >= FLOW_OBS_CYL_VALID_CONF ? 1.0f : 0.0f;
+  g_cylValid = (g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
+                g_cylAccepts >= FLOW_OBS_CYL_VALID_ACCEPTS) ? 1.0f : 0.0f;
 }
 
 static void flowObstacleClearFrameDerived(void) {
@@ -175,7 +343,7 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
   uint32_t sample = 0;
   if (!flowObstacleLinkGetLatest(&payload, &age_ms, &sample) || age_ms > 500) {
     flowObstacleClearFrameDerived();
-    flowObstacleDecayCylinder();
+    flowObstacleDecayCylinder(world_x_m, world_y_m, yaw_rad);
     return;
   }
 
@@ -339,55 +507,18 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
 
-  if (obs_fresh && g_obsValid > 0.5f) {
-    const float dx = g_obsBodyX - g_cylBodyX;
-    const float dy = g_obsBodyY - g_cylBodyY;
-    g_cylInnov = sqrtf(dx * dx + dy * dy);
-    const float gate = FLOW_OBS_CYL_GATE_BASE_M +
-                       FLOW_OBS_CYL_GATE_RANGE_FRAC * g_cylBodyX;
-    const bool accept_obs = g_cylConf < FLOW_OBS_CYL_GATE_CONF ||
-                            g_cylInnov <= gate;
-
-    if (accept_obs && g_cylConf <= 0.0f) {
-      g_cylBodyX = g_obsBodyX;
-      g_cylBodyY = g_obsBodyY;
-      g_cylWorldX = g_obsWorldX;
-      g_cylWorldY = g_obsWorldY;
-      g_cylReject = 0.0f;
-      g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
-      g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
-      g_cylCovXY = 0.0f;
-    } else if (accept_obs) {
-      g_cylBodyX += FLOW_OBS_CYL_ALPHA * (g_obsBodyX - g_cylBodyX);
-      g_cylBodyY += FLOW_OBS_CYL_ALPHA * (g_obsBodyY - g_cylBodyY);
-      g_cylWorldX += FLOW_OBS_CYL_ALPHA * (g_obsWorldX - g_cylWorldX);
-      g_cylWorldY += FLOW_OBS_CYL_ALPHA * (g_obsWorldY - g_cylWorldY);
-      g_cylReject = 0.0f;
-
-      const float rx = g_obsBodyX - g_cylBodyX;
-      const float ry = g_obsBodyY - g_cylBodyY;
-      g_cylVarX += FLOW_OBS_CYL_COV_ALPHA * (rx * rx - g_cylVarX);
-      g_cylVarY += FLOW_OBS_CYL_COV_ALPHA * (ry * ry - g_cylVarY);
-      g_cylCovXY += FLOW_OBS_CYL_COV_ALPHA * (rx * ry - g_cylCovXY);
-    } else {
-      g_cylReject += 1.0f;
-      g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
-      g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
-    }
-    if (accept_obs) {
-      g_cylConf += FLOW_OBS_CYL_CONF_UP * (1.0f - g_cylConf);
-      g_cylAge = 0.0f;
-    } else {
-      g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
-      if (g_cylConf < 0.0f) {
-        g_cylConf = 0.0f;
+  if (sample != g_lastDepthSample) {
+    g_lastDepthSample = sample;
+    flowObstacleDecayMap(FLOW_OBS_MAP_DECAY);
+    if (obs_fresh) {
+      float vote_weight = 0.5f + 0.15f * (float)g_obsClusterCount;
+      if (vote_weight > 1.0f) {
+        vote_weight = 1.0f;
       }
-      g_cylAge += 1.0f;
+      flowObstacleVoteMap(g_obsWorldX, g_obsWorldY, vote_weight);
     }
-  } else {
-    flowObstacleDecayCylinder();
   }
-  g_cylValid = g_cylConf >= FLOW_OBS_CYL_VALID_CONF ? 1.0f : 0.0f;
+  flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
 }
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
@@ -569,4 +700,7 @@ LOG_ADD(LOG_FLOAT,  cylInnov,  &g_cylInnov)
 LOG_ADD(LOG_FLOAT,  cylVarX,   &g_cylVarX)
 LOG_ADD(LOG_FLOAT,  cylVarY,   &g_cylVarY)
 LOG_ADD(LOG_FLOAT,  cylCovXY,  &g_cylCovXY)
+LOG_ADD(LOG_FLOAT,  mapPeak,   &g_mapPeak)
+LOG_ADD(LOG_UINT8,  mapActive, &g_mapActive)
+LOG_ADD(LOG_UINT8,  mapBest,   &g_mapBestIdx)
 LOG_GROUP_STOP(flowObsRx)

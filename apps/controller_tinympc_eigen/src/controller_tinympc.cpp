@@ -220,9 +220,12 @@ static GateVisionPacket g_gate_vision;
 // This bypasses the AI-deck ray pipeline for bring-up. The controller assumes a static
 // modeled obstacle in world coordinates and writes one linearized position half-space per
 // horizon knot, matching the demo-2 Eigen-task obstacle-avoidance structure.
-uint8_t obsEnable = 1;       // PARAM: master enable for modeled cylinder constraints
-uint8_t obsLogOnly = 0;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
+uint8_t obsEnable = 0;       // PARAM: master enable for modeled cylinder constraints
+uint8_t obsLogOnly = 1;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
 uint8_t obsUseFlow = 0;      // PARAM: 1 = use AI-deck flow cylinder instead of cx/cy
+uint8_t obsFreezeFlow = 0;   // PARAM: 1 = latch one valid flow cylinder and hold it
+uint8_t obsFreezeClear = 0;  // PARAM: write 1 to clear the latched flow cylinder
+uint32_t obsFreezeAfterMs = 0;// PARAM: wait after OOT activation before latching flow
 float   obsCx = 0.5f;        // PARAM: obstacle center x [m]
 float   obsCy = 0.15f;       // PARAM: obstacle center y [m]
 float   obsCz = 0.5f;        // PARAM: cylinder center z [m]
@@ -250,6 +253,11 @@ float    g_obs_eff_cx = 0.0f;
 float    g_obs_eff_cy = 0.0f;
 float    g_obs_eff_radius = 0.0f;
 float    g_obs_flow_conf = 0.0f;
+uint8_t  g_obs_freeze_valid = 0;
+float    g_obs_freeze_cx = 0.0f;
+float    g_obs_freeze_cy = 0.0f;
+float    g_obs_freeze_radius = 0.0f;
+float    g_obs_freeze_conf = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
 
@@ -786,23 +794,55 @@ static void updateObstacleHalfspace(const state_t *state) {
   g_obs_clearance = 0.0f;
   g_obs_source = 0;
   g_obs_flow_conf = 0.0f;
+  const uint32_t since_activation_ms =
+      (xTaskGetTickCount() - controller_activate_tick) * portTICK_PERIOD_MS;
+
+  if (obsFreezeClear) {
+    g_obs_freeze_valid = 0;
+    g_obs_freeze_cx = 0.0f;
+    g_obs_freeze_cy = 0.0f;
+    g_obs_freeze_radius = 0.0f;
+    g_obs_freeze_conf = 0.0f;
+    obsFreezeClear = 0;
+  }
 
   float cx = obsCx;
   float cy = obsCy;
   float radius = obsRadius;
   if (obsUseFlow) {
-    float flow_cx = 0.0f;
-    float flow_cy = 0.0f;
-    float flow_radius = 0.0f;
-    float flow_conf = 0.0f;
-    if (!flowObstacleLinkGetCylinder(&flow_cx, &flow_cy, &flow_radius, &flow_conf)) {
-      return;
+    if (obsFreezeFlow && g_obs_freeze_valid) {
+      cx = g_obs_freeze_cx;
+      cy = g_obs_freeze_cy;
+      radius = g_obs_freeze_radius;
+      g_obs_source = 2;
+      g_obs_flow_conf = g_obs_freeze_conf;
+    } else {
+      float flow_cx = 0.0f;
+      float flow_cy = 0.0f;
+      float flow_radius = 0.0f;
+      float flow_conf = 0.0f;
+      if (!flowObstacleLinkGetCylinder(&flow_cx, &flow_cy, &flow_radius, &flow_conf)) {
+        return;
+      }
+      if (obsFreezeFlow && since_activation_ms >= obsFreezeAfterMs) {
+        g_obs_freeze_valid = 1;
+        g_obs_freeze_cx = flow_cx;
+        g_obs_freeze_cy = flow_cy;
+        g_obs_freeze_radius = flow_radius;
+        g_obs_freeze_conf = flow_conf;
+        cx = g_obs_freeze_cx;
+        cy = g_obs_freeze_cy;
+        radius = g_obs_freeze_radius;
+        g_obs_source = 2;
+        g_obs_flow_conf = g_obs_freeze_conf;
+      } else {
+      cx = flow_cx;
+      cy = flow_cy;
+      radius = flow_radius;
+      g_obs_source = 1;
+      g_obs_flow_conf = flow_conf;
+      }
     }
-    cx = flow_cx;
-    cy = flow_cy;
-    radius = flow_radius;
-    g_obs_source = 1;
-    g_obs_flow_conf = flow_conf;
   }
   g_obs_eff_cx = cx;
   g_obs_eff_cy = cy;
@@ -816,8 +856,6 @@ static void updateObstacleHalfspace(const state_t *state) {
   g_obs_margin = effective_radius;
   g_obs_clearance = radial_dist0 - effective_radius;
 
-  const uint32_t since_activation_ms =
-      (xTaskGetTickCount() - controller_activate_tick) * portTICK_PERIOD_MS;
   if (!obsEnable || since_activation_ms < obsDelayMs) {
     return;
   }
