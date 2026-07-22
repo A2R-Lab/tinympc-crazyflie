@@ -703,8 +703,12 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
   xSemaphoreGive(dataMutex);
 
-  // Allows mpc task to run again
-  xSemaphoreGive(runTaskSemaphore);
+  // Wake the MPC task only at its actual solve rate. Waking this priority-2
+  // task from every stabilizer iteration keeps its binary semaphore ready and
+  // can starve the priority-1 FreeRTOS timer daemon until the timer queue fills.
+  if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
+    xSemaphoreGive(runTaskSemaphore);
+  }
   
   static uint32_t oot_loop_count = 0;
   oot_loop_count++;
