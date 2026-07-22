@@ -189,8 +189,10 @@ static Eigen::Matrix<tinytype, 3, 1> obs_centers[obstacle_count];
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.30f;
-static float obs_activation_margin = 0.15f;
+static const float obs_physical_radius = 0.18f;
+static const float obs_safety_margin = 0.10f;
+static const float obs_constraint_radius = obs_physical_radius + obs_safety_margin;
+static const float obs_activation_margin = 0.12f;
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -337,6 +339,9 @@ void controllerOutOfTreeInit(void)
 
   obs_centers[0] << 0.0f,  0.92f, traj_height;
   obs_centers[1] << 0.0f, -0.92f, traj_height;
+  DEBUG_PRINT("FIG8 obstacles: physical r=%.2f, constrained r=%.2f, activation r=%.2f\n",
+              (double)obs_physical_radius, (double)obs_constraint_radius,
+              (double)(obs_constraint_radius + obs_activation_margin));
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -481,6 +486,19 @@ static void tinympcControllerTask(void *parameters)
 
       // Get command reference
       UpdateHorizonReference(&setpoint_task);
+
+      // Emit a parseable full-flight trace at 10 Hz. Stop when the landing
+      // reference is complete to avoid flooding the console after touchdown.
+      static uint32_t trace_log_count = 0;
+      if (!landing_complete && (trace_log_count++ % 5 == 0)) {
+        const int trace_index = (traj_index > 0) ? (traj_index - 1) : 0;
+        DEBUG_PRINT("TRACE: idx=%d pos=(%.3f,%.3f,%.3f) ref=(%.3f,%.3f,%.3f)\n",
+                    trace_index,
+                    (double)state_task.position.x, (double)state_task.position.y,
+                    (double)state_task.position.z,
+                    (double)params.Xref(0, 0), (double)params.Xref(1, 0),
+                    (double)params.Xref(2, 0));
+      }
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("ref: (%.2f,%.2f,%.2f)\n",
@@ -503,7 +521,7 @@ static void tinympcControllerTask(void *parameters)
           // Only one state constraint is available per horizon step. The two
           // disks are far apart, so select the closest active one.
           Eigen::Matrix<tinytype, 3, 1> ref = params.Xref.col(i).head(3);
-          float best_dist = r_obs + obs_activation_margin;
+          float best_dist = obs_constraint_radius + obs_activation_margin;
           int best_obstacle = -1;
           for (int obs = 0; obs < obstacle_count; ++obs) {
             const float dist = (ref - obs_centers[obs]).norm();
@@ -517,7 +535,7 @@ static void tinympcControllerTask(void *parameters)
             const float xc_norm = xc.norm();
             a_norm = -xc / xc_norm; // inward normal (for A x <= b)
             params.A_constraints[i].head(3) = a_norm.transpose();
-            q_c = obs_centers[best_obstacle] - r_obs * a_norm;
+            q_c = obs_centers[best_obstacle] - obs_constraint_radius * a_norm;
             params.x_max[i](0) = a_norm.transpose() * q_c;
             cstr_active_count++;
             active_obstacle = best_obstacle;
