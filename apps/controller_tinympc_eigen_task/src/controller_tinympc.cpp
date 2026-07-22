@@ -80,7 +80,7 @@ extern "C"
 // #include "quadrotor_50hz_ref_circle_2_5s.hpp"
 // #include "quadrotor_50hz_line_5s.hpp"
 // #include "quadrotor_50hz_line_8s.hpp"
-#include "quadrotor_50hz_line_9s_xyz.hpp"
+#include "../../controller_tinympc_eigen/src/traj_fig8_single.h"
 
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "MPCTASK"
@@ -153,8 +153,6 @@ static struct tiny_problem problem;
 static tiny_MatrixNxNh problem_x;
 // static float horizon_nh_z;
 static float init_vel_z;
-// static Eigen::Matrix<tinytype, NSTATES, NTOTAL, Eigen::ColMajor> Xref_total;
-static Eigen::Matrix<tinytype, 3, NTOTAL, Eigen::ColMajor> Xref_total;
 static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_origin; // Start position for trajectory
 static Eigen::Matrix<tinytype, NSTATES, 1, Eigen::ColMajor> Xref_end; // End position for trajectory
 static tiny_VectorNu u_lqr;
@@ -165,10 +163,10 @@ static bool enable_traj = true;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
-static float traj_speed = 0.2f; // m/s
-static float traj_dist = 1.0f;  // m
+static const int figure8_waypoint_count = 892; // 892 unique samples, followed by 4 wrap samples
+static_assert((sizeof(X_ref_data) / sizeof(X_ref_data[0])) >= figure8_waypoint_count * 3,
+              "Figure-eight trajectory table is too short");
 static float traj_height = 0.5f;
-static float post_swerve_forward_time = 1.0f; // Continue forward after the swerve
 static float landing_time = 2.5f;             // Controlled descent duration
 static float landing_settle_time = 1.0f;      // Time at landing height before disarming
 static float landing_height = 0.05f;
@@ -185,13 +183,14 @@ static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
 static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
 
-// Static obstacle (disk) parameters for LTV linear constraints
-static Eigen::Matrix<tinytype, 3, 1> obs_center;
+// Two obstacle disks, one at each outer tip of the figure eight.
+static const int obstacle_count = 2;
+static Eigen::Matrix<tinytype, 3, 1> obs_centers[obstacle_count];
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.35f;           // Larger radius for more aggressive avoidance
-static float obs_activation_margin = 0.15f; // Smaller = later/faster swerve
+static float r_obs = 0.30f;
+static float obs_activation_margin = 0.15f;
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -321,10 +320,9 @@ void controllerOutOfTreeInit(void)
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints (1 to use rho corresponding to active constraints)
 
-  // Initialize straight-line reference (generated, not from table)
+  // The figure eight starts and ends at the origin before descending.
   Xref_origin << 0, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-  const float final_x = traj_dist + traj_speed * post_swerve_forward_time;
-  Xref_end << final_x, 0, landing_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  Xref_end << 0, 0, landing_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
 
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
@@ -334,12 +332,11 @@ void controllerOutOfTreeInit(void)
   mpc_has_run = false;
   landing_complete = false;
   traj_index = 0;
-  max_traj_index = (int)((traj_dist / traj_speed + post_swerve_forward_time +
-                          landing_time + landing_settle_time) * MPC_RATE);
+  max_traj_index = figure8_waypoint_count +
+                   (int)((landing_time + landing_settle_time) * MPC_RATE);
 
-  // Static obstacle further along path so swerve happens later
-  // Offset y=0.1 so drone swerves to negative y (left)
-  obs_center << 0.7f, 0.1f, 0.5f;
+  obs_centers[0] << 0.0f,  0.92f, traj_height;
+  obs_centers[1] << 0.0f, -0.92f, traj_height;
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -357,28 +354,25 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
 {
   if (enable_traj)
   {
-    const float dt = 1.0f / MPC_RATE;
-    const float travel_time = traj_dist / traj_speed;
-    const float forward_end_time = travel_time + post_swerve_forward_time;
-    const float final_x = traj_dist + traj_speed * post_swerve_forward_time;
-    const float base_t = traj_index * dt;
     for (int i = 0; i < NHORIZON; ++i) {
-      float t = base_t + i * dt;
-      if (t < forward_end_time) {
-        params.Xref(0, i) = traj_speed * t;
+      const int sample_index = traj_index + i;
+      if (sample_index < figure8_waypoint_count) {
+        params.Xref(0, i) = X_ref_data[3 * sample_index];
+        params.Xref(1, i) = X_ref_data[3 * sample_index + 1];
         params.Xref(2, i) = traj_height;
       } else {
-        float landing_alpha = (t - forward_end_time) / landing_time;
+        float landing_alpha = (sample_index - figure8_waypoint_count) /
+                              (landing_time * MPC_RATE);
         if (landing_alpha > 1.0f) landing_alpha = 1.0f;
-        params.Xref(0, i) = final_x;
+        params.Xref(0, i) = 0.0f;
+        params.Xref(1, i) = 0.0f;
         params.Xref(2, i) = traj_height + landing_alpha * (landing_height - traj_height);
       }
-      params.Xref(1, i) = 0.0f;
     }
 
-    if (base_t >= forward_end_time && enable_obs_constraint) {
+    if (traj_index >= figure8_waypoint_count && enable_obs_constraint) {
       enable_obs_constraint = 0;
-      DEBUG_PRINT("FORWARD DONE: x=%.2f, starting landing\n", (double)final_x);
+      DEBUG_PRINT("FIGURE 8 DONE: starting landing\n");
     }
 
     if (traj_index < max_traj_index) {
@@ -493,11 +487,12 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
-      // Static obstacle avoidance via LTV linear constraints (single disk)
+      // Static obstacle avoidance via LTV linear tangent constraints.
       const bool constraint_hold =
           (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
+      int active_obstacle = -1;
       for (int i = 0; i < NHORIZON; i++)
       {
         params.x_min[i] = tiny_VectorNc::Constant(-1000);
@@ -505,21 +500,33 @@ static void tinympcControllerTask(void *parameters)
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
         if (enable_obs_constraint && !constraint_hold) {
-          // Use reference position to define the tangent half-space
+          // Only one state constraint is available per horizon step. The two
+          // disks are far apart, so select the closest active one.
           Eigen::Matrix<tinytype, 3, 1> ref = params.Xref.col(i).head(3);
-          xc = ref - obs_center; // points from obstacle center to reference
-          float xc_norm = xc.norm();
-          if (xc_norm > 1e-3f && xc_norm < (r_obs + obs_activation_margin)) {
+          float best_dist = r_obs + obs_activation_margin;
+          int best_obstacle = -1;
+          for (int obs = 0; obs < obstacle_count; ++obs) {
+            const float dist = (ref - obs_centers[obs]).norm();
+            if (dist > 1e-3f && dist < best_dist) {
+              best_dist = dist;
+              best_obstacle = obs;
+            }
+          }
+          if (best_obstacle >= 0) {
+            xc = ref - obs_centers[best_obstacle];
+            const float xc_norm = xc.norm();
             a_norm = -xc / xc_norm; // inward normal (for A x <= b)
             params.A_constraints[i].head(3) = a_norm.transpose();
-            q_c = obs_center - r_obs * a_norm;
+            q_c = obs_centers[best_obstacle] - r_obs * a_norm;
             params.x_max[i](0) = a_norm.transpose() * q_c;
             cstr_active_count++;
+            active_obstacle = best_obstacle;
           }
         }
       }
       if (cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
-        DEBUG_PRINT("OBS: %d active, pos=(%.2f,%.2f)\n", cstr_active_count,
+        DEBUG_PRINT("OBS%d: %d active, pos=(%.2f,%.2f)\n", active_obstacle + 1,
+                    cstr_active_count,
                     (double)state_task.position.x, (double)state_task.position.y);
       }
       
