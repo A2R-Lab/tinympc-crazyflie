@@ -31,10 +31,6 @@
 
 #include "Eigen.h"
 
-// TinyMPC headers (C++, must be before extern "C")
-#include "tinympc/admm.hpp"
-#include "tinympc/psd_support.hpp"
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -64,7 +60,8 @@ extern "C"
 
 #include "cpp_compat.h" // needed to compile Cpp to C
 
-// PID controller
+// TinyMPC and PID controllers
+#include "tinympc/admm.hpp"
 #include "controller_pid.h"
 
 // Params
@@ -90,10 +87,8 @@ extern "C"
 #include "debug.h"
 
 // #define MPC_RATE RATE_250_HZ  // control frequency
-// #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
-#define MPC_RATE RATE_25_HZ  // 25Hz gives 40ms period for PSD
+#define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
 // #define MPC_RATE RATE_100_HZ
-//#define MPC_RATE 10
 #define LOWLEVEL_RATE RATE_500_HZ
 
 // Semaphore to signal that we got data from the stabilizer loop to process
@@ -173,7 +168,11 @@ static int max_traj_index = 0;
 static float traj_speed = 0.2f; // m/s
 static float traj_dist = 1.0f;  // m
 static float traj_height = 0.5f;
-static float traj_hold_time = 2.0f; // seconds
+static float post_swerve_forward_time = 1.0f; // Continue forward after the swerve
+static float landing_time = 2.5f;             // Controlled descent duration
+static float landing_settle_time = 1.0f;      // Time at landing height before disarming
+static float landing_height = 0.05f;
+static volatile bool landing_complete = false;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 // static int mpc_steps_taken = 0;
@@ -185,18 +184,14 @@ static struct vec phi; // For converting from the current state estimate's quate
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
 static uint8_t enable_obs_constraint = 1; // Static obstacle constraint enable
-static uint8_t enable_psd = 1; // PSD enabled (runs every 5 ADMM iters)
 
-// Dynamic obstacle (disk) parameters for LTV linear constraints
+// Static obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
-static Eigen::Matrix<tinytype, 3, 1> obs_start;     // Initial obstacle position
-static Eigen::Matrix<tinytype, 3, 1> obs_velocity;  // Obstacle velocity (m/s)
 static Eigen::Matrix<tinytype, 3, 1> xc;
 static Eigen::Matrix<tinytype, 3, 1> a_norm;
 static Eigen::Matrix<tinytype, 3, 1> q_c;
-static float r_obs = 0.35f;           // Obstacle radius
-static float obs_activation_margin = 0.15f; // Constraint activation distance
-static uint64_t obs_start_time = 0;   // Time when obstacle motion started
+static float r_obs = 0.35f;           // Larger radius for more aggressive avoidance
+static float obs_activation_margin = 0.15f; // Smaller = later/faster swerve
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
 {
@@ -328,7 +323,8 @@ void controllerOutOfTreeInit(void)
 
   // Initialize straight-line reference (generated, not from table)
   Xref_origin << 0, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-  Xref_end << traj_dist, 0, traj_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  const float final_x = traj_dist + traj_speed * post_swerve_forward_time;
+  Xref_end << final_x, 0, landing_height, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   params.Xref = Xref_origin.replicate<1, NHORIZON>();
 
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
@@ -336,26 +332,14 @@ void controllerOutOfTreeInit(void)
 
   enable_traj = true;
   mpc_has_run = false;
+  landing_complete = false;
   traj_index = 0;
-  max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
+  max_traj_index = (int)((traj_dist / traj_speed + post_swerve_forward_time +
+                          landing_time + landing_settle_time) * MPC_RATE);
 
-  // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
-  // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
-  obs_start << 0.7f, 0.3f, 0.5f;      // Start position (left side, in drone path)
-  obs_velocity << 0.0f, -0.1f, 0.0f; // Sweeps left-to-right at 0.1 m/s
-  obs_center = obs_start;             // Initial position
-  obs_start_time = 0;                 // Will be set on first MPC solve
-
-  // Initialize PSD constraints (disabled by default, enable via enable_psd flag)
-  problem.en_psd = enable_psd;
-  if (enable_psd) {
-    tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
-    tiny_enable_psd(&problem, &params, rho_psd);
-    // Set PSD obstacle (same as LTV obstacle)
-    tiny_set_psd_obstacle(&problem, obs_center(0), obs_center(1), r_obs);
-    DEBUG_PRINT("PSD enabled with rho_psd=%.1f, obs=(%.2f,%.2f,r=%.2f)\n", 
-                (double)rho_psd, (double)obs_center(0), (double)obs_center(1), (double)r_obs);
-  }
+  // Static obstacle further along path so swerve happens later
+  // Offset y=0.1 so drone swerves to negative y (left)
+  obs_center << 0.7f, 0.1f, 0.5f;
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -375,32 +359,47 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
   {
     const float dt = 1.0f / MPC_RATE;
     const float travel_time = traj_dist / traj_speed;
+    const float forward_end_time = travel_time + post_swerve_forward_time;
+    const float final_x = traj_dist + traj_speed * post_swerve_forward_time;
     const float base_t = traj_index * dt;
     for (int i = 0; i < NHORIZON; ++i) {
       float t = base_t + i * dt;
-      float x = (t < travel_time) ? (traj_speed * t) : traj_dist;
-      params.Xref(0, i) = x;
+      if (t < forward_end_time) {
+        params.Xref(0, i) = traj_speed * t;
+        params.Xref(2, i) = traj_height;
+      } else {
+        float landing_alpha = (t - forward_end_time) / landing_time;
+        if (landing_alpha > 1.0f) landing_alpha = 1.0f;
+        params.Xref(0, i) = final_x;
+        params.Xref(2, i) = traj_height + landing_alpha * (landing_height - traj_height);
+      }
       params.Xref(1, i) = 0.0f;
-      params.Xref(2, i) = traj_height;
+    }
+
+    if (base_t >= forward_end_time && enable_obs_constraint) {
+      enable_obs_constraint = 0;
+      DEBUG_PRINT("FORWARD DONE: x=%.2f, starting landing\n", (double)final_x);
     }
 
     if (traj_index < max_traj_index) {
       traj_index++;
     } else {
-      // Trajectory done - disable trajectory to trigger motor kill
+      // The landing reference has settled near the floor. The low-level loop
+      // will stop the motors only after the measured state confirms touchdown.
       static bool traj_done_msg = false;
       if (!traj_done_msg) {
-        DEBUG_PRINT("TRAJ DONE: idx=%d, max=%d\n", traj_index, max_traj_index);
+        DEBUG_PRINT("LANDING REFERENCE COMPLETE: waiting for touchdown\n");
         traj_done_msg = true;
       }
       enable_traj = false;
       enable_obs_constraint = 0;
+      landing_complete = true;
       params.Xref = Xref_end.replicate<1, NHORIZON>();
     }
   }
   else
   {
-    params.Xref = Xref_origin.replicate<1, NHORIZON>();
+    params.Xref = Xref_end.replicate<1, NHORIZON>();
   }
 }
 
@@ -441,11 +440,6 @@ static void tinympcControllerTask(void *parameters)
     if (nowMs >= nextMpcMs)
     {
       nextMpcMs = nowMs + (1000.0f / MPC_RATE);
-
-      // Skip MPC solve after landing (trajectory done)
-      if (!enable_traj && traj_index >= max_traj_index) {
-        continue;  // Don't solve, just wait
-      }
 
       // Comment out when avoiding dynamic obstacle
       // Uncomment if following reference trajectory
@@ -499,30 +493,11 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
-      // Dynamic obstacle - update position based on elapsed time
-      // Arm sweeps from left (y+) to right (y-) starting when OOT activates
-      if (obs_start_time == 0) {
-        obs_start_time = usecTimestamp();  // Start timer on first solve
-      }
-      float obs_elapsed = (usecTimestamp() - obs_start_time) / 1e6f;
-      obs_center = obs_start + obs_velocity * obs_elapsed;
-      // Clamp obstacle position to reasonable range
-      if (obs_center(1) < -0.4f) obs_center(1) = -0.4f;
-      if (obs_center(1) > 0.4f) obs_center(1) = 0.4f;
-      
-      // Update PSD obstacle position
-      if (enable_psd) {
-        problem.psd_obs_x = obs_center(0);
-        problem.psd_obs_y = obs_center(1);
-      }
-
-      // Dynamic obstacle avoidance via LTV linear constraints
+      // Static obstacle avoidance via LTV linear constraints (single disk)
       const bool constraint_hold =
           (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
-      const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
-      
       for (int i = 0; i < NHORIZON; i++)
       {
         params.x_min[i] = tiny_VectorNc::Constant(-1000);
@@ -530,37 +505,27 @@ static void tinympcControllerTask(void *parameters)
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
         if (enable_obs_constraint && !constraint_hold) {
-          // Predict obstacle position for this horizon step
-          float future_t = obs_elapsed + i * dt_horizon;
-          Eigen::Matrix<tinytype, 3, 1> obs_pred = obs_start + obs_velocity * future_t;
-          if (obs_pred(1) < -0.4f) obs_pred(1) = -0.4f;
-          if (obs_pred(1) > 0.4f) obs_pred(1) = 0.4f;
-          
           // Use reference position to define the tangent half-space
           Eigen::Matrix<tinytype, 3, 1> ref = params.Xref.col(i).head(3);
-          xc = ref - obs_pred; // points from predicted obstacle to reference
+          xc = ref - obs_center; // points from obstacle center to reference
           float xc_norm = xc.norm();
           if (xc_norm > 1e-3f && xc_norm < (r_obs + obs_activation_margin)) {
             a_norm = -xc / xc_norm; // inward normal (for A x <= b)
             params.A_constraints[i].head(3) = a_norm.transpose();
-            q_c = obs_pred - r_obs * a_norm;
+            q_c = obs_center - r_obs * a_norm;
             params.x_max[i](0) = a_norm.transpose() * q_c;
             cstr_active_count++;
           }
         }
       }
       if (cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
-        DEBUG_PRINT("OBS: %d active, obs_y=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
-                    (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
+        DEBUG_PRINT("OBS: %d active, pos=(%.2f,%.2f)\n", cstr_active_count,
+                    (double)state_task.position.x, (double)state_task.position.y);
       }
       
-      // Force cache_level=1 permanently once constraints have been activated
-      // This prevents oscillation when constraint count goes to 0 temporarily
-      static bool constraints_ever_active = false;
+      // Force cache_level=1 when any constraints are active to prevent oscillation
+      // The ADMM solver sets cache_level based on violation, but we want it stable
       if (cstr_active_count > 0) {
-        constraints_ever_active = true;
-      }
-      if (constraints_ever_active) {
         problem.cache_level = 1;
       }
 
@@ -588,7 +553,7 @@ static void tinympcControllerTask(void *parameters)
       //   params.x_max[i](0) = a_norm.transpose() * q_c;
       // }
 
-      // MPC solve (PSD runs every 5 ADMM iterations inside solve_admm)
+      // MPC solve
       problem.iter = 0;
 
       if (task_loop_count <= 3) {
@@ -597,58 +562,14 @@ static void tinympcControllerTask(void *parameters)
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
+        DEBUG_PRINT("MPC solve 1 done, iter=%d\n", problem.iter);
       }
+      // Skip second solve for now to reduce stack usage
+      // vTaskDelay(M2T(1));
+      // solve_admm(&problem, &params);
       mpc_time_us = usecTimestamp() - mpc_start_timestamp;
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC time=%lu us\n", mpc_time_us);
-      }
-
-      // ================================================================
-      // Safety Certificate (Section 3.4 of paper)
-      // Trace gap: Δ = trace(X^(p)) - ||p||² = S(1,1) + S(2,2) - (px² + py²)
-      // Lifted margin: η = S(1,1) + S(2,2) - 2*ox*S(0,1) - 2*oy*S(0,2) + ox² + oy² - r²
-      // Certified if: η ≥ 0 AND |Δ| ≤ η
-      // ================================================================
-      static uint32_t cert_log_cnt = 0;
-      bool certified_k0 = true;
-      float trace_gap_k0 = 0.0f;
-      float eta_min_k0 = 1000.0f;
-      
-      if (enable_psd && enable_obs_constraint) {
-        // Check certificate for k=0 (current step)
-        float px = problem.x(0, 0);
-        float py = problem.x(1, 0);
-        
-        // Get projected slack S from svec representation
-        tiny_MatrixPsd Snew = smat_3x3(problem.Spsd_new.col(0));
-        
-        // Trace gap: Δ = trace(X^(p)) - ||p||²
-        // trace(X^(p)) = S(1,1) + S(2,2)
-        // ||p||² = px² + py²
-        trace_gap_k0 = (Snew(1,1) + Snew(2,2)) - (px*px + py*py);
-        
-        // Lifted margin for obstacle
-        float ox = obs_center(0);
-        float oy = obs_center(1);
-        float r = r_obs;
-        eta_min_k0 = Snew(1,1) + Snew(2,2) - 2.0f*ox*Snew(0,1) - 2.0f*oy*Snew(0,2) + ox*ox + oy*oy - r*r;
-        
-        // Certificate check
-        certified_k0 = (eta_min_k0 >= 0.0f) && (fabsf(trace_gap_k0) <= eta_min_k0);
-        
-        // Log periodically
-        if (cert_log_cnt++ % 50 == 0) {
-          DEBUG_PRINT("CERT: %s Δ=%.3f η=%.3f\n", 
-                      certified_k0 ? "OK" : "FAIL",
-                      (double)trace_gap_k0, (double)eta_min_k0);
-        }
-        
-        // Optional: emergency stop if uncertified (commented out for now)
-        // if (!certified_k0) {
-        //   DEBUG_PRINT("CERT FAIL: Emergency stop!\n");
-        //   enable_traj = false;
-        // }
       }
 
       mpc_setpoint_task = problem.x.col(NHORIZON-1);
@@ -736,12 +657,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     //   // DEBUG_PRINT("x: %.4f\n", setpoint->position.x);
     // }
 
-    // Kill motors if trajectory finished (enable_traj goes false)
-    if (!enable_traj && mpc_has_run) {
-      static bool landed_msg = false;
-      if (!landed_msg) {
-        DEBUG_PRINT("LANDING: traj done, killing motors\n");
-        landed_msg = true;
+    const bool touchdown = landing_complete &&
+                           (state->position.z <= 0.10f) &&
+                           (fabsf(state->velocity.z) <= 0.15f);
+    if (touchdown) {
+      static bool touchdown_msg = false;
+      if (!touchdown_msg) {
+        DEBUG_PRINT("TOUCHDOWN: stopping motors\n");
+        touchdown_msg = true;
       }
       control->thrust = 0;
       control->roll = 0;
