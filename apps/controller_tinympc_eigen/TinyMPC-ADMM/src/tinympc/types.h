@@ -100,6 +100,7 @@ typedef struct {
   int   max_iter;            ///< Maximum number of AL iterations
   int   max_iter_riccati;    ///< Maximum number of Riccati solve iterations
   int   max_iter_ls;         ///< Maximum number of line-search iterations
+  int   iters_check_rho_update; ///< Rho update interval; 0 disables adaptive rho
 
   float tol_abs_prim;        ///< Riccati solve tolerance
   float tol_abs_dual;        ///< Constraint tolerance

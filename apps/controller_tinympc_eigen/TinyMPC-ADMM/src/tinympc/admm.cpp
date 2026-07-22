@@ -71,8 +71,12 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
     /* Update for next primal solve */
     tiny_UpdateConstrainedLinearCost(work);
 
-     // Update rho every 5 iterations
-    if (iter > 1 && iter % 5 == 0) {
+    // Match demo-2 semantics: rho/cache updates are explicitly scheduled. With
+    // max_iter=5 and iters_check_rho_update=10, the solve uses fixed precomputed
+    // caches for the full control step instead of rewriting rho on the final iter.
+    if (work->stgs->iters_check_rho_update > 0 &&
+        iter > 1 &&
+        iter % work->stgs->iters_check_rho_update == 0) {
       RhoBenchmarkResult rho_result;
       
       // Use existing residuals from work->info
@@ -129,6 +133,7 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
   if (work->info->status_val == TINY_UNSOLVED) {
     work->info->status_val = TINY_MAX_ITER_REACHED;
   }
+  work->info->iter = iter - 1;
   if (work->stgs->verbose) PrintSummary(work->info);
   return TINY_NO_ERROR;
 }

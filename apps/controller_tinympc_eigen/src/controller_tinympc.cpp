@@ -111,9 +111,9 @@ void appMain() {
 }
 
 // Macro variables - define locally to avoid dependency issues
-#define DT 0.002f       // dt
+#define DT 0.020f       // dt; matches the demo-2 50 Hz constrained cache
 #define NHORIZON 25     // horizon steps (must match constants.h if used)
-#define MPC_RATE RATE_50_HZ  // control frequency; keep the solve off the watchdog path
+#define MPC_RATE RATE_50_HZ  // demo-2 constrained model/cache rate
 #define LQR_RATE RATE_500_HZ  // control frequency
 
 /* Include trajectory to track */
@@ -180,7 +180,7 @@ static tiny_AdmmWorkspace work;
 
 static bool isInit = false;
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
-static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
+static float u_hover[4] = {0.583f, 0.583f, 0.583f, 0.583f};  // demo-2 cf21bl normalized hover
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
@@ -939,14 +939,14 @@ void controllerOutOfTreeInit(void) {
 
   // Precompute/Cache
   // #include "params_500hz.h"
-  #include "params_100hz.h"  // Original gains (stable)
-  // #include "params_constrained.h"
+  // #include "params_100hz.h"
+  #include "params_constrained.h"  // Demo-2-style 50 Hz constrained cache (rho=63)
 
   // End of Precompute/Cache
 
   tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
   tiny_InitSettings(&stgs);
-  stgs.rho_init = 250.0;  // Original stable rho
+  stgs.rho_init = 63.0f;  // Matches params_constrained.h
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
 
   // Fill in the remaining struct. State buffers are required when obstacle half-spaces
@@ -988,6 +988,7 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;  // Obstacle state constraints are opt-in via obs params.
   stgs.max_iter = 5;        // Match demo-2 hardcoded-obstacle solve depth.
+  stgs.iters_check_rho_update = 10;  // Demo-2: no rho/cache update during 5-iter solve.
   stgs.verbose = 0;
   stgs.check_termination = 0;
   stgs.tol_abs_dual = 1e-3f;
