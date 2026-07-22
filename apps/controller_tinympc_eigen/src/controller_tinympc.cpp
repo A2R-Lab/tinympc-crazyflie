@@ -760,7 +760,8 @@ static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sens
   const float body_vy = -s * state->velocity.x + c * state->velocity.y;
   const float yaw_rate = radians(sensors->gyro.z);
 
-  flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate);
+  flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,
+                              state->position.x, state->position.y, yaw);
 }
 
 static void updateObstacleHalfspace(const state_t *state) {

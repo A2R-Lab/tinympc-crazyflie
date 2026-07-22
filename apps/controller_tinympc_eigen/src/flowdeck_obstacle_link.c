@@ -20,6 +20,11 @@
 #define FLOW_MIN_TRANSLATION_M_S 0.03f
 #define FLOW_MAX_INV_DEPTH_M 8.0f
 #define FLOW_MAX_RANGE_M 10.0f
+#define FLOW_OBS_CANDIDATE_MAX_RANGE_M 3.0f
+#define FLOW_OBS_CANDIDATE_MAX_YAW_RATE_RAD_S 0.6f
+#define FLOW_OBS_CANDIDATE_MIN_SECTORS 2
+#define FLOW_OBS_CANDIDATE_ALPHA 0.35f
+#define FLOW_OBS_CANDIDATE_RADIUS_M 0.25f
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
@@ -35,8 +40,61 @@ static float g_velEff[FLOW_OBS_SECT_MAX] = {0};
 static float g_invDepth[FLOW_OBS_SECT_MAX] = {0};
 static float g_range[FLOW_OBS_SECT_MAX] = {0};
 static float g_valid[FLOW_OBS_SECT_MAX] = {0};
+static float g_bodyX[FLOW_OBS_SECT_MAX] = {0};
+static float g_bodyY[FLOW_OBS_SECT_MAX] = {0};
+static float g_worldX[FLOW_OBS_SECT_MAX] = {0};
+static float g_worldY[FLOW_OBS_SECT_MAX] = {0};
+static float g_nearValid = 0.0f;
+static uint8_t g_nearIdx = 0;
+static float g_nearRange = 0.0f;
+static float g_nearBodyX = 0.0f;
+static float g_nearBodyY = 0.0f;
+static float g_nearWorldX = 0.0f;
+static float g_nearWorldY = 0.0f;
+static float g_obsValid = 0.0f;
+static uint8_t g_obsHits = 0;
+static uint8_t g_obsClusterStart = 0;
+static uint8_t g_obsClusterCount = 0;
+static float g_obsRange = 0.0f;
+static float g_obsBearing = 0.0f;
+static float g_obsBodyX = 0.0f;
+static float g_obsBodyY = 0.0f;
+static float g_obsWorldX = 0.0f;
+static float g_obsWorldY = 0.0f;
+static float g_obsRadius = FLOW_OBS_CANDIDATE_RADIUS_M;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
+
+static void flowObstacleClearDerived(void) {
+  for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
+    g_resFlow[i] = 0.0f;
+    g_velEff[i] = 0.0f;
+    g_invDepth[i] = 0.0f;
+    g_range[i] = 0.0f;
+    g_valid[i] = 0.0f;
+    g_bodyX[i] = 0.0f;
+    g_bodyY[i] = 0.0f;
+    g_worldX[i] = 0.0f;
+    g_worldY[i] = 0.0f;
+  }
+  g_nearValid = 0.0f;
+  g_nearIdx = 0;
+  g_nearRange = 0.0f;
+  g_nearBodyX = 0.0f;
+  g_nearBodyY = 0.0f;
+  g_nearWorldX = 0.0f;
+  g_nearWorldY = 0.0f;
+  g_obsValid = 0.0f;
+  g_obsHits = 0;
+  g_obsClusterStart = 0;
+  g_obsClusterCount = 0;
+  g_obsRange = 0.0f;
+  g_obsBearing = 0.0f;
+  g_obsBodyX = 0.0f;
+  g_obsBodyY = 0.0f;
+  g_obsWorldX = 0.0f;
+  g_obsWorldY = 0.0f;
+}
 
 void flowObstacleLinkInit(void) {
   memset(&g_payload, 0, sizeof(g_payload));
@@ -66,24 +124,32 @@ void flowObstacleLinkNoteCrcErr(void) {
 
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
-                                 float yaw_rate_rad_s) {
+                                 float yaw_rate_rad_s,
+                                 float world_x_m,
+                                 float world_y_m,
+                                 float yaw_rad) {
   flow_obstacle_payload_t payload;
   uint32_t age_ms = 0;
   uint32_t sample = 0;
   if (!flowObstacleLinkGetLatest(&payload, &age_ms, &sample) || age_ms > 500) {
-    for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
-      g_resFlow[i] = 0.0f;
-      g_velEff[i] = 0.0f;
-      g_invDepth[i] = 0.0f;
-      g_range[i] = 0.0f;
-      g_valid[i] = 0.0f;
-    }
+    flowObstacleClearDerived();
     return;
   }
 
   g_bodyVx = body_vx_m_s;
   g_bodyVy = body_vy_m_s;
   g_yawRate = yaw_rate_rad_s;
+  g_nearValid = 0.0f;
+  g_nearIdx = 0;
+  g_nearRange = 0.0f;
+  g_nearBodyX = 0.0f;
+  g_nearBodyY = 0.0f;
+  g_nearWorldX = 0.0f;
+  g_nearWorldY = 0.0f;
+
+  const float yaw_c = cosf(yaw_rad);
+  const float yaw_s = sinf(yaw_rad);
+  uint8_t candidate_ok[FLOW_OBS_SECT_MAX] = {0};
 
   for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
     if (i >= payload.n_sectors || payload.sector[i].confidence < FLOW_MIN_CONFIDENCE) {
@@ -92,6 +158,10 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       g_invDepth[i] = 0.0f;
       g_range[i] = 0.0f;
       g_valid[i] = 0.0f;
+      g_bodyX[i] = 0.0f;
+      g_bodyY[i] = 0.0f;
+      g_worldX[i] = 0.0f;
+      g_worldY[i] = 0.0f;
       continue;
     }
 
@@ -108,6 +178,10 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       g_invDepth[i] = 0.0f;
       g_range[i] = 0.0f;
       g_valid[i] = 0.0f;
+      g_bodyX[i] = 0.0f;
+      g_bodyY[i] = 0.0f;
+      g_worldX[i] = 0.0f;
+      g_worldY[i] = 0.0f;
       continue;
     }
 
@@ -125,6 +199,99 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       g_range[i] = FLOW_MAX_RANGE_M;
     }
     g_valid[i] = 1.0f;
+
+    g_bodyX[i] = g_range[i] * cosf(az);
+    g_bodyY[i] = g_range[i] * sinf(az);
+    g_worldX[i] = world_x_m + yaw_c * g_bodyX[i] - yaw_s * g_bodyY[i];
+    g_worldY[i] = world_y_m + yaw_s * g_bodyX[i] + yaw_c * g_bodyY[i];
+
+    if (g_nearValid == 0.0f || g_range[i] < g_nearRange) {
+      g_nearValid = 1.0f;
+      g_nearIdx = i;
+      g_nearRange = g_range[i];
+      g_nearBodyX = g_bodyX[i];
+      g_nearBodyY = g_bodyY[i];
+      g_nearWorldX = g_worldX[i];
+      g_nearWorldY = g_worldY[i];
+    }
+
+    if (fabsf(yaw_rate_rad_s) < FLOW_OBS_CANDIDATE_MAX_YAW_RATE_RAD_S &&
+        g_range[i] > 0.0f &&
+        g_range[i] < FLOW_OBS_CANDIDATE_MAX_RANGE_M) {
+      candidate_ok[i] = 1;
+    }
+  }
+
+  uint8_t best_start = 0;
+  uint8_t best_count = 0;
+  float best_range_sum = 0.0f;
+  uint8_t start = 0;
+  while (start < FLOW_OBS_SECT_MAX) {
+    while (start < FLOW_OBS_SECT_MAX && !candidate_ok[start]) {
+      start++;
+    }
+    if (start >= FLOW_OBS_SECT_MAX) {
+      break;
+    }
+
+    uint8_t count = 0;
+    float range_sum = 0.0f;
+    while ((uint8_t)(start + count) < FLOW_OBS_SECT_MAX && candidate_ok[start + count]) {
+      range_sum += g_range[start + count];
+      count++;
+    }
+
+    if (count > best_count ||
+        (count == best_count && count > 0 && range_sum < best_range_sum)) {
+      best_start = start;
+      best_count = count;
+      best_range_sum = range_sum;
+    }
+    start += count;
+  }
+
+  g_obsClusterStart = best_start;
+  g_obsClusterCount = best_count;
+
+  if (best_count >= FLOW_OBS_CANDIDATE_MIN_SECTORS) {
+    float weight_sum = 0.0f;
+    float body_x_sum = 0.0f;
+    float body_y_sum = 0.0f;
+    float range_sum = 0.0f;
+    for (uint8_t j = 0; j < best_count; j++) {
+      const uint8_t i = best_start + j;
+      const float weight = payload.sector[i].confidence > 1.0e-3f ?
+                           payload.sector[i].confidence : 1.0e-3f;
+      weight_sum += weight;
+      body_x_sum += weight * g_bodyX[i];
+      body_y_sum += weight * g_bodyY[i];
+      range_sum += g_range[i];
+    }
+
+    const float raw_body_x = body_x_sum / weight_sum;
+    const float raw_body_y = body_y_sum / weight_sum;
+
+    if (g_obsHits == 0) {
+      g_obsBodyX = raw_body_x;
+      g_obsBodyY = raw_body_y;
+    } else {
+      g_obsBodyX += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_x - g_obsBodyX);
+      g_obsBodyY += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_y - g_obsBodyY);
+    }
+
+    if (g_obsHits < 255) {
+      g_obsHits++;
+    }
+    g_obsRange = range_sum / (float)best_count;
+    g_obsBearing = atan2f(g_obsBodyY, g_obsBodyX);
+    g_obsWorldX = world_x_m + yaw_c * g_obsBodyX - yaw_s * g_obsBodyY;
+    g_obsWorldY = world_y_m + yaw_s * g_obsBodyX + yaw_c * g_obsBodyY;
+    g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
+  } else {
+    if (g_obsHits > 0) {
+      g_obsHits--;
+    }
+    g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
 }
 
@@ -236,4 +403,40 @@ LOG_ADD(LOG_FLOAT,  valid5, &g_valid[5])
 LOG_ADD(LOG_FLOAT,  valid6, &g_valid[6])
 LOG_ADD(LOG_FLOAT,  valid7, &g_valid[7])
 LOG_ADD(LOG_FLOAT,  valid8, &g_valid[8])
+LOG_ADD(LOG_FLOAT,  bx0,    &g_bodyX[0])
+LOG_ADD(LOG_FLOAT,  bx1,    &g_bodyX[1])
+LOG_ADD(LOG_FLOAT,  bx2,    &g_bodyX[2])
+LOG_ADD(LOG_FLOAT,  bx3,    &g_bodyX[3])
+LOG_ADD(LOG_FLOAT,  bx4,    &g_bodyX[4])
+LOG_ADD(LOG_FLOAT,  bx5,    &g_bodyX[5])
+LOG_ADD(LOG_FLOAT,  bx6,    &g_bodyX[6])
+LOG_ADD(LOG_FLOAT,  bx7,    &g_bodyX[7])
+LOG_ADD(LOG_FLOAT,  bx8,    &g_bodyX[8])
+LOG_ADD(LOG_FLOAT,  by0,    &g_bodyY[0])
+LOG_ADD(LOG_FLOAT,  by1,    &g_bodyY[1])
+LOG_ADD(LOG_FLOAT,  by2,    &g_bodyY[2])
+LOG_ADD(LOG_FLOAT,  by3,    &g_bodyY[3])
+LOG_ADD(LOG_FLOAT,  by4,    &g_bodyY[4])
+LOG_ADD(LOG_FLOAT,  by5,    &g_bodyY[5])
+LOG_ADD(LOG_FLOAT,  by6,    &g_bodyY[6])
+LOG_ADD(LOG_FLOAT,  by7,    &g_bodyY[7])
+LOG_ADD(LOG_FLOAT,  by8,    &g_bodyY[8])
+LOG_ADD(LOG_FLOAT,  nearValid, &g_nearValid)
+LOG_ADD(LOG_UINT8,  nearIdx,   &g_nearIdx)
+LOG_ADD(LOG_FLOAT,  nearRange, &g_nearRange)
+LOG_ADD(LOG_FLOAT,  nearBx,    &g_nearBodyX)
+LOG_ADD(LOG_FLOAT,  nearBy,    &g_nearBodyY)
+LOG_ADD(LOG_FLOAT,  nearWx,    &g_nearWorldX)
+LOG_ADD(LOG_FLOAT,  nearWy,    &g_nearWorldY)
+LOG_ADD(LOG_FLOAT,  obsValid,  &g_obsValid)
+LOG_ADD(LOG_UINT8,  obsHits,   &g_obsHits)
+LOG_ADD(LOG_UINT8,  obsStart,  &g_obsClusterStart)
+LOG_ADD(LOG_UINT8,  obsCount,  &g_obsClusterCount)
+LOG_ADD(LOG_FLOAT,  obsRange,  &g_obsRange)
+LOG_ADD(LOG_FLOAT,  obsBear,   &g_obsBearing)
+LOG_ADD(LOG_FLOAT,  obsBx,     &g_obsBodyX)
+LOG_ADD(LOG_FLOAT,  obsBy,     &g_obsBodyY)
+LOG_ADD(LOG_FLOAT,  obsWx,     &g_obsWorldX)
+LOG_ADD(LOG_FLOAT,  obsWy,     &g_obsWorldY)
+LOG_ADD(LOG_FLOAT,  obsRadius, &g_obsRadius)
 LOG_GROUP_STOP(flowObsRx)

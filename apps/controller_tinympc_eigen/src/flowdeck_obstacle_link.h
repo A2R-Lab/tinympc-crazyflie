@@ -45,7 +45,10 @@ void flowObstacleLinkNoteBadRx(void);
 void flowObstacleLinkNoteCrcErr(void);
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
-                                 float yaw_rate_rad_s);
+                                 float yaw_rate_rad_s,
+                                 float world_x_m,
+                                 float world_y_m,
+                                 float yaw_rad);
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
                                uint32_t *out_age_ms,
