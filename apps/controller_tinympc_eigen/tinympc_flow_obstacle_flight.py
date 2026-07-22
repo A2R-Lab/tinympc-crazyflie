@@ -294,7 +294,7 @@ def main():
             set_param(cf, "obs.kStart", args.obs_k_start)
             freeze_after_s = args.freeze_after_s
             if freeze_after_s is None:
-                freeze_after_s = args.peer_s
+                freeze_after_s = 0.8 * args.peer_s
             set_param(cf, "obs.frzAfter", int(freeze_after_s * 1000.0))
 
             if not args.skip_flow_warmup:
