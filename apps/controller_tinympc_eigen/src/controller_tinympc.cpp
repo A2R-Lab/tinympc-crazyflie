@@ -750,6 +750,19 @@ static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   gate_pnp_project(corners, age_ms, &ds, &g_gate_vision);
 }
 
+static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sensors) {
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float yaw = atan2f(2.0f * (q->w * q->z + q->x * q->y),
+                          1.0f - 2.0f * (q->y * q->y + q->z * q->z));
+  const float c = cosf(yaw);
+  const float s = sinf(yaw);
+  const float body_vx = c * state->velocity.x + s * state->velocity.y;
+  const float body_vy = -s * state->velocity.x + c * state->velocity.y;
+  const float yaw_rate = radians(sensors->gyro.z);
+
+  flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate);
+}
+
 static void updateObstacleHalfspace(const state_t *state) {
   tiny_ClearPositionHalfspaces(&work);
   stgs.en_cstr_states = 0;
@@ -955,6 +968,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   // Perception only -- does not affect control.
   if (RATE_DO_EXECUTE(RATE_50_HZ, tick)) {
     pollGateVision(state, sensors);
+    pollFlowObstacleDepth(state, sensors);
     // Stage 4: turn a sighting of a surveyed gate into an absolute position fix for the
     // EKF, weighted by whether the trajectory says that gate should be in shot right now.
     // Corrects Flow-deck drift; the control path below is untouched by it.

@@ -13,13 +13,13 @@ extern "C" {
 #endif
 
 #define FLOW_OBS_SECT_MAX 9
-#define FLOW_OBS_MSG_HEADER "\x90\x19\x8\x34"
+#define FLOW_OBS_MSG_HEADER "\x90\x19\x8\x35"
 #define FLOW_OBS_HEADER_LEN 4
 
 typedef struct __attribute__((packed)) {
   float azimuth_rad;
-  float inv_depth;
-  float ttc_s;
+  float flow_x_rad_s;
+  float flow_y_rad_s;
   float confidence;
 } flow_obstacle_sector_t;
 
@@ -43,6 +43,9 @@ void flowObstacleLinkInit(void);
 void flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg);
 void flowObstacleLinkNoteBadRx(void);
 void flowObstacleLinkNoteCrcErr(void);
+void flowObstacleLinkUpdateDepth(float body_vx_m_s,
+                                 float body_vy_m_s,
+                                 float yaw_rate_rad_s);
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
                                uint32_t *out_age_ms,
