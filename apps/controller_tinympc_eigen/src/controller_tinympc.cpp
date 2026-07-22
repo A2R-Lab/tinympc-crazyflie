@@ -44,6 +44,8 @@ extern "C" {
 #include "config.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
+#include "static_mem.h"
 
 #include "controller.h"
 #include "controller_pid.h"   // stock PID cascade -- the cascade output feeds this
@@ -62,7 +64,9 @@ extern "C" {
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
 #include "tinympc/tinympc.h"
-#define TINYMPC_TASK_STACKSIZE        (3 * configMINIMAL_STACK_SIZE)
+#define TINYMPC_TASK_STACKSIZE        (4 * configMINIMAL_STACK_SIZE)
+#define TINYMPC_TASK_NAME             "TINYMPC"
+#define TINYMPC_TASK_PRI              2
 
 // Rodriguez parameters conversion function (needed for old firmware compatibility)
 static inline struct vec quat2rp(struct quat q) {
@@ -109,7 +113,7 @@ void appMain() {
 // Macro variables - define locally to avoid dependency issues
 #define DT 0.002f       // dt
 #define NHORIZON 25     // horizon steps (must match constants.h if used)
-#define MPC_RATE RATE_100_HZ  // control frequency
+#define MPC_RATE RATE_50_HZ  // control frequency; keep the solve off the watchdog path
 #define LQR_RATE RATE_500_HZ  // control frequency
 
 /* Include trajectory to track */
@@ -174,9 +178,7 @@ static tiny_AdmmInfo info;
 static tiny_AdmmSolution soln;
 static tiny_AdmmWorkspace work;
 
-// Helper variables
-static uint64_t startTimestamp;
-// static bool isInit = false;  // fix for tracking problem - UNUSED, commented out
+static bool isInit = false;
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
 static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
 // static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
@@ -206,6 +208,20 @@ static bool  mpc_has_run = false;          // hold current pose until the first 
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 static const bool enable_pid_face_forward_yaw = true;
+
+// Demo-2 watchdog fix: run TinyMPC in its own lower-priority task. The stabilizer loop
+// only snapshots inputs, wakes this task at MPC_RATE, and feeds the latest MPC setpoint
+// through the stock PID at 500 Hz.
+static SemaphoreHandle_t runTaskSemaphore = NULL;
+static SemaphoreHandle_t dataMutex = NULL;
+static StaticSemaphore_t dataMutexBuffer;
+static setpoint_t setpoint_data;
+static sensorData_t sensors_data;
+static state_t state_data;
+static setpoint_t mpc_setpoint_data;
+static bool mpc_reset_requested = false;
+static void tinympcControllerTask(void *parameters);
+STATIC_MEM_TASK_ALLOC(tinympcControllerTask, TINYMPC_TASK_STACKSIZE);
 // Let cfclient command yaw live (Parameters tab, group visYaw). useRef=1 overrides the
 // heading with yawRefDeg; non-static so the C param file links against them.
 uint8_t yawUseRef = 0;      // PARAM: 1 = command heading from yawRefDeg below
@@ -652,7 +668,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       circuitPoint(circ_phase, P, T);
       float Tn = sqrtf(T[0]*T[0] + T[1]*T[1] + T[2]*T[2]);
       if (Tn < 1e-6f) Tn = 1e-6f;
-      circ_phase += circSpeed * (1.0f / 100.0f) / Tn;   // advance ~const speed (dt=1/MPC_RATE)
+      circ_phase += circSpeed * (1.0f / (float)MPC_RATE) / Tn;   // advance ~const speed
       while (circ_phase >= 2.0f * M_PI_F) circ_phase -= 2.0f * M_PI_F;
       xg(0) = P[0]; xg(1) = P[1]; xg(2) = P[2];
       xg(6) = circSpeed * T[0] / Tn; xg(7) = circSpeed * T[1] / Tn; xg(8) = circSpeed * T[2] / Tn;
@@ -996,6 +1012,21 @@ void controllerOutOfTreeInit(void) {
     s_gate_link_init = true;
   }
   q_ref0 = qeye();  // level reference until the first updateHorizonReference
+  memset(&mpc_setpoint_data, 0, sizeof(mpc_setpoint_data));
+  mpc_setpoint_data.mode.x   = modeAbs;
+  mpc_setpoint_data.mode.y   = modeAbs;
+  mpc_setpoint_data.mode.z   = modeAbs;
+  mpc_setpoint_data.mode.yaw = modeAbs;
+
+  static bool s_mpc_task_init = false;
+  if (!s_mpc_task_init) {
+    runTaskSemaphore = xSemaphoreCreateBinary();
+    dataMutex = xSemaphoreCreateMutexStatic(&dataMutexBuffer);
+    STATIC_MEM_TASK_CREATE(tinympcControllerTask, tinympcControllerTask,
+                           TINYMPC_TASK_NAME, NULL, TINYMPC_TASK_PRI);
+    s_mpc_task_init = true;
+  }
+  isInit = true;
 
   if (en_traj) {
     DEBUG_PRINT("Stored trajectory enabled\n");
@@ -1009,86 +1040,144 @@ bool controllerOutOfTreeTest() {
   return true;
 }
 
-void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick) {
-  // Get current time
-  startTimestamp = usecTimestamp();
+static void tinympcControllerTask(void *parameters) {
+  (void)parameters;
 
-  /* Get current state (initial state for MPC) */
-  // delta_x = x - x_bar; x_bar = 0
-  // Positon error, [m]
-  updateInitialState(sensors, state);
+  while (true) {
+    xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
 
-  const bool controller_reactivated =
-      (last_controller_tick == 0) || ((tick - last_controller_tick) > M2T(200));
-  if (controller_reactivated) {
-    controller_activate_tick = tick;
-    mpc_has_run = false;
-    resetMpcWarmStart();
-    DEBUG_PRINT("OOT activated: hold pos=(%.2f,%.2f,%.2f)\n",
-                (double)state->position.x,
-                (double)state->position.y,
-                (double)state->position.z);
-  }
-  last_controller_tick = tick;
+    setpoint_t setpoint_task;
+    sensorData_t sensors_task;
+    state_t state_task;
+    bool reset_requested = false;
 
-  // Stage 1: gate perception at 50 Hz. Corners arrive slower than the control loop, so
-  // projecting every tick just wastes CPU (the stabilizer loop is already near budget).
-  // Perception only -- does not affect control.
-  if (RATE_DO_EXECUTE(RATE_50_HZ, tick)) {
-    pollGateVision(state, sensors);
-    pollFlowObstacleDepth(state, sensors);
-    // Stage 4: turn a sighting of a surveyed gate into an absolute position fix for the
-    // EKF, weighted by whether the trajectory says that gate should be in shot right now.
-    // Corrects Flow-deck drift; the control path below is untouched by it.
-    fuseGateIntoEkf(state);
-  }
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    memcpy(&setpoint_task, &setpoint_data, sizeof(setpoint_t));
+    memcpy(&sensors_task, &sensors_data, sizeof(sensorData_t));
+    memcpy(&state_task, &state_data, sizeof(state_t));
+    reset_requested = mpc_reset_requested;
+    mpc_reset_requested = false;
+    xSemaphoreGive(dataMutex);
 
-  /* Controller rate */
-  if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
-    // Get command reference
-    updateHorizonReference(setpoint);
+    updateInitialState(&sensors_task, &state_task);
+    if (reset_requested) {
+      resetMpcWarmStart();
+    }
+
+    // Perception runs in the MPC task, not in the stabilizer callback. It is still
+    // sampled at MPC_RATE, which is faster than the AI-deck camera/flow producer.
+    pollGateVision(&state_task, &sensors_task);
+    pollFlowObstacleDepth(&state_task, &sensors_task);
+    fuseGateIntoEkf(&state_task);
+
+    updateHorizonReference(&setpoint_task);
 
     // Multiplicative attitude error in the reference frame: q_err = q_ref0^-1 (x) q_meas.
-    // q_err stays small while tracking, so quat2rp is far from its q_w->0 singularity
-    // even at large absolute yaw; this realizes the attitude row of T_{-psi} exactly.
     struct quat q_err = qqmul(qinv(q_ref0), q_meas);
     phi = quat2rp(q_err);
     x0(3) = phi.x;
     x0(4) = phi.y;
     x0(5) = phi.z;
 
-    /* MPC solve */
-    // Solve optimization problem using ADMM
-    updateObstacleHalfspace(state);
+    updateObstacleHalfspace(&state_task);
     tiny_UpdateLinearCost(&work);
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
     g_mpc_iter = (uint8_t)info.iter;
-    mpc_has_run = true;   // Xhrz now holds a valid plan for the cascade output
 
-    result =  info.status_val * info.iter;
+    result = info.status_val * info.iter;
 
-    // Detailed logging every 0.5 seconds
+    setpoint_t next_sp;
+    memset(&next_sp, 0, sizeof(next_sp));
+    next_sp.mode.x   = modeAbs;
+    next_sp.mode.y   = modeAbs;
+    next_sp.mode.z   = modeAbs;
+    next_sp.mode.yaw = modeAbs;
+    next_sp.position.x = Xhrz[NHORIZON - 1](0);
+    next_sp.position.y = Xhrz[NHORIZON - 1](1);
+    next_sp.position.z = Xhrz[NHORIZON - 1](2);
+    next_sp.attitude.yaw = yawUseRef
+        ? yawRefDeg
+        : (enable_pid_face_forward_yaw
+             ? mpc_heading_yaw_deg
+             : (quat2rpy(q_meas).z * (180.0f / M_PI_F)));
+
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    memcpy(&mpc_setpoint_data, &next_sp, sizeof(setpoint_t));
+    mpc_has_run = true;
+    xSemaphoreGive(dataMutex);
+
     static uint32_t mpc_log_counter = 0;
-    if (mpc_log_counter % 50 == 0) {  // 100Hz / 50 = every 0.5s
+    if (mpc_log_counter % 25 == 0) {
       DEBUG_PRINT("MPC: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n",
                   (double)x0(0), (double)x0(1), (double)x0(2),
                   (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));
-      DEBUG_PRINT("MPC: u=(%.2f,%.2f,%.2f,%.2f) iter=%d\n",
+      DEBUG_PRINT("MPC: u=(%.2f,%.2f,%.2f,%.2f) iter=%d solve=%luus\n",
                   (double)(Uhrz[0](0) + u_hover[0]), (double)(Uhrz[0](1) + u_hover[1]),
                   (double)(Uhrz[0](2) + u_hover[2]), (double)(Uhrz[0](3) + u_hover[3]),
-                  info.iter);
+                  info.iter, (unsigned long)g_mpc_solve_us);
     }
     mpc_log_counter++;
+  }
+}
 
-    // Position logging disabled
-    // static uint32_t pos_log_counter = 0;
-    // if (pos_log_counter % 50 == 0) {
-    //   DEBUG_PRINT("POS: x=%.2f y=%.2f z=%.2f cstr=%d\n",
-    //               (double)x0(0), (double)x0(1), (double)x0(2), obs_constraint_active);
-    // }
-    // pos_log_counter++;
+void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state, const uint32_t tick) {
+  setpoint_t hold_sp;
+  memset(&hold_sp, 0, sizeof(hold_sp));
+  hold_sp.mode.x   = modeAbs;
+  hold_sp.mode.y   = modeAbs;
+  hold_sp.mode.z   = modeAbs;
+  hold_sp.mode.yaw = modeAbs;
+  hold_sp.position.x = state->position.x;
+  hold_sp.position.y = state->position.y;
+  hold_sp.position.z = state->position.z;
+  hold_sp.attitude.yaw = quat2rpy(qnormalize(mkquat(
+      state->attitudeQuaternion.x,
+      state->attitudeQuaternion.y,
+      state->attitudeQuaternion.z,
+      state->attitudeQuaternion.w))).z * (180.0f / M_PI_F);
+
+  if (!isInit || (dataMutex == NULL) || (runTaskSemaphore == NULL)) {
+    controllerPid(control, &hold_sp, sensors, state, tick);
+    return;
+  }
+
+  bool has_run_snapshot = false;
+  uint32_t activate_tick_snapshot = controller_activate_tick;
+  setpoint_t output_sp;
+  memcpy(&output_sp, &hold_sp, sizeof(output_sp));
+  const bool controller_reactivated =
+      (last_controller_tick == 0) || ((tick - last_controller_tick) > M2T(200));
+
+  if (xSemaphoreTake(dataMutex, M2T(2)) == pdTRUE) {
+    memcpy(&setpoint_data, setpoint, sizeof(setpoint_t));
+    memcpy(&sensors_data, sensors, sizeof(sensorData_t));
+    memcpy(&state_data, state, sizeof(state_t));
+    if (controller_reactivated) {
+      controller_activate_tick = tick;
+      activate_tick_snapshot = controller_activate_tick;
+      mpc_has_run = false;
+      mpc_reset_requested = true;
+    }
+    has_run_snapshot = mpc_has_run;
+    memcpy(&output_sp, &mpc_setpoint_data, sizeof(setpoint_t));
+    xSemaphoreGive(dataMutex);
+  } else {
+    controllerPid(control, &hold_sp, sensors, state, tick);
+    return;
+  }
+  last_controller_tick = tick;
+
+  if (controller_reactivated) {
+    DEBUG_PRINT("OOT activated: hold pos=(%.2f,%.2f,%.2f)\n",
+                (double)state->position.x,
+                (double)state->position.y,
+                (double)state->position.z);
+  }
+
+  if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
+    xSemaphoreGive(runTaskSemaphore);
   }
 
   /* Output: CASCADE (ishaan/debug-traj). Hand the MPC's planned position + face-forward
@@ -1096,7 +1185,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
      control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
     const bool hold_output =
-        (!mpc_has_run) || ((tick - controller_activate_tick) < M2T(250));
+        (!has_run_snapshot) || ((tick - activate_tick_snapshot) < M2T(250));
 
     if (setpoint->mode.z == modeDisable && !hold_output) {
       // Not commanded to fly -> motors off.
@@ -1112,15 +1201,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       mpc_setpoint_pid.mode.z   = modeAbs;
       mpc_setpoint_pid.mode.yaw = modeAbs;
       if (!hold_output) {
-        // Track the MPC's horizon-end planned position; yaw = face-forward heading.
-        mpc_setpoint_pid.position.x = Xhrz[NHORIZON - 1](0);
-        mpc_setpoint_pid.position.y = Xhrz[NHORIZON - 1](1);
-        mpc_setpoint_pid.position.z = Xhrz[NHORIZON - 1](2);
-        mpc_setpoint_pid.attitude.yaw = yawUseRef
-            ? yawRefDeg                                   // cfclient override
-            : (enable_pid_face_forward_yaw
-                 ? mpc_heading_yaw_deg
-                 : (quat2rpy(q_meas).z * (180.0f / M_PI_F)));
+        memcpy(&mpc_setpoint_pid, &output_sp, sizeof(mpc_setpoint_pid));
       } else {
         // Before the first solve: hold current pose so we don't dive on the switch.
         mpc_setpoint_pid.position.x = state->position.x;
