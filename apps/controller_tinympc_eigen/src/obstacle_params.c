@@ -9,6 +9,7 @@
 
 extern uint8_t obsEnable;
 extern uint8_t obsLogOnly;
+extern uint8_t obsUseFlow;
 extern float obsCx;
 extern float obsCy;
 extern float obsCz;
@@ -31,12 +32,18 @@ extern float g_obs_b;
 extern float g_obs_margin;
 extern float g_obs_violation;
 extern float g_obs_clearance;
+extern uint8_t g_obs_source;
+extern float g_obs_eff_cx;
+extern float g_obs_eff_cy;
+extern float g_obs_eff_radius;
+extern float g_obs_flow_conf;
 extern uint32_t g_mpc_solve_us;
 extern uint8_t g_mpc_iter;
 
 PARAM_GROUP_START(obs)
 PARAM_ADD(PARAM_UINT8,  enable,  &obsEnable)
 PARAM_ADD(PARAM_UINT8,  logOnly, &obsLogOnly)
+PARAM_ADD(PARAM_UINT8,  useFlow, &obsUseFlow)
 PARAM_ADD(PARAM_FLOAT,  cx,      &obsCx)
 PARAM_ADD(PARAM_FLOAT,  cy,      &obsCy)
 PARAM_ADD(PARAM_FLOAT,  cz,      &obsCz)
@@ -61,6 +68,11 @@ LOG_ADD(LOG_FLOAT,  b,      &g_obs_b)
 LOG_ADD(LOG_FLOAT,  margin, &g_obs_margin)
 LOG_ADD(LOG_FLOAT,  viol,   &g_obs_violation)
 LOG_ADD(LOG_FLOAT,  clear,  &g_obs_clearance)
+LOG_ADD(LOG_UINT8,  source, &g_obs_source)
+LOG_ADD(LOG_FLOAT,  effCx,  &g_obs_eff_cx)
+LOG_ADD(LOG_FLOAT,  effCy,  &g_obs_eff_cy)
+LOG_ADD(LOG_FLOAT,  effRad, &g_obs_eff_radius)
+LOG_ADD(LOG_FLOAT,  flowCf, &g_obs_flow_conf)
 LOG_ADD(LOG_UINT32, mpcUs,  &g_mpc_solve_us)
 LOG_ADD(LOG_UINT8,  iter,   &g_mpc_iter)
 LOG_GROUP_STOP(obs)

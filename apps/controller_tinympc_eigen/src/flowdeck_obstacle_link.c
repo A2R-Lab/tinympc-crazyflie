@@ -417,6 +417,28 @@ bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
   return true;
 }
 
+bool flowObstacleLinkGetCylinder(float *out_world_x_m,
+                                 float *out_world_y_m,
+                                 float *out_radius_m,
+                                 float *out_confidence) {
+  if (g_cylValid < 0.5f) {
+    return false;
+  }
+  if (out_world_x_m) {
+    *out_world_x_m = g_cylWorldX;
+  }
+  if (out_world_y_m) {
+    *out_world_y_m = g_cylWorldY;
+  }
+  if (out_radius_m) {
+    *out_radius_m = g_cylRadius;
+  }
+  if (out_confidence) {
+    *out_confidence = g_cylConf;
+  }
+  return true;
+}
+
 LOG_GROUP_START(flowObsRx)
 LOG_ADD(LOG_UINT32, rxOk,   &g_rxOk)
 LOG_ADD(LOG_UINT32, crcErr, &g_crcErr)

@@ -222,6 +222,7 @@ static GateVisionPacket g_gate_vision;
 // horizon knot, matching the demo-2 Eigen-task obstacle-avoidance structure.
 uint8_t obsEnable = 1;       // PARAM: master enable for modeled cylinder constraints
 uint8_t obsLogOnly = 0;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
+uint8_t obsUseFlow = 0;      // PARAM: 1 = use AI-deck flow cylinder instead of cx/cy
 float   obsCx = 0.5f;        // PARAM: obstacle center x [m]
 float   obsCy = 0.15f;       // PARAM: obstacle center y [m]
 float   obsCz = 0.5f;        // PARAM: cylinder center z [m]
@@ -244,6 +245,11 @@ float    g_obs_b = 0.0f;
 float    g_obs_margin = 0.0f;
 float    g_obs_violation = 0.0f;
 float    g_obs_clearance = 0.0f;
+uint8_t  g_obs_source = 0;
+float    g_obs_eff_cx = 0.0f;
+float    g_obs_eff_cy = 0.0f;
+float    g_obs_eff_radius = 0.0f;
+float    g_obs_flow_conf = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
 
@@ -778,12 +784,35 @@ static void updateObstacleHalfspace(const state_t *state) {
   g_obs_margin = 0.0f;
   g_obs_violation = 0.0f;
   g_obs_clearance = 0.0f;
+  g_obs_source = 0;
+  g_obs_flow_conf = 0.0f;
 
-  const float dx0 = state->position.x - obsCx;
-  const float dy0 = state->position.y - obsCy;
+  float cx = obsCx;
+  float cy = obsCy;
+  float radius = obsRadius;
+  if (obsUseFlow) {
+    float flow_cx = 0.0f;
+    float flow_cy = 0.0f;
+    float flow_radius = 0.0f;
+    float flow_conf = 0.0f;
+    if (!flowObstacleLinkGetCylinder(&flow_cx, &flow_cy, &flow_radius, &flow_conf)) {
+      return;
+    }
+    cx = flow_cx;
+    cy = flow_cy;
+    radius = flow_radius;
+    g_obs_source = 1;
+    g_obs_flow_conf = flow_conf;
+  }
+  g_obs_eff_cx = cx;
+  g_obs_eff_cy = cy;
+  g_obs_eff_radius = radius;
+
+  const float dx0 = state->position.x - cx;
+  const float dy0 = state->position.y - cy;
   const float dz0 = fabsf(state->position.z - obsCz);
   const float radial_dist0 = sqrtf(dx0 * dx0 + dy0 * dy0);
-  const float effective_radius = obsRadius + obsSafety;
+  const float effective_radius = radius + obsSafety;
   g_obs_margin = effective_radius;
   g_obs_clearance = radial_dist0 - effective_radius;
 
@@ -809,8 +838,8 @@ static void updateObstacleHalfspace(const state_t *state) {
       ref_z = x0(2) + alpha * (xg(2) - x0(2));
     }
 
-    const float rx = ref_x - obsCx;
-    float ry = ref_y - obsCy;
+    const float rx = ref_x - cx;
+    float ry = ref_y - cy;
     const float rz = fabsf(ref_z - obsCz);
     float rxy = sqrtf(rx * rx + ry * ry);
     if (rxy < effective_radius + obsActMargin && fabsf(ry) < 0.05f) {
@@ -825,7 +854,7 @@ static void updateObstacleHalfspace(const state_t *state) {
 
     Eigen::Vector3f a;
     a << -rx / rxy, -ry / rxy, 0.0f;
-    const float b = a(0) * obsCx + a(1) * obsCy - effective_radius;
+    const float b = a(0) * cx + a(1) * cy - effective_radius;
 
     g_obs_active = 1;
     g_obs_count++;

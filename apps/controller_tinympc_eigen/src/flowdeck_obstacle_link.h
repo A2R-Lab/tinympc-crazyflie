@@ -49,6 +49,10 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float world_x_m,
                                  float world_y_m,
                                  float yaw_rad);
+bool flowObstacleLinkGetCylinder(float *out_world_x_m,
+                                 float *out_world_y_m,
+                                 float *out_radius_m,
+                                 float *out_confidence);
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
                                uint32_t *out_age_ms,
