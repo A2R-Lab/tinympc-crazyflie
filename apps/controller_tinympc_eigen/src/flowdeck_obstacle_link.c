@@ -89,7 +89,25 @@ static float g_cylCovXY = 0.0f;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
-static void flowObstacleClearDerived(void) {
+static void flowObstacleDecayCylinder(void) {
+  g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
+  if (g_cylConf < 0.0f) {
+    g_cylConf = 0.0f;
+  }
+  g_cylAge += 1.0f;
+  g_cylInnov = 0.0f;
+  g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
+  g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
+  if (g_cylVarX > FLOW_OBS_CYL_COV_MAX_M2) {
+    g_cylVarX = FLOW_OBS_CYL_COV_MAX_M2;
+  }
+  if (g_cylVarY > FLOW_OBS_CYL_COV_MAX_M2) {
+    g_cylVarY = FLOW_OBS_CYL_COV_MAX_M2;
+  }
+  g_cylValid = g_cylConf >= FLOW_OBS_CYL_VALID_CONF ? 1.0f : 0.0f;
+}
+
+static void flowObstacleClearFrameDerived(void) {
   for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
     g_resFlow[i] = 0.0f;
     g_velEff[i] = 0.0f;
@@ -118,18 +136,6 @@ static void flowObstacleClearDerived(void) {
   g_obsBodyY = 0.0f;
   g_obsWorldX = 0.0f;
   g_obsWorldY = 0.0f;
-  g_cylValid = 0.0f;
-  g_cylConf = 0.0f;
-  g_cylAge = 0.0f;
-  g_cylBodyX = 0.0f;
-  g_cylBodyY = 0.0f;
-  g_cylWorldX = 0.0f;
-  g_cylWorldY = 0.0f;
-  g_cylReject = 0.0f;
-  g_cylInnov = 0.0f;
-  g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
-  g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
-  g_cylCovXY = 0.0f;
 }
 
 void flowObstacleLinkInit(void) {
@@ -168,7 +174,8 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
   uint32_t age_ms = 0;
   uint32_t sample = 0;
   if (!flowObstacleLinkGetLatest(&payload, &age_ms, &sample) || age_ms > 500) {
-    flowObstacleClearDerived();
+    flowObstacleClearFrameDerived();
+    flowObstacleDecayCylinder();
     return;
   }
 
@@ -288,8 +295,10 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
 
   g_obsClusterStart = best_start;
   g_obsClusterCount = best_count;
+  bool obs_fresh = false;
 
   if (best_count >= FLOW_OBS_CANDIDATE_MIN_SECTORS) {
+    obs_fresh = true;
     float weight_sum = 0.0f;
     float body_x_sum = 0.0f;
     float body_y_sum = 0.0f;
@@ -330,7 +339,7 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
 
-  if (g_obsValid > 0.5f) {
+  if (obs_fresh && g_obsValid > 0.5f) {
     const float dx = g_obsBodyX - g_cylBodyX;
     const float dy = g_obsBodyY - g_cylBodyY;
     g_cylInnov = sqrtf(dx * dx + dy * dy);
@@ -376,20 +385,7 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       g_cylAge += 1.0f;
     }
   } else {
-    g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
-    if (g_cylConf < 0.0f) {
-      g_cylConf = 0.0f;
-    }
-    g_cylAge += 1.0f;
-    g_cylInnov = 0.0f;
-    g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
-    g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
-  }
-  if (g_cylVarX > FLOW_OBS_CYL_COV_MAX_M2) {
-    g_cylVarX = FLOW_OBS_CYL_COV_MAX_M2;
-  }
-  if (g_cylVarY > FLOW_OBS_CYL_COV_MAX_M2) {
-    g_cylVarY = FLOW_OBS_CYL_COV_MAX_M2;
+    flowObstacleDecayCylinder();
   }
   g_cylValid = g_cylConf >= FLOW_OBS_CYL_VALID_CONF ? 1.0f : 0.0f;
 }
