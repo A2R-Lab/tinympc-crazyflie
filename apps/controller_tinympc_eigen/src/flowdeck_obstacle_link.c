@@ -25,6 +25,17 @@
 #define FLOW_OBS_CANDIDATE_MIN_SECTORS 2
 #define FLOW_OBS_CANDIDATE_ALPHA 0.35f
 #define FLOW_OBS_CANDIDATE_RADIUS_M 0.25f
+#define FLOW_OBS_CYL_ALPHA 0.20f
+#define FLOW_OBS_CYL_CONF_UP 0.20f
+#define FLOW_OBS_CYL_CONF_DOWN 0.04f
+#define FLOW_OBS_CYL_VALID_CONF 0.50f
+#define FLOW_OBS_CYL_GATE_CONF 0.35f
+#define FLOW_OBS_CYL_GATE_BASE_M 0.45f
+#define FLOW_OBS_CYL_GATE_RANGE_FRAC 0.50f
+#define FLOW_OBS_CYL_COV_ALPHA 0.15f
+#define FLOW_OBS_CYL_COV_INIT_M2 0.04f
+#define FLOW_OBS_CYL_COV_INFLATE_M2 0.002f
+#define FLOW_OBS_CYL_COV_MAX_M2 4.0f
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
@@ -62,6 +73,19 @@ static float g_obsBodyY = 0.0f;
 static float g_obsWorldX = 0.0f;
 static float g_obsWorldY = 0.0f;
 static float g_obsRadius = FLOW_OBS_CANDIDATE_RADIUS_M;
+static float g_cylValid = 0.0f;
+static float g_cylConf = 0.0f;
+static float g_cylAge = 0.0f;
+static float g_cylBodyX = 0.0f;
+static float g_cylBodyY = 0.0f;
+static float g_cylWorldX = 0.0f;
+static float g_cylWorldY = 0.0f;
+static float g_cylRadius = FLOW_OBS_CANDIDATE_RADIUS_M;
+static float g_cylReject = 0.0f;
+static float g_cylInnov = 0.0f;
+static float g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
+static float g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
+static float g_cylCovXY = 0.0f;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
@@ -94,6 +118,18 @@ static void flowObstacleClearDerived(void) {
   g_obsBodyY = 0.0f;
   g_obsWorldX = 0.0f;
   g_obsWorldY = 0.0f;
+  g_cylValid = 0.0f;
+  g_cylConf = 0.0f;
+  g_cylAge = 0.0f;
+  g_cylBodyX = 0.0f;
+  g_cylBodyY = 0.0f;
+  g_cylWorldX = 0.0f;
+  g_cylWorldY = 0.0f;
+  g_cylReject = 0.0f;
+  g_cylInnov = 0.0f;
+  g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
+  g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
+  g_cylCovXY = 0.0f;
 }
 
 void flowObstacleLinkInit(void) {
@@ -293,6 +329,69 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     }
     g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
+
+  if (g_obsValid > 0.5f) {
+    const float dx = g_obsBodyX - g_cylBodyX;
+    const float dy = g_obsBodyY - g_cylBodyY;
+    g_cylInnov = sqrtf(dx * dx + dy * dy);
+    const float gate = FLOW_OBS_CYL_GATE_BASE_M +
+                       FLOW_OBS_CYL_GATE_RANGE_FRAC * g_cylBodyX;
+    const bool accept_obs = g_cylConf < FLOW_OBS_CYL_GATE_CONF ||
+                            g_cylInnov <= gate;
+
+    if (accept_obs && g_cylConf <= 0.0f) {
+      g_cylBodyX = g_obsBodyX;
+      g_cylBodyY = g_obsBodyY;
+      g_cylWorldX = g_obsWorldX;
+      g_cylWorldY = g_obsWorldY;
+      g_cylReject = 0.0f;
+      g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
+      g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
+      g_cylCovXY = 0.0f;
+    } else if (accept_obs) {
+      g_cylBodyX += FLOW_OBS_CYL_ALPHA * (g_obsBodyX - g_cylBodyX);
+      g_cylBodyY += FLOW_OBS_CYL_ALPHA * (g_obsBodyY - g_cylBodyY);
+      g_cylWorldX += FLOW_OBS_CYL_ALPHA * (g_obsWorldX - g_cylWorldX);
+      g_cylWorldY += FLOW_OBS_CYL_ALPHA * (g_obsWorldY - g_cylWorldY);
+      g_cylReject = 0.0f;
+
+      const float rx = g_obsBodyX - g_cylBodyX;
+      const float ry = g_obsBodyY - g_cylBodyY;
+      g_cylVarX += FLOW_OBS_CYL_COV_ALPHA * (rx * rx - g_cylVarX);
+      g_cylVarY += FLOW_OBS_CYL_COV_ALPHA * (ry * ry - g_cylVarY);
+      g_cylCovXY += FLOW_OBS_CYL_COV_ALPHA * (rx * ry - g_cylCovXY);
+    } else {
+      g_cylReject += 1.0f;
+      g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
+      g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
+    }
+    if (accept_obs) {
+      g_cylConf += FLOW_OBS_CYL_CONF_UP * (1.0f - g_cylConf);
+      g_cylAge = 0.0f;
+    } else {
+      g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
+      if (g_cylConf < 0.0f) {
+        g_cylConf = 0.0f;
+      }
+      g_cylAge += 1.0f;
+    }
+  } else {
+    g_cylConf -= FLOW_OBS_CYL_CONF_DOWN;
+    if (g_cylConf < 0.0f) {
+      g_cylConf = 0.0f;
+    }
+    g_cylAge += 1.0f;
+    g_cylInnov = 0.0f;
+    g_cylVarX += FLOW_OBS_CYL_COV_INFLATE_M2;
+    g_cylVarY += FLOW_OBS_CYL_COV_INFLATE_M2;
+  }
+  if (g_cylVarX > FLOW_OBS_CYL_COV_MAX_M2) {
+    g_cylVarX = FLOW_OBS_CYL_COV_MAX_M2;
+  }
+  if (g_cylVarY > FLOW_OBS_CYL_COV_MAX_M2) {
+    g_cylVarY = FLOW_OBS_CYL_COV_MAX_M2;
+  }
+  g_cylValid = g_cylConf >= FLOW_OBS_CYL_VALID_CONF ? 1.0f : 0.0f;
 }
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
@@ -439,4 +538,17 @@ LOG_ADD(LOG_FLOAT,  obsBy,     &g_obsBodyY)
 LOG_ADD(LOG_FLOAT,  obsWx,     &g_obsWorldX)
 LOG_ADD(LOG_FLOAT,  obsWy,     &g_obsWorldY)
 LOG_ADD(LOG_FLOAT,  obsRadius, &g_obsRadius)
+LOG_ADD(LOG_FLOAT,  cylValid,  &g_cylValid)
+LOG_ADD(LOG_FLOAT,  cylConf,   &g_cylConf)
+LOG_ADD(LOG_FLOAT,  cylAge,    &g_cylAge)
+LOG_ADD(LOG_FLOAT,  cylBx,     &g_cylBodyX)
+LOG_ADD(LOG_FLOAT,  cylBy,     &g_cylBodyY)
+LOG_ADD(LOG_FLOAT,  cylWx,     &g_cylWorldX)
+LOG_ADD(LOG_FLOAT,  cylWy,     &g_cylWorldY)
+LOG_ADD(LOG_FLOAT,  cylRadius, &g_cylRadius)
+LOG_ADD(LOG_FLOAT,  cylReject, &g_cylReject)
+LOG_ADD(LOG_FLOAT,  cylInnov,  &g_cylInnov)
+LOG_ADD(LOG_FLOAT,  cylVarX,   &g_cylVarX)
+LOG_ADD(LOG_FLOAT,  cylVarY,   &g_cylVarY)
+LOG_ADD(LOG_FLOAT,  cylCovXY,  &g_cylCovXY)
 LOG_GROUP_STOP(flowObsRx)
