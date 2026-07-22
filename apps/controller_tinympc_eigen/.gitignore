@@ -1,3 +1,4 @@
 bin/*
 cf2.*
 build/*
+.cf_cache/
