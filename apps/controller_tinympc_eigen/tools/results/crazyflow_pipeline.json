@@ -1,0 +1,976 @@
+{
+  "backend": "Crazyflow first_principles / MuJoCo MJX, CPU",
+  "camera": "HM01B0 160x160, fx=89.15584, 10ms exposure approximation",
+  "transport": {
+    "baud": 115200,
+    "packet_bytes": 168,
+    "serialization_delay_ms": 14.583333333333334
+  },
+  "trials": [
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": -0.5299999674007576,
+      "final_position_m": [
+        3.558285713195801,
+        -2.6087889182235813e-08,
+        0.5852245688438416
+      ],
+      "packets_sent": 18,
+      "packets_delivered": 18,
+      "simulated_seconds": 3.95,
+      "wall_seconds": 0.9535280470008729,
+      "realtime_factor": 4.142510555849842
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": -0.5299999674007576,
+      "final_position_m": [
+        3.558285713195801,
+        -2.6087889182235813e-08,
+        0.5852245688438416
+      ],
+      "packets_sent": 18,
+      "packets_delivered": 18,
+      "simulated_seconds": 3.95,
+      "wall_seconds": 0.8912571819964796,
+      "realtime_factor": 4.431941845508295
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": -0.5299999674007576,
+      "final_position_m": [
+        3.558285713195801,
+        -2.6087889182235813e-08,
+        0.5852245688438416
+      ],
+      "packets_sent": 19,
+      "packets_delivered": 19,
+      "simulated_seconds": 3.95,
+      "wall_seconds": 0.8846088149875868,
+      "realtime_factor": 4.465250552647306
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": -0.5299999674007576,
+      "final_position_m": [
+        3.558285713195801,
+        -2.6087889182235813e-08,
+        0.5852245688438416
+      ],
+      "packets_sent": 18,
+      "packets_delivered": 18,
+      "simulated_seconds": 3.95,
+      "wall_seconds": 0.8791007160034496,
+      "realtime_factor": 4.4932280546390775
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": -0.5299999674007576,
+      "final_position_m": [
+        3.558285713195801,
+        -2.6087889182235813e-08,
+        0.5852245688438416
+      ],
+      "packets_sent": 19,
+      "packets_delivered": 19,
+      "simulated_seconds": 3.95,
+      "wall_seconds": 0.8825061280076625,
+      "realtime_factor": 4.475889599676189
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.86,
+        "remaining_m": 1.543097972869873,
+        "range_m": 1.5240981837527001,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.89,
+        "remaining_m": 1.5129269361495972,
+        "estimate_xy_m": [
+          2.9693279346203867,
+          -0.18846428784010788
+        ],
+        "error_m": 0.19094387496259288
+      },
+      "avoidance_started_s": 1.89,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": 0.42198059082031253,
+      "final_position_m": [
+        3.5586624145507812,
+        0.9535577297210693,
+        0.5811305642127991
+      ],
+      "packets_sent": 172,
+      "packets_delivered": 171,
+      "simulated_seconds": 5.87,
+      "wall_seconds": 5.37837586698879,
+      "realtime_factor": 1.091407544799664
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.09,
+        "remaining_m": 2.2647823691368103,
+        "range_m": 2.0591808668933047,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.12,
+        "remaining_m": 2.2376980781555176,
+        "estimate_xy_m": [
+          2.7778448077272224,
+          0.16315803106604979
+        ],
+        "error_m": 0.27563285826458506
+      },
+      "avoidance_started_s": 1.12,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": 0.42317190885543826,
+      "final_position_m": [
+        3.5510876178741455,
+        -0.9531717896461487,
+        0.5811889171600342
+      ],
+      "packets_sent": 170,
+      "packets_delivered": 169,
+      "simulated_seconds": 5.81,
+      "wall_seconds": 5.237662068000645,
+      "realtime_factor": 1.1092735507882492
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.09,
+        "remaining_m": 2.2647823691368103,
+        "range_m": 2.016981802804647,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.12,
+        "remaining_m": 2.2376980781555176,
+        "estimate_xy_m": [
+          2.74175126414258,
+          0.18987079619110614
+        ],
+        "error_m": 0.3205360023744603
+      },
+      "avoidance_started_s": 1.12,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": 0.42317190885543826,
+      "final_position_m": [
+        3.5510876178741455,
+        -0.9531717896461487,
+        0.5811889171600342
+      ],
+      "packets_sent": 170,
+      "packets_delivered": 169,
+      "simulated_seconds": 5.81,
+      "wall_seconds": 5.176331012000446,
+      "realtime_factor": 1.1224166280190542
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.09,
+        "remaining_m": 2.2647823691368103,
+        "range_m": 2.073951296876217,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.12,
+        "remaining_m": 2.2376980781555176,
+        "estimate_xy_m": [
+          2.7932261947705834,
+          0.17363464210272048
+        ],
+        "error_m": 0.2700081396313684
+      },
+      "avoidance_started_s": 1.12,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": 0.42317190885543826,
+      "final_position_m": [
+        3.5510876178741455,
+        -0.9531717896461487,
+        0.5811889171600342
+      ],
+      "packets_sent": 172,
+      "packets_delivered": 171,
+      "simulated_seconds": 5.81,
+      "wall_seconds": 5.098981336996076,
+      "realtime_factor": 1.1394432762177555
+    },
+    {
+      "speed_m_s": 1.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.09,
+        "remaining_m": 2.2647823691368103,
+        "range_m": 2.1075505783724857,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.12,
+        "remaining_m": 2.2376980781555176,
+        "estimate_xy_m": [
+          2.8269037537480326,
+          0.18725996122450672
+        ],
+        "error_m": 0.2550070656752975
+      },
+      "avoidance_started_s": 1.12,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.500232458114624,
+      "minimum_clearance_m": 0.42317190885543826,
+      "final_position_m": [
+        3.5510876178741455,
+        -0.9531717896461487,
+        0.5811889171600342
+      ],
+      "packets_sent": 170,
+      "packets_delivered": 169,
+      "simulated_seconds": 5.81,
+      "wall_seconds": 5.096573874994647,
+      "realtime_factor": 1.1399815135625995
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999784339977,
+      "final_position_m": [
+        3.55206561088562,
+        -1.929176463022486e-08,
+        0.591130256652832
+      ],
+      "packets_sent": 9,
+      "packets_delivered": 9,
+      "simulated_seconds": 2.17,
+      "wall_seconds": 0.6083190630015451,
+      "realtime_factor": 3.5672069674964106
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999784339977,
+      "final_position_m": [
+        3.55206561088562,
+        -1.929176463022486e-08,
+        0.591130256652832
+      ],
+      "packets_sent": 10,
+      "packets_delivered": 10,
+      "simulated_seconds": 2.17,
+      "wall_seconds": 0.6048782249999931,
+      "realtime_factor": 3.5874989548516556
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999784339977,
+      "final_position_m": [
+        3.55206561088562,
+        -1.929176463022486e-08,
+        0.591130256652832
+      ],
+      "packets_sent": 10,
+      "packets_delivered": 10,
+      "simulated_seconds": 2.17,
+      "wall_seconds": 0.6022155840037158,
+      "realtime_factor": 3.603360752594889
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999784339977,
+      "final_position_m": [
+        3.55206561088562,
+        -1.929176463022486e-08,
+        0.591130256652832
+      ],
+      "packets_sent": 10,
+      "packets_delivered": 10,
+      "simulated_seconds": 2.17,
+      "wall_seconds": 0.615133095998317,
+      "realtime_factor": 3.5276918346886297
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999784339977,
+      "final_position_m": [
+        3.55206561088562,
+        -1.929176463022486e-08,
+        0.591130256652832
+      ],
+      "packets_sent": 10,
+      "packets_delivered": 10,
+      "simulated_seconds": 2.17,
+      "wall_seconds": 0.6070873029966606,
+      "realtime_factor": 3.574444712133827
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.16,
+        "remaining_m": 1.4023663997650146,
+        "range_m": 1.535717351468774,
+        "sector_count": 3
+      },
+      "first_detection": {
+        "time_s": 1.19,
+        "remaining_m": 1.349745512008667,
+        "estimate_xy_m": [
+          3.1191937293009824,
+          -0.011185469124073444
+        ],
+        "error_m": 0.11971741654496837
+      },
+      "avoidance_started_s": 1.19,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.4071033906936645,
+      "final_position_m": [
+        3.5601725578308105,
+        0.9426613450050354,
+        0.5827814936637878
+      ],
+      "packets_sent": 118,
+      "packets_delivered": 118,
+      "simulated_seconds": 4.09,
+      "wall_seconds": 3.817067443000269,
+      "realtime_factor": 1.0715032052944817
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.36,
+        "remaining_m": 2.8612771332263947,
+        "range_m": 2.67852882678303,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.16,
+        "remaining_m": 1.4023663997650146,
+        "estimate_xy_m": [
+          2.779559891709742,
+          -0.1279429709843683
+        ],
+        "error_m": 0.25487888332956815
+      },
+      "avoidance_started_s": 1.16,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.4071172189712524,
+      "final_position_m": [
+        3.5657646656036377,
+        0.9440768957138062,
+        0.5828859806060791
+      ],
+      "packets_sent": 119,
+      "packets_delivered": 119,
+      "simulated_seconds": 4.09,
+      "wall_seconds": 3.8088704539986793,
+      "realtime_factor": 1.073809164527027
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.36,
+        "remaining_m": 2.8612771332263947,
+        "range_m": 2.7550282851591597,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.16,
+        "remaining_m": 1.4023663997650146,
+        "estimate_xy_m": [
+          2.8937596042189746,
+          -0.128065711158258
+        ],
+        "error_m": 0.16639665883117752
+      },
+      "avoidance_started_s": 1.16,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.4071172189712524,
+      "final_position_m": [
+        3.5657646656036377,
+        0.9440768957138062,
+        0.5828859806060791
+      ],
+      "packets_sent": 118,
+      "packets_delivered": 118,
+      "simulated_seconds": 4.09,
+      "wall_seconds": 3.8799870439979713,
+      "realtime_factor": 1.0541272312563263
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.19,
+        "remaining_m": 1.349745512008667,
+        "range_m": 1.3506507607865081,
+        "sector_count": 3
+      },
+      "first_detection": {
+        "time_s": 1.22,
+        "remaining_m": 1.2975819110870361,
+        "estimate_xy_m": [
+          2.99642873354548,
+          -0.048548649583955696
+        ],
+        "error_m": 0.0486798245735839
+      },
+      "avoidance_started_s": 1.22,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.40715441226959226,
+      "final_position_m": [
+        3.5571091175079346,
+        0.9412323236465454,
+        0.5826773643493652
+      ],
+      "packets_sent": 120,
+      "packets_delivered": 120,
+      "simulated_seconds": 4.09,
+      "wall_seconds": 3.8866397390083876,
+      "realtime_factor": 1.052322899637592
+    },
+    {
+      "speed_m_s": 2.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 1.16,
+        "remaining_m": 1.4023663997650146,
+        "range_m": 1.5032636887060777,
+        "sector_count": 3
+      },
+      "first_detection": {
+        "time_s": 1.19,
+        "remaining_m": 1.349745512008667,
+        "estimate_xy_m": [
+          3.0893520296640125,
+          -0.001136617769020448
+        ],
+        "error_m": 0.08935925864190802
+      },
+      "avoidance_started_s": 1.19,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.4071033906936645,
+      "final_position_m": [
+        3.5601725578308105,
+        0.9426613450050354,
+        0.5827814936637878
+      ],
+      "packets_sent": 121,
+      "packets_delivered": 121,
+      "simulated_seconds": 4.09,
+      "wall_seconds": 3.9047543159977067,
+      "realtime_factor": 1.0474410600542383
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999874750234,
+      "final_position_m": [
+        3.5615782737731934,
+        -3.6704953743083024e-08,
+        0.5918721556663513
+      ],
+      "packets_sent": 6,
+      "packets_delivered": 6,
+      "simulated_seconds": 1.58,
+      "wall_seconds": 0.5181370250065811,
+      "realtime_factor": 3.049386405034328
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999874750234,
+      "final_position_m": [
+        3.5615782737731934,
+        -3.6704953743083024e-08,
+        0.5918721556663513
+      ],
+      "packets_sent": 7,
+      "packets_delivered": 7,
+      "simulated_seconds": 1.58,
+      "wall_seconds": 0.5049360200064257,
+      "realtime_factor": 3.1291093077097045
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999874750234,
+      "final_position_m": [
+        3.5615782737731934,
+        -3.6704953743083024e-08,
+        0.5918721556663513
+      ],
+      "packets_sent": 7,
+      "packets_delivered": 7,
+      "simulated_seconds": 1.58,
+      "wall_seconds": 0.5546838180016493,
+      "realtime_factor": 2.8484696122779303
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999874750234,
+      "final_position_m": [
+        3.5615782737731934,
+        -3.6704953743083024e-08,
+        0.5918721556663513
+      ],
+      "packets_sent": 7,
+      "packets_delivered": 7,
+      "simulated_seconds": 1.58,
+      "wall_seconds": 0.5228523010009667,
+      "realtime_factor": 3.0218859073110953
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "deployed_5hz",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": null,
+      "first_detection": null,
+      "avoidance_started_s": null,
+      "collision": true,
+      "ground_contact": false,
+      "safe_pass": false,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": -0.5299999874750234,
+      "final_position_m": [
+        3.5615782737731934,
+        -3.6704953743083024e-08,
+        0.5918721556663513
+      ],
+      "packets_sent": 7,
+      "packets_delivered": 7,
+      "simulated_seconds": 1.58,
+      "wall_seconds": 0.515675763002946,
+      "realtime_factor": 3.0639407809262766
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1000,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.96,
+        "remaining_m": 1.1717331409454346,
+        "range_m": 1.3137547556422844,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 0.99,
+        "remaining_m": 1.0801163911819458,
+        "estimate_xy_m": [
+          3.135654694755648,
+          0.09311230270912584
+        ],
+        "error_m": 0.1645360055581874
+      },
+      "avoidance_started_s": 0.99,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.41257539510726926,
+      "final_position_m": [
+        3.5578770637512207,
+        -0.96961510181427,
+        0.5793306827545166
+      ],
+      "packets_sent": 103,
+      "packets_delivered": 102,
+      "simulated_seconds": 3.57,
+      "wall_seconds": 3.261518270999659,
+      "realtime_factor": 1.0945822477044689
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1001,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.96,
+        "remaining_m": 1.1717331409454346,
+        "range_m": 1.3799226600295678,
+        "sector_count": 3
+      },
+      "first_detection": {
+        "time_s": 0.99,
+        "remaining_m": 1.0801163911819458,
+        "estimate_xy_m": [
+          3.2041981259170944,
+          -0.06058381632659326
+        ],
+        "error_m": 0.2129959469772792
+      },
+      "avoidance_started_s": 0.99,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.41257539510726926,
+      "final_position_m": [
+        3.5578773021698,
+        0.96961510181427,
+        0.5793307423591614
+      ],
+      "packets_sent": 106,
+      "packets_delivered": 105,
+      "simulated_seconds": 3.57,
+      "wall_seconds": 3.290663728999789,
+      "realtime_factor": 1.084887516320337
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1002,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.96,
+        "remaining_m": 1.1717331409454346,
+        "range_m": 1.258926798942404,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 0.99,
+        "remaining_m": 1.0801163911819458,
+        "estimate_xy_m": [
+          3.0875840890906603,
+          0.08154460451965802
+        ],
+        "error_m": 0.1196682714344456
+      },
+      "avoidance_started_s": 0.99,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.41257539510726926,
+      "final_position_m": [
+        3.5578770637512207,
+        -0.96961510181427,
+        0.5793306827545166
+      ],
+      "packets_sent": 103,
+      "packets_delivered": 102,
+      "simulated_seconds": 3.57,
+      "wall_seconds": 3.285305597994011,
+      "realtime_factor": 1.086656901013964
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1003,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.92,
+        "remaining_m": 1.296779751777649,
+        "range_m": 1.7484048592575645,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 0.96,
+        "remaining_m": 1.1717331409454346,
+        "estimate_xy_m": [
+          3.3540118100711207,
+          0.08357861928846223
+        ],
+        "error_m": 0.3637440683667528
+      },
+      "avoidance_started_s": 0.96,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.4277276110649109,
+      "final_position_m": [
+        3.5548791885375977,
+        -0.966731071472168,
+        0.5795806646347046
+      ],
+      "packets_sent": 105,
+      "packets_delivered": 104,
+      "simulated_seconds": 3.57,
+      "wall_seconds": 3.351658507002867,
+      "realtime_factor": 1.0651443136408247
+    },
+    {
+      "speed_m_s": 3.0,
+      "pipeline": "30hz_hybrid",
+      "seed": 1004,
+      "packet_loss": 0.02,
+      "image_noise_sigma": 2.0,
+      "first_cluster": {
+        "time_s": 0.26,
+        "remaining_m": 2.9259664192795753,
+        "range_m": 2.5858778599819914,
+        "sector_count": 2
+      },
+      "first_detection": {
+        "time_s": 1.02,
+        "remaining_m": 0.9906156063079834,
+        "estimate_xy_m": [
+          3.225171713668718,
+          -0.05515102925001749
+        ],
+        "error_m": 0.2318273854915406
+      },
+      "avoidance_started_s": 1.02,
+      "collision": false,
+      "ground_contact": false,
+      "safe_pass": true,
+      "minimum_altitude_m": 0.5002319812774658,
+      "minimum_clearance_m": 0.3985864233970642,
+      "final_position_m": [
+        3.558767318725586,
+        0.9722016453742981,
+        0.5791901350021362
+      ],
+      "packets_sent": 106,
+      "packets_delivered": 105,
+      "simulated_seconds": 3.57,
+      "wall_seconds": 3.227731101986137,
+      "realtime_factor": 1.1060400904534
+    }
+  ],
+  "aggregate": {
+    "deployed_5hz": {
+      "runs": 15,
+      "detection_rate": 0.0,
+      "collision_rate": 1.0,
+      "ground_contact_rate": 0.0,
+      "safe_pass_rate": 0.0,
+      "mean_realtime_factor": 3.665454389556364,
+      "mean_detection_error_m": null
+    },
+    "30hz_hybrid": {
+      "runs": 15,
+      "detection_rate": 1.0,
+      "collision_rate": 0.0,
+      "ground_contact_rate": 0.0,
+      "safe_pass_rate": 1.0,
+      "mean_realtime_factor": 1.0892691428859989,
+      "mean_detection_error_m": 0.20559544404384772
+    }
+  }
+}

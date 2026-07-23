@@ -31,6 +31,14 @@ typedef struct __attribute__((packed)) {
   uint32_t checksum;                   /* CRC32 over header+payload */
 } gate8_msg_t;
 
+#ifdef __cplusplus
+static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
+static_assert(sizeof(gate8_msg_t) == 44, "gate packet ABI changed");
+#else
+_Static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
+_Static_assert(sizeof(gate8_msg_t) == 44, "gate packet ABI changed");
+#endif
+
 /* Init UART1/USART3 and start the RX task. Call once at startup. */
 void gate8LinkInit(void);
 

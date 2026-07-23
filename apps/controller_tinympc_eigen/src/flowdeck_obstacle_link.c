@@ -17,12 +17,15 @@
 #include <string.h>
 
 #define FLOW_MIN_CONFIDENCE 0.02f
-#define FLOW_MIN_TRANSLATION_M_S 0.03f
+#define FLOW_MIN_TRANSLATION_M_S 0.08f
+#define FLOW_MIN_FORWARD_LOOMING_M_S 0.15f
+#define FLOW_MAX_LOOMING_YAW_RATE_RAD_S 0.20f
 #define FLOW_MAX_INV_DEPTH_M 8.0f
 #define FLOW_MAX_RANGE_M 10.0f
 #define FLOW_OBS_CANDIDATE_MAX_RANGE_M 3.0f
 #define FLOW_OBS_CANDIDATE_MAX_YAW_RATE_RAD_S 0.6f
 #define FLOW_OBS_CANDIDATE_MIN_SECTORS 2
+#define FLOW_OBS_CANDIDATE_MAX_RANGE_JUMP_M 0.45f
 #define FLOW_OBS_CANDIDATE_ALPHA 0.35f
 #define FLOW_OBS_CANDIDATE_RADIUS_M 0.25f
 #define FLOW_OBS_CYL_ALPHA 0.20f
@@ -43,8 +46,8 @@
 #define FLOW_OBS_MAP_STALE_DECAY 0.995f
 #define FLOW_OBS_MAP_MIN_EVIDENCE 0.03f
 #define FLOW_OBS_MAP_VOTE 0.18f
-#define FLOW_OBS_MAP_MERGE_RADIUS_M 1.10f
-#define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.90f
+#define FLOW_OBS_MAP_MERGE_RADIUS_M 0.55f
+#define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.55f
 #define FLOW_OBS_MAP_VALID_EVIDENCE 0.20f
 #define FLOW_OBS_MAP_CELL_SIGMA_M2 0.01f
 
@@ -54,6 +57,10 @@ static volatile uint32_t g_rxTick = 0;
 static volatile uint32_t g_rxOk = 0;
 static volatile uint32_t g_crcErr = 0;
 static volatile uint32_t g_badRx = 0;
+static volatile uint32_t g_dupRx = 0;
+static volatile uint32_t g_invalidRx = 0;
+static uint16_t g_lastWireSeq = 0;
+static bool g_haveWireSeq = false;
 static float g_bodyVx = 0.0f;
 static float g_bodyVy = 0.0f;
 static float g_yawRate = 0.0f;
@@ -310,7 +317,34 @@ void flowObstacleLinkInit(void) {
   memset(&g_payload, 0, sizeof(g_payload));
 }
 
-void flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
+bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
+  const flow_obstacle_payload_t *p = &msg->p;
+  if (p->n_sectors == 0 || p->n_sectors > FLOW_OBS_SECT_MAX ||
+      !isfinite(p->dt_s) || p->dt_s < 0.004f || p->dt_s > 0.5f) {
+    g_invalidRx++;
+    return false;
+  }
+  for (uint8_t i = 0; i < p->n_sectors; i++) {
+    const flow_obstacle_sector_t *sector = &p->sector[i];
+    if (!isfinite(sector->azimuth_rad) ||
+        !isfinite(sector->flow_x_rad_s) ||
+        !isfinite(sector->flow_y_rad_s) ||
+        !isfinite(sector->confidence) ||
+        fabsf(sector->azimuth_rad) > 2.0f ||
+        fabsf(sector->flow_x_rad_s) > 25.0f ||
+        fabsf(sector->flow_y_rad_s) > 25.0f ||
+        sector->confidence < 0.0f || sector->confidence > 1.0f) {
+      g_invalidRx++;
+      return false;
+    }
+  }
+  /* reserved is a nonzero producer sequence in the combined firmware. Keep
+   * accepting zero for compatibility with the older flow-only producer. */
+  if (p->reserved != 0 && g_haveWireSeq && p->reserved == g_lastWireSeq) {
+    g_dupRx++;
+    return false;
+  }
+
   uint32_t s = g_seq + 1;
   g_seq = s;
   COMPILER_BARRIER();
@@ -322,6 +356,11 @@ void flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
   COMPILER_BARRIER();
   g_seq = s + 1;
   g_rxOk++;
+  if (p->reserved != 0) {
+    g_lastWireSeq = p->reserved;
+    g_haveWireSeq = true;
+  }
+  return true;
 }
 
 void flowObstacleLinkNoteBadRx(void) {
@@ -346,6 +385,7 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     flowObstacleDecayCylinder(world_x_m, world_y_m, yaw_rad);
     return;
   }
+  const bool new_sample = sample != g_lastDepthSample;
 
   g_bodyVx = body_vx_m_s;
   g_bodyVy = body_vy_m_s;
@@ -376,10 +416,27 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       continue;
     }
 
-    const float az = payload.sector[i].azimuth_rad;
-    const float measured_flow = payload.sector[i].flow_x_rad_s;
-    const float residual_flow = measured_flow - yaw_rate_rad_s;
-    const float vel_eff = body_vx_m_s * sinf(az) - body_vy_m_s * cosf(az);
+    /* GAP8 sends normalized pinhole image coordinate q=(u-cx)/fx and its
+     * derivative qdot=du/(fx*dt), not literal bearing/radial rate. Convert
+     * through bearing=atan(q), whose derivative is qdot/(1+q^2). */
+    const float image_q = payload.sector[i].azimuth_rad;
+    const float az = atanf(image_q);
+    const float measured_flow = payload.sector[i].flow_x_rad_s /
+                                (1.0f + image_q * image_q);
+    float residual_flow = measured_flow - yaw_rate_rad_s;
+    float vel_eff = body_vx_m_s * sinf(az) - body_vy_m_s * cosf(az);
+
+    /* flow_y carries GAP8's sector radial-expansion rate. It makes forward
+     * translation observable where horizontal parallax is near zero. */
+    const bool use_looming =
+        fabsf(vel_eff) < FLOW_MIN_TRANSLATION_M_S &&
+        fabsf(body_vx_m_s) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(yaw_rate_rad_s) < FLOW_MAX_LOOMING_YAW_RATE_RAD_S &&
+        fabsf(payload.sector[i].flow_y_rad_s) >= 1.0e-3f;
+    if (use_looming) {
+      residual_flow = payload.sector[i].flow_y_rad_s;
+      vel_eff = body_vx_m_s;
+    }
 
     g_resFlow[i] = residual_flow;
     g_velEff[i] = vel_eff;
@@ -397,8 +454,15 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     }
 
     float inv_depth = residual_flow / vel_eff;
-    if (inv_depth < 0.0f) {
-      inv_depth = -inv_depth;
+    if (inv_depth <= 0.0f) {
+      g_invDepth[i] = 0.0f;
+      g_range[i] = 0.0f;
+      g_valid[i] = 0.0f;
+      g_bodyX[i] = 0.0f;
+      g_bodyY[i] = 0.0f;
+      g_worldX[i] = 0.0f;
+      g_worldY[i] = 0.0f;
+      continue;
     }
     if (inv_depth > FLOW_MAX_INV_DEPTH_M) {
       inv_depth = FLOW_MAX_INV_DEPTH_M;
@@ -448,7 +512,12 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     uint8_t count = 0;
     float range_sum = 0.0f;
     while ((uint8_t)(start + count) < FLOW_OBS_SECT_MAX && candidate_ok[start + count]) {
-      range_sum += g_range[start + count];
+      const uint8_t idx = start + count;
+      if (count > 0 && fabsf(g_range[idx] - g_range[idx - 1]) >
+                           FLOW_OBS_CANDIDATE_MAX_RANGE_JUMP_M) {
+        break;
+      }
+      range_sum += g_range[idx];
       count++;
     }
 
@@ -484,30 +553,31 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     const float raw_body_x = body_x_sum / weight_sum;
     const float raw_body_y = body_y_sum / weight_sum;
 
-    if (g_obsHits == 0) {
-      g_obsBodyX = raw_body_x;
-      g_obsBodyY = raw_body_y;
-    } else {
-      g_obsBodyX += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_x - g_obsBodyX);
-      g_obsBodyY += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_y - g_obsBodyY);
-    }
-
-    if (g_obsHits < 255) {
-      g_obsHits++;
+    if (new_sample) {
+      if (g_obsHits == 0) {
+        g_obsBodyX = raw_body_x;
+        g_obsBodyY = raw_body_y;
+      } else {
+        g_obsBodyX += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_x - g_obsBodyX);
+        g_obsBodyY += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_y - g_obsBodyY);
+      }
+      if (g_obsHits < 255) {
+        g_obsHits++;
+      }
     }
     g_obsRange = range_sum / (float)best_count;
     g_obsBearing = atan2f(g_obsBodyY, g_obsBodyX);
     g_obsWorldX = world_x_m + yaw_c * g_obsBodyX - yaw_s * g_obsBodyY;
     g_obsWorldY = world_y_m + yaw_s * g_obsBodyX + yaw_c * g_obsBodyY;
     g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
-  } else {
+  } else if (new_sample) {
     if (g_obsHits > 0) {
       g_obsHits--;
     }
     g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
 
-  if (sample != g_lastDepthSample) {
+  if (new_sample) {
     g_lastDepthSample = sample;
     flowObstacleDecayMap(FLOW_OBS_MAP_DECAY);
     if (obs_fresh) {
@@ -574,7 +644,10 @@ LOG_GROUP_START(flowObsRx)
 LOG_ADD(LOG_UINT32, rxOk,   &g_rxOk)
 LOG_ADD(LOG_UINT32, crcErr, &g_crcErr)
 LOG_ADD(LOG_UINT32, badRx,  &g_badRx)
+LOG_ADD(LOG_UINT32, dupRx,  &g_dupRx)
+LOG_ADD(LOG_UINT32, invalid, &g_invalidRx)
 LOG_ADD(LOG_UINT8,  n,      &g_payload.n_sectors)
+LOG_ADD(LOG_UINT8,  flags,  &g_payload.flags)
 LOG_ADD(LOG_FLOAT,  dt,     &g_payload.dt_s)
 LOG_ADD(LOG_FLOAT,  flowX0, &g_payload.sector[0].flow_x_rad_s)
 LOG_ADD(LOG_FLOAT,  flowX1, &g_payload.sector[1].flow_x_rad_s)

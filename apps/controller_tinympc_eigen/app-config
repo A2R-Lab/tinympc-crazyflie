@@ -8,6 +8,7 @@ CONFIG_PLATFORM_CF21BL=y
 # merged over the base defconfig), so set it explicitly or the motors get a
 # signal the ESCs ignore and never spin. Brushless also requires arming.
 CONFIG_MOTORS_ESC_PROTOCOL_DSHOT=y
+CONFIG_MOTORS_DSHOT_PWM_300KHZ=y
 CONFIG_MOTORS_REQUIRE_ARMING=y
 
 CONFIG_APP_ENABLE=y

@@ -15,9 +15,12 @@
 
 #include "uart1.h"     /* uart1Init, uart1GetDataWithDefaultTimeout, USART3 */
 #include "crc32.h"
+#include "deck.h"
 #include "log.h"
 #include "debug.h"
+#include "system.h"
 
+#include <math.h>
 #include <string.h>
 
 #define GATE8_BAUD       115200
@@ -33,10 +36,36 @@ static volatile uint32_t g_rxOk     = 0;   /* accepted messages */
 static volatile uint32_t g_crcErr   = 0;   /* CRC mismatches */
 static volatile uint32_t g_badRx    = 0;   /* short or timed-out reads */
 static volatile uint32_t g_rawBytes = 0;   /* total bytes seen on the UART */
+static volatile uint32_t g_dupRx    = 0;   /* duplicate producer timestamp */
+static volatile uint32_t g_invalidRx = 0;  /* CRC-valid, invalid numeric data */
+static uint32_t          g_queueDrops = 0;
+static uint32_t          g_stackFreeWords = 0;
+static TaskHandle_t      g_rxTaskHandle = NULL;
+static volatile uint32_t g_linkResets = 0;
+static TickType_t        g_lastValidTick = 0;
+static bool              g_everValid = false;
+static uint32_t          g_lastProducerTs = 0;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
-static void gate8PublishCorners(const gate8_msg_t *msg) {
+static bool gate8PublishCorners(const gate8_msg_t *msg) {
+  for (uint8_t i = 0; i < GATE8_N_CORNERS; i++) {
+    /* Permit moderate off-frame predictions but reject a corrupt/saturated
+     * network output before it can look like a "gate clipped, commit" event. */
+    const float lower = (i & 1u) ? -48.0f : -80.0f;
+    const float upper = (i & 1u) ? 144.0f : 240.0f;
+    if (!isfinite(msg->p.corner[i]) ||
+        msg->p.corner[i] < lower || msg->p.corner[i] > upper) {
+      g_invalidRx++;
+      return false;
+    }
+  }
+  /* Timestamp zero denotes the legacy producer and remains accepted. */
+  if (msg->p.stm32_timestamp != 0 &&
+      msg->p.stm32_timestamp == g_lastProducerTs) {
+    g_dupRx++;
+    return false;
+  }
   uint32_t s = g_seq + 1;
   g_seq = s;                                  /* mark odd, write in progress */
   COMPILER_BARRIER();
@@ -46,6 +75,10 @@ static void gate8PublishCorners(const gate8_msg_t *msg) {
   COMPILER_BARRIER();
   g_seq = s + 1;                              /* mark even, stable */
   g_rxOk++;
+  if (msg->p.stm32_timestamp != 0) {
+    g_lastProducerTs = msg->p.stm32_timestamp;
+  }
+  return true;
 }
 
 static bool headerMatches(const uint8_t window[GATE8_HEADER_LEN], const char *header) {
@@ -57,8 +90,19 @@ static bool readBytes(uint8_t *dst, int n) {
     if (!uart1GetDataWithDefaultTimeout(dst++)) {
       return false;
     }
+    g_rawBytes++;
   }
   return true;
+}
+
+static void resetAiDeck(void) {
+  pinMode(DECK_GPIO_IO4, OUTPUT);
+  digitalWrite(DECK_GPIO_IO4, LOW);
+  vTaskDelay(M2T(100));
+  digitalWrite(DECK_GPIO_IO4, HIGH);
+  pinMode(DECK_GPIO_IO4, INPUT_PULLUP);
+  g_lastValidTick = xTaskGetTickCount();
+  g_linkResets++;
 }
 
 static void gate8RxTask(void *arg) {
@@ -67,6 +111,13 @@ static void gate8RxTask(void *arg) {
   flow_obstacle_msg_t flow_msg;
   uint8_t sync[GATE8_HEADER_LEN] = {0};
 
+  systemWaitStart();
+
+  /* CONFIG_DECK_AI is deliberately off to avoid the stock CPX/UART2 stack,
+   * so this link owns the reset sequence that driver would otherwise perform.
+   * UART1 and its queue are already live before GAP8 is released. */
+  resetAiDeck();
+
   while (1) {
     /* Sync to either 4-byte header. The AI-deck UART is shared by gate corners
      * and obstacle-flow sectors, so one RX task must dispatch both message types. */
@@ -74,7 +125,15 @@ static void gate8RxTask(void *arg) {
     bool is_flow = false;
     while (!is_gate && !is_flow) {
       uint8_t b;
-      if (!uart1GetDataWithDefaultTimeout(&b)) { continue; }
+      if (!uart1GetDataWithDefaultTimeout(&b)) {
+        const TickType_t now = xTaskGetTickCount();
+        const TickType_t timeout = g_everValid ? M2T(2000) : M2T(10000);
+        if ((now - g_lastValidTick) > timeout) {
+          resetAiDeck();
+          memset(sync, 0, sizeof(sync));
+        }
+        continue;
+      }
       g_rawBytes++;
       memmove(sync, sync + 1, GATE8_HEADER_LEN - 1);
       sync[GATE8_HEADER_LEN - 1] = b;
@@ -93,7 +152,10 @@ static void gate8RxTask(void *arg) {
         flowObstacleLinkNoteCrcErr();
         continue;
       }
-      flowObstacleLinkPublishFromRx(&flow_msg);
+      if (flowObstacleLinkPublishFromRx(&flow_msg)) {
+        g_lastValidTick = xTaskGetTickCount();
+        g_everValid = true;
+      }
       continue;
     }
 
@@ -109,20 +171,29 @@ static void gate8RxTask(void *arg) {
       continue;
     }
 
-    gate8PublishCorners(&msg);
+    if (gate8PublishCorners(&msg)) {
+      g_lastValidTick = xTaskGetTickCount();
+      g_everValid = true;
+    }
   }
 }
 
 void gate8LinkInit(void) {
   uart1Init(GATE8_BAUD);   /* USART3, the GAP8 deck UART */
   flowObstacleLinkInit();
-  xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
-              NULL, tskIDLE_PRIORITY + 2, NULL);
+  const BaseType_t taskCreated =
+      xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
+                  NULL, tskIDLE_PRIORITY + 2, &g_rxTaskHandle);
+  configASSERT(taskCreated == pdPASS);
   DEBUG_PRINT("vision link: UART1/USART3@%d started\n", GATE8_BAUD);
 }
 
 bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
                            uint32_t *out_sample) {
+  g_queueDrops = uart1QueueDrops();
+  if (g_rxTaskHandle) {
+    g_stackFreeWords = uxTaskGetStackHighWaterMark(g_rxTaskHandle);
+  }
   uint32_t s1, s2, rxTick;
   do {
     s1 = g_seq;
@@ -160,4 +231,9 @@ LOG_ADD(LOG_UINT32, rxOk,   &g_rxOk)
 LOG_ADD(LOG_UINT32, crcErr, &g_crcErr)
 LOG_ADD(LOG_UINT32, badRx,  &g_badRx)
 LOG_ADD(LOG_UINT32, raw,    &g_rawBytes)
+LOG_ADD(LOG_UINT32, dupRx,  &g_dupRx)
+LOG_ADD(LOG_UINT32, invalid, &g_invalidRx)
+LOG_ADD(LOG_UINT32, qDrop,  &g_queueDrops)
+LOG_ADD(LOG_UINT32, stackFree, &g_stackFreeWords)
+LOG_ADD(LOG_UINT32, resets, &g_linkResets)
 LOG_GROUP_STOP(gate8)

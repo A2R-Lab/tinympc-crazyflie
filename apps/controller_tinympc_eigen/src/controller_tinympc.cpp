@@ -784,10 +784,16 @@ static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sens
   const quaternion_t *q = &state->attitudeQuaternion;
   const float yaw = atan2f(2.0f * (q->w * q->z + q->x * q->y),
                           1.0f - 2.0f * (q->y * q->y + q->z * q->z));
-  const float c = cosf(yaw);
-  const float s = sinf(yaw);
-  const float body_vx = c * state->velocity.x + s * state->velocity.y;
-  const float body_vy = -s * state->velocity.x + c * state->velocity.y;
+  /* Rotate world velocity with R(q)^T. A yaw-only rotation biases monocular
+   * inverse depth during the pitch/roll angles used in racing flight. */
+  const float body_vx =
+      (1.0f - 2.0f * (q->y*q->y + q->z*q->z)) * state->velocity.x +
+      2.0f * (q->x*q->y + q->w*q->z) * state->velocity.y +
+      2.0f * (q->x*q->z - q->w*q->y) * state->velocity.z;
+  const float body_vy =
+      2.0f * (q->x*q->y - q->w*q->z) * state->velocity.x +
+      (1.0f - 2.0f * (q->x*q->x + q->z*q->z)) * state->velocity.y +
+      2.0f * (q->y*q->z + q->w*q->x) * state->velocity.z;
   const float yaw_rate = radians(sensors->gyro.z);
 
   flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,

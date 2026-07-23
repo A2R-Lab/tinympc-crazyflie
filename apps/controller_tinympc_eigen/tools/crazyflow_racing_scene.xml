@@ -1,0 +1,20 @@
+<mujoco model="Crazyflow optical-flow racing scene">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.002"/>
+  <compiler inertiafromgeom="false" autolimits="true"/>
+  <statistic center="2 0 0.5" extent="4"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.5 0.5 0.5" specular="0 0 0"/>
+  </visual>
+  <asset>
+    <texture type="2d" name="ground" builtin="checker" rgb1=".25 .3 .35"
+             rgb2=".08 .1 .12" width="256" height="256"/>
+    <material name="ground" texture="ground" texrepeat="4 4" texuniform="true"/>
+  </asset>
+  <worldbody>
+    <light pos="2 0 4" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="0 0 .05" material="ground"/>
+    <!-- Front face is x=3.0, matching the source-matched camera scene. -->
+    <geom name="target_box" type="box" pos="3.125 0 .55"
+          size=".125 .45 .55" rgba=".85 .25 .1 1"/>
+  </worldbody>
+</mujoco>

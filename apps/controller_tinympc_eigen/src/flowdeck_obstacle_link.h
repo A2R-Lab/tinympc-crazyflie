@@ -39,8 +39,20 @@ typedef struct __attribute__((packed)) {
   uint32_t checksum;
 } flow_obstacle_msg_t;
 
+#ifdef __cplusplus
+static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
+static_assert(sizeof(flow_obstacle_payload_t) == 160,
+              "flow payload ABI changed");
+static_assert(sizeof(flow_obstacle_msg_t) == 168, "flow packet ABI changed");
+#else
+_Static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
+_Static_assert(sizeof(flow_obstacle_payload_t) == 160,
+               "flow payload ABI changed");
+_Static_assert(sizeof(flow_obstacle_msg_t) == 168, "flow packet ABI changed");
+#endif
+
 void flowObstacleLinkInit(void);
-void flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg);
+bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg);
 void flowObstacleLinkNoteBadRx(void);
 void flowObstacleLinkNoteCrcErr(void);
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
