@@ -1,0 +1,155 @@
+{
+  "rate_hz": 15,
+  "cases": 18,
+  "frames": 216,
+  "compiled_source": "apps/controller_tinympc_eigen/src/flowdeck_obstacle_link.c",
+  "python_mirror": "apps/controller_tinympc_eigen/tools/sim_flow_obstacle_sectors.py",
+  "max_abs_error": 3.1076514561689805e-07,
+  "all_passed": true,
+  "results": [
+    {
+      "name": "range_0p5",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.721320814773719e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "range_0p75",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.4449428842322476e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "range_1p0",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.4449428842322476e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "range_1p5",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.614337201694127e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "range_2p0",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 2.2602637717028529e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "range_2p5",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 2.6630047500475484e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "forward_looming",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 3.1076514561689805e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "combined_yaw",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 2.7911629452148645e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "narrow_two_sector",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.009681753760816e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "noncontiguous_foreground",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.5020930599352056e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "single_edge_foreground_far_wall",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 2.45141447585695e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "intermittent_two_of_three",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.2501593826819146e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "spatial_gate_jump",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 2.2602637717028529e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "duplicate_controller_reads",
+      "frames": 12,
+      "comparisons": 18,
+      "max_abs_error": 1.1134405819568371e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "parallax_looming_disagreement",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.2276576172309817e-08,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "stationary",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 0.0,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "pure_yaw",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 1.0848954024034185e-07,
+      "mismatches": [],
+      "passed": true
+    },
+    {
+      "name": "low_texture",
+      "frames": 12,
+      "comparisons": 108,
+      "max_abs_error": 0.0,
+      "mismatches": [],
+      "passed": true
+    }
+  ]
+}

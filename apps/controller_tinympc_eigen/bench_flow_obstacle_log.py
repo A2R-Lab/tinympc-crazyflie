@@ -9,8 +9,10 @@ safe defaults when this script exits.
 
 import argparse
 import csv
+import json
 import os
 import math
+import subprocess
 import time
 from pathlib import Path
 
@@ -26,58 +28,61 @@ SECTORS = range(9)
 
 
 LOG_BLOCKS = [
-    ("health", [("flowObsRx.rxOk", "uint32_t"), ("flowObsRx.crcErr", "uint32_t"), ("flowObsRx.badRx", "uint32_t")]),
-    ("packet", [("flowObsRx.n", "uint8_t"), ("flowObsRx.dt", "float"), ("flowObsRx.nearIdx", "uint8_t")]),
-    ("motion", [("flowObsRx.bodyVx", "float"), ("flowObsRx.bodyVy", "float"), ("flowObsRx.yawRate", "float")]),
-    ("obs_a", [("flowObsRx.obsValid", "float"), ("flowObsRx.obsHits", "uint8_t"), ("flowObsRx.obsCount", "uint8_t")]),
-    ("obs_b", [
-        ("flowObsRx.obsRange", "float"),
-        ("flowObsRx.obsBear", "float"),
-        ("flowObsRx.obsBx", "float"),
-        ("flowObsRx.obsBy", "float"),
-        ("flowObsRx.obsWx", "float"),
-        ("flowObsRx.obsWy", "float"),
-    ]),
-    ("cyl_a", [("flowObsRx.cylValid", "float"), ("flowObsRx.cylConf", "float"), ("flowObsRx.cylReject", "float"), ("flowObsRx.cylInnov", "float")]),
-    ("cyl_b", [
-        ("flowObsRx.cylBx", "float"),
-        ("flowObsRx.cylBy", "float"),
-        ("flowObsRx.cylWx", "float"),
-        ("flowObsRx.cylWy", "float"),
-    ]),
-    ("cyl_cov", [
-        ("flowObsRx.cylVarX", "float"),
-        ("flowObsRx.cylVarY", "float"),
-        ("flowObsRx.cylCovXY", "float"),
-        ("flowObsRx.mapPeak", "float"),
-        ("flowObsRx.mapActive", "uint8_t"),
-        ("flowObsRx.mapBest", "uint8_t"),
-    ]),
-    ("admm_obs", [
-        ("obs.source", "uint8_t"),
-        ("obs.active", "uint8_t"),
-        ("obs.apply", "uint8_t"),
-        ("obs.count", "uint8_t"),
-        ("obs.effCx", "float"),
-        ("obs.effCy", "float"),
-        ("obs.frzValid", "uint8_t"),
-        ("obs.frzCx", "float"),
-        ("obs.frzCy", "float"),
-    ]),
-    ("state_xy", [("stateEstimate.x", "float"), ("stateEstimate.y", "float"), ("stateEstimate.yaw", "float")]),
+    ("health_flow", [("flowObsRx.rxOk", "uint32_t"), ("flowObsRx.crcErr", "uint32_t"),
+                     ("flowObsRx.badRx", "uint32_t"), ("flowObsRx.dupRx", "uint32_t"),
+                     ("flowObsRx.invalid", "uint32_t"), ("flowObsRx.seqGap", "uint32_t")]),
+    ("health_link", [("flowObsRx.seqReset", "uint32_t"), ("flowObsRx.ageMs", "uint32_t"),
+                     ("gate8.crcErr", "uint32_t"), ("gate8.badRx", "uint32_t"),
+                     ("gate8.qDrop", "uint32_t"), ("gate8.resets", "uint32_t")]),
+    ("packet", [("flowObsRx.gap8Ts", "uint32_t"), ("flowObsRx.wireSeq", "uint16_t"),
+                ("flowObsRx.wasNew", "uint8_t"), ("flowObsRx.n", "uint8_t"),
+                ("flowObsRx.flags", "uint8_t"), ("flowObsRx.dt", "float"),
+                ("flowObsRx.newCount", "uint32_t"), ("flowObsRx.mapVotes", "uint32_t"),
+                ("gate8.rxOk", "uint32_t")]),
+    ("motion_state", [("flowObsRx.bodyVx", "float"), ("flowObsRx.bodyVy", "float"),
+                      ("flowObsRx.yawRate", "float"), ("stateEstimate.x", "float"),
+                      ("stateEstimate.y", "float"), ("stateEstimate.yaw", "float")]),
+    ("candidate", [("flowObsRx.obsValid", "float"), ("flowObsRx.obsHits", "uint8_t"),
+                   ("flowObsRx.obsCount", "uint8_t"), ("flowObsRx.reject", "uint8_t"),
+                   ("flowObsRx.obsRange", "float"), ("flowObsRx.obsBear", "float"),
+                   ("flowObsRx.obsBx", "float"), ("flowObsRx.obsBy", "float")]),
+    ("cylinder", [("flowObsRx.cylValid", "float"), ("flowObsRx.cylConf", "float"),
+                  ("flowObsRx.cylAge", "float"), ("flowObsRx.cylWx", "float"),
+                  ("flowObsRx.cylWy", "float"), ("flowObsRx.cylRadius", "float")]),
+    ("reject_values", [("flowObsRx.aggDisp", "float"), ("flowObsRx.yawRatio", "float"),
+                       ("flowObsRx.depDisagr", "float"), ("flowObsRx.grpDisp", "float"),
+                       ("flowObsRx.grpScore", "float")]),
+    ("reject_counts", [("flowObsRx.rejMotion", "uint32_t"), ("flowObsRx.rejYaw", "uint32_t"),
+                       ("flowObsRx.rejDepth", "uint32_t"), ("flowObsRx.rejDisp", "uint32_t"),
+                       ("flowObsRx.rejGroup", "uint32_t")]),
 ]
 
-for i in range(6):
-    LOG_BLOCKS.append((
-        f"sector_{i}",
-        [
+for first in range(0, 9, 2):
+    variables = []
+    for i in range(first, min(first + 2, 9)):
+        variables.extend([
             (f"flowObsRx.flowX{i}", "float"),
-            (f"flowObsRx.resX{i}", "float"),
-            (f"flowObsRx.vEff{i}", "float"),
+            (f"flowObsRx.flowY{i}", "float"),
+            (f"flowObsRx.conf{i}", "float"),
+        ])
+    LOG_BLOCKS.append((
+        f"raw_{first}_{min(first + 1, 8)}",
+        variables,
+    ))
+
+for first in range(0, 9, 3):
+    variables = []
+    for i in range(first, first + 3):
+        variables.extend([
             (f"flowObsRx.range{i}", "float"),
             (f"flowObsRx.valid{i}", "float"),
-        ],
+        ])
+    LOG_BLOCKS.append((
+        f"range_{first}_{first + 2}",
+        variables,
     ))
+
+assert len(LOG_BLOCKS) == 16
 
 
 CSV_FIELDS = [
@@ -86,6 +91,25 @@ CSV_FIELDS = [
     "rx_ok",
     "crc_err",
     "bad_rx",
+    "dup_rx",
+    "invalid_rx",
+    "sequence_gaps",
+    "sequence_resets",
+    "sample_age_ms",
+    "new_samples",
+    "map_votes",
+    "last_sample_was_new",
+    "gap8_ts_us",
+    "wire_seq",
+    "packet_flags",
+    "gate_rx_ok",
+    "gate_crc_err",
+    "gate_bad_rx",
+    "gate_dup_rx",
+    "gate_invalid_rx",
+    "uart_queue_drops",
+    "link_resets",
+    "rx_stack_free_words",
     "n",
     "dt",
     "body_vx",
@@ -101,6 +125,8 @@ CSV_FIELDS = [
     "obs_valid",
     "obs_hits",
     "obs_count",
+    "reject_reason",
+    "obs_radius",
     "obs_range",
     "obs_bearing",
     "obs_bx",
@@ -122,6 +148,16 @@ CSV_FIELDS = [
     "map_peak",
     "map_active",
     "map_best",
+    "reject_low_motion",
+    "reject_yaw",
+    "reject_depth_disagreement",
+    "reject_dispersion",
+    "reject_no_group",
+    "aggregate_displacement",
+    "yaw_explained_ratio",
+    "depth_disagreement",
+    "group_dispersion",
+    "group_score",
     "admm_obs_source",
     "admm_obs_active",
     "admm_obs_apply",
@@ -136,9 +172,11 @@ CSV_FIELDS = [
     "state_yaw",
 ]
 
-for name in ("flow_x", "res_x", "veff", "range", "valid", "bx", "by"):
+for name in ("flow_x", "flow_y", "confidence", "res_x", "veff", "range", "valid", "bx", "by"):
     for i in SECTORS:
         CSV_FIELDS.append(f"{name}{i}")
+for block_name, _variables in LOG_BLOCKS:
+    CSV_FIELDS.append(f"log_ts_{block_name}")
 
 
 def parse_args():
@@ -146,8 +184,12 @@ def parse_args():
     p.add_argument("--uri", default=uri_helper.uri_from_env(default=DEFAULT_URI))
     p.add_argument("--out", default="flow_obstacle_bench.csv")
     p.add_argument("--duration", type=float, default=30.0, help="Seconds to record.")
-    p.add_argument("--period-ms", type=int, default=100, help="Crazyflie log period for each small block.")
-    p.add_argument("--sample-hz", type=float, default=20.0, help="CSV snapshot rate from latest received logs.")
+    p.add_argument("--start-delay", type=float, default=0.0,
+                   help="Visible delay after connection/controller setup before recording.")
+    p.add_argument("--period-ms", type=int, default=30,
+                   help="Crazyflie log period for each small block.")
+    p.add_argument("--sample-hz", type=float, default=30.0,
+                   help="CSV snapshot rate from latest received logs.")
     p.add_argument("--cache-dir", default=".cf_cache")
     p.add_argument("--no-controller-switch", action="store_true",
                    help="Do not switch stabilizer.controller to OOT/6 before logging.")
@@ -165,6 +207,31 @@ def parse_args():
     p.add_argument("--freeze-after-s", type=float, default=None,
                    help="Set obs.freeze=1 and latch the flow obstacle after this many seconds from OOT activation.")
     p.add_argument("--no-plot", action="store_true")
+    p.add_argument("--case-id", required=True, help="Unique ID from the physical-corpus manifest.")
+    p.add_argument("--configuration", choices=("27", "36"), required=True)
+    p.add_argument("--label", choices=("positive", "negative"), required=True)
+    p.add_argument("--distance-m", type=float)
+    p.add_argument("--orientation-deg", type=float)
+    p.add_argument("--lateral-offset-m", type=float)
+    p.add_argument("--obstacle-shape", default="none")
+    p.add_argument("--obstacle-width", choices=("none", "narrow", "broad"), default="none")
+    p.add_argument("--depth-configuration",
+                   choices=("single", "foreground_background", "stationary_scene"),
+                   default="stationary_scene")
+    p.add_argument("--texture", choices=("high", "medium", "repeated", "low"), required=True)
+    p.add_argument("--lighting", default="nominal")
+    p.add_argument("--motion", choices=("translation", "translation_yaw", "pure_yaw", "stationary"), required=True)
+    p.add_argument("--truth-world-x", type=float)
+    p.add_argument("--truth-world-y", type=float)
+    p.add_argument("--truth-start-range-m", type=float,
+                   help="Measured obstacle range from the initial camera/body pose.")
+    p.add_argument("--truth-start-bearing-deg", type=float,
+                   help="Measured obstacle bearing from initial body +x, positive left.")
+    p.add_argument("--truth-obstacle-width-m", type=float,
+                   help="Measured physical obstacle width or cylinder diameter.")
+    p.add_argument("--truth-orientation-deg", type=float,
+                   help="Measured obstacle yaw relative to the initial body frame.")
+    p.add_argument("--notes", default="")
     return p.parse_args()
 
 
@@ -184,6 +251,25 @@ def make_row(latest, start_time):
         "rx_ok": latest_get(latest, "flowObsRx.rxOk"),
         "crc_err": latest_get(latest, "flowObsRx.crcErr"),
         "bad_rx": latest_get(latest, "flowObsRx.badRx"),
+        "dup_rx": latest_get(latest, "flowObsRx.dupRx"),
+        "invalid_rx": latest_get(latest, "flowObsRx.invalid"),
+        "sequence_gaps": latest_get(latest, "flowObsRx.seqGap"),
+        "sequence_resets": latest_get(latest, "flowObsRx.seqReset"),
+        "sample_age_ms": latest_get(latest, "flowObsRx.ageMs"),
+        "new_samples": latest_get(latest, "flowObsRx.newCount"),
+        "map_votes": latest_get(latest, "flowObsRx.mapVotes"),
+        "last_sample_was_new": latest_get(latest, "flowObsRx.wasNew"),
+        "gap8_ts_us": latest_get(latest, "flowObsRx.gap8Ts"),
+        "wire_seq": latest_get(latest, "flowObsRx.wireSeq"),
+        "packet_flags": latest_get(latest, "flowObsRx.flags"),
+        "gate_rx_ok": latest_get(latest, "gate8.rxOk"),
+        "gate_crc_err": latest_get(latest, "gate8.crcErr"),
+        "gate_bad_rx": latest_get(latest, "gate8.badRx"),
+        "gate_dup_rx": latest_get(latest, "gate8.dupRx"),
+        "gate_invalid_rx": latest_get(latest, "gate8.invalid"),
+        "uart_queue_drops": latest_get(latest, "gate8.qDrop"),
+        "link_resets": latest_get(latest, "gate8.resets"),
+        "rx_stack_free_words": latest_get(latest, "gate8.stackFree"),
         "n": latest_get(latest, "flowObsRx.n"),
         "dt": latest_get(latest, "flowObsRx.dt"),
         "body_vx": latest_get(latest, "flowObsRx.bodyVx"),
@@ -199,6 +285,8 @@ def make_row(latest, start_time):
         "obs_valid": latest_get(latest, "flowObsRx.obsValid"),
         "obs_hits": latest_get(latest, "flowObsRx.obsHits"),
         "obs_count": latest_get(latest, "flowObsRx.obsCount"),
+        "reject_reason": latest_get(latest, "flowObsRx.reject"),
+        "obs_radius": latest_get(latest, "flowObsRx.obsRadius"),
         "obs_range": latest_get(latest, "flowObsRx.obsRange"),
         "obs_bearing": latest_get(latest, "flowObsRx.obsBear"),
         "obs_bx": latest_get(latest, "flowObsRx.obsBx"),
@@ -220,6 +308,16 @@ def make_row(latest, start_time):
         "map_peak": latest_get(latest, "flowObsRx.mapPeak"),
         "map_active": latest_get(latest, "flowObsRx.mapActive"),
         "map_best": latest_get(latest, "flowObsRx.mapBest"),
+        "reject_low_motion": latest_get(latest, "flowObsRx.rejMotion"),
+        "reject_yaw": latest_get(latest, "flowObsRx.rejYaw"),
+        "reject_depth_disagreement": latest_get(latest, "flowObsRx.rejDepth"),
+        "reject_dispersion": latest_get(latest, "flowObsRx.rejDisp"),
+        "reject_no_group": latest_get(latest, "flowObsRx.rejGroup"),
+        "aggregate_displacement": latest_get(latest, "flowObsRx.aggDisp"),
+        "yaw_explained_ratio": latest_get(latest, "flowObsRx.yawRatio"),
+        "depth_disagreement": latest_get(latest, "flowObsRx.depDisagr"),
+        "group_dispersion": latest_get(latest, "flowObsRx.grpDisp"),
+        "group_score": latest_get(latest, "flowObsRx.grpScore"),
         "admm_obs_source": latest_get(latest, "obs.source"),
         "admm_obs_active": latest_get(latest, "obs.active"),
         "admm_obs_apply": latest_get(latest, "obs.apply"),
@@ -235,13 +333,78 @@ def make_row(latest, start_time):
     }
     for i in SECTORS:
         row[f"flow_x{i}"] = latest_get(latest, f"flowObsRx.flowX{i}")
+        row[f"flow_y{i}"] = latest_get(latest, f"flowObsRx.flowY{i}")
+        row[f"confidence{i}"] = latest_get(latest, f"flowObsRx.conf{i}")
         row[f"res_x{i}"] = latest_get(latest, f"flowObsRx.resX{i}")
         row[f"veff{i}"] = latest_get(latest, f"flowObsRx.vEff{i}")
         row[f"range{i}"] = latest_get(latest, f"flowObsRx.range{i}")
         row[f"valid{i}"] = latest_get(latest, f"flowObsRx.valid{i}")
         row[f"bx{i}"] = latest_get(latest, f"flowObsRx.bx{i}")
         row[f"by{i}"] = latest_get(latest, f"flowObsRx.by{i}")
+    for block_name, _variables in LOG_BLOCKS:
+        row[f"log_ts_{block_name}"] = latest_get(latest, f"__log_ts_{block_name}")
     return row
+
+
+def git_state(path):
+    path = Path(path)
+    try:
+        commit = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = bool(subprocess.check_output(
+            ["git", "-C", str(path), "status", "--porcelain"], text=True
+        ).strip())
+        return {"path": str(path.resolve()), "commit": commit, "dirty": dirty}
+    except (OSError, subprocess.CalledProcessError):
+        return {"path": str(path.resolve()), "commit": None, "dirty": None}
+
+
+def write_metadata(args, out):
+    app_dir = Path(__file__).resolve().parent
+    repo = app_dir.parents[1]
+    metadata = {
+        "schema_version": 1,
+        "created_unix_s": time.time(),
+        "csv": str(out.resolve()),
+        "case": {
+            "id": args.case_id,
+            "label": args.label,
+            "configuration_features": int(args.configuration),
+            "distance_m": args.distance_m,
+            "orientation_deg": args.orientation_deg,
+            "lateral_offset_m": args.lateral_offset_m,
+            "obstacle_shape": args.obstacle_shape,
+            "obstacle_width": args.obstacle_width,
+            "depth_configuration": args.depth_configuration,
+            "texture": args.texture,
+            "lighting": args.lighting,
+            "motion": args.motion,
+            "truth_world_x_m": args.truth_world_x,
+            "truth_world_y_m": args.truth_world_y,
+            "truth_start_range_m": args.truth_start_range_m,
+            "truth_start_bearing_deg": args.truth_start_bearing_deg,
+            "truth_obstacle_width_m": args.truth_obstacle_width_m,
+            "truth_orientation_deg": args.truth_orientation_deg,
+            "notes": args.notes,
+        },
+        "run": {
+            "uri": args.uri,
+            "duration_s": args.duration,
+            "start_delay_s": args.start_delay,
+            "log_period_ms": args.period_ms,
+            "snapshot_hz": args.sample_hz,
+            "motors_commanded": False,
+            "admm_apply": args.admm_apply,
+        },
+        "source": {
+            "controller_repo": git_state(repo),
+            "crazyflie_firmware_submodule": git_state(repo / "crazyflie-firmware"),
+        },
+    }
+    sidecar = out.with_suffix(out.suffix + ".json")
+    sidecar.write_text(json.dumps(metadata, indent=2) + "\n")
+    return sidecar
 
 
 def as_float(row, key):
@@ -359,6 +522,7 @@ def main():
 
         def on_log(_timestamp, data, _logconf):
             latest.update(data)
+            latest[f"__log_ts_{_logconf.name}"] = _timestamp
 
         for name, variables in LOG_BLOCKS:
             lc = LogConfig(name=name, period_in_ms=args.period_ms)
@@ -391,10 +555,6 @@ def main():
             set_param(cf, "obs.logOnly", 0, delay=0.05)
             set_param(cf, "obs.useFlow", 1, delay=0.05)
 
-        if not args.no_controller_switch:
-            print("switching stabilizer.controller to OOT/6")
-            set_param(cf, "stabilizer.controller", 6, delay=0.5)
-
         row_count = 0
         with out.open("w", newline="") as fp:
             writer = csv.DictWriter(fp, fieldnames=CSV_FIELDS)
@@ -403,6 +563,21 @@ def main():
             os.fsync(fp.fileno())
 
             print(f"connected {args.uri}")
+            if args.start_delay > 0:
+                remaining = args.start_delay
+                while remaining > 0:
+                    print(f"recording starts in {remaining:.1f}s", flush=True)
+                    step = min(1.0, remaining)
+                    time.sleep(step)
+                    remaining -= step
+            if not args.no_controller_switch:
+                # Activate perception only after the countdown. Otherwise map
+                # evidence gathered before t=0 can appear as an instantaneous
+                # detection without synchronized motion or truth evidence.
+                print("resetting flow obstacle estimator")
+                set_param(cf, "flowObsCtl.reset", 1, delay=0.05)
+                print("switching stabilizer.controller to OOT/6")
+                set_param(cf, "stabilizer.controller", 6, delay=0.1)
             print(f"recording {args.duration:.1f}s to {out}")
             start = time.time()
             next_sample = start
@@ -457,6 +632,8 @@ def main():
                         pass
 
     print(f"wrote {out} ({row_count} rows)")
+    sidecar = write_metadata(args, out)
+    print(f"wrote {sidecar}")
 
     if not args.no_plot:
         png = out.with_suffix(".png")

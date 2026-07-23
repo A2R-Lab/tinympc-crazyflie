@@ -9,6 +9,7 @@
 
 extern uint8_t obsEnable;
 extern uint8_t obsLogOnly;
+extern uint8_t obsPidPassthrough;
 extern uint8_t obsUseFlow;
 extern uint8_t obsFreezeFlow;
 extern uint8_t obsFreezeClear;
@@ -50,6 +51,7 @@ extern uint8_t g_mpc_iter;
 PARAM_GROUP_START(obs)
 PARAM_ADD(PARAM_UINT8,  enable,  &obsEnable)
 PARAM_ADD(PARAM_UINT8,  logOnly, &obsLogOnly)
+PARAM_ADD(PARAM_UINT8,  pidPass, &obsPidPassthrough)
 PARAM_ADD(PARAM_UINT8,  useFlow, &obsUseFlow)
 PARAM_ADD(PARAM_UINT8,  freeze,  &obsFreezeFlow)
 PARAM_ADD(PARAM_UINT8,  frzClear,&obsFreezeClear)

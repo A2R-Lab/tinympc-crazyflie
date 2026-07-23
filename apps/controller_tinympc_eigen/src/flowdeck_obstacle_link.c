@@ -12,6 +12,7 @@
 #include "task.h"
 
 #include "log.h"
+#include "param.h"
 
 #include <math.h>
 #include <string.h>
@@ -24,19 +25,28 @@
 #define FLOW_MAX_RANGE_M 10.0f
 #define FLOW_OBS_CANDIDATE_MAX_RANGE_M 3.0f
 #define FLOW_OBS_CANDIDATE_MAX_YAW_RATE_RAD_S 0.6f
-#define FLOW_OBS_CANDIDATE_MIN_SECTORS 2
-#define FLOW_OBS_CANDIDATE_MAX_RANGE_JUMP_M 0.45f
-#define FLOW_OBS_CANDIDATE_ALPHA 0.35f
+#define FLOW_OBS_CANDIDATE_MIN_SECTORS 1
+#define FLOW_OBS_GROUP_RADIUS_M 0.60f
+#define FLOW_OBS_MAX_RANGE_DISPERSION_M 0.55f
+#define FLOW_OBS_PERSIST_SPATIAL_GATE_M 0.55f
+#define FLOW_OBS_PERSIST_WINDOW 3
+#define FLOW_OBS_PERSIST_REQUIRED 2
+#define FLOW_OBS_MIN_AGG_DISPLACEMENT_RAD 0.004f
+#define FLOW_OBS_MAX_YAW_EXPLAINED_RATIO 0.80f
+#define FLOW_OBS_MAX_INV_DEPTH_DISAGREEMENT_M 0.75f
 #define FLOW_OBS_CANDIDATE_RADIUS_M 0.25f
 #define FLOW_OBS_CYL_ALPHA 0.20f
 #define FLOW_OBS_CYL_CONF_UP 0.20f
 #define FLOW_OBS_CYL_CONF_DOWN 0.01f
-#define FLOW_OBS_CYL_VALID_CONF 0.20f
-#define FLOW_OBS_CYL_VALID_ACCEPTS 2
+#define FLOW_OBS_CYL_VALID_CONF 0.10f
+#define FLOW_OBS_CYL_VALID_ACCEPTS 1
+#define FLOW_OBS_CYL_FAR_RANGE_M 0.75f
+#define FLOW_OBS_CYL_FAR_VALID_ACCEPTS 4
 #define FLOW_OBS_CYL_GATE_CONF 0.35f
 #define FLOW_OBS_CYL_GATE_BASE_M 0.25f
 #define FLOW_OBS_CYL_GATE_RANGE_FRAC 0.20f
 #define FLOW_OBS_CYL_GATE_MAX_M 0.50f
+#define FLOW_OBS_CYL_SWITCH_MARGIN_M 0.50f
 #define FLOW_OBS_CYL_COV_ALPHA 0.15f
 #define FLOW_OBS_CYL_COV_INIT_M2 0.04f
 #define FLOW_OBS_CYL_COV_INFLATE_M2 0.002f
@@ -46,9 +56,9 @@
 #define FLOW_OBS_MAP_STALE_DECAY 0.995f
 #define FLOW_OBS_MAP_MIN_EVIDENCE 0.03f
 #define FLOW_OBS_MAP_VOTE 0.18f
-#define FLOW_OBS_MAP_MERGE_RADIUS_M 0.55f
-#define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.55f
-#define FLOW_OBS_MAP_VALID_EVIDENCE 0.20f
+#define FLOW_OBS_MAP_MERGE_RADIUS_M 0.30f
+#define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.30f
+#define FLOW_OBS_MAP_VALID_EVIDENCE 0.10f
 #define FLOW_OBS_MAP_CELL_SIGMA_M2 0.01f
 
 static volatile uint32_t g_seq = 0;
@@ -61,6 +71,12 @@ static volatile uint32_t g_dupRx = 0;
 static volatile uint32_t g_invalidRx = 0;
 static uint16_t g_lastWireSeq = 0;
 static bool g_haveWireSeq = false;
+static volatile uint32_t g_wireSeqGaps = 0;
+static volatile uint32_t g_wireSeqResets = 0;
+static uint32_t g_sampleAgeMs = 0;
+static uint32_t g_newSamplesProcessed = 0;
+static uint32_t g_mapEvidenceVotes = 0;
+static uint8_t g_lastSampleWasNew = 0;
 static float g_bodyVx = 0.0f;
 static float g_bodyVy = 0.0f;
 static float g_yawRate = 0.0f;
@@ -90,6 +106,21 @@ static float g_obsBodyX = 0.0f;
 static float g_obsBodyY = 0.0f;
 static float g_obsWorldX = 0.0f;
 static float g_obsWorldY = 0.0f;
+static float g_obsHistoryX[FLOW_OBS_PERSIST_WINDOW] = {0};
+static float g_obsHistoryY[FLOW_OBS_PERSIST_WINDOW] = {0};
+static uint8_t g_obsHistoryValid[FLOW_OBS_PERSIST_WINDOW] = {0};
+static uint8_t g_obsHistoryHead = 0;
+static uint8_t g_rejectReason = 0;
+static uint32_t g_rejectLowMotion = 0;
+static uint32_t g_rejectYaw = 0;
+static uint32_t g_rejectDepthDisagree = 0;
+static uint32_t g_rejectDispersion = 0;
+static uint32_t g_rejectNoGroup = 0;
+static float g_aggregateDisplacement = 0.0f;
+static float g_yawExplainedRatio = 0.0f;
+static float g_depthDisagreement = 0.0f;
+static float g_groupDispersion = 0.0f;
+static float g_groupScore = 0.0f;
 static float g_obsRadius = FLOW_OBS_CANDIDATE_RADIUS_M;
 static float g_cylValid = 0.0f;
 static float g_cylConf = 0.0f;
@@ -113,8 +144,29 @@ static uint8_t g_mapHits[FLOW_OBS_MAP_CELLS] = {0};
 static float g_mapPeak = 0.0f;
 static uint8_t g_mapActive = 0;
 static uint8_t g_mapBestIdx = 0;
+static uint8_t g_resetRequested = 0;
+static uint32_t g_resetCount = 0;
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
+
+static uint8_t flowObstacleGroupRoot(uint8_t parent[FLOW_OBS_SECT_MAX],
+                                     uint8_t index) {
+  while (parent[index] != index) {
+    parent[index] = parent[parent[index]];
+    index = parent[index];
+  }
+  return index;
+}
+
+static bool flowObstacleCylinderMeetsValidity(void) {
+  const float range = sqrtf(g_cylBodyX * g_cylBodyX +
+                            g_cylBodyY * g_cylBodyY);
+  const uint8_t required_accepts =
+      range > FLOW_OBS_CYL_FAR_RANGE_M ?
+      FLOW_OBS_CYL_FAR_VALID_ACCEPTS : FLOW_OBS_CYL_VALID_ACCEPTS;
+  return g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
+         g_cylAccepts >= required_accepts;
+}
 
 static void flowObstacleDecayMap(float decay) {
   g_mapActive = 0;
@@ -189,8 +241,64 @@ static void flowObstacleExtractCylinder(float world_x_m,
     return;
   }
 
-  const float best_x = g_mapX[g_mapBestIdx];
-  const float best_y = g_mapY[g_mapBestIdx];
+  /* A map vote already represents spatial agreement across at least two
+   * distinct camera samples.  Among such temporally validated components,
+   * publish the nearest hazard rather than allowing a well-textured distant
+   * wall to displace a closer foreground obstacle. */
+  uint8_t nearest_idx = g_mapBestIdx;
+  float nearest_d2 = INFINITY;
+  float nearest_evidence = 0.0f;
+  uint8_t tracked_idx = g_mapBestIdx;
+  float tracked_innovation_d2 = INFINITY;
+  for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
+    if (g_mapEvidence[i] < FLOW_OBS_MAP_VALID_EVIDENCE) {
+      continue;
+    }
+    const float dx = g_mapX[i] - world_x_m;
+    const float dy = g_mapY[i] - world_y_m;
+    const float d2 = dx * dx + dy * dy;
+    if (d2 < nearest_d2 ||
+        (d2 == nearest_d2 && g_mapEvidence[i] > nearest_evidence)) {
+      nearest_idx = i;
+      nearest_d2 = d2;
+      nearest_evidence = g_mapEvidence[i];
+    }
+    const float track_dx = g_mapX[i] - g_cylWorldX;
+    const float track_dy = g_mapY[i] - g_cylWorldY;
+    const float track_d2 = track_dx * track_dx + track_dy * track_dy;
+    if (track_d2 < tracked_innovation_d2) {
+      tracked_idx = i;
+      tracked_innovation_d2 = track_d2;
+    }
+  }
+
+  /* Preserve association with the published component through modest state
+   * and map jitter. A new component may take over only when it is materially
+   * closer to the vehicle; this still lets a near foreground obstacle replace
+   * a previously confirmed far wall. */
+  if (g_cylConf >= FLOW_OBS_CYL_VALID_CONF) {
+    const float old_dx = g_cylWorldX - world_x_m;
+    const float old_dy = g_cylWorldY - world_y_m;
+    const float old_range = sqrtf(old_dx * old_dx + old_dy * old_dy);
+    float track_gate = FLOW_OBS_CYL_GATE_BASE_M +
+                       FLOW_OBS_CYL_GATE_RANGE_FRAC * old_range;
+    if (track_gate > FLOW_OBS_CYL_GATE_MAX_M) {
+      track_gate = FLOW_OBS_CYL_GATE_MAX_M;
+    }
+    if (tracked_innovation_d2 <= track_gate * track_gate) {
+      const float tracked_dx = g_mapX[tracked_idx] - world_x_m;
+      const float tracked_dy = g_mapY[tracked_idx] - world_y_m;
+      const float tracked_range =
+          sqrtf(tracked_dx * tracked_dx + tracked_dy * tracked_dy);
+      const float nearest_range = sqrtf(nearest_d2);
+      if (nearest_range + FLOW_OBS_CYL_SWITCH_MARGIN_M >= tracked_range) {
+        nearest_idx = tracked_idx;
+      }
+    }
+  }
+  g_mapBestIdx = nearest_idx;
+  const float best_x = g_mapX[nearest_idx];
+  const float best_y = g_mapY[nearest_idx];
   const float extract_r2 = FLOW_OBS_MAP_EXTRACT_RADIUS_M * FLOW_OBS_MAP_EXTRACT_RADIUS_M;
   float w_sum = 0.0f;
   float x_sum = 0.0f;
@@ -256,12 +364,11 @@ static void flowObstacleExtractCylinder(float world_x_m,
   const float dy_body = g_cylWorldY - world_y_m;
   g_cylBodyX = yaw_c * dx_body + yaw_s * dy_body;
   g_cylBodyY = -yaw_s * dx_body + yaw_c * dy_body;
-  g_cylConf = g_mapPeak;
-  g_cylAccepts = g_mapHits[g_mapBestIdx];
+  g_cylConf = g_mapEvidence[nearest_idx];
+  g_cylAccepts = g_mapHits[nearest_idx];
   g_cylAge = 0.0f;
   g_cylReject = 0.0f;
-  g_cylValid = (g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
-                g_cylAccepts >= FLOW_OBS_CYL_VALID_ACCEPTS) ? 1.0f : 0.0f;
+  g_cylValid = flowObstacleCylinderMeetsValidity() ? 1.0f : 0.0f;
 }
 
 static void flowObstacleDecayCylinder(float world_x_m,
@@ -278,8 +385,7 @@ static void flowObstacleDecayCylinder(float world_x_m,
   if (g_cylVarY > FLOW_OBS_CYL_COV_MAX_M2) {
     g_cylVarY = FLOW_OBS_CYL_COV_MAX_M2;
   }
-  g_cylValid = (g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
-                g_cylAccepts >= FLOW_OBS_CYL_VALID_ACCEPTS) ? 1.0f : 0.0f;
+  g_cylValid = flowObstacleCylinderMeetsValidity() ? 1.0f : 0.0f;
 }
 
 static void flowObstacleClearFrameDerived(void) {
@@ -313,8 +419,51 @@ static void flowObstacleClearFrameDerived(void) {
   g_obsWorldY = 0.0f;
 }
 
+static void flowObstacleResetEstimator(void) {
+  flowObstacleClearFrameDerived();
+  memset(g_obsHistoryX, 0, sizeof(g_obsHistoryX));
+  memset(g_obsHistoryY, 0, sizeof(g_obsHistoryY));
+  memset(g_obsHistoryValid, 0, sizeof(g_obsHistoryValid));
+  g_obsHistoryHead = 0;
+  g_rejectReason = 0;
+  g_rejectLowMotion = 0;
+  g_rejectYaw = 0;
+  g_rejectDepthDisagree = 0;
+  g_rejectDispersion = 0;
+  g_rejectNoGroup = 0;
+  g_aggregateDisplacement = 0.0f;
+  g_yawExplainedRatio = 0.0f;
+  g_depthDisagreement = 0.0f;
+  g_groupDispersion = 0.0f;
+  g_groupScore = 0.0f;
+  g_cylValid = 0.0f;
+  g_cylConf = 0.0f;
+  g_cylAge = 0.0f;
+  g_cylBodyX = 0.0f;
+  g_cylBodyY = 0.0f;
+  g_cylWorldX = 0.0f;
+  g_cylWorldY = 0.0f;
+  g_cylReject = 0.0f;
+  g_cylInnov = 0.0f;
+  g_cylAccepts = 0;
+  g_cylVarX = FLOW_OBS_CYL_COV_INIT_M2;
+  g_cylVarY = FLOW_OBS_CYL_COV_INIT_M2;
+  g_cylCovXY = 0.0f;
+  g_lastDepthSample = 0;
+  memset(g_mapX, 0, sizeof(g_mapX));
+  memset(g_mapY, 0, sizeof(g_mapY));
+  memset(g_mapEvidence, 0, sizeof(g_mapEvidence));
+  memset(g_mapHits, 0, sizeof(g_mapHits));
+  g_mapPeak = 0.0f;
+  g_mapActive = 0;
+  g_mapBestIdx = 0;
+  g_mapEvidenceVotes = 0;
+  g_resetCount++;
+}
+
 void flowObstacleLinkInit(void) {
   memset(&g_payload, 0, sizeof(g_payload));
+  flowObstacleResetEstimator();
 }
 
 bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
@@ -340,9 +489,19 @@ bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
   }
   /* reserved is a nonzero producer sequence in the combined firmware. Keep
    * accepting zero for compatibility with the older flow-only producer. */
-  if (p->reserved != 0 && g_haveWireSeq && p->reserved == g_lastWireSeq) {
-    g_dupRx++;
-    return false;
+  if (p->reserved != 0 && g_haveWireSeq) {
+    const uint16_t delta = (uint16_t)(p->reserved - g_lastWireSeq);
+    if (delta == 0) {
+      g_dupRx++;
+      return false;
+    }
+    if (delta < 0x8000u) {
+      g_wireSeqGaps += (uint32_t)(delta - 1u);
+    } else {
+      /* A producer restart normally jumps backwards. Treat a large modular
+       * delta as a reset instead of reporting tens of thousands of losses. */
+      g_wireSeqResets++;
+    }
   }
 
   uint32_t s = g_seq + 1;
@@ -377,15 +536,28 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float world_x_m,
                                  float world_y_m,
                                  float yaw_rad) {
+  if (g_resetRequested) {
+    flowObstacleResetEstimator();
+    g_resetRequested = 0;
+  }
   flow_obstacle_payload_t payload;
   uint32_t age_ms = 0;
   uint32_t sample = 0;
   if (!flowObstacleLinkGetLatest(&payload, &age_ms, &sample) || age_ms > 500) {
+    g_sampleAgeMs = age_ms;
+    g_lastSampleWasNew = 0;
     flowObstacleClearFrameDerived();
     flowObstacleDecayCylinder(world_x_m, world_y_m, yaw_rad);
     return;
   }
   const bool new_sample = sample != g_lastDepthSample;
+  g_sampleAgeMs = age_ms;
+  g_lastSampleWasNew = new_sample ? 1u : 0u;
+  if (!new_sample) {
+    flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
+    return;
+  }
+  g_newSamplesProcessed++;
 
   g_bodyVx = body_vx_m_s;
   g_bodyVy = body_vy_m_s;
@@ -401,6 +573,12 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
   const float yaw_c = cosf(yaw_rad);
   const float yaw_s = sinf(yaw_rad);
   uint8_t candidate_ok[FLOW_OBS_SECT_MAX] = {0};
+  g_aggregateDisplacement = 0.0f;
+  float yaw_displacement = 0.0f;
+  g_depthDisagreement = 0.0f;
+  g_groupDispersion = 0.0f;
+  g_groupScore = 0.0f;
+  g_rejectReason = 0;
 
   for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
     if (i >= payload.n_sectors || payload.sector[i].confidence < FLOW_MIN_CONFIDENCE) {
@@ -425,6 +603,34 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                 (1.0f + image_q * image_q);
     float residual_flow = measured_flow - yaw_rate_rad_s;
     float vel_eff = body_vx_m_s * sinf(az) - body_vy_m_s * cosf(az);
+    const float confidence = payload.sector[i].confidence;
+    g_aggregateDisplacement += confidence * fabsf(measured_flow) * payload.dt_s;
+    yaw_displacement += confidence * fabsf(yaw_rate_rad_s) * payload.dt_s;
+    const bool parallax_observable = fabsf(vel_eff) >= FLOW_MIN_TRANSLATION_M_S;
+    const bool looming_observable =
+        fabsf(body_vx_m_s) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(payload.sector[i].flow_y_rad_s) >= 1.0e-3f;
+    if (parallax_observable && looming_observable) {
+      const float disagreement = fabsf(residual_flow / vel_eff -
+                                         payload.sector[i].flow_y_rad_s / body_vx_m_s);
+      if (disagreement > g_depthDisagreement) {
+        g_depthDisagreement = disagreement;
+      }
+      if (disagreement > FLOW_OBS_MAX_INV_DEPTH_DISAGREEMENT_M) {
+        g_rejectDepthDisagree++;
+        g_rejectReason = 3;
+        g_resFlow[i] = residual_flow;
+        g_velEff[i] = vel_eff;
+        g_invDepth[i] = 0.0f;
+        g_range[i] = 0.0f;
+        g_valid[i] = 0.0f;
+        g_bodyX[i] = 0.0f;
+        g_bodyY[i] = 0.0f;
+        g_worldX[i] = 0.0f;
+        g_worldY[i] = 0.0f;
+        continue;
+      }
+    }
 
     /* flow_y carries GAP8's sector radial-expansion rate. It makes forward
      * translation observable where horizontal parallax is near zero. */
@@ -497,96 +703,159 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     }
   }
 
+  g_yawExplainedRatio = yaw_displacement /
+                        (g_aggregateDisplacement > 1.0e-9f ?
+                         g_aggregateDisplacement : 1.0e-9f);
+  if (g_aggregateDisplacement < FLOW_OBS_MIN_AGG_DISPLACEMENT_RAD) {
+    memset(candidate_ok, 0, sizeof(candidate_ok));
+    g_rejectLowMotion++;
+    g_rejectReason = 1;
+  } else if (g_yawExplainedRatio > FLOW_OBS_MAX_YAW_EXPLAINED_RATIO) {
+    memset(candidate_ok, 0, sizeof(candidate_ok));
+    g_rejectYaw++;
+    g_rejectReason = 2;
+  }
+  /* The slot at head falls out before evaluating the current sample, leaving
+   * exactly the previous M-1 samples for a current-inclusive N-of-M test. */
+  g_obsHistoryValid[g_obsHistoryHead] = 0;
+
   uint8_t best_start = 0;
   uint8_t best_count = 0;
-  float best_range_sum = 0.0f;
-  uint8_t start = 0;
-  while (start < FLOW_OBS_SECT_MAX) {
-    while (start < FLOW_OBS_SECT_MAX && !candidate_ok[start]) {
-      start++;
-    }
-    if (start >= FLOW_OBS_SECT_MAX) {
-      break;
-    }
-
-    uint8_t count = 0;
-    float range_sum = 0.0f;
-    while ((uint8_t)(start + count) < FLOW_OBS_SECT_MAX && candidate_ok[start + count]) {
-      const uint8_t idx = start + count;
-      if (count > 0 && fabsf(g_range[idx] - g_range[idx - 1]) >
-                           FLOW_OBS_CANDIDATE_MAX_RANGE_JUMP_M) {
-        break;
+  float best_score = -1.0f;
+  uint8_t parent[FLOW_OBS_SECT_MAX];
+  for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
+    parent[i] = i;
+  }
+  /* Bounded union-find produces disjoint foreground/background components.
+   * Both body-point distance and range must agree; sector adjacency is not
+   * required and overlapping seed-ball ties cannot introduce side bias.
+   * A one-sector component is deliberately retained here: an obstacle at the
+   * edge of the FOV can occupy only one sector in a frame.  It still cannot
+   * vote by itself because the independent N-of-M temporal/spatial gate below
+   * requires agreement in another frame. */
+  for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
+    if (!candidate_ok[i]) continue;
+    for (uint8_t j = (uint8_t)(i + 1u); j < FLOW_OBS_SECT_MAX; j++) {
+      if (!candidate_ok[j]) continue;
+      const float dx = g_bodyX[i] - g_bodyX[j];
+      const float dy = g_bodyY[i] - g_bodyY[j];
+      if (dx * dx + dy * dy <=
+            FLOW_OBS_GROUP_RADIUS_M * FLOW_OBS_GROUP_RADIUS_M &&
+          fabsf(g_range[i] - g_range[j]) <=
+            FLOW_OBS_MAX_RANGE_DISPERSION_M) {
+        const uint8_t root_i = flowObstacleGroupRoot(parent, i);
+        const uint8_t root_j = flowObstacleGroupRoot(parent, j);
+        if (root_i != root_j) parent[root_j] = root_i;
       }
-      range_sum += g_range[idx];
+    }
+  }
+  for (uint8_t component = 0; component < FLOW_OBS_SECT_MAX; component++) {
+    if (!candidate_ok[component] ||
+        flowObstacleGroupRoot(parent, component) != component) {
+      continue;
+    }
+    uint8_t count = 0;
+    float confidence_sum = 0.0f;
+    float range_sum = 0.0f;
+    float range_min = FLOW_MAX_RANGE_M;
+    float range_max = 0.0f;
+    float bx_sum = 0.0f;
+    float by_sum = 0.0f;
+    for (uint8_t i = 0; i < FLOW_OBS_SECT_MAX; i++) {
+      if (!candidate_ok[i] ||
+          flowObstacleGroupRoot(parent, i) != component) {
+        continue;
+      }
+      const float weight = payload.sector[i].confidence > 1.0e-3f ?
+                           payload.sector[i].confidence : 1.0e-3f;
+      confidence_sum += weight;
+      bx_sum += weight * g_bodyX[i];
+      by_sum += weight * g_bodyY[i];
+      range_sum += g_range[i];
+      if (g_range[i] < range_min) range_min = g_range[i];
+      if (g_range[i] > range_max) range_max = g_range[i];
       count++;
     }
-
-    if (count > best_count ||
-        (count == best_count && count > 0 && range_sum < best_range_sum)) {
-      best_start = start;
-      best_count = count;
-      best_range_sum = range_sum;
+    const float dispersion = range_max - range_min;
+    if (count < FLOW_OBS_CANDIDATE_MIN_SECTORS ||
+        dispersion > FLOW_OBS_MAX_RANGE_DISPERSION_M) {
+      if (dispersion > FLOW_OBS_MAX_RANGE_DISPERSION_M) {
+        g_rejectDispersion++;
+        g_groupDispersion = dispersion;
+      }
+      continue;
     }
-    start += count;
+    const float bx = bx_sum / confidence_sum;
+    const float by = by_sum / confidence_sum;
+    float temporal = 1.0f;
+    for (uint8_t h = 0; h < FLOW_OBS_PERSIST_WINDOW; h++) {
+      if (!g_obsHistoryValid[h]) continue;
+      const float dx = bx - g_obsHistoryX[h];
+      const float dy = by - g_obsHistoryY[h];
+      const float dist = sqrtf(dx * dx + dy * dy);
+      const float agreement = 1.0f - dist / FLOW_OBS_PERSIST_SPATIAL_GATE_M;
+      if (agreement > temporal - 1.0f) temporal = 1.0f + agreement;
+    }
+    const float mean_range = range_sum / (float)count;
+    const float score = 0.25f * (float)count + 2.0f * confidence_sum +
+                        2.0f / (mean_range > 0.2f ? mean_range : 0.2f) +
+                        temporal;
+    if (score > best_score) {
+      best_score = score;
+      best_start = component;
+      best_count = count;
+      g_obsBodyX = bx;
+      g_obsBodyY = by;
+      g_obsRange = mean_range;
+      g_groupDispersion = dispersion;
+    }
   }
 
   g_obsClusterStart = best_start;
   g_obsClusterCount = best_count;
-  bool obs_fresh = false;
+  g_groupScore = best_score > 0.0f ? best_score : 0.0f;
+  const bool obs_fresh = best_count >= FLOW_OBS_CANDIDATE_MIN_SECTORS;
 
-  if (best_count >= FLOW_OBS_CANDIDATE_MIN_SECTORS) {
-    obs_fresh = true;
-    float weight_sum = 0.0f;
-    float body_x_sum = 0.0f;
-    float body_y_sum = 0.0f;
-    float range_sum = 0.0f;
-    for (uint8_t j = 0; j < best_count; j++) {
-      const uint8_t i = best_start + j;
-      const float weight = payload.sector[i].confidence > 1.0e-3f ?
-                           payload.sector[i].confidence : 1.0e-3f;
-      weight_sum += weight;
-      body_x_sum += weight * g_bodyX[i];
-      body_y_sum += weight * g_bodyY[i];
-      range_sum += g_range[i];
-    }
-
-    const float raw_body_x = body_x_sum / weight_sum;
-    const float raw_body_y = body_y_sum / weight_sum;
-
-    if (new_sample) {
-      if (g_obsHits == 0) {
-        g_obsBodyX = raw_body_x;
-        g_obsBodyY = raw_body_y;
-      } else {
-        g_obsBodyX += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_x - g_obsBodyX);
-        g_obsBodyY += FLOW_OBS_CANDIDATE_ALPHA * (raw_body_y - g_obsBodyY);
-      }
-      if (g_obsHits < 255) {
-        g_obsHits++;
+  g_obsHits = obs_fresh ? 1 : 0;
+  if (obs_fresh) {
+    for (uint8_t h = 0; h < FLOW_OBS_PERSIST_WINDOW; h++) {
+      if (g_obsHistoryValid[h]) {
+        const float dx = g_obsBodyX - g_obsHistoryX[h];
+        const float dy = g_obsBodyY - g_obsHistoryY[h];
+        if (dx * dx + dy * dy <=
+            FLOW_OBS_PERSIST_SPATIAL_GATE_M * FLOW_OBS_PERSIST_SPATIAL_GATE_M) {
+          g_obsHits++;
+        }
       }
     }
-    g_obsRange = range_sum / (float)best_count;
     g_obsBearing = atan2f(g_obsBodyY, g_obsBodyX);
     g_obsWorldX = world_x_m + yaw_c * g_obsBodyX - yaw_s * g_obsBodyY;
     g_obsWorldY = world_y_m + yaw_s * g_obsBodyX + yaw_c * g_obsBodyY;
-    g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
-  } else if (new_sample) {
-    if (g_obsHits > 0) {
-      g_obsHits--;
+    g_obsValid = g_obsHits >= FLOW_OBS_PERSIST_REQUIRED ? 1.0f : 0.0f;
+  } else {
+    g_obsValid = 0.0f;
+    if (g_rejectReason == 0) {
+      g_rejectNoGroup++;
+      g_rejectReason = 5;
     }
-    g_obsValid = g_obsHits >= 2 ? 1.0f : 0.0f;
   }
 
-  if (new_sample) {
-    g_lastDepthSample = sample;
-    flowObstacleDecayMap(FLOW_OBS_MAP_DECAY);
-    if (obs_fresh) {
-      float vote_weight = 0.5f + 0.15f * (float)g_obsClusterCount;
-      if (vote_weight > 1.0f) {
-        vote_weight = 1.0f;
-      }
-      flowObstacleVoteMap(g_obsWorldX, g_obsWorldY, vote_weight);
+  g_obsHistoryValid[g_obsHistoryHead] = obs_fresh ? 1 : 0;
+  if (obs_fresh) {
+    g_obsHistoryX[g_obsHistoryHead] = g_obsBodyX;
+    g_obsHistoryY[g_obsHistoryHead] = g_obsBodyY;
+  }
+  g_obsHistoryHead = (uint8_t)((g_obsHistoryHead + 1u) %
+                               FLOW_OBS_PERSIST_WINDOW);
+  g_lastDepthSample = sample;
+  flowObstacleDecayMap(FLOW_OBS_MAP_DECAY);
+  if (obs_fresh && g_obsValid > 0.5f) {
+    float vote_weight = 0.5f + 0.15f * (float)g_obsClusterCount;
+    if (vote_weight > 1.0f) {
+      vote_weight = 1.0f;
     }
+    flowObstacleVoteMap(g_obsWorldX, g_obsWorldY, vote_weight);
+    g_mapEvidenceVotes++;
   }
   flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
 }
@@ -646,6 +915,14 @@ LOG_ADD(LOG_UINT32, crcErr, &g_crcErr)
 LOG_ADD(LOG_UINT32, badRx,  &g_badRx)
 LOG_ADD(LOG_UINT32, dupRx,  &g_dupRx)
 LOG_ADD(LOG_UINT32, invalid, &g_invalidRx)
+LOG_ADD(LOG_UINT16, wireSeq, &g_lastWireSeq)
+LOG_ADD(LOG_UINT32, seqGap, &g_wireSeqGaps)
+LOG_ADD(LOG_UINT32, seqReset, &g_wireSeqResets)
+LOG_ADD(LOG_UINT32, gap8Ts, &g_payload.gap8_ts_us)
+LOG_ADD(LOG_UINT32, ageMs, &g_sampleAgeMs)
+LOG_ADD(LOG_UINT32, newCount, &g_newSamplesProcessed)
+LOG_ADD(LOG_UINT32, mapVotes, &g_mapEvidenceVotes)
+LOG_ADD(LOG_UINT8, wasNew, &g_lastSampleWasNew)
 LOG_ADD(LOG_UINT8,  n,      &g_payload.n_sectors)
 LOG_ADD(LOG_UINT8,  flags,  &g_payload.flags)
 LOG_ADD(LOG_FLOAT,  dt,     &g_payload.dt_s)
@@ -760,6 +1037,17 @@ LOG_ADD(LOG_FLOAT,  obsBy,     &g_obsBodyY)
 LOG_ADD(LOG_FLOAT,  obsWx,     &g_obsWorldX)
 LOG_ADD(LOG_FLOAT,  obsWy,     &g_obsWorldY)
 LOG_ADD(LOG_FLOAT,  obsRadius, &g_obsRadius)
+LOG_ADD(LOG_UINT8,  reject,    &g_rejectReason)
+LOG_ADD(LOG_UINT32, rejMotion, &g_rejectLowMotion)
+LOG_ADD(LOG_UINT32, rejYaw,    &g_rejectYaw)
+LOG_ADD(LOG_UINT32, rejDepth,  &g_rejectDepthDisagree)
+LOG_ADD(LOG_UINT32, rejDisp,   &g_rejectDispersion)
+LOG_ADD(LOG_UINT32, rejGroup,  &g_rejectNoGroup)
+LOG_ADD(LOG_FLOAT,  aggDisp,   &g_aggregateDisplacement)
+LOG_ADD(LOG_FLOAT,  yawRatio,  &g_yawExplainedRatio)
+LOG_ADD(LOG_FLOAT,  depDisagr, &g_depthDisagreement)
+LOG_ADD(LOG_FLOAT,  grpDisp,   &g_groupDispersion)
+LOG_ADD(LOG_FLOAT,  grpScore,  &g_groupScore)
 LOG_ADD(LOG_FLOAT,  cylValid,  &g_cylValid)
 LOG_ADD(LOG_FLOAT,  cylConf,   &g_cylConf)
 LOG_ADD(LOG_FLOAT,  cylAge,    &g_cylAge)
@@ -776,4 +1064,9 @@ LOG_ADD(LOG_FLOAT,  cylCovXY,  &g_cylCovXY)
 LOG_ADD(LOG_FLOAT,  mapPeak,   &g_mapPeak)
 LOG_ADD(LOG_UINT8,  mapActive, &g_mapActive)
 LOG_ADD(LOG_UINT8,  mapBest,   &g_mapBestIdx)
+LOG_ADD(LOG_UINT32, resetCnt,  &g_resetCount)
 LOG_GROUP_STOP(flowObsRx)
+
+PARAM_GROUP_START(flowObsCtl)
+PARAM_ADD(PARAM_UINT8, reset, &g_resetRequested)
+PARAM_GROUP_STOP(flowObsCtl)

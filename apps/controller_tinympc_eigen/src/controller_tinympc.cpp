@@ -238,6 +238,7 @@ static GateVisionPacket g_gate_vision;
 // horizon knot, matching the demo-2 Eigen-task obstacle-avoidance structure.
 uint8_t obsEnable = 0;       // PARAM: master enable for modeled cylinder constraints
 uint8_t obsLogOnly = 1;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
+uint8_t obsPidPassthrough = 0;// PARAM: run perception task but pass commander setpoints to PID
 uint8_t obsUseFlow = 0;      // PARAM: 1 = use AI-deck flow cylinder instead of cx/cy
 uint8_t obsFreezeFlow = 0;   // PARAM: 1 = latch one valid flow cylinder and hold it
 uint8_t obsFreezeClear = 0;  // PARAM: write 1 to clear the latched flow cylinder
@@ -1191,6 +1192,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
      heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
      control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
+    if (obsPidPassthrough) {
+      controllerPid(control, setpoint, sensors, state, tick);
+      return;
+    }
     const bool hold_output =
         (!has_run_snapshot) || ((tick - activate_tick_snapshot) < M2T(250));
 
