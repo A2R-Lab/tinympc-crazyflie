@@ -160,6 +160,10 @@ def parse_args():
     p.add_argument("--peer-s", type=float, default=10.0)
     p.add_argument("--freeze-after-s", type=float, default=None,
                    help="Latch obstacle this many seconds after switching to TinyMPC. Default: 80%% of peer-s.")
+    p.add_argument("--freeze-on-support", action="store_true",
+                   help="Latch as soon as live flow support passes the safety gates.")
+    p.add_argument("--freeze-support-hold", type=int, default=1,
+                   help="Consecutive good support samples required before latching.")
     p.add_argument("--peer-amp", type=float, default=0.25, help="Side-to-side peering amplitude [m].")
     p.add_argument("--peer-period-s", type=float, default=3.0)
     p.add_argument("--approach-s", type=float, default=0.0,
@@ -205,6 +209,8 @@ def parse_args():
                    help="Minimum frozen flow confidence required before a PID detour.")
     p.add_argument("--min-track-baseline", type=float, default=0.04,
                    help="Minimum measured lateral camera baseline before accepting a frozen obstacle [m].")
+    p.add_argument("--min-track-support", type=int, default=3,
+                   help="Minimum clustered track support before accepting/freezing an obstacle.")
     p.add_argument("--max-track-sigma", type=float, default=0.20,
                    help="Maximum per-frame clustered track range sigma [m].")
     p.add_argument("--max-cylinder-sigma", type=float, default=0.30,
@@ -349,6 +355,69 @@ def obstacle_detour_points(start, goal, obstacle, clearance):
     return [start, shifted_start, shifted_goal, goal]
 
 
+def flow_support_metrics(latest):
+    baseline = float(latest_get(latest, "flowObsRx.baseline", 0.0) or 0.0)
+    support = int(latest_get(latest, "flowObsRx.trkSupport", 0) or 0)
+    track_sigma = float(
+        latest_get(latest, "flowObsRx.trkSigma", float("inf")) or float("inf"))
+    cylinder_sigma = math.sqrt(max(
+        float(latest_get(latest, "flowObsRx.cylVarX", float("inf"))
+              or float("inf")),
+        float(latest_get(latest, "flowObsRx.cylVarY", float("inf"))
+              or float("inf")),
+    ))
+    cyl_valid = int(float(latest_get(latest, "flowObsRx.cylValid", 0) or 0))
+    cyl_conf = float(latest_get(latest, "flowObsRx.cylConf", 0.0) or 0.0)
+    track_rx = int(latest_get(latest, "flowObsRx.trackRx", 0) or 0)
+    return {
+        "baseline": baseline,
+        "support": support,
+        "track_sigma": track_sigma,
+        "cylinder_sigma": cylinder_sigma,
+        "cyl_valid": cyl_valid,
+        "cyl_conf": cyl_conf,
+        "track_rx": track_rx,
+    }
+
+
+def flow_support_gate_ok(latest, args):
+    m = flow_support_metrics(latest)
+    return (
+        m["cyl_valid"] != 0
+        and m["baseline"] >= args.min_track_baseline
+        and m["support"] >= args.min_track_support
+        and m["track_sigma"] <= args.max_track_sigma
+        and m["cylinder_sigma"] <= args.max_cylinder_sigma
+    ), m
+
+
+def maybe_freeze_on_support(cf, latest, args, state):
+    if not args.freeze_on_support or state.get("requested"):
+        return False
+    if int(latest_get(latest, "obs.frzValid", 0) or 0):
+        state["requested"] = True
+        return True
+    ok, metrics = flow_support_gate_ok(latest, args)
+    if ok:
+        state["good_count"] = state.get("good_count", 0) + 1
+    else:
+        state["good_count"] = 0
+    if state["good_count"] < max(1, args.freeze_support_hold):
+        return False
+    print(
+        "support window good; requesting freeze: "
+        f"trackRx={metrics['track_rx']} support={metrics['support']} "
+        f"baseline={metrics['baseline']:.3f}m "
+        f"trackSigma={metrics['track_sigma']:.3f}m "
+        f"cylinderSigma={metrics['cylinder_sigma']:.3f}m "
+        f"conf={metrics['cyl_conf']:.3f}"
+    )
+    set_param(cf, "obs.frzAfter", 0, delay=0.01)
+    state["requested"] = True
+    state["metrics"] = metrics
+    return True
+
+
 def inside_flight_envelope(latest, x0, y0, height, max_horizontal,
                            min_height_fraction, max_height_factor):
     x = latest_get(latest, "stateEstimate.x")
@@ -365,7 +434,8 @@ def inside_flight_envelope(latest, x0, y0, height, max_horizontal,
 
 
 def stream_peer(cf, rows, latest, seconds, x, y0, z, yaw_deg, amp, period_s,
-                max_horizontal, min_height_fraction, max_height_factor):
+                max_horizontal, min_height_fraction, max_height_factor,
+                args=None, freeze_state=None):
     steps = max(1, int(seconds * 50.0))
     for step in range(steps):
         ensure_link_fresh(latest)
@@ -373,6 +443,11 @@ def stream_peer(cf, rows, latest, seconds, x, y0, z, yaw_deg, amp, period_s,
         y = y0 + amp * math.sin(2.0 * math.pi * t / period_s)
         cf.commander.send_position_setpoint(x, y, z, yaw_deg)
         rows.append(make_row("peer", latest, x, y, z))
+        if args is not None and freeze_state is not None:
+            maybe_freeze_on_support(cf, latest, args, freeze_state)
+            if (args.freeze_on_support and
+                    int(latest_get(latest, "obs.frzValid", 0) or 0)):
+                return True
         if step >= 25 and not inside_flight_envelope(
                 latest, x, y0, z, max_horizontal,
                 min_height_fraction, max_height_factor):
@@ -390,7 +465,8 @@ def stream_peer(cf, rows, latest, seconds, x, y0, z, yaw_deg, amp, period_s,
 def stream_approach_until_frozen(cf, rows, latest, seconds,
                                  x0, y0, x1, z, yaw_deg,
                                  peer_amp, peer_period_s,
-                                 min_height_fraction, max_height_factor):
+                                 min_height_fraction, max_height_factor,
+                                 args=None, freeze_state=None):
     steps = max(1, int(seconds * 50.0))
     denom = max(1, steps - 1)
     for step in range(steps):
@@ -401,6 +477,8 @@ def stream_approach_until_frozen(cf, rows, latest, seconds,
         y = y0 + peer_amp * math.sin(2.0 * math.pi * t / peer_period_s)
         cf.commander.send_position_setpoint(x, y, z, yaw_deg)
         rows.append(make_row("approach", latest, x, y, z))
+        if args is not None and freeze_state is not None:
+            maybe_freeze_on_support(cf, latest, args, freeze_state)
         if int(latest_get(latest, "obs.frzValid", 0) or 0):
             state_x = float(latest_get(latest, "stateEstimate.x", x) or x)
             state_y = float(latest_get(latest, "stateEstimate.y", y) or y)
@@ -447,6 +525,7 @@ def main():
     out = Path(args.out)
     abort_after_cleanup = False
     run_start = (args.start_x, args.start_y)
+    freeze_state = {"requested": False, "good_count": 0}
 
     Path(args.cache_dir).mkdir(parents=True, exist_ok=True)
     cflib.crtp.init_drivers()
@@ -496,6 +575,9 @@ def main():
             freeze_after_s = args.freeze_after_s
             if freeze_after_s is None:
                 freeze_after_s = 0.8 * args.peer_s
+            if args.freeze_on_support:
+                freeze_after_s = max(args.peer_s + args.approach_s +
+                                     args.approach_hold_s + 10.0, freeze_after_s)
             set_param(cf, "obs.frzAfter", int(freeze_after_s * 1000.0))
 
             if not args.skip_flow_warmup:
@@ -541,7 +623,12 @@ def main():
 
             if not abort_after_cleanup:
                 print("enabling flow perception; PID passthrough remains active")
-                print(f"peer command: {args.peer_s:.1f}s side-to-side, freeze after {freeze_after_s:.1f}s")
+                if args.freeze_on_support:
+                    print(f"peer command: {args.peer_s:.1f}s side-to-side, "
+                          "freeze on good support window")
+                else:
+                    print(f"peer command: {args.peer_s:.1f}s side-to-side, "
+                          f"freeze after {freeze_after_s:.1f}s")
                 set_param(cf, "obs.enable", 1)
                 set_param(cf, "obs.logOnly", 1)
                 set_param(cf, "obs.useFlow", 1)
@@ -560,7 +647,8 @@ def main():
                     args.start_x, args.start_y, args.height,
                     args.yaw_deg, args.peer_amp, args.peer_period_s,
                     args.max_horizontal_excursion,
-                    args.min_height_fraction, args.max_height_factor)
+                    args.min_height_fraction, args.max_height_factor,
+                    args, freeze_state)
                 if not peer_ok:
                     abort_after_cleanup = True
                     land_pid(cf, rows, latest, args.land_s, switch_controller=False)
@@ -574,7 +662,8 @@ def main():
                     args.start_x, args.start_y, args.approach_x,
                     args.height, args.yaw_deg,
                     args.approach_peer_amp, args.peer_period_s,
-                    args.min_height_fraction, args.max_height_factor)
+                    args.min_height_fraction, args.max_height_factor,
+                    args, freeze_state)
                 if not approach_ok and args.approach_hold_s > 0.0:
                     print(f"holding at x={args.approach_x:.2f} m with "
                           f"peering for {args.approach_hold_s:.1f}s")
@@ -583,7 +672,8 @@ def main():
                         args.approach_x, args.start_y, args.approach_x,
                         args.height, args.yaw_deg,
                         args.approach_peer_amp, args.peer_period_s,
-                        args.min_height_fraction, args.max_height_factor)
+                        args.min_height_fraction, args.max_height_factor,
+                        args, freeze_state)
                 if not approach_ok:
                     print("ABORT: approach ended without a frozen obstacle")
                     abort_after_cleanup = True
@@ -598,25 +688,22 @@ def main():
                   f"mapPeak={latest_get(latest, 'flowObsRx.mapPeak')} "
                   f"cylValid={latest_get(latest, 'flowObsRx.cylValid')} "
                   f"cylConf={latest_get(latest, 'flowObsRx.cylConf')}")
-            track_baseline = float(
-                latest_get(latest, "flowObsRx.baseline", 0.0) or 0.0)
-            track_support = int(
-                latest_get(latest, "flowObsRx.trkSupport", 0) or 0)
-            track_sigma = float(
-                latest_get(latest, "flowObsRx.trkSigma", float("inf"))
-                or float("inf"))
-            cylinder_sigma = math.sqrt(max(
-                float(latest_get(latest, "flowObsRx.cylVarX",
-                                 float("inf")) or float("inf")),
-                float(latest_get(latest, "flowObsRx.cylVarY",
-                                 float("inf")) or float("inf")),
-            ))
+            current_metrics = flow_support_metrics(latest)
+            gate_metrics = current_metrics
+            if (args.freeze_on_support and int(frz_valid) != 0 and
+                    freeze_state.get("metrics")):
+                gate_metrics = freeze_state["metrics"]
+            track_baseline = gate_metrics["baseline"]
+            track_support = gate_metrics["support"]
+            track_sigma = gate_metrics["track_sigma"]
+            cylinder_sigma = gate_metrics["cylinder_sigma"]
             print(f"observability: baseline={track_baseline:.3f}m "
                   f"support={track_support} trackSigma={track_sigma:.3f}m "
                   f"cylinderSigma={cylinder_sigma:.3f}m")
             safety_gate_ok = (
-                track_baseline >= args.min_track_baseline
-                and track_support >= 3
+                gate_metrics["cyl_valid"] != 0
+                and track_baseline >= args.min_track_baseline
+                and track_support >= args.min_track_support
                 and track_sigma <= args.max_track_sigma
                 and cylinder_sigma <= args.max_cylinder_sigma
             )
