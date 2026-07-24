@@ -16,7 +16,9 @@ make FIRMWARE_MODE=2  # LIMO posthoc
 make FIRMWARE_MODE=3  # LIMO embedded
 ```
 
-The result to flash with cfclient is `build/cf2.bin`. Kbuild tracks the
+This app targets the Crazyflie 2.1 Brushless (`cf21bl`). The result to flash
+with cfclient is `build/cf21bl.bin`; do not select a `cf2.bin`, which is for
+the brushed Crazyflie 2.x platform. Kbuild tracks the
 compiler-definition change, so changing `FIRMWARE_MODE` rebuilds the
 controller and relinks the image. Use `make clean` first only if you want a
 fully clean rebuild.
