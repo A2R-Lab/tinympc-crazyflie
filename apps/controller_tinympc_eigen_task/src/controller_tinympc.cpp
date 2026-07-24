@@ -1217,6 +1217,10 @@ static void tinympcControllerTask(void *parameters)
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC time=%lu us\n", mpc_time_us);
       }
+      if (task_loop_count == 1) {
+        DEBUG_PRINT("MPC stack free=%lu words\n",
+                    (unsigned long)uxTaskGetStackHighWaterMark(NULL));
+      }
 
       // ================================================================
       // Safety Certificate (Section 3.4 of paper)
