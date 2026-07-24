@@ -12,6 +12,8 @@ void update_psd_dual(struct tiny_problem *problem, const struct tiny_params *par
 extern "C" {
 
 #include "debug.h"
+#include "FreeRTOS.h"
+#include "task.h"
 // #include "usec_time.h"
 
 //static uint64_t startTimestamp;
@@ -49,6 +51,10 @@ void solve_admm(struct tiny_problem *problem, const struct tiny_params *params) 
     update_slack(problem, params);
     update_dual(problem, params);
     update_linear_cost(problem, params);
+    // The firmware's parameter/log consumers run at the same priority as this
+    // task. Yield between bounded ADMM chunks so CRTP cannot back up while the
+    // embedded LIMO cache and solver are active.
+    taskYIELD();
     for (int i=0; i<problem->max_iter; i++) {
 
         // Solve linear system with Riccati and roll out to get new trajectory
@@ -93,6 +99,8 @@ void solve_admm(struct tiny_problem *problem, const struct tiny_params *params) 
             problem->status = 1;
             break;
         }
+
+        taskYIELD();
 
         // std::cout << problem->primal_residual_state << std::endl;
         // std::cout << problem->dual_residual_state << std::endl;
