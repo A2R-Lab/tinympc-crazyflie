@@ -104,7 +104,10 @@ GAP8 executable is built from verbatim function bodies extracted from
 
 The suite covers nominal and insufficient peering, no motion, sensor
 degradation, timestamp bias, mixed foreground/background depth, low texture,
-and looming without lateral baseline. See
+looming without lateral baseline, centered obstacles at 0.8 m and 1.4 m, and
+obstacles offset 0.2 m left and right. The offset cases exercise both peering
+directions; the 1.4 m case uses a larger 0.40 m sweep because its parallax is
+smaller. See
 `../../docs/track_perception_validation_2026-07-23.md` for the pinned findings
 and limitations.
 

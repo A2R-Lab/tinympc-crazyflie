@@ -44,6 +44,18 @@ TARGET = Box("target", 1.0, 1.2, -0.45, 0.45, 1)
 CASES = (
     SimCase("nominal_peer", Scene("nominal", (TARGET,), truth=(1.0, 0.0)),
             0.20, True),
+    SimCase("near_center", Scene(
+        "near", (Box("target", 0.8, 1.0, -0.4, 0.4, 1),),
+        truth=(0.8, 0.0)), 0.30, True),
+    SimCase("far_center", Scene(
+        "far", (Box("target", 1.4, 1.6, -0.5, 0.5, 1),),
+        truth=(1.4, 0.0)), 0.40, True),
+    SimCase("left_offset", Scene(
+        "left", (Box("target", 1.0, 1.2, -0.2, 0.6, 1),),
+        truth=(1.0, 0.2)), 0.30, True),
+    SimCase("right_offset", Scene(
+        "right", (Box("target", 1.0, 1.2, -0.6, 0.2, 1),),
+        truth=(1.0, -0.2)), -0.30, True),
     SimCase("no_motion", Scene("still", (TARGET,), truth=(1.0, 0.0)),
             0.0, False),
     SimCase("insufficient_peer", Scene("small", (TARGET,), truth=(1.0, 0.0)),

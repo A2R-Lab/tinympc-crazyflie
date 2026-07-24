@@ -67,7 +67,8 @@ and orchestrates the run. The GAP8 executable contains verbatim function bodies
 extracted from `pulp-frontnet/main.c`; the STM32 executable directly includes
 `flowdeck_obstacle_link.c`.
 
-The final eight-case run passed all expected behaviors:
+The initial eight cases and four additional position cases passed all expected
+behaviors:
 
 | Case | Expected result | Exact-source result |
 | --- | --- | --- |
@@ -79,6 +80,17 @@ The final eight-case run passed all expected behaviors:
 | Mixed 1.0/1.8 m depths | Select robust near component | Detect, 0.070 m error |
 | Low-texture obstacle | Avoid false positive | No cylinder |
 | Forward looming without baseline | Emergency cue only | No cylinder; brake cue on 3 frames |
+| Centered obstacle at 0.8 m, 0.30 m sweep | Detect | Detect, 0.047 m center error |
+| Centered obstacle at 1.4 m, 0.40 m sweep | Detect | Detect, 0.062 m center error |
+| Obstacle 0.2 m left at 1.0 m, 0.30 m sweep | Detect | Detect, 0.065 m center error |
+| Obstacle 0.2 m right at 1.0 m, reversed 0.30 m sweep | Detect | Detect, 0.204 m center error |
+
+The position sweep exposed an observability limitation: all four added cases
+were rejected under the first, uniform 0.20 m left-to-right trajectory. The
+far case required more baseline, and reversing the sweep restored sufficient
+track persistence for the right-offset case. This is evidence that flight
+tests must exercise both peering directions and record achieved baseline;
+detectability at one bearing does not imply symmetric coverage.
 
 These deterministic cases support software regression claims only. The
 renderer is not a substitute for curated real-camera captures, and the
