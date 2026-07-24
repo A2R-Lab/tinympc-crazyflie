@@ -8,7 +8,7 @@ bounded Crazyflie PID motion profile over CrazyRadio:
   takeoff -> settle -> lateral peering -> slow forward approach + peering -> land
 
 The output directory contains:
-  frames/frame_000001.png ...
+  frames/frame_000001.pgm ...
   frames.csv              per-image host/GAP/state/command metadata
   state_log.csv           CrazyRadio state/voltage log snapshots
   commands.csv            commanded setpoints at 50 Hz
@@ -20,6 +20,7 @@ import argparse
 import csv
 import os
 from pathlib import Path
+import queue
 import sys
 import threading
 import time
@@ -69,6 +70,10 @@ def parse_args():
     p.add_argument("--port", type=int, default=5000, help="AI-deck streamer port")
     p.add_argument("--no-udp-send", action="store_false", dest="udp_send",
                    help="do not send CPX streamer replies")
+    p.add_argument("--image-format", choices=("pgm", "png"), default="pgm",
+                   help="image file format; pgm is fastest for capture")
+    p.add_argument("--frame-queue-size", type=int, default=512,
+                   help="max frames buffered for disk writes before dropping")
     p.add_argument("--stream-timeout-s", type=float, default=8.0,
                    help="wait this long for the first image before arming")
     p.add_argument("--height", type=float, default=0.5)
@@ -136,81 +141,121 @@ def as_u8_image(frame):
     return cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
 
-def streamer_thread(args, cap, stop_event, first_frame_event, streamer_errors, client):
+def write_image(path, frame, image_format):
+    if image_format == "png":
+        return cv2.imwrite(str(path), frame, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    return cv2.imwrite(str(path), frame)
+
+
+def image_writer_thread(args, write_queue, writer_done, first_frame_event):
     frames_dir = args.out / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     csv_path = args.out / "frames.csv"
     count = 0
+    dropped = 0
+    suffix = args.image_format
+    fieldnames = [
+        "image", "host_time", "phase", "cmd_x", "cmd_y", "cmd_z",
+        "cmd_yaw_deg", "frame_id", "frame_width", "frame_height",
+        "frame_bpp", "frame_format", "frame_gap8_timestamp",
+        "state_gap8_timestamp", "state_stm32_timestamp",
+        "meta_x_m", "meta_y_m", "meta_z_m",
+        "meta_vx_mps", "meta_vy_mps", "meta_vz_mps",
+        "meta_quat", "meta_rate_roll_rps", "meta_rate_pitch_rps",
+        "meta_rate_yaw_rps", "log_x", "log_y", "log_z", "log_yaw_deg",
+        "log_vx", "log_vy", "log_vz", "vbat", "host_queue_dropped",
+    ]
+    with csv_path.open("w", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer.writeheader()
+        while True:
+            item = write_queue.get()
+            if item is None:
+                write_queue.task_done()
+                break
+            count += 1
+            frame, metadata, snap, host_time, dropped = item
+            image_name = f"frame_{count:06d}.{suffix}"
+            write_image(frames_dir / image_name, frame, args.image_format)
+            writer.writerow({
+                "image": f"frames/{image_name}",
+                "host_time": f"{host_time:.6f}",
+                "phase": snap.get("phase"),
+                "cmd_x": snap.get("cmd_x"),
+                "cmd_y": snap.get("cmd_y"),
+                "cmd_z": snap.get("cmd_z"),
+                "cmd_yaw_deg": snap.get("cmd_yaw_deg"),
+                "frame_id": metadata.frame_id,
+                "frame_width": metadata.frame_width,
+                "frame_height": metadata.frame_height,
+                "frame_bpp": metadata.frame_bpp,
+                "frame_format": metadata.frame_format,
+                "frame_gap8_timestamp": metadata.frame_timestamp,
+                "state_gap8_timestamp": metadata.state_timestamp,
+                "state_stm32_timestamp": metadata.state.timestamp,
+                "meta_x_m": metadata.state.x / 1000.0,
+                "meta_y_m": metadata.state.y / 1000.0,
+                "meta_z_m": metadata.state.z / 1000.0,
+                "meta_vx_mps": metadata.state.vx / 1000.0,
+                "meta_vy_mps": metadata.state.vy / 1000.0,
+                "meta_vz_mps": metadata.state.vz / 1000.0,
+                "meta_quat": metadata.state.quat,
+                "meta_rate_roll_rps": metadata.state.rateRoll / 1000.0,
+                "meta_rate_pitch_rps": metadata.state.ratePitch / 1000.0,
+                "meta_rate_yaw_rps": metadata.state.rateYaw / 1000.0,
+                "log_x": snap.get("stateEstimate.x"),
+                "log_y": snap.get("stateEstimate.y"),
+                "log_z": snap.get("stateEstimate.z"),
+                "log_yaw_deg": snap.get("stateEstimate.yaw"),
+                "log_vx": snap.get("stateEstimate.vx"),
+                "log_vy": snap.get("stateEstimate.vy"),
+                "log_vz": snap.get("stateEstimate.vz"),
+                "vbat": snap.get("pm.vbat"),
+                "host_queue_dropped": dropped,
+            })
+            fp.flush()
+            first_frame_event.set()
+            write_queue.task_done()
+    writer_done["saved"] = count
+    writer_done["dropped"] = dropped
+
+
+def streamer_thread(args, cap, stop_event, first_frame_event, streamer_errors, client):
+    write_queue = queue.Queue(maxsize=max(1, args.frame_queue_size))
+    writer_done = {}
+    writer = threading.Thread(
+        target=image_writer_thread,
+        args=(args, write_queue, writer_done, first_frame_event),
+        daemon=True,
+    )
+    writer.start()
+    received = 0
+    dropped = 0
     try:
-        with csv_path.open("w", newline="") as fp:
-            fieldnames = [
-                "image", "host_time", "phase", "cmd_x", "cmd_y", "cmd_z",
-                "cmd_yaw_deg", "frame_id", "frame_width", "frame_height",
-                "frame_bpp", "frame_format", "frame_gap8_timestamp",
-                "state_gap8_timestamp", "state_stm32_timestamp",
-                "meta_x_m", "meta_y_m", "meta_z_m",
-                "meta_vx_mps", "meta_vy_mps", "meta_vz_mps",
-                "meta_quat", "meta_rate_roll_rps", "meta_rate_pitch_rps",
-                "meta_rate_yaw_rps", "log_x", "log_y", "log_z", "log_yaw_deg",
-                "log_vx", "log_vy", "log_vz", "vbat",
-            ]
-            writer = csv.DictWriter(fp, fieldnames=fieldnames)
-            writer.writeheader()
-            for frame, _tof_frame, metadata in client.receive():
-                if stop_event.is_set():
-                    break
-                client.send_reply(metadata, None)
-                count += 1
-                image_name = f"frame_{count:06d}.png"
-                cv2.imwrite(str(frames_dir / image_name), as_u8_image(frame))
-                snap = cap.snapshot()
-                writer.writerow({
-                    "image": f"frames/{image_name}",
-                    "host_time": f"{time.time():.6f}",
-                    "phase": snap.get("phase"),
-                    "cmd_x": snap.get("cmd_x"),
-                    "cmd_y": snap.get("cmd_y"),
-                    "cmd_z": snap.get("cmd_z"),
-                    "cmd_yaw_deg": snap.get("cmd_yaw_deg"),
-                    "frame_id": metadata.frame_id,
-                    "frame_width": metadata.frame_width,
-                    "frame_height": metadata.frame_height,
-                    "frame_bpp": metadata.frame_bpp,
-                    "frame_format": metadata.frame_format,
-                    "frame_gap8_timestamp": metadata.frame_timestamp,
-                    "state_gap8_timestamp": metadata.state_timestamp,
-                    "state_stm32_timestamp": metadata.state.timestamp,
-                    "meta_x_m": metadata.state.x / 1000.0,
-                    "meta_y_m": metadata.state.y / 1000.0,
-                    "meta_z_m": metadata.state.z / 1000.0,
-                    "meta_vx_mps": metadata.state.vx / 1000.0,
-                    "meta_vy_mps": metadata.state.vy / 1000.0,
-                    "meta_vz_mps": metadata.state.vz / 1000.0,
-                    "meta_quat": metadata.state.quat,
-                    "meta_rate_roll_rps": metadata.state.rateRoll / 1000.0,
-                    "meta_rate_pitch_rps": metadata.state.ratePitch / 1000.0,
-                    "meta_rate_yaw_rps": metadata.state.rateYaw / 1000.0,
-                    "log_x": snap.get("stateEstimate.x"),
-                    "log_y": snap.get("stateEstimate.y"),
-                    "log_z": snap.get("stateEstimate.z"),
-                    "log_yaw_deg": snap.get("stateEstimate.yaw"),
-                    "log_vx": snap.get("stateEstimate.vx"),
-                    "log_vy": snap.get("stateEstimate.vy"),
-                    "log_vz": snap.get("stateEstimate.vz"),
-                    "vbat": snap.get("pm.vbat"),
-                })
-                fp.flush()
-                first_frame_event.set()
+        for frame, _tof_frame, metadata in client.receive():
+            if stop_event.is_set():
+                break
+            client.send_reply(metadata, None)
+            received += 1
+            item = (as_u8_image(frame).copy(), metadata, cap.snapshot(), time.time(), dropped)
+            try:
+                write_queue.put_nowait(item)
+            except queue.Full:
+                dropped += 1
     except Exception as exc:  # noqa: BLE001
         if not stop_event.is_set():
             streamer_errors.append(str(exc))
             first_frame_event.set()
             print(f"streamer stopped: {exc}")
     finally:
-        if count == 0 and not stop_event.is_set() and not streamer_errors:
+        write_queue.put(None)
+        writer.join(timeout=10.0)
+        saved = writer_done.get("saved", 0)
+        dropped = max(dropped, writer_done.get("dropped", 0))
+        if saved == 0 and not stop_event.is_set() and not streamer_errors:
             streamer_errors.append("stream ended before any frame was received")
             first_frame_event.set()
-        print(f"streamer saved {count} frames")
+        print(f"streamer received {received} frames, saved {saved}, host queue dropped {dropped}")
 
 
 def command_position(cf, cap, commands_writer, phase, x, y, z, yaw_deg):
