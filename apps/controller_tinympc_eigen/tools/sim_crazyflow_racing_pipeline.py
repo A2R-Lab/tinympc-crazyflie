@@ -123,10 +123,15 @@ def run(speed: float, improved: bool, seed: int, packet_loss: float,
             packets_delivered += 1
             new_sample = True
         if latest is not None:
-            # Firmware receives EKF world velocity and converts it to body frame.
-            cy, sy = math.cos(yaw), math.sin(yaw)
-            body_vx = cy*vel[0] + sy*vel[1]
-            body_vy = -sy*vel[0] + cy*vel[1]
+            # Match controller_tinympc.cpp: rotate EKF world velocity with the
+            # full measured R(q)^T, including racing-flight roll and pitch.
+            qx, qy, qz, qw = quat
+            body_vx = ((1-2*(qy*qy+qz*qz))*vel[0] +
+                       2*(qx*qy+qw*qz)*vel[1] +
+                       2*(qx*qz-qw*qy)*vel[2])
+            body_vy = (2*(qx*qy-qw*qz)*vel[0] +
+                       (1-2*(qx*qx+qz*qz))*vel[1] +
+                       2*(qy*qz+qw*qx)*vel[2])
             result = stm32.update(latest, body_vx, body_vy,
                                   float(sim.data.states.ang_vel[0, 0, 2]),
                                   pos[0], pos[1], yaw, new_sample=new_sample)

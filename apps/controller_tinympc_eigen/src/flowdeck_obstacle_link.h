@@ -114,6 +114,7 @@ bool flowObstacleLinkGetCylinder(float *out_world_x_m,
                                  float *out_world_y_m,
                                  float *out_radius_m,
                                  float *out_confidence);
+bool flowObstacleLinkEmergencyBrake(void);
 
 bool flowObstacleLinkGetLatest(flow_obstacle_payload_t *out,
                                uint32_t *out_age_ms,

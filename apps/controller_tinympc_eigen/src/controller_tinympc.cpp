@@ -1214,6 +1214,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
      heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
      control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
+    /* Independent looming cue: hold the current pose even while perception is
+     * otherwise in PID-passthrough/log-only mode. The cue requires multi-track
+     * support and expires with the feature packet, so stale UART data cannot
+     * leave the controller permanently latched. */
+    if (flowObstacleLinkEmergencyBrake()) {
+      controllerPid(control, &hold_sp, sensors, state, tick);
+      return;
+    }
     if (obsPidPassthrough) {
       controllerPid(control, setpoint, sensors, state, tick);
       return;

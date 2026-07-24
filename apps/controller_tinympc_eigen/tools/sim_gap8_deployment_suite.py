@@ -9,21 +9,58 @@ import math
 from pathlib import Path
 
 from sim_flow_obstacle_sectors import FirmwareMirror
-from sim_gap8_flow_frontend import CX, FX, H, W, Gap8FlowFrontend
+from sim_gap8_flow_frontend import CX, CY, FX, FY, H, W, Gap8FlowFrontend
 from sim_monocular_flow_suite import SCENES, Scene, ray_hit, texture
 
 
+K1, K2, P1, P2, K3 = (
+    -0.01764488, 0.09941325, 0.00544322, -0.00604001, -0.19001899)
+
+
+def undistort_pixel(u: float, v: float) -> tuple[float, float]:
+    xd, yd = (u-CX)/FX, (v-CY)/FY
+    x, y = xd, yd
+    for _ in range(4):
+        r2 = x*x+y*y
+        radial = 1+r2*(K1+r2*(K2+r2*K3))
+        dx = 2*P1*x*y+P2*(r2+2*x*x)
+        dy = P1*(r2+2*y*y)+2*P2*x*y
+        x, y = (xd-dx)/radial, (yd-dy)/radial
+    return x, y
+
+
+def _noise(seed: int, row: int, col: int) -> float:
+    value = (seed ^ (row*0x45D9F3B) ^ (col*0x119DE1F3)) & 0xFFFFFFFF
+    value ^= value >> 16
+    value = (value*0x45D9F3B) & 0xFFFFFFFF
+    value ^= value >> 16
+    return (value / 0xFFFFFFFF)*2.0-1.0
+
+
 def render_gap8(scene: Scene, x: float, y: float, yaw: float,
-                exposure_scale: float = 1.0, brightness: float = 0.0) -> list[list[int]]:
+                exposure_scale: float = 1.0, brightness: float = 0.0,
+                read_noise: float = 0.0, seed: int = 0,
+                motion_blur_y: float = 0.0) -> list[list[int]]:
+    """Render through measured calibration with deterministic sensor effects."""
     image = [[0] * W for _ in range(H)]
     for col in range(W):
-        az = math.atan((col + 0.5 - CX) / FX)
-        distance, box, face = ray_hit(x, y, yaw + az, scene.boxes)
-        wx, wy = x + distance*math.cos(yaw+az), y + distance*math.sin(yaw+az)
         for row in range(H):
-            z = 1.0 + (H/2-row-0.5)*distance/FX
-            raw = texture(5 if box is None else box.texture, wx, wy, z, face)
-            image[row][col] = max(0, min(255, round(raw*exposure_scale+brightness)))
+            q, p = undistort_pixel(col+0.5, row+0.5)
+            samples = []
+            for blur_fraction in (-0.5, 0.5) if motion_blur_y else (0.0,):
+                sample_y = y+blur_fraction*motion_blur_y
+                az = math.atan(q)
+                distance, box, face = ray_hit(
+                    x, sample_y, yaw+az, scene.boxes)
+                wx = x+distance*math.cos(yaw+az)
+                wy = sample_y+distance*math.sin(yaw+az)
+                z = 1.0-p*distance
+                samples.append(texture(
+                    5 if box is None else box.texture, wx, wy, z, face))
+            raw = sum(samples)/len(samples)
+            raw = (raw*exposure_scale+brightness +
+                   read_noise*_noise(seed, row, col))
+            image[row][col] = max(0, min(255, round(raw)))
     return image
 
 

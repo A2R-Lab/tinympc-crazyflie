@@ -27,13 +27,16 @@ class Gap8DeploymentTest(unittest.TestCase):
                                   balanced_features=True, out=None)
         result = deployment.run_scene(SCENES[0], args)
         self.assertTrue(result["pass"])
-        self.assertLess(float(result["error_m"]), 0.10)
+        # The source-identical 27-feature/one-iteration frontend has a larger
+        # bias than the former 48-feature/three-iteration Python approximation.
+        self.assertLess(float(result["error_m"]), 0.20)
 
-    def test_narrow_box_remains_known_miss(self):
+    def test_narrow_box_is_detected_but_remains_inaccurate(self):
         args = argparse.Namespace(snapshots=15, pass_error=0.35,
                                   balanced_features=True, out=None)
         result = deployment.run_scene(next(s for s in SCENES if s.name == "narrow"), args)
-        self.assertEqual(result["valid_controller_ticks"], 0)
+        self.assertGreater(result["valid_controller_ticks"], 0)
+        self.assertGreater(float(result["error_m"]), args.pass_error)
 
 
 if __name__ == "__main__":

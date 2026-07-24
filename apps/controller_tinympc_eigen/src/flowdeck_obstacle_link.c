@@ -29,7 +29,7 @@
 #define FLOW_OBS_GROUP_RADIUS_M 0.60f
 #define FLOW_OBS_MAX_RANGE_DISPERSION_M 0.55f
 #define FLOW_OBS_PERSIST_SPATIAL_GATE_M 0.55f
-#define FLOW_OBS_PERSIST_WINDOW 3
+#define FLOW_OBS_PERSIST_WINDOW 9
 #define FLOW_OBS_PERSIST_REQUIRED 2
 #define FLOW_OBS_MIN_AGG_DISPLACEMENT_RAD 0.004f
 #define FLOW_OBS_MAX_YAW_EXPLAINED_RATIO 0.80f
@@ -66,6 +66,37 @@
 #define FLOW_OBS_GYRO_SIGMA_RAD_S 0.02f
 #define FLOW_OBS_MAX_RANGE_SIGMA_M 0.35f
 #define FLOW_OBS_MAX_REL_RANGE_SIGMA 0.60f
+#define FLOW_TRACK_MAX_AGE_MS 500u
+#define FLOW_TRACK_MIN_DT_S 0.010f
+#define FLOW_TRACK_MAX_DT_S 0.150f
+#define FLOW_TRACK_MIN_TRANSLATION_M_S 0.08f
+#define FLOW_TRACK_MIN_RESIDUAL_RAD_S 1.0e-3f
+#define FLOW_TRACK_PIXEL_SIGMA_FLOOR 0.10f
+#define FLOW_TRACK_FB_SIGMA_GAIN 0.25f
+/* LK error is an intensity residual, not a geometric pixel residual. It is
+ * retained as a weak texture/exposure penalty; FB error carries the geometric
+ * uncertainty. */
+#define FLOW_TRACK_LK_SIGMA_GAIN 0.002f
+#define FLOW_TRACK_PIXEL_SIGMA_MAX 2.0f
+#define FLOW_TRACK_TIMESTAMP_SIGMA_S 0.002f
+#define FLOW_TRACK_CALIBRATION_REL_SIGMA 0.01f
+#define FLOW_TRACK_FX 89.15584f
+#define FLOW_TRACK_FY 89.46082f
+#define FLOW_TRACK_CX 81.10381f
+#define FLOW_TRACK_CY 73.34730f
+#define FLOW_TRACK_K1 -0.01764488f
+#define FLOW_TRACK_K2 0.09941325f
+#define FLOW_TRACK_P1 0.00544322f
+#define FLOW_TRACK_P2 -0.00604001f
+#define FLOW_TRACK_K3 -0.19001899f
+#define FLOW_TRACK_UNDISTORT_ITERS 4
+#define FLOW_TRACK_CLUSTER_RADIUS_M 0.40f
+#define FLOW_TRACK_CLUSTER_RANGE_GATE_M 0.45f
+#define FLOW_TRACK_CLUSTER_MIN_SUPPORT 3
+#define FLOW_TRACK_MIN_BASELINE_M 0.04f
+#define FLOW_TRACK_MAX_CLUSTER_SIGMA_M 0.20f
+#define FLOW_TRACK_EMERGENCY_MIN_SUPPORT 3
+#define FLOW_TRACK_EMERGENCY_MIN_LOOMING_S_INV 1.0f
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
@@ -78,6 +109,37 @@ static volatile uint32_t g_trackDupRx = 0;
 static uint16_t g_lastTrackWireSeq = 0;
 static bool g_haveTrackWireSeq = false;
 static volatile uint32_t g_trackWireSeqGaps = 0;
+static uint32_t g_lastTrackDepthRxOk = 0;
+static uint32_t g_lastTrackCaptureUs = 0;
+static uint16_t g_lastTrackDepthSequence = 0;
+static bool g_haveTrackDepthTimestamp = false;
+static uint8_t g_trackDepthAccepted = 0;
+static uint8_t g_trackDepthRejectedMotion = 0;
+static uint8_t g_trackDepthRejectedGeometry = 0;
+static uint8_t g_trackDepthRejectedUncertainty = 0;
+static uint8_t g_trackDepthSyncValid = 0;
+static uint32_t g_trackDepthSyncErrorMs = 0;
+static uint8_t g_trackClusterSupport = 0;
+static float g_trackClusterSigma = 0.0f;
+static uint8_t g_trackValidatedSupport = 0;
+static float g_trackValidatedSigma = 0.0f;
+static uint8_t g_trackSafetyAge = UINT8_MAX;
+static uint8_t g_trackBaselineValid = 0;
+static float g_trackBaselineM = 0.0f;
+static float g_trackBaselineAxisX = 0.0f;
+static float g_trackBaselineAxisY = 1.0f;
+static float g_trackBaselineMin = 0.0f;
+static float g_trackBaselineMax = 0.0f;
+static uint8_t g_trackLoomingSupport = 0;
+static float g_trackLoomingRate = 0.0f;
+static uint8_t g_trackEmergencyBrake = 0;
+/* 0: legacy sectors, 1: feature tracks with automatic legacy fallback. */
+static uint8_t g_perceptionMode = 1;
+static float g_trackRange[FLOW_TRACK_MAX] = {0};
+static float g_trackRangeSigma[FLOW_TRACK_MAX] = {0};
+static float g_trackBodyX[FLOW_TRACK_MAX] = {0};
+static float g_trackBodyY[FLOW_TRACK_MAX] = {0};
+static uint8_t g_trackDepthValid[FLOW_TRACK_MAX] = {0};
 static volatile uint32_t g_rxTick = 0;
 static volatile uint32_t g_rxOk = 0;
 static volatile uint32_t g_crcErr = 0;
@@ -195,11 +257,24 @@ static uint8_t flowObstacleGroupRoot(uint8_t parent[FLOW_OBS_SECT_MAX],
 static bool flowObstacleCylinderMeetsValidity(void) {
   const float range = sqrtf(g_cylBodyX * g_cylBodyX +
                             g_cylBodyY * g_cylBodyY);
-  const uint8_t required_accepts =
+  uint8_t required_accepts =
       range > FLOW_OBS_CYL_FAR_RANGE_M ?
       FLOW_OBS_CYL_FAR_VALID_ACCEPTS : FLOW_OBS_CYL_VALID_ACCEPTS;
-  return g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
-         g_cylAccepts >= required_accepts;
+  if (g_perceptionMode == 1u && g_trackRxOk > 0u) {
+    required_accepts =
+        range > FLOW_OBS_CYL_FAR_RANGE_M ? 3u : 2u;
+  }
+  const bool map_valid =
+      g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
+      g_cylAccepts >= required_accepts;
+  if (g_perceptionMode == 1u && g_trackRxOk > 0u) {
+    return map_valid &&
+           g_trackValidatedSupport >= FLOW_TRACK_CLUSTER_MIN_SUPPORT &&
+           g_trackValidatedSigma <= FLOW_TRACK_MAX_CLUSTER_SIGMA_M &&
+           g_trackSafetyAge < FLOW_OBS_PERSIST_WINDOW &&
+           g_trackBaselineM >= FLOW_TRACK_MIN_BASELINE_M;
+  }
+  return map_valid;
 }
 
 static void flowObstacleDecayMap(float decay) {
@@ -492,6 +567,15 @@ static void flowObstacleResetEstimator(void) {
   g_mapActive = 0;
   g_mapBestIdx = 0;
   g_mapEvidenceVotes = 0;
+  g_trackClusterSupport = 0;
+  g_trackClusterSigma = 0.0f;
+  g_trackValidatedSupport = 0;
+  g_trackValidatedSigma = 0.0f;
+  g_trackSafetyAge = UINT8_MAX;
+  g_trackBaselineValid = 0;
+  g_trackBaselineM = 0.0f;
+  g_trackBaselineMin = 0.0f;
+  g_trackBaselineMax = 0.0f;
   g_resetCount++;
 }
 
@@ -686,6 +770,419 @@ static bool flowObstacleStateAt(uint32_t timestamp_ms,
   return true;
 }
 
+static bool flowTrackGetLatest(flow_track_payload_t *out,
+                               uint32_t *out_age_ms,
+                               uint32_t *out_rx_ok) {
+  uint32_t s1 = 0;
+  uint32_t s2 = 0;
+  uint32_t rx_tick = 0;
+  uint32_t rx_ok = 0;
+  do {
+    s1 = g_trackSeqLock;
+    COMPILER_BARRIER();
+    if (s1 & 1u) {
+      continue;
+    }
+    memcpy(out, &g_trackPayload, sizeof(*out));
+    rx_tick = g_trackRxTick;
+    rx_ok = g_trackRxOk;
+    COMPILER_BARRIER();
+    s2 = g_trackSeqLock;
+  } while (s1 != s2 || (s2 & 1u));
+  if (rx_ok == 0u) {
+    return false;
+  }
+  if (out_age_ms) {
+    *out_age_ms = (uint32_t)(xTaskGetTickCount() - rx_tick);
+  }
+  if (out_rx_ok) {
+    *out_rx_ok = rx_ok;
+  }
+  return true;
+}
+
+static void flowTrackUndistort(float pixel_u, float pixel_v,
+                               float *out_x, float *out_y) {
+  const float xd = (pixel_u - FLOW_TRACK_CX) / FLOW_TRACK_FX;
+  const float yd = (pixel_v - FLOW_TRACK_CY) / FLOW_TRACK_FY;
+  float x = xd;
+  float y = yd;
+  for (uint8_t iteration = 0; iteration < FLOW_TRACK_UNDISTORT_ITERS;
+       iteration++) {
+    const float r2 = x * x + y * y;
+    const float radial =
+        1.0f + r2 * (FLOW_TRACK_K1 +
+                     r2 * (FLOW_TRACK_K2 + r2 * FLOW_TRACK_K3));
+    if (!isfinite(radial) || fabsf(radial) < 0.5f) {
+      break;
+    }
+    const float dx = 2.0f * FLOW_TRACK_P1 * x * y +
+                     FLOW_TRACK_P2 * (r2 + 2.0f * x * x);
+    const float dy = FLOW_TRACK_P1 * (r2 + 2.0f * y * y) +
+                     2.0f * FLOW_TRACK_P2 * x * y;
+    x = (xd - dx) / radial;
+    y = (yd - dy) / radial;
+  }
+  *out_x = x;
+  *out_y = y;
+}
+
+static void flowTrackClearDepth(void) {
+  g_trackDepthAccepted = 0;
+  g_trackDepthRejectedMotion = 0;
+  g_trackDepthRejectedGeometry = 0;
+  g_trackDepthRejectedUncertainty = 0;
+  g_trackLoomingSupport = 0;
+  g_trackLoomingRate = 0.0f;
+  g_trackEmergencyBrake = 0;
+  memset(g_trackRange, 0, sizeof(g_trackRange));
+  memset(g_trackRangeSigma, 0, sizeof(g_trackRangeSigma));
+  memset(g_trackBodyX, 0, sizeof(g_trackBodyX));
+  memset(g_trackBodyY, 0, sizeof(g_trackBodyY));
+  memset(g_trackDepthValid, 0, sizeof(g_trackDepthValid));
+}
+
+static uint8_t flowTrackGroupRoot(uint8_t parent[FLOW_TRACK_MAX],
+                                  uint8_t index) {
+  while (parent[index] != index) {
+    parent[index] = parent[parent[index]];
+    index = parent[index];
+  }
+  return index;
+}
+
+static bool flowTrackUpdateDepth(float body_vx_m_s,
+                                 float body_vy_m_s,
+                                 float yaw_rate_rad_s,
+                                 float world_x_m,
+                                 float world_y_m,
+                                 float yaw_rad) {
+  flow_track_payload_t payload = {0};
+  uint32_t age_ms = 0;
+  uint32_t rx_ok = 0;
+  if (!flowTrackGetLatest(&payload, &age_ms, &rx_ok) ||
+      age_ms > FLOW_TRACK_MAX_AGE_MS || rx_ok == g_lastTrackDepthRxOk) {
+    return false;
+  }
+  g_lastTrackDepthRxOk = rx_ok;
+  flowTrackClearDepth();
+
+  flow_state_sample_t synchronized;
+  g_trackDepthSyncValid = 0;
+  g_trackDepthSyncErrorMs = UINT32_MAX;
+  if (payload.stm32_ts_echo != 0u &&
+      flowObstacleStateAt(payload.stm32_ts_echo, &synchronized)) {
+    body_vx_m_s = synchronized.body_vx;
+    body_vy_m_s = synchronized.body_vy;
+    yaw_rate_rad_s = synchronized.yaw_rate;
+    world_x_m = synchronized.world_x;
+    world_y_m = synchronized.world_y;
+    yaw_rad = synchronized.yaw;
+    g_trackDepthSyncValid = 1;
+    g_trackDepthSyncErrorMs = g_syncErrorMs;
+  }
+
+  uint32_t dt_us = payload.dt_us;
+  if (g_haveTrackDepthTimestamp &&
+      (uint16_t)(payload.sequence - g_lastTrackDepthSequence) == 1u) {
+    const uint32_t capture_dt_us =
+        (uint32_t)(payload.gap8_ts_us - g_lastTrackCaptureUs);
+    if (capture_dt_us >= (uint32_t)(FLOW_TRACK_MIN_DT_S * 1000000.0f) &&
+        capture_dt_us <= (uint32_t)(FLOW_TRACK_MAX_DT_S * 1000000.0f)) {
+      dt_us = capture_dt_us;
+    }
+  }
+  g_lastTrackCaptureUs = payload.gap8_ts_us;
+  g_lastTrackDepthSequence = payload.sequence;
+  g_haveTrackDepthTimestamp = true;
+  const float dt_s = (float)dt_us * 1.0e-6f;
+  if (dt_s < FLOW_TRACK_MIN_DT_S || dt_s > FLOW_TRACK_MAX_DT_S) {
+    g_trackDepthRejectedGeometry = payload.count;
+    return true;
+  }
+  const float camera_yaw_c = cosf(g_cameraYawRad);
+  const float camera_yaw_s = sinf(g_cameraYawRad);
+  const float camera_body_vx =
+      body_vx_m_s - yaw_rate_rad_s * g_cameraLeftM;
+  const float camera_body_vy =
+      body_vy_m_s + yaw_rate_rad_s * g_cameraForwardM;
+  const float camera_vx =
+      camera_yaw_c * camera_body_vx + camera_yaw_s * camera_body_vy;
+  const float camera_vy =
+      -camera_yaw_s * camera_body_vx + camera_yaw_c * camera_body_vy;
+  float looming_sum = 0.0f;
+  uint8_t looming_count = 0;
+
+  for (uint8_t i = 0; i < payload.count; i++) {
+    const flow_track_wire_t *wire = &payload.track[i];
+    const float u0 = (float)wire->u_q4 / 16.0f;
+    const float v0 = (float)wire->v_q4 / 16.0f;
+    const float du = (float)wire->du_q8 / 256.0f;
+    const float dv = (float)wire->dv_q8 / 256.0f;
+    float x0;
+    float y0;
+    float x1;
+    float y1;
+    flowTrackUndistort(u0, v0, &x0, &y0);
+    flowTrackUndistort(u0 + du, v0 + dv, &x1, &y1);
+    if (!isfinite(x0) || !isfinite(y0) ||
+        !isfinite(x1) || !isfinite(y1)) {
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+    const float radius2 = x0 * x0 + y0 * y0;
+    if (camera_vx >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(yaw_rate_rad_s) < FLOW_MAX_LOOMING_YAW_RATE_RAD_S &&
+        radius2 > 0.01f &&
+        wire->fb_err_q8 <= (uint16_t)(0.75f * 256.0f)) {
+      const float radial_rate =
+          (x0 * (x1 - x0) + y0 * (y1 - y0)) /
+          (radius2 * dt_s);
+      if (isfinite(radial_rate) && radial_rate > 0.0f) {
+        looming_sum += radial_rate;
+        looming_count++;
+      }
+    }
+
+    const float bearing0 = atanf(x0);
+    const float bearing1 = atanf(x1);
+    const float measured_rate =
+        atan2f(sinf(bearing1 - bearing0), cosf(bearing1 - bearing0)) / dt_s;
+    const float residual_rate = measured_rate - yaw_rate_rad_s;
+    const float vel_eff =
+        camera_vx * sinf(bearing0) - camera_vy * cosf(bearing0);
+    if (fabsf(vel_eff) < FLOW_TRACK_MIN_TRANSLATION_M_S) {
+      g_trackDepthRejectedMotion++;
+      continue;
+    }
+    if (fabsf(residual_rate) < FLOW_TRACK_MIN_RESIDUAL_RAD_S) {
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+    const float inv_depth = residual_rate / vel_eff;
+    if (!isfinite(inv_depth) || inv_depth <= 0.0f ||
+        inv_depth > FLOW_MAX_INV_DEPTH_M) {
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+    const float range = 1.0f / inv_depth;
+    if (range > FLOW_OBS_CANDIDATE_MAX_RANGE_M) {
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+
+    float pixel_sigma =
+        FLOW_TRACK_PIXEL_SIGMA_FLOOR +
+        FLOW_TRACK_FB_SIGMA_GAIN * ((float)wire->fb_err_q8 / 256.0f) +
+        FLOW_TRACK_LK_SIGMA_GAIN * ((float)wire->lk_err_q8 / 256.0f);
+    if (pixel_sigma > FLOW_TRACK_PIXEL_SIGMA_MAX) {
+      pixel_sigma = FLOW_TRACK_PIXEL_SIGMA_MAX;
+    }
+    const float bearing_sigma =
+        pixel_sigma / (FLOW_TRACK_FX * (1.0f + x0 * x0));
+    const float rate_sigma_pixels =
+        1.41421356f * bearing_sigma / dt_s;
+    const float rate_sigma_time =
+        fabsf(measured_rate) * FLOW_TRACK_TIMESTAMP_SIGMA_S / dt_s;
+    const float rate_sigma_cal =
+        fabsf(measured_rate) * FLOW_TRACK_CALIBRATION_REL_SIGMA;
+    const float rate_sigma = sqrtf(
+        rate_sigma_pixels * rate_sigma_pixels +
+        rate_sigma_time * rate_sigma_time +
+        rate_sigma_cal * rate_sigma_cal +
+        FLOW_OBS_GYRO_SIGMA_RAD_S * FLOW_OBS_GYRO_SIGMA_RAD_S);
+    const float inv_sigma_flow = rate_sigma / fabsf(vel_eff);
+    const float inv_sigma_velocity =
+        fabsf(residual_rate) * FLOW_OBS_VELOCITY_SIGMA_M_S /
+        (vel_eff * vel_eff);
+    const float inv_sigma = sqrtf(inv_sigma_flow * inv_sigma_flow +
+                                  inv_sigma_velocity * inv_sigma_velocity);
+    const float range_sigma = inv_sigma / (inv_depth * inv_depth);
+    if (!isfinite(range_sigma) ||
+        range_sigma > FLOW_OBS_MAX_RANGE_SIGMA_M ||
+        range_sigma > FLOW_OBS_MAX_REL_RANGE_SIGMA * range) {
+      g_trackDepthRejectedUncertainty++;
+      continue;
+    }
+
+    const float body_azimuth = bearing0 + g_cameraYawRad;
+    g_trackRange[i] = range;
+    g_trackRangeSigma[i] = range_sigma;
+    g_trackBodyX[i] =
+        g_cameraForwardM + range * cosf(body_azimuth);
+    g_trackBodyY[i] =
+        g_cameraLeftM + range * sinf(body_azimuth);
+    g_trackDepthValid[i] = 1;
+    g_trackDepthAccepted++;
+  }
+  g_trackLoomingSupport = looming_count;
+  g_trackLoomingRate =
+      looming_count > 0u ? looming_sum / (float)looming_count : 0.0f;
+  g_trackEmergencyBrake =
+      looming_count >= FLOW_TRACK_EMERGENCY_MIN_SUPPORT &&
+      g_trackLoomingRate >= FLOW_TRACK_EMERGENCY_MIN_LOOMING_S_INV;
+
+  uint8_t parent[FLOW_TRACK_MAX];
+  for (uint8_t i = 0; i < FLOW_TRACK_MAX; i++) {
+    parent[i] = i;
+  }
+  for (uint8_t i = 0; i < payload.count; i++) {
+    if (!g_trackDepthValid[i]) {
+      continue;
+    }
+    for (uint8_t j = (uint8_t)(i + 1u); j < payload.count; j++) {
+      if (!g_trackDepthValid[j]) {
+        continue;
+      }
+      const float dx = g_trackBodyX[i] - g_trackBodyX[j];
+      const float dy = g_trackBodyY[i] - g_trackBodyY[j];
+      if (dx * dx + dy * dy <=
+              FLOW_TRACK_CLUSTER_RADIUS_M * FLOW_TRACK_CLUSTER_RADIUS_M &&
+          fabsf(g_trackRange[i] - g_trackRange[j]) <=
+              FLOW_TRACK_CLUSTER_RANGE_GATE_M) {
+        const uint8_t root_i = flowTrackGroupRoot(parent, i);
+        const uint8_t root_j = flowTrackGroupRoot(parent, j);
+        if (root_i != root_j) {
+          parent[root_j] = root_i;
+        }
+      }
+    }
+  }
+
+  uint8_t best_root = 0;
+  uint8_t best_count = 0;
+  float best_weight = 0.0f;
+  float best_bx = 0.0f;
+  float best_by = 0.0f;
+  float best_sigma = 0.0f;
+  for (uint8_t component = 0; component < payload.count; component++) {
+    if (!g_trackDepthValid[component] ||
+        flowTrackGroupRoot(parent, component) != component) {
+      continue;
+    }
+    uint8_t count = 0;
+    float weight_sum = 0.0f;
+    float bx_sum = 0.0f;
+    float by_sum = 0.0f;
+    for (uint8_t i = 0; i < payload.count; i++) {
+      if (!g_trackDepthValid[i] ||
+          flowTrackGroupRoot(parent, i) != component) {
+        continue;
+      }
+      const float variance =
+          g_trackRangeSigma[i] * g_trackRangeSigma[i] + 0.0025f;
+      const float weight = 1.0f / variance;
+      weight_sum += weight;
+      bx_sum += weight * g_trackBodyX[i];
+      by_sum += weight * g_trackBodyY[i];
+      count++;
+    }
+    if (count >= FLOW_TRACK_CLUSTER_MIN_SUPPORT &&
+        (count > best_count ||
+         (count == best_count && weight_sum > best_weight))) {
+      best_root = component;
+      best_count = count;
+      best_weight = weight_sum;
+      best_bx = bx_sum / weight_sum;
+      best_by = by_sum / weight_sum;
+      best_sigma = sqrtf(1.0f / weight_sum);
+    }
+  }
+
+  g_trackClusterSupport = best_count;
+  g_trackClusterSigma = best_sigma;
+  if (best_count >= FLOW_TRACK_CLUSTER_MIN_SUPPORT) {
+    g_trackValidatedSupport = best_count;
+    g_trackValidatedSigma = best_sigma;
+    g_trackSafetyAge = 0;
+  } else if (g_trackSafetyAge < UINT8_MAX) {
+    g_trackSafetyAge++;
+  }
+  g_obsClusterStart = best_root;
+  g_obsClusterCount = best_count;
+  g_obsHistoryValid[g_obsHistoryHead] = 0;
+  g_obsHits = best_count >= FLOW_TRACK_CLUSTER_MIN_SUPPORT ? 1u : 0u;
+  if (g_obsHits > 0u) {
+    for (uint8_t h = 0; h < FLOW_OBS_PERSIST_WINDOW; h++) {
+      if (!g_obsHistoryValid[h]) {
+        continue;
+      }
+      const float dx = best_bx - g_obsHistoryX[h];
+      const float dy = best_by - g_obsHistoryY[h];
+      if (dx * dx + dy * dy <=
+          FLOW_OBS_PERSIST_SPATIAL_GATE_M *
+              FLOW_OBS_PERSIST_SPATIAL_GATE_M) {
+        g_obsHits++;
+      }
+    }
+    g_obsBodyX = best_bx;
+    g_obsBodyY = best_by;
+    g_obsRange = sqrtf(best_bx * best_bx + best_by * best_by);
+    g_obsBearing = atan2f(best_by, best_bx);
+    const float yaw_c = cosf(yaw_rad);
+    const float yaw_s = sinf(yaw_rad);
+    g_obsWorldX = world_x_m + yaw_c * best_bx - yaw_s * best_by;
+    g_obsWorldY = world_y_m + yaw_s * best_bx + yaw_c * best_by;
+    if (!g_trackBaselineValid) {
+      const float norm =
+          sqrtf(best_bx * best_bx + best_by * best_by);
+      if (norm > 0.05f) {
+        const float world_forward_x =
+            yaw_c * best_bx - yaw_s * best_by;
+        const float world_forward_y =
+            yaw_s * best_bx + yaw_c * best_by;
+        g_trackBaselineAxisX = -world_forward_y / norm;
+        g_trackBaselineAxisY = world_forward_x / norm;
+        const float projection =
+            g_trackBaselineAxisX * world_x_m +
+            g_trackBaselineAxisY * world_y_m;
+        g_trackBaselineMin = projection;
+        g_trackBaselineMax = projection;
+        g_trackBaselineValid = 1;
+      }
+    } else {
+      const float projection =
+          g_trackBaselineAxisX * world_x_m +
+          g_trackBaselineAxisY * world_y_m;
+      if (projection < g_trackBaselineMin) {
+        g_trackBaselineMin = projection;
+      }
+      if (projection > g_trackBaselineMax) {
+        g_trackBaselineMax = projection;
+      }
+      g_trackBaselineM =
+          g_trackBaselineMax - g_trackBaselineMin;
+    }
+    g_obsValid =
+        g_obsHits >= FLOW_OBS_PERSIST_REQUIRED ? 1.0f : 0.0f;
+  } else {
+    g_obsValid = 0.0f;
+  }
+  g_obsHistoryValid[g_obsHistoryHead] = g_obsHits > 0u ? 1u : 0u;
+  if (g_obsHits > 0u) {
+    g_obsHistoryX[g_obsHistoryHead] = best_bx;
+    g_obsHistoryY[g_obsHistoryHead] = best_by;
+  }
+  g_obsHistoryHead =
+      (uint8_t)((g_obsHistoryHead + 1u) % FLOW_OBS_PERSIST_WINDOW);
+
+  flowObstacleDecayMap(FLOW_OBS_MAP_DECAY);
+  if (g_obsValid > 0.5f) {
+    float vote_weight =
+        0.20f + 0.10f * (float)best_count;
+    const float sigma_quality =
+        1.0f / (1.0f + 25.0f * best_sigma * best_sigma);
+    vote_weight *= sigma_quality;
+    if (vote_weight > 1.0f) {
+      vote_weight = 1.0f;
+    }
+    flowObstacleVoteMap(g_obsWorldX, g_obsWorldY, vote_weight);
+    g_mapEvidenceVotes++;
+  }
+  flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
+  return true;
+}
+
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
                                  float yaw_rate_rad_s,
@@ -695,6 +1192,16 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
   if (g_resetRequested) {
     flowObstacleResetEstimator();
     g_resetRequested = 0;
+  }
+  const bool track_sample_processed =
+      flowTrackUpdateDepth(body_vx_m_s, body_vy_m_s, yaw_rate_rad_s,
+                           world_x_m, world_y_m, yaw_rad);
+  if (g_perceptionMode == 1u &&
+      (track_sample_processed || g_trackRxOk > 0u)) {
+    if (!track_sample_processed) {
+      flowObstacleExtractCylinder(world_x_m, world_y_m, yaw_rad);
+    }
+    return;
   }
   flow_obstacle_payload_t payload;
   uint32_t age_ms = 0;
@@ -1119,6 +1626,12 @@ bool flowObstacleLinkGetCylinder(float *out_world_x_m,
   return true;
 }
 
+bool flowObstacleLinkEmergencyBrake(void) {
+  const uint32_t age_ms =
+      (uint32_t)(xTaskGetTickCount() - g_trackRxTick) * portTICK_PERIOD_MS;
+  return g_trackEmergencyBrake != 0u && age_ms <= 200u;
+}
+
 LOG_GROUP_START(flowObsRx)
 LOG_ADD(LOG_UINT32, rxOk,   &g_rxOk)
 LOG_ADD(LOG_UINT32, crcErr, &g_crcErr)
@@ -1136,6 +1649,19 @@ LOG_ADD(LOG_UINT16, trackSeq, &g_lastTrackWireSeq)
 LOG_ADD(LOG_UINT8, trackN, &g_trackPayload.count)
 LOG_ADD(LOG_UINT8, trackVer, &g_trackPayload.version)
 LOG_ADD(LOG_UINT32, trackTick, &g_trackRxTick)
+LOG_ADD(LOG_UINT8, depthN, &g_trackDepthAccepted)
+LOG_ADD(LOG_UINT8, depthMot, &g_trackDepthRejectedMotion)
+LOG_ADD(LOG_UINT8, depthGeo, &g_trackDepthRejectedGeometry)
+LOG_ADD(LOG_UINT8, depthSig, &g_trackDepthRejectedUncertainty)
+LOG_ADD(LOG_UINT8, depthSync, &g_trackDepthSyncValid)
+LOG_ADD(LOG_UINT32, depthSErr, &g_trackDepthSyncErrorMs)
+LOG_ADD(LOG_UINT8, trkSupport, &g_trackClusterSupport)
+LOG_ADD(LOG_FLOAT, trkSigma, &g_trackClusterSigma)
+LOG_ADD(LOG_UINT8, trkAge, &g_trackSafetyAge)
+LOG_ADD(LOG_FLOAT, baseline, &g_trackBaselineM)
+LOG_ADD(LOG_UINT8, loomN, &g_trackLoomingSupport)
+LOG_ADD(LOG_FLOAT, loomRate, &g_trackLoomingRate)
+LOG_ADD(LOG_UINT8, eBrake, &g_trackEmergencyBrake)
 LOG_ADD(LOG_UINT32, gap8Ts, &g_payload.gap8_ts_us)
 LOG_ADD(LOG_UINT32, ageMs, &g_sampleAgeMs)
 LOG_ADD(LOG_UINT32, newCount, &g_newSamplesProcessed)
@@ -1308,6 +1834,7 @@ LOG_GROUP_STOP(flowObsRx)
 
 PARAM_GROUP_START(flowObsCtl)
 PARAM_ADD(PARAM_UINT8, reset, &g_resetRequested)
+PARAM_ADD(PARAM_UINT8, mode, &g_perceptionMode)
 PARAM_GROUP_STOP(flowObsCtl)
 
 PARAM_GROUP_START(flowCal)

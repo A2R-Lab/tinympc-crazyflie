@@ -60,11 +60,17 @@ LOG_BLOCKS = [
         ("obs.frzCf", "float"),
     ]),
     ("flow_map", 100, [
-        ("flowObsRx.rxOk", "uint32_t"),
+        ("flowObsRx.trackRx", "uint32_t"),
         ("flowObsRx.mapPeak", "float"),
         ("flowObsRx.mapActive", "uint8_t"),
         ("flowObsRx.cylValid", "float"),
         ("flowObsRx.cylConf", "float"),
+    ]),
+    ("flow_tracks", 100, [
+        ("flowObsRx.depthN", "uint8_t"),
+        ("flowObsRx.trkSupport", "uint8_t"),
+        ("flowObsRx.trkSigma", "float"),
+        ("flowObsRx.baseline", "float"),
     ]),
     ("flow_cyl", 100, [
         ("flowObsRx.cylWx", "float"),
@@ -104,7 +110,11 @@ CSV_FIELDS = [
     "roll",
     "pitch",
     "vbat",
-    "rx_ok",
+    "track_rx",
+    "track_depth_count",
+    "track_support",
+    "track_sigma",
+    "track_baseline",
     "map_peak",
     "map_active",
     "flow_cyl_valid",
@@ -192,6 +202,12 @@ def parse_args():
                    help="Additional lateral clearance outside radius+safety [m].")
     p.add_argument("--min-detour-confidence", type=float, default=0.25,
                    help="Minimum frozen flow confidence required before a PID detour.")
+    p.add_argument("--min-track-baseline", type=float, default=0.04,
+                   help="Minimum measured lateral camera baseline before accepting a frozen obstacle [m].")
+    p.add_argument("--max-track-sigma", type=float, default=0.20,
+                   help="Maximum per-frame clustered track range sigma [m].")
+    p.add_argument("--max-cylinder-sigma", type=float, default=0.30,
+                   help="Maximum sqrt of either cylinder covariance diagonal [m].")
     p.add_argument("--run-without-freeze", action="store_true",
                    help="If freeze fails, fly the run leg with obs disabled instead of aborting.")
     p.add_argument("--no-reset-estimator", action="store_true")
@@ -224,7 +240,11 @@ def make_row(phase, latest, cmd_x, cmd_y, cmd_z):
         "roll": latest_get(latest, "stabilizer.roll"),
         "pitch": latest_get(latest, "stabilizer.pitch"),
         "vbat": latest_get(latest, "pm.vbat"),
-        "rx_ok": latest_get(latest, "flowObsRx.rxOk"),
+        "track_rx": latest_get(latest, "flowObsRx.trackRx"),
+        "track_depth_count": latest_get(latest, "flowObsRx.depthN"),
+        "track_support": latest_get(latest, "flowObsRx.trkSupport"),
+        "track_sigma": latest_get(latest, "flowObsRx.trkSigma"),
+        "track_baseline": latest_get(latest, "flowObsRx.baseline"),
         "map_peak": latest_get(latest, "flowObsRx.mapPeak"),
         "map_active": latest_get(latest, "flowObsRx.mapActive"),
         "flow_cyl_valid": latest_get(latest, "flowObsRx.cylValid"),
@@ -396,12 +416,12 @@ def stream_approach_until_frozen(cf, rows, latest, seconds,
 
 
 def wait_for_flow(cf, rows, latest, seconds, x, y, z, yaw_deg):
-    start_rx = latest_get(latest, "flowObsRx.rxOk", 0) or 0
+    start_rx = latest_get(latest, "flowObsRx.trackRx", 0) or 0
     steps = max(1, int(seconds * 50.0))
     for _ in range(steps):
         cf.commander.send_position_setpoint(x, y, z, yaw_deg)
         rows.append(make_row("wait_flow", latest, x, y, z))
-        rx_now = latest_get(latest, "flowObsRx.rxOk", 0) or 0
+        rx_now = latest_get(latest, "flowObsRx.trackRx", 0) or 0
         if rx_now > start_rx:
             return True
         time.sleep(0.02)
@@ -573,12 +593,40 @@ def main():
             source = latest_get(latest, "obs.source", 0) or 0
             print(f"freeze status: frzValid={frz_valid} source={source} "
                   f"center=({latest_get(latest, 'obs.frzCx')}, {latest_get(latest, 'obs.frzCy')})")
-            print(f"map status: rxOk={latest_get(latest, 'flowObsRx.rxOk')} "
+            print(f"map status: trackRx={latest_get(latest, 'flowObsRx.trackRx')} "
                   f"mapPeak={latest_get(latest, 'flowObsRx.mapPeak')} "
                   f"cylValid={latest_get(latest, 'flowObsRx.cylValid')} "
                   f"cylConf={latest_get(latest, 'flowObsRx.cylConf')}")
+            track_baseline = float(
+                latest_get(latest, "flowObsRx.baseline", 0.0) or 0.0)
+            track_support = int(
+                latest_get(latest, "flowObsRx.trkSupport", 0) or 0)
+            track_sigma = float(
+                latest_get(latest, "flowObsRx.trkSigma", float("inf"))
+                or float("inf"))
+            cylinder_sigma = math.sqrt(max(
+                float(latest_get(latest, "flowObsRx.cylVarX",
+                                 float("inf")) or float("inf")),
+                float(latest_get(latest, "flowObsRx.cylVarY",
+                                 float("inf")) or float("inf")),
+            ))
+            print(f"observability: baseline={track_baseline:.3f}m "
+                  f"support={track_support} trackSigma={track_sigma:.3f}m "
+                  f"cylinderSigma={cylinder_sigma:.3f}m")
+            safety_gate_ok = (
+                track_baseline >= args.min_track_baseline
+                and track_support >= 3
+                and track_sigma <= args.max_track_sigma
+                and cylinder_sigma <= args.max_cylinder_sigma
+            )
             if abort_after_cleanup:
                 pass
+            elif int(frz_valid) != 0 and not safety_gate_ok:
+                print("ABORT: frozen obstacle failed baseline/support/"
+                      "covariance safety gates")
+                abort_after_cleanup = True
+                land_pid(cf, rows, latest, args.land_s,
+                         switch_controller=False)
             elif not args.log_only and int(frz_valid) == 0 and not args.run_without_freeze:
                 print("ABORT: obstacle did not freeze; refusing to fly run leg")
                 abort_after_cleanup = True
