@@ -1,6 +1,10 @@
 Hover benchmark 1: nominal TinyMPC vs embedded LIMO
 ===================================================
 
+STATUS: PRE-MATCHING PILOT ONLY. Do not use this run as the fair benchmark.
+The nominal and LIMO controller models/costs were not matched when these data
+were collected. The raw observations are retained for traceability.
+
 Date: 2026-07-24
 Vehicle: Crazyflie 2.1 Brushless with Flow deck
 Estimator: Kalman
@@ -25,8 +29,8 @@ From apps/controller_tinympc_eigen_task, run:
   make -j8 cload
 
 For the complete trajectory, configure CFClient to record tinympc.posX and
-tinympc.posY. Use a 40 ms log period for nominal (25 Hz) and a 50 ms period
-for embedded LIMO (20 Hz).
+tinympc.posY. The corrected benchmark runs every mode at 20 Hz, so use a
+50 ms log period for all modes.
 
 Summary from the supplied console logs
 --------------------------------------
@@ -51,11 +55,17 @@ Landing completed                   yes                 yes
 The embedded LIMO run reduced final horizontal displacement by 40.4% relative
 to nominal (0.552 m to 0.329 m). Absolute X error fell by 43.6% (0.55 m to
 0.31 m); absolute Y error rose from 0.05 m to 0.11 m. The comparison assumes
-the two manual wind disturbances were comparable.
+the two manual wind disturbances were comparable. It is descriptive only:
+the old nominal arm used a 50 Hz model at a 25 Hz task rate with Qz=10000 and
+R=100, while LIMO used its 20 Hz model with rho=5 and adaptive Q/R.
 
 This first run did not retain the CFClient position time series. Therefore the
 file reports console-observable initial and landing-start positions only; it
 does not claim trajectory RMSE, peak displacement, or recovery time.
+
+After this pilot, all modes were matched to LIMO's canonical 20 Hz plant,
+rho=5, and w=0/qz=1 base cache (Qz=100, R=4). New matched flights must be
+recorded before making a controller-performance claim.
 
 Nominal raw console excerpts
 ----------------------------

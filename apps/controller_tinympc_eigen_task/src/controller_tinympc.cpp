@@ -84,6 +84,7 @@
 // TinyMPC headers (C++, must be before extern "C")
 #include "tinympc/admm.hpp"
 #include "tinympc/psd_support.hpp"
+#include "limo_shared_baseline.hpp"
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC || \
     TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
 #include "limo_barrier.hpp"
@@ -124,19 +125,6 @@ extern "C"
 // PID controller
 #include "controller_pid.h"
 
-// Params
-// #include "quadrotor_10hz_params.hpp"
-// #include "quadrotor_50hz_params.hpp" // rho = 65
-// #include "quadrotor_50hz_params_2.hpp" // rho = 5, passive
-// #include "quadrotor_50hz_params_3.hpp" // rho = 5, aggressive
-// #include "quadrotor_50hz_params_constraints.hpp"
-// #include "quadrotor_250hz_params.hpp"
-#include "quadrotor_50hz_params_unconstrained.hpp"
-#include "quadrotor_50hz_params_constrained.hpp"
-#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-#include "limo_20hz_model.hpp"
-#endif
-
 // Trajectory
 // #include "quadrotor_100hz_ref_hover.hpp"
 // #include "quadrotor_50hz_ref_circle.hpp"
@@ -149,15 +137,8 @@ extern "C"
 #define DEBUG_MODULE "MPCTASK"
 #include "debug.h"
 
-#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-#define MPC_RATE 20  // Match the 20 Hz model used to generate the LIMO cache bank
-#else
-// #define MPC_RATE RATE_250_HZ  // control frequency
-// #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
-#define MPC_RATE RATE_25_HZ  // 25Hz MPC task period
-#endif
-// #define MPC_RATE RATE_100_HZ
-//#define MPC_RATE 10
+// Every benchmark arm uses the exact 20 Hz model/cache timing from LIMO.
+#define MPC_RATE 20
 #define LOWLEVEL_RATE RATE_500_HZ
 
 // Semaphore to signal that we got data from the stabilizer loop to process
@@ -216,7 +197,6 @@ tiny_VectorNx mpc_setpoint_task;
 /* Allocate global variables for MPC */
 // static tinytype u_hover[4] = {.65, .65, .65, .65};
 static tinytype u_hover[4] = {.583, .583, .583, .583};
-static struct tiny_cache cache;
 static struct tiny_params params;
 static struct tiny_problem problem;
 static tiny_MatrixNxNh problem_x;
@@ -405,72 +385,11 @@ static void reset_solver_warm_start()
   prev_cache_level = 0;
 }
 
-static void restore_nominal_solver()
+static void restore_shared_baseline()
 {
-  params.cache.Adyn[0] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          Adyn_unconstrained_data);
-  params.cache.Bdyn[0] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-          Bdyn_unconstrained_data);
-  params.cache.rho[0] = rho_unconstrained_value;
-  params.cache.Kinf[0] =
-      Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(
-          Kinf_unconstrained_data);
-  params.cache.Pinf[0] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          Pinf_unconstrained_data);
-  params.cache.Quu_inv[0] =
-      Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(
-          Quu_inv_unconstrained_data);
-  params.cache.AmBKt[0] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          AmBKt_unconstrained_data);
-  params.cache.coeff_d2p[0] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-          coeff_d2p_unconstrained_data);
-
-  params.cache.Adyn[1] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          Adyn_constrained_data);
-  params.cache.Bdyn[1] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-          Bdyn_constrained_data);
-  params.cache.rho[1] = rho_constrained_value;
-  params.cache.Kinf[1] =
-      Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(
-          Kinf_constrained_data);
-  params.cache.Pinf[1] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          Pinf_constrained_data);
-  params.cache.Quu_inv[1] =
-      Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(
-          Quu_inv_constrained_data);
-  params.cache.AmBKt[1] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-          AmBKt_constrained_data);
-  params.cache.coeff_d2p[1] =
-      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-          coeff_d2p_constrained_data);
-  params.Q[0] = Eigen::Map<tiny_VectorNx>(Q_unconstrained_data);
-  params.Qf[0] = Eigen::Map<tiny_VectorNx>(Qf_unconstrained_data);
-  params.R[0] = Eigen::Map<tiny_VectorNu>(R_unconstrained_data);
-  params.Q[1] = Eigen::Map<tiny_VectorNx>(Q_constrained_data);
-  params.Qf[1] = Eigen::Map<tiny_VectorNx>(Qf_constrained_data);
-  params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
-#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-  // The embedded LIMO Riccati bank was generated from this exact 20 Hz
-  // plant. Keep A/B synchronized with that bank whenever solver state is
-  // restored; the remaining benchmark modes retain their legacy model.
-  for (int level = 0; level < 2; ++level) {
-    params.cache.Adyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-            limo_Adyn_20hz_data);
-    params.cache.Bdyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-            limo_Bdyn_20hz_data);
-  }
-#endif
+  // Frozen w=0, qz=1 entry of LIMO's canonical 20 Hz cache bank.
+  // All non-adaptive benchmark arms remain on this exact baseline.
+  limo_shared_baseline::install(&params);
 }
 
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
@@ -682,44 +601,7 @@ void controllerOutOfTreeInit(void)
 
   controllerPidInit();
 
-  // Copy cache data from problem_data/quadrotor*.hpp
-  cache.Adyn[0] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Adyn_unconstrained_data);
-  cache.Bdyn[0] = Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(Bdyn_unconstrained_data);
-  cache.rho[0] = rho_unconstrained_value;
-  cache.Kinf[0] = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_unconstrained_data);
-  cache.Pinf[0] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Pinf_unconstrained_data);
-  cache.Quu_inv[0] = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_unconstrained_data);
-  cache.AmBKt[0] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_unconstrained_data);
-  cache.coeff_d2p[0] = Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(coeff_d2p_unconstrained_data);
-
-  cache.Adyn[1] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Adyn_constrained_data);
-  cache.Bdyn[1] = Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(Bdyn_constrained_data);
-  cache.rho[1] = rho_constrained_value;
-  cache.Kinf[1] = Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(Kinf_constrained_data);
-  cache.Pinf[1] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(Pinf_constrained_data);
-  cache.Quu_inv[1] = Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(Quu_inv_constrained_data);
-  cache.AmBKt[1] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data);
-  cache.coeff_d2p[1] = Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(coeff_d2p_constrained_data);
-
-#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-  // Match the 20 Hz dynamics used by authority_cache_bank_16x4_f32.
-  for (int level = 0; level < 2; ++level) {
-    cache.Adyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-            limo_Adyn_20hz_data);
-    cache.Bdyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-            limo_Bdyn_20hz_data);
-  }
-#endif
-
-  // Copy parameter data
-  params.Q[0] = Eigen::Map<tiny_VectorNx>(Q_unconstrained_data);
-  params.Qf[0] = Eigen::Map<tiny_VectorNx>(Qf_unconstrained_data);
-  params.R[0] = Eigen::Map<tiny_VectorNu>(R_unconstrained_data);
-  params.Q[1] = Eigen::Map<tiny_VectorNx>(Q_constrained_data);
-  params.Qf[1] = Eigen::Map<tiny_VectorNx>(Qf_constrained_data);
-  params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
+  restore_shared_baseline();
   params.u_min = tiny_VectorNu(-u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3]).replicate<1, NHORIZON - 1>();
   params.u_max = tiny_VectorNu(1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3]).replicate<1, NHORIZON - 1>();
   for (int i = 0; i < NHORIZON; i++)
@@ -730,7 +612,6 @@ void controllerOutOfTreeInit(void)
   }
   params.Xref = tiny_MatrixNxNh::Zero();
   params.Uref = tiny_MatrixNuNhm1::Zero();
-  params.cache = cache;
 
   // Initialize problem data to zero
   resetProblem();
@@ -780,9 +661,11 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
 
+  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4\n");
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-  DEBUG_PRINT("LIMO integration: mpc_hz=%u model_hz=20 bridge=x4 z_guard=ref..ref+0.20 evals=1\n",
-              (unsigned int)MPC_RATE);
+  DEBUG_PRINT("LIMO adaptive: cache=16x4 z_guard=ref..ref+0.20 evals=1\n");
+#else
+  DEBUG_PRINT("Fixed baseline: w=0 qz=1 adaptive_cache=off\n");
 #endif
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -899,17 +782,11 @@ static void tinympcControllerTask(void *parameters)
           benchmark_maneuver != previous_benchmark_maneuver) {
         previous_benchmark_mode = benchmark_mode;
         previous_benchmark_maneuver = benchmark_maneuver;
-        restore_nominal_solver();
+        restore_shared_baseline();
         reset_benchmark_run();
         DEBUG_PRINT("Benchmark reset: mode=%u maneuver=%u\n",
                     (unsigned int)benchmark_mode,
                     (unsigned int)benchmark_maneuver);
-#if TINYMPC_FIRMWARE_MODE != TINYMPC_MODE_LIMO_EMBEDDED
-      } else {
-        // Embedded LIMO replaces the Riccati cache/cost online. Restore the
-        // untouched TinyMPC data for every other benchmark arm.
-        restore_nominal_solver();
-#endif
       }
       problem.max_iter = benchmark_max_iter > 0 ? benchmark_max_iter : 1;
 
@@ -1007,7 +884,7 @@ static void tinympcControllerTask(void *parameters)
           mpc_has_run = true;
           landing_start_tick = 0;
           flight_phase = FLIGHT_PHASE_LANDING;
-          restore_nominal_solver();
+          restore_shared_baseline();
           reset_solver_warm_start();
         }
       }
