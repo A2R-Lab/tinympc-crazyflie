@@ -25,7 +25,7 @@ Alternatively, edit the single default-selection line near the top of
 `src/controller_tinympc.cpp`:
 
 ```cpp
-#define TINYMPC_FIRMWARE_MODE TINYMPC_MODE_LIMO_EMBEDDED
+#define TINYMPC_FIRMWARE_MODE 3
 ```
 
 The supported selections are:

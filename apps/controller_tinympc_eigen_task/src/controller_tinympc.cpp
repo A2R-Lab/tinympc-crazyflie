@@ -29,14 +29,18 @@
  * Single lap
  */
 
-// Select exactly one controller for this firmware image. The build system can
-// override this with `make FIRMWARE_MODE=<0..3>` without editing the file.
+// Select exactly one controller for this firmware image:
+//   0 = nominal TinyMPC
+//   1 = MPC-CBF (analytic linear constraints)
+//   2 = LIMO posthoc
+//   3 = LIMO embedded
+// Change only the number below, then run `make -j8` and `make cload`.
 #define TINYMPC_MODE_NOMINAL       0
 #define TINYMPC_MODE_MPC_CBF       1
 #define TINYMPC_MODE_LIMO_POSTHOC  2
 #define TINYMPC_MODE_LIMO_EMBEDDED 3
 #ifndef TINYMPC_FIRMWARE_MODE
-#define TINYMPC_FIRMWARE_MODE TINYMPC_MODE_LIMO_EMBEDDED
+#define TINYMPC_FIRMWARE_MODE 3
 #endif
 #if TINYMPC_FIRMWARE_MODE < TINYMPC_MODE_NOMINAL || \
     TINYMPC_FIRMWARE_MODE > TINYMPC_MODE_LIMO_EMBEDDED
@@ -705,30 +709,40 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       const float t = base_t + i * dt;
       float x = 0.0f;
       float y = 0.0f;
+      float vx = 0.0f;
+      float vy = 0.0f;
       switch (benchmark_maneuver) {
         case MANEUVER_HOVER:
           break;
         case MANEUVER_LINE_Y:
           y = fminf(traj_speed * t, traj_dist);
+          vy = traj_speed * t < traj_dist ? traj_speed : 0.0f;
           break;
         case MANEUVER_CIRCLE:
           // Starts at the origin with continuous position.
           x = traj_radius * sinf(traj_omega * t);
           y = traj_radius * (1.0f - cosf(traj_omega * t));
+          vx = traj_radius * traj_omega * cosf(traj_omega * t);
+          vy = traj_radius * traj_omega * sinf(traj_omega * t);
           break;
         case MANEUVER_FIGURE8:
           x = traj_radius * sinf(traj_omega * t);
           y = 0.5f * traj_radius * sinf(2.0f * traj_omega * t);
+          vx = traj_radius * traj_omega * cosf(traj_omega * t);
+          vy = traj_radius * traj_omega * cosf(2.0f * traj_omega * t);
           break;
         case MANEUVER_LINE_X:
         default:
           x = fminf(traj_speed * t, traj_dist);
+          vx = traj_speed * t < traj_dist ? traj_speed : 0.0f;
           break;
       }
       params.Xref.col(i).setZero();
       params.Xref(0, i) = x;
       params.Xref(1, i) = y;
       params.Xref(2, i) = traj_height;
+      params.Xref(6, i) = vx;
+      params.Xref(7, i) = vy;
     }
     Xref_end = params.Xref.col(NHORIZON - 1);
 
