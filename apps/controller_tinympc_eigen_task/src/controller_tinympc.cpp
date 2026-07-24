@@ -733,10 +733,11 @@ void controllerOutOfTreeInit(void)
   enable_obs_constraint = 0;
   enable_psd = 0;
   problem.en_psd = 0;
-  DEBUG_PRINT("Benchmark mode %u, maneuver %u, max_iter %u\n",
+  DEBUG_PRINT("Benchmark mode %u, maneuver %u, max_iter %u, task_pri %u\n",
               (unsigned int)benchmark_mode,
               (unsigned int)benchmark_maneuver,
-              (unsigned int)benchmark_max_iter);
+              (unsigned int)benchmark_max_iter,
+              (unsigned int)TINYMPC_TASK_PRI);
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
