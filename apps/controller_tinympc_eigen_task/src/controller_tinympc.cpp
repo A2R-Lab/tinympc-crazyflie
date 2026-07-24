@@ -47,6 +47,26 @@
 #error "TINYMPC_FIRMWARE_MODE must be 0 (nominal), 1 (MPC-CBF), 2 (LIMO posthoc), or 3 (LIMO embedded)"
 #endif
 
+// Select exactly one trajectory for this firmware image:
+//   0 = hover
+//   1 = X-axis line
+//   2 = Y-axis line
+//   3 = circle
+//   4 = figure eight
+// Change only the number below, then run `make -j8` and `make cload`.
+#define TINYMPC_TRAJECTORY_HOVER   0
+#define TINYMPC_TRAJECTORY_LINE_X  1
+#define TINYMPC_TRAJECTORY_LINE_Y  2
+#define TINYMPC_TRAJECTORY_CIRCLE  3
+#define TINYMPC_TRAJECTORY_FIGURE8 4
+#ifndef TINYMPC_TRAJECTORY
+#define TINYMPC_TRAJECTORY 1
+#endif
+#if TINYMPC_TRAJECTORY < TINYMPC_TRAJECTORY_HOVER || \
+    TINYMPC_TRAJECTORY > TINYMPC_TRAJECTORY_FIGURE8
+#error "TINYMPC_TRAJECTORY must be 0 (hover), 1 (X-line), 2 (Y-line), 3 (circle), or 4 (figure eight)"
+#endif
+
 #include "Eigen.h"
 
 // TinyMPC headers (C++, must be before extern "C")
@@ -191,7 +211,7 @@ static tiny_VectorNu u_lqr;
 static tiny_VectorNx current_state;
 
 // Helper variables
-static bool enable_traj = true;
+static bool enable_traj = false;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
@@ -211,17 +231,10 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-enum BenchmarkManeuver : uint8_t {
-  MANEUVER_HOVER = 0,
-  MANEUVER_LINE_X = 1,
-  MANEUVER_LINE_Y = 2,
-  MANEUVER_CIRCLE = 3,
-  MANEUVER_FIGURE8 = 4,
-};
-// Kept as a byte for logging. It is deliberately not a runtime parameter:
-// changing controller arms requires building/flashing a different image.
+// Kept as bytes for logging. They are deliberately not runtime parameters:
+// changing the controller or trajectory requires building/flashing an image.
 static uint8_t benchmark_mode = TINYMPC_FIRMWARE_MODE;
-static uint8_t benchmark_maneuver = MANEUVER_LINE_X;
+static uint8_t benchmark_maneuver = TINYMPC_TRAJECTORY;
 static uint8_t previous_benchmark_mode = 255;
 static uint8_t previous_benchmark_maneuver = 255;
 static uint8_t benchmark_max_iter = 30;
@@ -711,32 +724,26 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       float y = 0.0f;
       float vx = 0.0f;
       float vy = 0.0f;
-      switch (benchmark_maneuver) {
-        case MANEUVER_HOVER:
-          break;
-        case MANEUVER_LINE_Y:
-          y = fminf(traj_speed * t, traj_dist);
-          vy = traj_speed * t < traj_dist ? traj_speed : 0.0f;
-          break;
-        case MANEUVER_CIRCLE:
-          // Starts at the origin with continuous position.
-          x = traj_radius * sinf(traj_omega * t);
-          y = traj_radius * (1.0f - cosf(traj_omega * t));
-          vx = traj_radius * traj_omega * cosf(traj_omega * t);
-          vy = traj_radius * traj_omega * sinf(traj_omega * t);
-          break;
-        case MANEUVER_FIGURE8:
-          x = traj_radius * sinf(traj_omega * t);
-          y = 0.5f * traj_radius * sinf(2.0f * traj_omega * t);
-          vx = traj_radius * traj_omega * cosf(traj_omega * t);
-          vy = traj_radius * traj_omega * cosf(2.0f * traj_omega * t);
-          break;
-        case MANEUVER_LINE_X:
-        default:
-          x = fminf(traj_speed * t, traj_dist);
-          vx = traj_speed * t < traj_dist ? traj_speed : 0.0f;
-          break;
-      }
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER
+      // Position and velocity stay at zero in X/Y.
+#elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_LINE_X
+      x = fminf(traj_speed * t, traj_dist);
+      vx = traj_speed * t < traj_dist ? traj_speed : 0.0f;
+#elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_LINE_Y
+      y = fminf(traj_speed * t, traj_dist);
+      vy = traj_speed * t < traj_dist ? traj_speed : 0.0f;
+#elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_CIRCLE
+      // Starts at the origin with continuous position.
+      x = traj_radius * sinf(traj_omega * t);
+      y = traj_radius * (1.0f - cosf(traj_omega * t));
+      vx = traj_radius * traj_omega * cosf(traj_omega * t);
+      vy = traj_radius * traj_omega * sinf(traj_omega * t);
+#elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+      x = traj_radius * sinf(traj_omega * t);
+      y = 0.5f * traj_radius * sinf(2.0f * traj_omega * t);
+      vx = traj_radius * traj_omega * cosf(traj_omega * t);
+      vy = traj_radius * traj_omega * cosf(2.0f * traj_omega * t);
+#endif
       params.Xref.col(i).setZero();
       params.Xref(0, i) = x;
       params.Xref(1, i) = y;
@@ -804,9 +811,6 @@ static void tinympcControllerTask(void *parameters)
     {
       nextMpcMs = nowMs + (1000.0f / MPC_RATE);
 
-      if (benchmark_maneuver > MANEUVER_FIGURE8) {
-        benchmark_maneuver = MANEUVER_FIGURE8;
-      }
       if (benchmark_mode != previous_benchmark_mode ||
           benchmark_maneuver != previous_benchmark_maneuver) {
         previous_benchmark_mode = benchmark_mode;
@@ -1415,7 +1419,6 @@ LOG_GROUP_STOP(tinympc)
 
 static struct param_s __params_limo[] __attribute__((section(".param.limo"), used)) = {
   PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_START, limo)
-  PARAM_VALUE_ENTRY(PARAM_UINT8, maneuver, &benchmark_maneuver)
   PARAM_VALUE_ENTRY(PARAM_UINT8, maxIter, &benchmark_max_iter)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, duration, &traj_duration)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, radius, &traj_radius)

@@ -56,6 +56,19 @@ ifneq ($(filter $(FIRMWARE_MODE),0 1 2 3),$(FIRMWARE_MODE))
 $(error FIRMWARE_MODE must be 0, 1, 2, or 3)
 endif
 endif
+
+# Optional compile-time trajectory override:
+#   make TRAJECTORY=0  # hover
+#   make TRAJECTORY=1  # X-axis line
+#   make TRAJECTORY=2  # Y-axis line
+#   make TRAJECTORY=3  # circle
+#   make TRAJECTORY=4  # figure eight
+# If omitted, controller_tinympc.cpp's TINYMPC_TRAJECTORY default is used.
+ifdef TRAJECTORY
+ifneq ($(filter $(TRAJECTORY),0 1 2 3 4),$(TRAJECTORY))
+$(error TRAJECTORY must be 0, 1, 2, 3, or 4)
+endif
+endif
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
@@ -69,6 +82,9 @@ OOT_USES_CXX := 1
 OOT_ARGS := -C $(CRAZYFLIE_BASE) OOT=$(PWD) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
 ifdef FIRMWARE_MODE
 OOT_ARGS += FIRMWARE_MODE=$(FIRMWARE_MODE)
+endif
+ifdef TRAJECTORY
+OOT_ARGS += TRAJECTORY=$(TRAJECTORY)
 endif
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk

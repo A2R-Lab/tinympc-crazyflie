@@ -6,3 +6,6 @@ obj-y += controller_tinympc.o
 ifdef FIRMWARE_MODE
 ccflags-y += -DTINYMPC_FIRMWARE_MODE=$(FIRMWARE_MODE)
 endif
+ifdef TRAJECTORY
+ccflags-y += -DTINYMPC_TRAJECTORY=$(TRAJECTORY)
+endif

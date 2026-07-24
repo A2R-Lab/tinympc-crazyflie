@@ -41,7 +41,13 @@ The source default is embedded LIMO (`3`). `tinympc.mode` is a read-only log
 value identifying the flashed image; there is intentionally no runtime
 `limo.mode` parameter.
 
-Set `limo.maneuver` to select a common reference maneuver:
+The firmware also compiles exactly one reference trajectory. For the normal
+edit/build/flash workflow, change the second numeric selector near the top of
+`src/controller_tinympc.cpp`:
+
+```cpp
+#define TINYMPC_TRAJECTORY 1
+```
 
 | Value | Maneuver |
 |------:|----------|
@@ -50,6 +56,16 @@ Set `limo.maneuver` to select a common reference maneuver:
 | `2` | Y-axis line |
 | `3` | Circle |
 | `4` | Figure eight |
+
+An optional command-line override is available for scripted builds:
+
+```sh
+make TRAJECTORY=4  # figure eight
+```
+
+The source default is the X-axis line (`1`). `tinympc.maneuver` is a read-only
+log value identifying the compiled trajectory; there is intentionally no
+runtime `limo.maneuver` parameter.
 
 The shared trajectory parameters are `limo.duration`, `limo.radius`,
 `limo.omega`, `limo.speed`, `limo.distance`, and `limo.height`.
