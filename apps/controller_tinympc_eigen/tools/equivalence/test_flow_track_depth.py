@@ -88,7 +88,12 @@ int main(void) {
   if (publish_forward_track(0.0f, 0.1f, -176) != 0) return 14;
   if (g_trackDepthAccepted != 0 || g_trackDepthValid[0]) return 15;
 
-  puts("PASS per-track depth: lateral/forward range, yaw, sync, and uncertainty gates");
+  flow_equiv_tick_ms += 500;
+  if (publish_track(0.2f, -301, 26, 65535) != 0) return 16;
+  if (g_trackDepthAccepted != 0 || g_trackDepthValid[0] ||
+      g_trackDepthRejectedGeometry != 1) return 17;
+
+  puts("PASS per-track depth: lateral/forward range, yaw, sync, uncertainty, and capture-gap gates");
   return 0;
 }
 """

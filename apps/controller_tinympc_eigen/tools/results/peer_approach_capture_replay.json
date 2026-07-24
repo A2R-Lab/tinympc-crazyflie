@@ -1,0 +1,79 @@
+{
+  "implementation": {
+    "gap8": "verbatim production functions extracted from pulp-frontnet/main.c",
+    "stm32": "production flowdeck_obstacle_link.c directly included by host harness",
+    "pixels": "native 160x160 8-bit grayscale PNG samples; no resize or filtering",
+    "selection": "production accumulated 66,667 us vision deadline applied to saved frames"
+  },
+  "coverage": {
+    "saved_frames": 270,
+    "selected_frames": 186,
+    "selected_by_phase": {
+      "init": 88,
+      "takeoff": 20,
+      "settle": 9,
+      "peer": 38,
+      "approach": 12,
+      "approach_hold": 9,
+      "land": 10
+    },
+    "selected_pair_gap_camera_frames": {
+      "1": 16,
+      "2": 85,
+      "3": 20,
+      "4": 8,
+      "5": 8,
+      "6": 5,
+      "7": 2,
+      "8": 3,
+      "9": 3,
+      "10": 4,
+      "11": 1,
+      "12": 4,
+      "13": 6,
+      "15": 1,
+      "16": 3,
+      "17": 3,
+      "18": 5,
+      "21": 2,
+      "22": 1,
+      "24": 1,
+      "28": 1,
+      "32": 1,
+      "39": 1,
+      "41": 1
+    },
+    "nominal_pairs": 85,
+    "non_nominal_pairs": 100
+  },
+  "frontend": {
+    "frames_with_tracks": 179,
+    "max_track_count": 26
+  },
+  "estimator": {
+    "frames_with_accepted_depth": 2,
+    "frames_with_observation": 0,
+    "frames_with_valid_cylinder": 0,
+    "max_accepted_tracks": 1,
+    "max_cluster_support": 0,
+    "max_baseline_m": 0.0,
+    "max_map_peak": 0.0,
+    "first_accepted": {
+      "replay_frame": 125,
+      "image": "frames/frame_000199.png",
+      "phase": "peer",
+      "gap8_timestamp": 54395507,
+      "world_x_m": 0.009676956571638584,
+      "world_y_m": 0.05422084406018257,
+      "yaw_deg": -0.05900128558278084
+    },
+    "first_observation": null,
+    "first_valid_cylinder": null,
+    "last_valid_cylinder": null
+  },
+  "limitations": [
+    "The Wi-Fi recording omitted on-board camera frames; non-nominal selected gaps cannot reproduce the flow pairs processed in flight.",
+    "No measured obstacle world coordinate or dimensions are present, so absolute range/bearing error cannot be scored from these files alone.",
+    "Gyroscope samples were not logged; yaw rate is derived from logged yaw."
+  ]
+}

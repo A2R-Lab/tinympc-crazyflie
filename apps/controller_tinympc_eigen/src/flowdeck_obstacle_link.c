@@ -922,10 +922,14 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
       (uint16_t)(payload.sequence - g_lastTrackDepthSequence) == 1u) {
     const uint32_t capture_dt_us =
         (uint32_t)(payload.gap8_ts_us - g_lastTrackCaptureUs);
-    if (capture_dt_us >= (uint32_t)(FLOW_TRACK_MIN_DT_S * 1000000.0f) &&
-        capture_dt_us <= (uint32_t)(FLOW_TRACK_MAX_DT_S * 1000000.0f)) {
-      dt_us = capture_dt_us;
-    }
+    /*
+     * A consecutive packet gives us an unambiguous 32-bit capture interval.
+     * Always validate that interval below. Falling back to the saturated
+     * uint16 wire interval made camera stalls longer than 150 ms look like a
+     * nominal 65.535 ms frame pair and could turn unrelated images into a
+     * false depth observation.
+     */
+    dt_us = capture_dt_us;
   }
   g_lastTrackCaptureUs = payload.gap8_ts_us;
   g_lastTrackDepthSequence = payload.sequence;
