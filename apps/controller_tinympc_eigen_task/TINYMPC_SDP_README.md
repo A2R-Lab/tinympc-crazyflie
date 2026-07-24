@@ -32,6 +32,15 @@ The `tinympc` log group exposes mode, maneuver, step, barrier activation,
 post-hoc projection, no-oracle detector, authority weight, Qz level, and
 cache-validation telemetry.
 
+Mode `2` is the firmware realization of safe-reachability `main`'s canonical
+`posthoc_learned` arm (verified at `33421e84`, canonical audit commit
+`8dccdb7f`). It keeps the nominal fixed-Q/R solve free of learned horizon
+rows, evaluates the same combined6 barrier and structural guard, and applies
+the same one-step box-constrained least-norm CBF-QP to the box-projected ADMM
+iterate. `post_active` means the barrier margin is deficient, `post_failed`
+means the actuator box cannot restore the linearized margin, and `post_du`
+is the norm of the projected action change.
+
 ## Overview
 
 This implementation brings TinyMPC-SDP (Semidefinite Programming) obstacle avoidance to the Bitcraze Crazyflie 2.1 drone. It demonstrates real-time collision avoidance using a hybrid approach combining Linear Time-Varying (LTV) constraints with Positive Semidefinite (PSD) relaxation.

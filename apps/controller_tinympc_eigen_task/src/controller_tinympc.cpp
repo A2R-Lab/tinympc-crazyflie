@@ -386,26 +386,41 @@ static void restore_nominal_solver()
   params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
 }
 
+// Firmware port of safe-reachability's solve_posthoc_cbf_qp. The nominal
+// action is the box-projected ADMM iterate z, exactly as in posthoc_learned.
 static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
-                                          const tiny_VectorNx &gradient,
                                           tinytype h,
                                           tinytype margin,
-                                          bool *failed)
+                                          tinytype dh_dz,
+                                          tinytype dh_dvz,
+                                          bool *active,
+                                          bool *failed,
+                                          tinytype *du_norm)
 {
   tiny_VectorNu command =
       nominal.cwiseMax(params.u_min.col(0)).cwiseMin(params.u_max.col(0));
+  *active = false;
+  *failed = false;
+  *du_norm = 0.0f;
+
   const tinytype deficit = margin - h;
   if (deficit <= 0.0f) {
-    *failed = false;
     return command;
   }
-  const tiny_VectorNu input_gradient =
-      params.cache.Bdyn[problem.cache_level].transpose() * gradient;
+  *active = true;
+
+  tiny_VectorNu input_gradient = tiny_VectorNu::Zero();
+  for (int j = 0; j < NINPUTS; ++j) {
+    input_gradient(j) =
+        dh_dz * params.cache.Bdyn[problem.cache_level](2, j) +
+        dh_dvz * params.cache.Bdyn[problem.cache_level](8, j);
+  }
   if (input_gradient.squaredNorm() <= 1e-12f) {
     *failed = true;
     return command;
   }
-  const tinytype target = input_gradient.dot(command) + deficit;
+  const tiny_VectorNu nominal_clamped = command;
+  const tinytype target = input_gradient.dot(nominal_clamped) + deficit;
   tinytype maximum = 0.0f;
   tiny_VectorNu maximum_command;
   for (int j = 0; j < NINPUTS; ++j) {
@@ -414,6 +429,7 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
     maximum += input_gradient(j) * maximum_command(j);
   }
   if (maximum < target - 1e-6f) {
+    *du_norm = (maximum_command - command).norm();
     *failed = true;
     return maximum_command;
   }
@@ -421,7 +437,7 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
   tinytype high = 1.0f;
   const auto affine_at = [&](tinytype lambda, tiny_VectorNu *result) {
     tiny_VectorNu candidate =
-        (command + lambda * input_gradient)
+        (nominal_clamped + lambda * input_gradient)
             .cwiseMax(params.u_min.col(0))
             .cwiseMin(params.u_max.col(0));
     if (result) {
@@ -429,10 +445,21 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
     }
     return input_gradient.dot(candidate);
   };
-  while (affine_at(high, nullptr) < target && high < 1e8f) {
+
+  tinytype phi_high = affine_at(high, nullptr);
+  int grow = 0;
+  while (phi_high < target && grow < 80) {
     high *= 2.0f;
+    phi_high = affine_at(high, nullptr);
+    ++grow;
   }
-  for (int iteration = 0; iteration < 40; ++iteration) {
+  if (phi_high < target - 1e-6f) {
+    *du_norm = (maximum_command - command).norm();
+    *failed = true;
+    return maximum_command;
+  }
+
+  for (int iteration = 0; iteration < 80; ++iteration) {
     const tinytype middle = 0.5f * (low + high);
     tiny_VectorNu candidate;
     if (affine_at(middle, &candidate) >= target) {
@@ -442,7 +469,10 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
       low = middle;
     }
   }
-  *failed = input_gradient.dot(command) < target - 1e-4f;
+  *du_norm = (command - nominal_clamped).norm();
+  const tinytype h_linearized =
+      h + input_gradient.dot(command - nominal_clamped);
+  *failed = h_linearized < margin - 1e-4f;
   return command;
 }
 
@@ -1031,7 +1061,7 @@ static void tinympcControllerTask(void *parameters)
       }
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
-      if (is_posthoc_limo() && !constraint_hold) {
+      if (is_posthoc_limo()) {
         LimoBarrierEval posthoc_eval;
         const uint32_t eval_start_us = usecTimestamp();
         limo_eval_barrier(
@@ -1040,37 +1070,46 @@ static void tinympcControllerTask(void *parameters)
             &posthoc_eval);
         limo_eval_us += usecTimestamp() - eval_start_us;
 
-        tiny_VectorNx posthoc_gradient = tiny_VectorNx::Zero();
-        // This matches the quad branch post-hoc LIMO projection: the same
-        // learned barrier signal, projected through its z/vz derivatives.
-        posthoc_gradient(2) = limo_barrier::clamp(
-            posthoc_eval.grad(2), tinytype(-2.0f), tinytype(2.0f));
-        posthoc_gradient(8) = limo_barrier::clamp(
-            posthoc_eval.grad(8), tinytype(-2.0f), tinytype(2.0f));
         const tinytype posthoc_h =
             guarded_limo_h(problem.x.col(0), posthoc_eval.h);
         const tinytype posthoc_margin =
             limo_effective_margin(problem.x.col(0), 0);
-        const tiny_VectorNu nominal_command = problem.u.col(0);
+        // The canonical posthoc arm consumes z.col(0), not the unconstrained
+        // primal u.col(0). Keeping that distinction is important at a
+        // truncated ADMM iteration count.
+        const tiny_VectorNu nominal_command = problem.z.col(0);
         tiny_VectorNu filtered_command = nominal_command;
+        bool projection_active = false;
         bool projection_failed = false;
-        if (!barrier_skipped_high_altitude(problem.x.col(0)) &&
-            posthoc_h < posthoc_margin) {
+        tinytype projection_du_norm = 0.0f;
+        if (!barrier_skipped_high_altitude(problem.x.col(0))) {
           filtered_command = project_posthoc_limo(
-              nominal_command, posthoc_gradient, posthoc_h,
-              posthoc_margin, &projection_failed);
+              nominal_command, posthoc_h, posthoc_margin,
+              posthoc_eval.grad(2), posthoc_eval.grad(8),
+              &projection_active, &projection_failed,
+              &projection_du_norm);
         }
-        posthoc_du_norm = (filtered_command - nominal_command).norm();
-        posthoc_active = posthoc_du_norm > 1e-5f ? 1 : 0;
+        posthoc_du_norm = projection_du_norm;
+        posthoc_active = projection_active ? 1 : 0;
         posthoc_failed = projection_failed ? 1 : 0;
-        problem.u.col(0) = filtered_command;
-        if (posthoc_active) {
+
+        // This task-controller drives the stock Crazyflie PID with the MPC
+        // terminal state. Apply the exact canonical delta-u to the primal
+        // horizon and reroll it so the posthoc action reaches that bridge
+        // without changing the nominal no-intervention path.
+        if (posthoc_du_norm > 1e-5f) {
+          problem.u.col(0) =
+              (problem.u.col(0) + filtered_command - nominal_command)
+                  .cwiseMax(params.u_min.col(0))
+                  .cwiseMin(params.u_max.col(0));
           reroll_horizon_from_first_input();
         }
 
         limo_h = posthoc_h;
         limo_raw = posthoc_eval.raw;
-        limo_grad_norm = posthoc_gradient.norm();
+        limo_grad_norm = sqrtf(
+            posthoc_eval.grad(2) * posthoc_eval.grad(2) +
+            posthoc_eval.grad(8) * posthoc_eval.grad(8));
         limo_margin_eff = posthoc_margin;
         limo_threshold = posthoc_margin;
         limo_active = posthoc_active;
