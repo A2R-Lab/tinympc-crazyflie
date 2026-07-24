@@ -66,6 +66,10 @@ Looming/time-to-contact should remain an independent emergency braking cue.
 The capture-time state synchronization and camera calibration/extrinsics task
 is complete at source and build level.
 
+The bounded per-feature UART transport milestone is also complete at source,
+host-test, and build level. Per-feature depth estimation is deliberately not
+part of this checkpoint and remains the next task.
+
 ### STM32 / `tinympc-crazyflie`
 
 - Sends position, velocity, compressed attitude, and body rates to GAP8 at
@@ -89,6 +93,12 @@ Relevant files:
 - `apps/controller_tinympc_eigen/src/gate8_link.[ch]`
 - `apps/controller_tinympc_eigen/src/flowdeck_obstacle_link.[ch]`
 - `apps/controller_tinympc_eigen/Makefile`
+
+The STM32 shared UART parser now also accepts the version-1 feature packet,
+checks its CRC and numeric bounds, rejects duplicates, records sequence gaps,
+and publishes the latest bounded payload through a seqlock. Transport health is
+available through the `flowObsRx.track*` logs. The legacy sector packet remains
+the active estimator input until the next milestone.
 
 ### GAP8 / `tinympc-nanocockpit`
 
@@ -119,6 +129,22 @@ Relevant files:
 - `src/gap/examples/pulp-frontnet/flow_obstacle_uart.[ch]`
 - `src/gap/examples/pulp-frontnet/Makefile`
 
+The GAP8 now emits a separate version-1 feature packet:
+
+- header `90 19 08 36`;
+- 400-byte payload and 408-byte CRC-framed message;
+- at most 32 tracks;
+- capture timestamps, 16-bit sequence, microsecond frame interval, version,
+  count, and flags;
+- Q12.4 start pixels, signed Q7.8 pixel displacement, and unsigned Q8.8 LK and
+  geometric forward/backward residuals;
+- strongest-track selection capped at four tracks in each of eight image
+  columns before filling any unused slots.
+
+The 204-byte sector packet is still transmitted for estimator compatibility.
+This intentionally raises UART utilization and must be measured on hardware
+before flight.
+
 ## Validation completed
 
 The following commands passed on 2026-07-23:
@@ -129,7 +155,7 @@ make -j4
 ```
 
 This produced a CF21BL firmware build. Reported memory usage was approximately
-340,656/1,032,192 bytes flash, 110,264/131,072 bytes RAM, and
+341,192/1,032,192 bytes flash, 110,692/131,072 bytes RAM, and
 62,392/65,536 bytes CCM.
 
 ```sh
@@ -138,7 +164,28 @@ cd tinympc-nanocockpit/src/gap
 ```
 
 This produced the GAP8 image. Reported memory usage was approximately
-152,408/524,288 bytes L2 and 7,740/16,380 bytes FC TCDM.
+156,776/524,288 bytes L2 and 7,756/16,380 bytes FC TCDM.
+
+The 36-feature build also passed, exercising the spatial selection path that
+caps the wire payload at 32 tracks:
+
+```sh
+cd tinympc-nanocockpit/src/gap
+./gap8.sh examples/pulp-frontnet FLOW_FEATURE_COUNT=36 clean build
+```
+
+It used approximately 157,384/524,288 bytes L2 and 7,820/16,380 bytes FC TCDM.
+
+The cross-repository host ABI test also passed:
+
+```sh
+python3 \
+  tinympc-crazyflie/apps/controller_tinympc_eigen/tools/equivalence/test_flow_track_wire.py
+```
+
+It compiles probes against both C headers, verifies identical 12/400/408-byte
+layouts and deterministic serialization, and tests CRC rejection plus stream
+resynchronization.
 
 `git diff --check` passed in both repositories before committing. Hardware
 timing, UART duplex behavior, estimator accuracy, and flight safety remain
@@ -149,23 +196,7 @@ and other untracked artifacts were intentionally not committed.
 
 ## Remaining implementation tasks, in recommended order
 
-### 1. Replace early sectors with a per-feature UART packet
-
-Add a second packet type while keeping the 204-byte sector packet as a fallback.
-A reasonable bounded design is 32 tracks at 15 Hz:
-
-- payload header: GAP8 timestamp, echoed STM32 tick, frame `dt`, sequence,
-  count, and flags;
-- each track: quantized starting `u,v`, `du,dv`, LK residual, and
-  forward/backward residual;
-- approximately 408 bytes total for 32 twelve-byte tracks, or about 6.1 kB/s
-  at 15 Hz, which fits 115200 baud alongside the other traffic.
-
-Select tracks across the image rather than merely taking the first 32. Preserve
-the existing CRC and resynchronizing header parser. Add compile-time size
-assertions on both processors and host serialization tests.
-
-### 2. Perform per-track depth estimation on STM32
+### 1. Perform per-track depth estimation on STM32
 
 For each accepted track:
 
@@ -181,7 +212,11 @@ union-find with range/position gates or a small fixed-grid vote. Weight accepted
 points by inverse variance, apply N-of-M temporal persistence, and only then
 generate planner sectors and the obstacle cylinder.
 
-### 3. Add peering observability and planner safety gates
+Once this path drives the planner, reduce or disable routine legacy sector
+transmission to restore UART margin, while retaining an explicit compatibility
+mode.
+
+### 2. Add peering observability and planner safety gates
 
 - Accumulate actual lateral baseline rather than assuming the commanded peer
   motion was achieved.
@@ -193,7 +228,7 @@ generate planner sectors and the obstacle cylinder.
   large, instead of accepting confidence alone.
 - Preserve conservative emergency stop behavior when looming indicates danger.
 
-### 4. Finish diagnostic capture and deterministic replay
+### 3. Finish diagnostic capture and deterministic replay
 
 The GAP8 `FLOWCAP_*` text dump exists but has no checked-in parser yet.
 
@@ -206,7 +241,7 @@ The GAP8 `FLOWCAP_*` text dump exists but has no checked-in parser yet.
 - Add regression cases for subpixel motion, low texture, edge tracks, repeated
   patterns, blur, exposure change, and distortion near image borders.
 
-### 5. Upgrade simulation to image level
+### 4. Upgrade simulation to image level
 
 The existing primary PyBullet and estimator simulations bypass the camera:
 they use ground-truth rays or analytic ideal flow. Add a calibrated grayscale
@@ -222,7 +257,7 @@ Test expected degradation and safety behavior, not just ideal accuracy:
 no-motion unobservability, insufficient peering, timestamp bias, mixed
 foreground/background depth, outliers, and false looming.
 
-### 6. Hardware validation when the drone is available
+### 5. Hardware validation when the drone is available
 
 Bench first, with props removed:
 
@@ -257,6 +292,11 @@ Then use restrained flight tests:
   driver.
 - STM32 RAM is already at roughly 84% and CCM at roughly 95%. Keep future
   buffers fixed and small, and inspect memory reports after every change.
+- At 15 Hz, the 408-byte track packet, 204-byte compatibility sector packet,
+  and approximately 44-byte gate packet consume about 98.4 kbit/s after UART
+  start/stop bits, roughly 85% of a 115200 baud link. This fits arithmetically
+  but has not been validated for scheduling jitter or packet drops. The
+  per-track estimator should make routine sector transmission unnecessary.
 - Full-resolution refinement plus backward LK built successfully but has not
   been timed on GAP8 hardware. It may require fewer tracks, conditional
   refinement, or moving work to the cluster.
@@ -310,18 +350,17 @@ submodules if necessary. The Crazyflie and AI-deck are not available, so do
 not claim hardware or flight validation.
 
 Capture-time STM32/GAP8 state synchronization, calibrated undistortion, planar
-camera extrinsics, flow/range uncertainty, forward/backward LK validation, and
-diagnostic capture scaffolding are already implemented and cross-compiled.
-Preserve those changes.
+camera extrinsics, flow/range uncertainty, forward/backward LK validation,
+diagnostic capture scaffolding, and the bounded version-1 per-feature UART
+transport are implemented, host-tested, and cross-compiled. The new packet
+contains up to 32 spatially distributed quantized tracks and coexists with the
+legacy sector packet. Preserve those changes.
 
-The next task is to stop using nine sectors as the primary perception
-representation. Implement a bounded, versioned, CRC-protected per-feature UART
-packet from GAP8 to STM32 (target about 32 spatially distributed quantized
-tracks at 15 Hz), while retaining the existing sector packet as a compatibility
-fallback. Add matching compile-time ABI assertions and host serialization/parser
-tests on both sides. Then implement capture-time synchronized per-track depth
-and uncertainty on STM32, robust clustering/persistence, and only late
-sector/cylinder formation for TinyMPC. Work incrementally and keep fixed memory
+The next task is capture-time synchronized per-track depth and uncertainty on
+STM32, followed by robust clustering/persistence and only late sector/cylinder
+formation for TinyMPC. Once the per-track path drives the planner, reduce or
+disable routine legacy sector transmission to recover UART margin while keeping
+an explicit compatibility mode. Work incrementally and keep fixed memory
 bounds because STM32 RAM/CCM are tight.
 
 After that, continue the remaining tasks in the handoff: peering observability

@@ -69,6 +69,15 @@
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
+static volatile uint32_t g_trackSeqLock = 0;
+static flow_track_payload_t g_trackPayload;
+static volatile uint32_t g_trackRxTick = 0;
+static volatile uint32_t g_trackRxOk = 0;
+static volatile uint32_t g_trackInvalidRx = 0;
+static volatile uint32_t g_trackDupRx = 0;
+static uint16_t g_lastTrackWireSeq = 0;
+static bool g_haveTrackWireSeq = false;
+static volatile uint32_t g_trackWireSeqGaps = 0;
 static volatile uint32_t g_rxTick = 0;
 static volatile uint32_t g_rxOk = 0;
 static volatile uint32_t g_crcErr = 0;
@@ -488,6 +497,7 @@ static void flowObstacleResetEstimator(void) {
 
 void flowObstacleLinkInit(void) {
   memset(&g_payload, 0, sizeof(g_payload));
+  memset(&g_trackPayload, 0, sizeof(g_trackPayload));
   flowObstacleResetEstimator();
 }
 
@@ -547,6 +557,51 @@ bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
     g_lastWireSeq = p->reserved;
     g_haveWireSeq = true;
   }
+  return true;
+}
+
+bool flowObstacleLinkPublishTracksFromRx(const flow_track_msg_t *msg) {
+  const flow_track_payload_t *p = &msg->p;
+  if (p->version != FLOW_TRACK_WIRE_VERSION ||
+      p->count > FLOW_TRACK_MAX ||
+      p->dt_us < 4000u) {
+    g_trackInvalidRx++;
+    return false;
+  }
+  for (uint8_t i = 0; i < p->count; i++) {
+    const flow_track_wire_t *track = &p->track[i];
+    if (track->u_q4 >= 160u * 16u ||
+        track->v_q4 >= 160u * 16u ||
+        track->du_q8 < -32 * 256 || track->du_q8 > 32 * 256 ||
+        track->dv_q8 < -32 * 256 || track->dv_q8 > 32 * 256 ||
+        track->lk_err_q8 > 64u * 256u ||
+        track->fb_err_q8 > 8u * 256u) {
+      g_trackInvalidRx++;
+      return false;
+    }
+  }
+  if (g_haveTrackWireSeq) {
+    const uint16_t delta =
+        (uint16_t)(p->sequence - g_lastTrackWireSeq);
+    if (delta == 0u) {
+      g_trackDupRx++;
+      return false;
+    }
+    if (delta < 0x8000u) {
+      g_trackWireSeqGaps += (uint32_t)(delta - 1u);
+    }
+  }
+
+  uint32_t s = g_trackSeqLock + 1u;
+  g_trackSeqLock = s;
+  COMPILER_BARRIER();
+  memcpy(&g_trackPayload, p, sizeof(g_trackPayload));
+  g_trackRxTick = xTaskGetTickCount();
+  COMPILER_BARRIER();
+  g_trackSeqLock = s + 1u;
+  g_trackRxOk++;
+  g_lastTrackWireSeq = p->sequence;
+  g_haveTrackWireSeq = true;
   return true;
 }
 
@@ -1073,6 +1128,14 @@ LOG_ADD(LOG_UINT32, invalid, &g_invalidRx)
 LOG_ADD(LOG_UINT16, wireSeq, &g_lastWireSeq)
 LOG_ADD(LOG_UINT32, seqGap, &g_wireSeqGaps)
 LOG_ADD(LOG_UINT32, seqReset, &g_wireSeqResets)
+LOG_ADD(LOG_UINT32, trackRx, &g_trackRxOk)
+LOG_ADD(LOG_UINT32, trackBad, &g_trackInvalidRx)
+LOG_ADD(LOG_UINT32, trackDup, &g_trackDupRx)
+LOG_ADD(LOG_UINT32, trackGap, &g_trackWireSeqGaps)
+LOG_ADD(LOG_UINT16, trackSeq, &g_lastTrackWireSeq)
+LOG_ADD(LOG_UINT8, trackN, &g_trackPayload.count)
+LOG_ADD(LOG_UINT8, trackVer, &g_trackPayload.version)
+LOG_ADD(LOG_UINT32, trackTick, &g_trackRxTick)
 LOG_ADD(LOG_UINT32, gap8Ts, &g_payload.gap8_ts_us)
 LOG_ADD(LOG_UINT32, ageMs, &g_sampleAgeMs)
 LOG_ADD(LOG_UINT32, newCount, &g_newSamplesProcessed)

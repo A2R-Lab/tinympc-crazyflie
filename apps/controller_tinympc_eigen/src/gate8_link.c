@@ -27,6 +27,7 @@
 #define GATE8_BAUD       115200
 #define GATE8_PAYLOAD_N  ((int)(sizeof(gate8_payload_t) + sizeof(uint32_t)))  /* payload + crc */
 #define FLOW_OBS_PAYLOAD_N ((int)(sizeof(flow_obstacle_payload_t) + sizeof(uint32_t)))
+#define FLOW_TRACK_PAYLOAD_N ((int)(sizeof(flow_track_payload_t) + sizeof(uint32_t)))
 #define STATE_MSG_HEADER "!STA"
 
 typedef struct __attribute__((packed)) {
@@ -129,6 +130,7 @@ static void gate8RxTask(void *arg) {
   (void)arg;
   gate8_msg_t msg;
   flow_obstacle_msg_t flow_msg;
+  flow_track_msg_t track_msg;
   uint8_t sync[GATE8_HEADER_LEN] = {0};
 
   systemWaitStart();
@@ -143,7 +145,8 @@ static void gate8RxTask(void *arg) {
      * and obstacle-flow sectors, so one RX task must dispatch both message types. */
     bool is_gate = false;
     bool is_flow = false;
-    while (!is_gate && !is_flow) {
+    bool is_track = false;
+    while (!is_gate && !is_flow && !is_track) {
       uint8_t b;
       if (!uart1GetDataWithDefaultTimeout(&b)) {
         const TickType_t now = xTaskGetTickCount();
@@ -159,6 +162,27 @@ static void gate8RxTask(void *arg) {
       sync[GATE8_HEADER_LEN - 1] = b;
       is_gate = headerMatches(sync, GATE8_MSG_HEADER);
       is_flow = headerMatches(sync, FLOW_OBS_MSG_HEADER);
+      is_track = headerMatches(sync, FLOW_TRACK_MSG_HEADER);
+    }
+
+    if (is_track) {
+      memcpy(track_msg.header, FLOW_TRACK_MSG_HEADER, FLOW_OBS_HEADER_LEN);
+      if (!readBytes((uint8_t *)&track_msg.p, FLOW_TRACK_PAYLOAD_N)) {
+        flowObstacleLinkNoteBadRx();
+        continue;
+      }
+      uint32_t crc = crc32CalculateBuffer(
+          &track_msg,
+          FLOW_OBS_HEADER_LEN + sizeof(flow_track_payload_t));
+      if (crc != track_msg.checksum) {
+        flowObstacleLinkNoteCrcErr();
+        continue;
+      }
+      if (flowObstacleLinkPublishTracksFromRx(&track_msg)) {
+        g_lastValidTick = xTaskGetTickCount();
+        g_everValid = true;
+      }
+      continue;
     }
 
     if (is_flow) {
