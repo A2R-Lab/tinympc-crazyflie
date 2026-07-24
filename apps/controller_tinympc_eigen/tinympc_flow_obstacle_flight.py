@@ -206,6 +206,10 @@ def parse_args():
         help=("Keep the stable PID-passthrough controller and route the run leg "
               "around the frozen flow obstacle. Required for an avoidance run "
               "while obs.pidPass=1."))
+    p.add_argument(
+        "--admm-after-freeze", action="store_true",
+        help=("After flow freeze, disable PID passthrough and fly the run leg "
+              "with controller 6 applying the frozen flow obstacle."))
     p.add_argument("--detour-margin", type=float, default=0.05,
                    help="Additional lateral clearance outside radius+safety [m].")
     p.add_argument("--min-detour-confidence", type=float, default=0.25,
@@ -529,6 +533,8 @@ def main():
     global LINK_STALE_S
     args = parse_args()
     LINK_STALE_S = args.link_stale_s
+    if args.pid_detour and args.admm_after_freeze:
+        raise SystemExit("ABORT: choose only one of --pid-detour or --admm-after-freeze")
     rows = []
     latest = {}
     configs = []
@@ -772,9 +778,30 @@ def main():
                                 stream_polyline(
                                     cf, rows, latest, args.run_s, points,
                                     args.height, args.yaw_deg, "avoid")
+                elif args.admm_after_freeze:
+                    if int(frz_valid) == 0:
+                        print("ABORT: ADMM run requires a frozen obstacle")
+                        abort_after_cleanup = True
+                        land_pid(cf, rows, latest, args.land_s,
+                                 switch_controller=False)
+                    else:
+                        print("flying ADMM run with frozen flow obstacle")
+                        set_param(cf, "obs.enable", 1)
+                        set_param(cf, "obs.useFlow", 1)
+                        set_param(cf, "obs.freeze", 1)
+                        set_param(cf, "obs.logOnly", 0)
+                        set_param(cf, "obs.pidPass", 0, delay=0.1)
+                        stream_position(cf, rows, latest, 1.0,
+                                        run_start[0], run_start[1], args.height,
+                                        args.yaw_deg, "admm_settle")
+                        stream_line(cf, rows, latest, args.run_s,
+                                    run_start[0], run_start[1], args.height,
+                                    args.goal_x, args.goal_y, args.height,
+                                    args.yaw_deg, "admm_run")
                 elif not args.log_only:
                     print("ABORT: obstacle constraints do not affect PID "
-                          "passthrough; use --pid-detour or --log-only")
+                          "passthrough; use --pid-detour, --admm-after-freeze, "
+                          "or --log-only")
                     abort_after_cleanup = True
                     land_pid(cf, rows, latest, args.land_s,
                              switch_controller=False)
