@@ -80,6 +80,10 @@ OOT_USES_CXX := 1
 # Forward the selector to the firmware sub-make without putting it in the
 # global CFLAGS. src/Kbuild applies it only to controller_tinympc.o.
 OOT_ARGS := -C $(CRAZYFLIE_BASE) OOT=$(PWD) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
+# Pin the firmware link flags as a command-line make value. This prevents the
+# recursive Crazyflie build from appending nosys/nano specs more than once on
+# macOS Arm GNU Toolchain 14, while retaining the normal embedded link setup.
+OOT_ARGS += LDFLAGS="--specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -nostdlib"
 ifdef FIRMWARE_MODE
 OOT_ARGS += FIRMWARE_MODE=$(FIRMWARE_MODE)
 endif
