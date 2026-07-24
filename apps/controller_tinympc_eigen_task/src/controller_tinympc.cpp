@@ -35,6 +35,7 @@
 #include "tinympc/admm.hpp"
 #include "tinympc/psd_support.hpp"
 #include "limo_barrier.hpp"
+#include "limo_embedded.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -186,6 +187,7 @@ static struct vec phi; // For converting from the current state estimate's quate
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
 static uint8_t enable_limo = 1; // LIMO deploy path enable
+static uint8_t enable_limo_embedded = 1; // Frozen policy + static cache-bank path
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
@@ -215,6 +217,13 @@ static float limo_threshold = 0.0f;
 static uint32_t limo_eval_us = 0;
 static uint8_t limo_active = 0;
 static uint8_t limo_active_count = 0;
+static limo_embedded::Runtime limo_embedded_runtime = {};
+static float limo_authority_w = 0.0f;
+static float limo_authority_w_requested = 0.0f;
+static float limo_qz = 1.0f;
+static uint8_t limo_w_index = 0;
+static uint8_t limo_qz_index = 0;
+static uint8_t limo_cache_ok = 0;
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -557,6 +566,32 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
+      if (enable_limo && enable_limo_embedded) {
+        LimoBarrierEval embedded_eval;
+        limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
+                          radians(limo_fail_roll_deg),
+                          radians(limo_fail_pitch_deg), &embedded_eval);
+        const tinytype embedded_margin =
+            limo_effective_margin(problem.x.col(0), 0);
+        limo_embedded::update(
+            &limo_embedded_runtime, problem.x.col(0), params.Xref.col(0),
+            embedded_eval.h, embedded_margin, radians(limo_fail_roll_deg),
+            radians(limo_fail_pitch_deg));
+        limo_cache_ok =
+            limo_embedded::install_cache(limo_embedded_runtime, &params) ? 1 : 0;
+        limo_authority_w = limo_embedded_runtime.applied_w;
+        limo_authority_w_requested = limo_embedded_runtime.requested_w;
+        limo_qz = limo_embedded_runtime.applied_qz;
+        limo_w_index =
+            static_cast<uint8_t>(limo_embedded_runtime.w_index);
+        limo_qz_index =
+            static_cast<uint8_t>(limo_embedded_runtime.qz_index);
+        if (!limo_cache_ok) {
+          DEBUG_PRINT("LIMO embedded cache validation failed\n");
+          enable_limo_embedded = 0;
+        }
+      }
+
       float obs_elapsed = 0.0f;
       if (!enable_limo && enable_obs_constraint) {
         // Dynamic obstacle - update position based on elapsed time
@@ -706,6 +741,11 @@ static void tinympcControllerTask(void *parameters)
       }
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
+      if (enable_limo && enable_limo_embedded) {
+        limo_embedded::update_saturation(
+            &limo_embedded_runtime, problem.u.col(0),
+            params.u_min.col(0), params.u_max.col(0));
+      }
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
       }
@@ -916,6 +956,12 @@ LOG_ADD(LOG_FLOAT, limo_thresh, &limo_threshold)
 LOG_ADD(LOG_UINT32, limo_eval_us, &limo_eval_us)
 LOG_ADD(LOG_UINT8, limo_active, &limo_active)
 LOG_ADD(LOG_UINT8, limo_active_count, &limo_active_count)
+LOG_ADD(LOG_FLOAT, limo_w, &limo_authority_w)
+LOG_ADD(LOG_FLOAT, limo_w_req, &limo_authority_w_requested)
+LOG_ADD(LOG_FLOAT, limo_qz, &limo_qz)
+LOG_ADD(LOG_UINT8, limo_w_idx, &limo_w_index)
+LOG_ADD(LOG_UINT8, limo_qz_idx, &limo_qz_index)
+LOG_ADD(LOG_UINT8, limo_cache, &limo_cache_ok)
 
 LOG_GROUP_STOP(tinympc)
 
@@ -934,6 +980,7 @@ LOG_GROUP_STOP(tinympc)
 static struct param_s __params_limo[] __attribute__((section(".param.limo"), used)) = {
   PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_START, limo)
   PARAM_VALUE_ENTRY(PARAM_UINT8, enable, &enable_limo)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, embedded, &enable_limo_embedded)
   PARAM_VALUE_ENTRY(PARAM_UINT8, activeH, &limo_active_horizon)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, margin, &limo_margin)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, mScale, &limo_margin_scale)
