@@ -25,6 +25,7 @@ from cflib.utils import uri_helper
 
 
 DEFAULT_URI = "radio://0/80/2M/E7E7E7E7E8"
+LINK_STALE_S = 0.5
 
 LOG_BLOCKS = [
     ("state", 50, [
@@ -182,6 +183,8 @@ def parse_args():
                    help="Abort if estimated altitude exceeds this multiple of commanded height.")
     p.add_argument("--flow-start-timeout-s", type=float, default=5.0,
                    help="After switching to TinyMPC, wait this long for flow rxOk to increment before peering.")
+    p.add_argument("--link-stale-s", type=float, default=0.5,
+                   help="Abort if no Crazyflie log packet is received for this long during flight.")
     p.add_argument("--skip-flow-warmup", action="store_true",
                    help="Skip the pre-arm OOT switch used to verify AI-deck flow packets on the ground.")
     p.add_argument("--run-s", type=float, default=5.0)
@@ -286,27 +289,33 @@ def make_row(phase, latest, cmd_x, cmd_y, cmd_z):
     }
 
 
-def ensure_link_fresh(latest, maximum_age_s=0.5):
+def ensure_link_fresh(latest, maximum_age_s=None):
+    if maximum_age_s is None:
+        maximum_age_s = LINK_STALE_S
     last_rx = latest_get(latest, "_host_rx_time")
     if last_rx is not None and time.monotonic() - last_rx > maximum_age_s:
         raise RuntimeError(
             f"flight telemetry stale for more than {maximum_age_s:.1f}s")
 
 
-def stream_position(cf, rows, latest, seconds, x, y, z, yaw_deg, phase):
+def stream_position(cf, rows, latest, seconds, x, y, z, yaw_deg, phase,
+                    check_link=True):
     steps = max(1, int(seconds * 50.0))
     for _ in range(steps):
-        ensure_link_fresh(latest)
+        if check_link:
+            ensure_link_fresh(latest)
         cf.commander.send_position_setpoint(x, y, z, yaw_deg)
         rows.append(make_row(phase, latest, x, y, z))
         time.sleep(0.02)
 
 
-def stream_line(cf, rows, latest, seconds, x0, y0, z0, x1, y1, z1, yaw_deg, phase):
+def stream_line(cf, rows, latest, seconds, x0, y0, z0, x1, y1, z1, yaw_deg,
+                phase, check_link=True):
     steps = max(1, int(seconds * 50.0))
     denom = max(1, steps - 1)
     for step in range(steps):
-        ensure_link_fresh(latest)
+        if check_link:
+            ensure_link_fresh(latest)
         a = step / denom
         x = x0 + a * (x1 - x0)
         y = y0 + a * (y1 - y0)
@@ -507,18 +516,22 @@ def wait_for_flow(cf, rows, latest, seconds, x, y, z, yaw_deg):
     return False
 
 
-def land_pid(cf, rows, latest, seconds, z_final=0.05, switch_controller=True):
+def land_pid(cf, rows, latest, seconds, z_final=0.05, switch_controller=True,
+             check_link=True):
     if switch_controller:
         set_param(cf, "stabilizer.controller", 1, delay=0.1)
     x = latest_get(latest, "stateEstimate.x", 0.0) or 0.0
     y = latest_get(latest, "stateEstimate.y", 0.0) or 0.0
     z = latest_get(latest, "stateEstimate.z", 0.4) or 0.4
     yaw = latest_get(latest, "stateEstimate.yaw", 0.0) or 0.0
-    stream_line(cf, rows, latest, seconds, x, y, z, x, y, z_final, yaw, "land")
+    stream_line(cf, rows, latest, seconds, x, y, z, x, y, z_final, yaw, "land",
+                check_link=check_link)
 
 
 def main():
+    global LINK_STALE_S
     args = parse_args()
+    LINK_STALE_S = args.link_stale_s
     rows = []
     latest = {}
     configs = []
@@ -795,6 +808,14 @@ def main():
             land_pid(cf, rows, latest, args.land_s, switch_controller=False)
         except RuntimeError as exc:
             print(f"ABORT: {exc}")
+            current_z = latest_get(latest, "stateEstimate.z", 0.0) or 0.0
+            if current_z >= 0.08:
+                print("attempting PID landing despite stale telemetry")
+                try:
+                    land_pid(cf, rows, latest, args.land_s,
+                             switch_controller=False, check_link=False)
+                except Exception as land_exc:  # noqa: BLE001
+                    print(f"landing attempt failed: {land_exc}")
         finally:
             for action in (
                 lambda: cf.commander.send_stop_setpoint(),
