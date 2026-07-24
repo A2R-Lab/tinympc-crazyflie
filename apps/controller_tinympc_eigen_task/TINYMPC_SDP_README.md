@@ -1,4 +1,36 @@
-# TinyMPC-SDP Crazyflie Implementation
+# TinyMPC / LIMO Crazyflie Benchmark
+
+## Benchmark controller
+
+The out-of-tree Eigen task contains four runtime-selectable benchmark arms.
+Set `limo.mode` before a run:
+
+| Value | Controller |
+|------:|------------|
+| `0` | Nominal TinyMPC |
+| `1` | MPC-CBF with the analytic floor barrier inserted as horizon linear constraints |
+| `2` | Post-hoc LIMO: nominal TinyMPC followed by the learned-barrier input projection |
+| `3` | Embedded LIMO: learned horizon constraints plus the frozen authority policy, causal no-oracle detector, and 16×4 float32 Riccati cache bank |
+
+The default is mode `3`. Changing mode resets the trajectory, solver warm
+start, embedded detector, and benchmark step counter.
+
+Set `limo.maneuver` to select a common reference maneuver:
+
+| Value | Maneuver |
+|------:|----------|
+| `0` | Hover |
+| `1` | X-axis line |
+| `2` | Y-axis line |
+| `3` | Circle |
+| `4` | Figure eight |
+
+The shared trajectory parameters are `limo.duration`, `limo.radius`,
+`limo.omega`, `limo.speed`, `limo.distance`, and `limo.height`.
+`limo.maxIter` controls the common ADMM iteration cap and defaults to `30`.
+The `tinympc` log group exposes mode, maneuver, step, barrier activation,
+post-hoc projection, no-oracle detector, authority weight, Qz level, and
+cache-validation telemetry.
 
 ## Overview
 
@@ -13,7 +45,7 @@ This implementation brings TinyMPC-SDP (Semidefinite Programming) obstacle avoid
 | State Dimension | 12 (position, orientation, velocities) |
 | Input Dimension | 4 (motor thrusts) |
 | Horizon | 20 steps |
-| ADMM Iterations | 5 per solve |
+| ADMM Iterations | 30 per solve by default (`limo.maxIter`) |
 | Solve Time | ~15ms |
 
 ## Obstacle Avoidance Architecture

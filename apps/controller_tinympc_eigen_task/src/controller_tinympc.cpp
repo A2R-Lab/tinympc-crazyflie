@@ -175,7 +175,9 @@ static int max_traj_index = 0;
 static float traj_speed = 0.2f; // m/s
 static float traj_dist = 1.0f;  // m
 static float traj_height = 0.5f;
-static float traj_hold_time = 2.0f; // seconds
+static float traj_duration = 12.0f;
+static float traj_radius = 0.75f;
+static float traj_omega = 0.45f;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 // static int mpc_steps_taken = 0;
@@ -186,21 +188,40 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-static uint8_t enable_limo = 1; // LIMO deploy path enable
-static uint8_t enable_limo_embedded = 1; // Frozen policy + static cache-bank path
+enum BenchmarkMode : uint8_t {
+  BENCH_NOMINAL = 0,
+  BENCH_MPC_CBF = 1,
+  BENCH_LIMO_POSTHOC = 2,
+  BENCH_LIMO_EMBEDDED = 3,
+};
+enum BenchmarkManeuver : uint8_t {
+  MANEUVER_HOVER = 0,
+  MANEUVER_LINE_X = 1,
+  MANEUVER_LINE_Y = 2,
+  MANEUVER_CIRCLE = 3,
+  MANEUVER_FIGURE8 = 4,
+};
+static uint8_t benchmark_mode = BENCH_LIMO_EMBEDDED;
+static uint8_t benchmark_maneuver = MANEUVER_LINE_X;
+static uint8_t previous_benchmark_mode = 255;
+static uint8_t previous_benchmark_maneuver = 255;
+static uint8_t benchmark_max_iter = 30;
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
 static tinytype limo_margin = tinytype(0.01f);
-static tinytype limo_margin_scale = tinytype(1.0f);
+static tinytype limo_margin_scale = tinytype(1.5f);
 static tinytype limo_h_deadband = tinytype(0.30f);
 static tinytype limo_act_slack = tinytype(0.20f);
 static tinytype limo_az_coeff = tinytype(8.0f);
 static tinytype limo_gravity_comp = tinytype(0.0f);
 static tinytype limo_fail_roll_deg = tinytype(50.0f);
 static tinytype limo_fail_pitch_deg = tinytype(50.0f);
+static tinytype limo_structural_guard_relax = tinytype(0.70f);
+static tinytype limo_skip_z = tinytype(0.75f);
+static tinytype limo_skip_vz = tinytype(-0.20f);
 static uint8_t limo_active_horizon = 3;
-static tinytype limo_dist_budget = tinytype(0.0f);
+static tinytype limo_dist_budget = tinytype(1.6f);
 static tinytype limo_dist_margin_coeff = tinytype(0.018f);
 static tinytype limo_dist_high_cut = tinytype(1.35f);
 static tinytype limo_dist_high_bias = tinytype(0.030f);
@@ -224,6 +245,13 @@ static float limo_qz = 1.0f;
 static uint8_t limo_w_index = 0;
 static uint8_t limo_qz_index = 0;
 static uint8_t limo_cache_ok = 0;
+static float limo_no_oracle_score = 0.0f;
+static float limo_no_oracle_score_raw = 0.0f;
+static uint8_t limo_no_oracle_active = 0;
+static uint8_t posthoc_active = 0;
+static uint8_t posthoc_failed = 0;
+static float posthoc_du_norm = 0.0f;
+static uint32_t benchmark_step = 0;
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -257,6 +285,193 @@ static tinytype limo_effective_margin(const tiny_VectorNx &xbar, int stage)
   margin *= positive_part(limo_margin_scale);
 
   return margin;
+}
+
+static inline bool is_embedded_limo()
+{
+  return benchmark_mode == BENCH_LIMO_EMBEDDED;
+}
+
+static inline bool is_posthoc_limo()
+{
+  return benchmark_mode == BENCH_LIMO_POSTHOC;
+}
+
+static inline bool is_mpc_cbf()
+{
+  return benchmark_mode == BENCH_MPC_CBF;
+}
+
+static inline tinytype structural_floor_h(const tiny_VectorNx &x)
+{
+  return x(2) - tinytype(0.20f) * positive_part(-x(8));
+}
+
+static inline tinytype guarded_limo_h(const tiny_VectorNx &x, tinytype learned_h)
+{
+  const tinytype guarded_structural =
+      structural_floor_h(x) - positive_part(limo_structural_guard_relax);
+  return learned_h > guarded_structural ? learned_h : guarded_structural;
+}
+
+static inline bool barrier_skipped_high_altitude(const tiny_VectorNx &x)
+{
+  return x(2) > limo_skip_z && x(8) > limo_skip_vz;
+}
+
+static void reset_solver_warm_start()
+{
+  problem.y.setZero();
+  problem.g.setZero();
+  problem.v.setZero();
+  problem.vnew.setZero();
+  problem.z.setZero();
+  problem.znew.setZero();
+  problem.cache_level = 0;
+  prev_cache_level = 0;
+}
+
+static void restore_nominal_solver()
+{
+  params.cache.Adyn[0] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          Adyn_unconstrained_data);
+  params.cache.Bdyn[0] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+          Bdyn_unconstrained_data);
+  params.cache.rho[0] = rho_unconstrained_value;
+  params.cache.Kinf[0] =
+      Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(
+          Kinf_unconstrained_data);
+  params.cache.Pinf[0] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          Pinf_unconstrained_data);
+  params.cache.Quu_inv[0] =
+      Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(
+          Quu_inv_unconstrained_data);
+  params.cache.AmBKt[0] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          AmBKt_unconstrained_data);
+  params.cache.coeff_d2p[0] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+          coeff_d2p_unconstrained_data);
+
+  params.cache.Adyn[1] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          Adyn_constrained_data);
+  params.cache.Bdyn[1] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+          Bdyn_constrained_data);
+  params.cache.rho[1] = rho_constrained_value;
+  params.cache.Kinf[1] =
+      Eigen::Map<Matrix<tinytype, NINPUTS, NSTATES, Eigen::RowMajor>>(
+          Kinf_constrained_data);
+  params.cache.Pinf[1] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          Pinf_constrained_data);
+  params.cache.Quu_inv[1] =
+      Eigen::Map<Matrix<tinytype, NINPUTS, NINPUTS, Eigen::RowMajor>>(
+          Quu_inv_constrained_data);
+  params.cache.AmBKt[1] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+          AmBKt_constrained_data);
+  params.cache.coeff_d2p[1] =
+      Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+          coeff_d2p_constrained_data);
+  params.Q[0] = Eigen::Map<tiny_VectorNx>(Q_unconstrained_data);
+  params.Qf[0] = Eigen::Map<tiny_VectorNx>(Qf_unconstrained_data);
+  params.R[0] = Eigen::Map<tiny_VectorNu>(R_unconstrained_data);
+  params.Q[1] = Eigen::Map<tiny_VectorNx>(Q_constrained_data);
+  params.Qf[1] = Eigen::Map<tiny_VectorNx>(Qf_constrained_data);
+  params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
+}
+
+static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
+                                          const tiny_VectorNx &gradient,
+                                          tinytype h,
+                                          tinytype margin,
+                                          bool *failed)
+{
+  tiny_VectorNu command =
+      nominal.cwiseMax(params.u_min.col(0)).cwiseMin(params.u_max.col(0));
+  const tinytype deficit = margin - h;
+  if (deficit <= 0.0f) {
+    *failed = false;
+    return command;
+  }
+  const tiny_VectorNu input_gradient =
+      params.cache.Bdyn[problem.cache_level].transpose() * gradient;
+  if (input_gradient.squaredNorm() <= 1e-12f) {
+    *failed = true;
+    return command;
+  }
+  const tinytype target = input_gradient.dot(command) + deficit;
+  tinytype maximum = 0.0f;
+  tiny_VectorNu maximum_command;
+  for (int j = 0; j < NINPUTS; ++j) {
+    maximum_command(j) = input_gradient(j) >= 0.0f
+        ? params.u_max(j, 0) : params.u_min(j, 0);
+    maximum += input_gradient(j) * maximum_command(j);
+  }
+  if (maximum < target - 1e-6f) {
+    *failed = true;
+    return maximum_command;
+  }
+  tinytype low = 0.0f;
+  tinytype high = 1.0f;
+  const auto affine_at = [&](tinytype lambda, tiny_VectorNu *result) {
+    tiny_VectorNu candidate =
+        (command + lambda * input_gradient)
+            .cwiseMax(params.u_min.col(0))
+            .cwiseMin(params.u_max.col(0));
+    if (result) {
+      *result = candidate;
+    }
+    return input_gradient.dot(candidate);
+  };
+  while (affine_at(high, nullptr) < target && high < 1e8f) {
+    high *= 2.0f;
+  }
+  for (int iteration = 0; iteration < 40; ++iteration) {
+    const tinytype middle = 0.5f * (low + high);
+    tiny_VectorNu candidate;
+    if (affine_at(middle, &candidate) >= target) {
+      high = middle;
+      command = candidate;
+    } else {
+      low = middle;
+    }
+  }
+  *failed = input_gradient.dot(command) < target - 1e-4f;
+  return command;
+}
+
+static void reroll_horizon_from_first_input()
+{
+  for (int i = 0; i < NHORIZON - 1; ++i) {
+    problem.x.col(i + 1).noalias() =
+        params.cache.Adyn[problem.cache_level] * problem.x.col(i) +
+        params.cache.Bdyn[problem.cache_level] * problem.u.col(i);
+  }
+}
+
+static void reset_benchmark_run()
+{
+  traj_index = 0;
+  benchmark_step = 0;
+  enable_traj = true;
+  mpc_has_run = false;
+  max_traj_index =
+      static_cast<int>(positive_part(traj_duration) * MPC_RATE);
+  limo_embedded_runtime = {};
+  limo_cache_ok = 0;
+  limo_no_oracle_score = 0.0f;
+  limo_no_oracle_score_raw = 0.0f;
+  limo_no_oracle_active = 0;
+  posthoc_active = 0;
+  posthoc_failed = 0;
+  posthoc_du_norm = 0.0f;
+  reset_solver_warm_start();
 }
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
@@ -383,7 +598,7 @@ void controllerOutOfTreeInit(void)
   problem.abs_tol = 0.001;
   problem.status = 0;
   problem.iter = 0;
-  problem.max_iter = 5;
+  problem.max_iter = benchmark_max_iter;
   problem.iters_check_rho_update = 10;
   problem.cache_level = 0; // 0 to use rho corresponding to inactive constraints (1 to use rho corresponding to active constraints)
 
@@ -398,7 +613,7 @@ void controllerOutOfTreeInit(void)
   enable_traj = true;
   mpc_has_run = false;
   traj_index = 0;
-  max_traj_index = (int)((traj_dist / traj_speed + traj_hold_time) * MPC_RATE);
+  max_traj_index = static_cast<int>(traj_duration * MPC_RATE);
 
   // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
   // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
@@ -407,22 +622,15 @@ void controllerOutOfTreeInit(void)
   obs_center = obs_start;             // Initial position
   obs_start_time = 0;                 // Will be set on first MPC solve
 
-  if (enable_limo) {
-    enable_obs_constraint = 0;
-    enable_psd = 0;
-    DEBUG_PRINT("LIMO deploy mode: PSD and obstacle constraints disabled\n");
-  }
-
-  // Initialize PSD constraints when the legacy obstacle path is enabled.
-  problem.en_psd = enable_psd;
-  if (!enable_limo && enable_psd) {
-    tinytype rho_psd = 10.0f;  // PSD penalty parameter (tune as needed)
-    tiny_enable_psd(&problem, &params, rho_psd);
-    // Set PSD obstacle (same as LTV obstacle)
-    tiny_set_psd_obstacle(&problem, obs_center(0), obs_center(1), r_obs);
-    DEBUG_PRINT("PSD enabled with rho_psd=%.1f, obs=(%.2f,%.2f,r=%.2f)\n", 
-                (double)rho_psd, (double)obs_center(0), (double)obs_center(1), (double)r_obs);
-  }
+  // The benchmark isolates the four requested controllers. Legacy obstacle
+  // and PSD paths stay disabled so every mode sees the same plant/reference.
+  enable_obs_constraint = 0;
+  enable_psd = 0;
+  problem.en_psd = 0;
+  DEBUG_PRINT("Benchmark mode %u, maneuver %u, max_iter %u\n",
+              (unsigned int)benchmark_mode,
+              (unsigned int)benchmark_maneuver,
+              (unsigned int)benchmark_max_iter);
 
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -438,18 +646,41 @@ void controllerOutOfTreeInit(void)
 
 static void UpdateHorizonReference(const setpoint_t *setpoint)
 {
+  (void)setpoint;
   if (enable_traj)
   {
     const float dt = 1.0f / MPC_RATE;
-    const float travel_time = traj_dist / traj_speed;
     const float base_t = traj_index * dt;
     for (int i = 0; i < NHORIZON; ++i) {
-      float t = base_t + i * dt;
-      float x = (t < travel_time) ? (traj_speed * t) : traj_dist;
+      const float t = base_t + i * dt;
+      float x = 0.0f;
+      float y = 0.0f;
+      switch (benchmark_maneuver) {
+        case MANEUVER_HOVER:
+          break;
+        case MANEUVER_LINE_Y:
+          y = fminf(traj_speed * t, traj_dist);
+          break;
+        case MANEUVER_CIRCLE:
+          // Starts at the origin with continuous position.
+          x = traj_radius * sinf(traj_omega * t);
+          y = traj_radius * (1.0f - cosf(traj_omega * t));
+          break;
+        case MANEUVER_FIGURE8:
+          x = traj_radius * sinf(traj_omega * t);
+          y = 0.5f * traj_radius * sinf(2.0f * traj_omega * t);
+          break;
+        case MANEUVER_LINE_X:
+        default:
+          x = fminf(traj_speed * t, traj_dist);
+          break;
+      }
+      params.Xref.col(i).setZero();
       params.Xref(0, i) = x;
-      params.Xref(1, i) = 0.0f;
+      params.Xref(1, i) = y;
       params.Xref(2, i) = traj_height;
     }
+    Xref_end = params.Xref.col(NHORIZON - 1);
 
     if (traj_index < max_traj_index) {
       traj_index++;
@@ -509,6 +740,28 @@ static void tinympcControllerTask(void *parameters)
     {
       nextMpcMs = nowMs + (1000.0f / MPC_RATE);
 
+      if (benchmark_mode > BENCH_LIMO_EMBEDDED) {
+        benchmark_mode = BENCH_LIMO_EMBEDDED;
+      }
+      if (benchmark_maneuver > MANEUVER_FIGURE8) {
+        benchmark_maneuver = MANEUVER_FIGURE8;
+      }
+      if (benchmark_mode != previous_benchmark_mode ||
+          benchmark_maneuver != previous_benchmark_maneuver) {
+        previous_benchmark_mode = benchmark_mode;
+        previous_benchmark_maneuver = benchmark_maneuver;
+        restore_nominal_solver();
+        reset_benchmark_run();
+        DEBUG_PRINT("Benchmark reset: mode=%u maneuver=%u\n",
+                    (unsigned int)benchmark_mode,
+                    (unsigned int)benchmark_maneuver);
+      } else if (!is_embedded_limo()) {
+        // Embedded LIMO replaces the Riccati cache/cost online. Restore the
+        // untouched TinyMPC data for every other benchmark arm.
+        restore_nominal_solver();
+      }
+      problem.max_iter = benchmark_max_iter > 0 ? benchmark_max_iter : 1;
+
       // Skip MPC solve after landing (trajectory done)
       if (!enable_traj && traj_index >= max_traj_index) {
         continue;  // Don't solve, just wait
@@ -520,24 +773,6 @@ static void tinympcControllerTask(void *parameters)
       {
         DEBUG_PRINT("Enable trajectory!\n");
         enable_traj = true;
-      }
-
-      // Reset dual variables when switching modes or when in unconstrained mode
-      if (problem.cache_level != prev_cache_level) {
-        DEBUG_PRINT("Cache level changed: %d -> %d\n", prev_cache_level, problem.cache_level);
-        // Reset dual variables when switching modes to avoid instability
-        problem.y = tiny_MatrixNuNhm1::Zero();
-        problem.g = tiny_MatrixNxNh::Zero();
-        problem.v = tiny_MatrixNxNh::Zero();
-        problem.vnew = tiny_MatrixNxNh::Zero();
-        problem.z = tiny_MatrixNuNhm1::Zero();
-        problem.znew = tiny_MatrixNuNhm1::Zero();
-        prev_cache_level = problem.cache_level;
-      }
-      
-      if (problem.cache_level == 0) {
-        problem.y = tiny_MatrixNuNhm1::Zero();
-        problem.g = tiny_MatrixNxNh::Zero();
       }
 
       // TODO: predict into the future and set initial x to wherever we think we'll be
@@ -566,16 +801,31 @@ static void tinympcControllerTask(void *parameters)
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
 
-      if (enable_limo && enable_limo_embedded) {
+      limo_cache_ok = 0;
+      limo_authority_w = 0.0f;
+      limo_authority_w_requested = 0.0f;
+      limo_qz = 1.0f;
+      limo_w_index = 0;
+      limo_qz_index = 0;
+      limo_no_oracle_score = 0.0f;
+      limo_no_oracle_score_raw = 0.0f;
+      limo_no_oracle_active = 0;
+      if (is_embedded_limo()) {
         LimoBarrierEval embedded_eval;
         limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
                           radians(limo_fail_roll_deg),
                           radians(limo_fail_pitch_deg), &embedded_eval);
+        const tinytype embedded_h =
+            guarded_limo_h(problem.x.col(0), embedded_eval.h);
         const tinytype embedded_margin =
             limo_effective_margin(problem.x.col(0), 0);
+        limo_embedded::observe_no_oracle(
+            &limo_embedded_runtime, problem.x.col(0), embedded_h,
+            embedded_margin, radians(limo_fail_roll_deg),
+            radians(limo_fail_pitch_deg));
         limo_embedded::update(
             &limo_embedded_runtime, problem.x.col(0), params.Xref.col(0),
-            embedded_eval.h, embedded_margin, radians(limo_fail_roll_deg),
+            embedded_h, embedded_margin, radians(limo_fail_roll_deg),
             radians(limo_fail_pitch_deg));
         limo_cache_ok =
             limo_embedded::install_cache(limo_embedded_runtime, &params) ? 1 : 0;
@@ -586,14 +836,22 @@ static void tinympcControllerTask(void *parameters)
             static_cast<uint8_t>(limo_embedded_runtime.w_index);
         limo_qz_index =
             static_cast<uint8_t>(limo_embedded_runtime.qz_index);
+        limo_no_oracle_score = limo_embedded_runtime.no_oracle_score;
+        limo_no_oracle_score_raw =
+            limo_embedded_runtime.no_oracle_score_raw;
+        limo_no_oracle_active =
+            limo_embedded_runtime.no_oracle_active ? 1 : 0;
         if (!limo_cache_ok) {
           DEBUG_PRINT("LIMO embedded cache validation failed\n");
-          enable_limo_embedded = 0;
+          benchmark_mode = BENCH_NOMINAL;
+          previous_benchmark_mode = BENCH_NOMINAL;
+          restore_nominal_solver();
+          reset_solver_warm_start();
         }
       }
 
       float obs_elapsed = 0.0f;
-      if (!enable_limo && enable_obs_constraint) {
+      if (enable_obs_constraint) {
         // Dynamic obstacle - update position based on elapsed time
         // Arm sweeps from left (y+) to right (y-) starting when OOT activates
         if (obs_start_time == 0) {
@@ -607,7 +865,7 @@ static void tinympcControllerTask(void *parameters)
       }
       
       // Update PSD obstacle position
-      if (!enable_limo && enable_psd) {
+      if (enable_psd) {
         problem.psd_obs_x = obs_center(0);
         problem.psd_obs_y = obs_center(1);
       }
@@ -619,11 +877,16 @@ static void tinympcControllerTask(void *parameters)
       int cstr_active_count = 0;
       const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
       limo_eval_us = 0;
+      limo_h = 0.0f;
+      limo_raw = 0.0f;
       limo_active = 0;
       limo_active_count = 0;
       limo_grad_norm = 0.0f;
       limo_margin_eff = 0.0f;
       limo_threshold = 0.0f;
+      posthoc_active = 0;
+      posthoc_failed = 0;
+      posthoc_du_norm = 0.0f;
       
       for (int i = 0; i < NHORIZON; i++)
       {
@@ -631,15 +894,32 @@ static void tinympcControllerTask(void *parameters)
         params.x_max[i] = tiny_VectorNc::Constant(1000);
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
-        if (enable_limo && !constraint_hold && i < limo_active_horizon) {
+        if ((is_embedded_limo() || is_mpc_cbf()) &&
+            !constraint_hold && i < limo_active_horizon) {
           const tiny_VectorNx xbar = problem.x.col(i);
-          LimoBarrierEval eval;
-          const uint32_t eval_start_us = usecTimestamp();
-          limo_eval_barrier(xbar, limo_az_coeff, limo_gravity_comp,
-                            radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg), &eval);
-          limo_eval_us += usecTimestamp() - eval_start_us;
-
-          tiny_VectorNx grad = eval.grad;
+          tiny_VectorNx grad = tiny_VectorNx::Zero();
+          tinytype barrier_h = 0.0f;
+          tinytype constraint_h = 0.0f;
+          tinytype raw_h = 0.0f;
+          if (is_mpc_cbf()) {
+            barrier_h = structural_floor_h(xbar);
+            constraint_h = barrier_h;
+            raw_h = barrier_h;
+            grad(2) = 1.0f;
+            grad(8) = xbar(8) < 0.0f ? 0.20f : 0.0f;
+          } else {
+            LimoBarrierEval eval;
+            const uint32_t eval_start_us = usecTimestamp();
+            limo_eval_barrier(
+                xbar, limo_az_coeff, limo_gravity_comp,
+                radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
+                &eval);
+            limo_eval_us += usecTimestamp() - eval_start_us;
+            raw_h = eval.raw;
+            barrier_h = guarded_limo_h(xbar, eval.h);
+            constraint_h = eval.h;
+            grad = eval.grad;
+          }
           for (int j = 0; j < NSTATES; ++j) {
             grad(j) = limo_barrier::clamp(grad(j), tinytype(-2.0f), tinytype(2.0f));
           }
@@ -647,11 +927,13 @@ static void tinympcControllerTask(void *parameters)
           const tinytype margin_eff = limo_effective_margin(xbar, i);
           const tinytype activation_threshold =
               limo_h_deadband > (margin_eff + limo_act_slack) ? limo_h_deadband : (margin_eff + limo_act_slack);
-          const bool active = (grad_norm > tinytype(1e-6f)) && (eval.h < activation_threshold);
+          const bool skipped = barrier_skipped_high_altitude(xbar);
+          const bool active = !skipped && (grad_norm > tinytype(1e-6f)) &&
+                              (barrier_h < activation_threshold);
 
           if (i == 0) {
-            limo_h = eval.h;
-            limo_raw = eval.raw;
+            limo_h = barrier_h;
+            limo_raw = raw_h;
             limo_grad_norm = grad_norm;
             limo_margin_eff = margin_eff;
             limo_threshold = activation_threshold;
@@ -660,7 +942,8 @@ static void tinympcControllerTask(void *parameters)
 
           if (active) {
             params.A_constraints[i] = -grad.transpose();
-            params.x_max[i](0) = eval.h - grad.dot(xbar) - margin_eff;
+            params.x_max[i](0) =
+                constraint_h - grad.dot(xbar) - margin_eff;
             cstr_active_count++;
             if (limo_active_count < 255) {
               limo_active_count++;
@@ -668,7 +951,7 @@ static void tinympcControllerTask(void *parameters)
           }
         }
 
-        if (!enable_limo && enable_obs_constraint && !constraint_hold) {
+        if (enable_obs_constraint && !constraint_hold) {
           // Predict obstacle position for this horizon step
           float future_t = obs_elapsed + i * dt_horizon;
           Eigen::Matrix<tinytype, 3, 1> obs_pred = obs_start + obs_velocity * future_t;
@@ -688,25 +971,32 @@ static void tinympcControllerTask(void *parameters)
           }
         }
       }
-      if (!enable_limo && cstr_active_count > 0 && (cstr_log_cnt++ % 25 == 0)) {
+      if (enable_obs_constraint && cstr_active_count > 0 &&
+          (cstr_log_cnt++ % 25 == 0)) {
         DEBUG_PRINT("OBS: %d active, obs_y=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
                     (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
       }
-      if (enable_limo && task_loop_count <= 3) {
-        DEBUG_PRINT("LIMO TV: h=%.3f raw=%.3f grad=%.3f margin=%.3f thr=%.3f active0=%u active_count=%u eval=%lu us\n",
+      if ((is_embedded_limo() || is_mpc_cbf()) && task_loop_count <= 3) {
+        DEBUG_PRINT("SAFE TV mode=%u: h=%.3f raw=%.3f grad=%.3f margin=%.3f thr=%.3f active0=%u active_count=%u eval=%lu us\n",
+                    (unsigned int)benchmark_mode,
                     (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
                     (double)limo_margin_eff, (double)limo_threshold,
                     (unsigned int)limo_active, (unsigned int)limo_active_count, limo_eval_us);
       }
       
-      // Force cache_level=1 permanently once constraints have been activated
-      // This prevents oscillation when constraint count goes to 0 temporarily
-      static bool constraints_ever_active = false;
-      if (cstr_active_count > 0) {
-        constraints_ever_active = true;
+      const int requested_cache_level = cstr_active_count > 0 ? 1 : 0;
+      if (requested_cache_level != prev_cache_level) {
+        DEBUG_PRINT("Cache level changed: %d -> %d\n",
+                    prev_cache_level, requested_cache_level);
+        reset_solver_warm_start();
+        problem.cache_level = requested_cache_level;
+        prev_cache_level = requested_cache_level;
+      } else {
+        problem.cache_level = requested_cache_level;
       }
-      if (constraints_ever_active) {
-        problem.cache_level = 1;
+      if (problem.cache_level == 0) {
+        problem.y.setZero();
+        problem.g.setZero();
       }
 
 
@@ -741,11 +1031,59 @@ static void tinympcControllerTask(void *parameters)
       }
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
-      if (enable_limo && enable_limo_embedded) {
+      if (is_posthoc_limo() && !constraint_hold) {
+        LimoBarrierEval posthoc_eval;
+        const uint32_t eval_start_us = usecTimestamp();
+        limo_eval_barrier(
+            problem.x.col(0), limo_az_coeff, limo_gravity_comp,
+            radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
+            &posthoc_eval);
+        limo_eval_us += usecTimestamp() - eval_start_us;
+
+        tiny_VectorNx posthoc_gradient = tiny_VectorNx::Zero();
+        // This matches the quad branch post-hoc LIMO projection: the same
+        // learned barrier signal, projected through its z/vz derivatives.
+        posthoc_gradient(2) = limo_barrier::clamp(
+            posthoc_eval.grad(2), tinytype(-2.0f), tinytype(2.0f));
+        posthoc_gradient(8) = limo_barrier::clamp(
+            posthoc_eval.grad(8), tinytype(-2.0f), tinytype(2.0f));
+        const tinytype posthoc_h =
+            guarded_limo_h(problem.x.col(0), posthoc_eval.h);
+        const tinytype posthoc_margin =
+            limo_effective_margin(problem.x.col(0), 0);
+        const tiny_VectorNu nominal_command = problem.u.col(0);
+        tiny_VectorNu filtered_command = nominal_command;
+        bool projection_failed = false;
+        if (!barrier_skipped_high_altitude(problem.x.col(0)) &&
+            posthoc_h < posthoc_margin) {
+          filtered_command = project_posthoc_limo(
+              nominal_command, posthoc_gradient, posthoc_h,
+              posthoc_margin, &projection_failed);
+        }
+        posthoc_du_norm = (filtered_command - nominal_command).norm();
+        posthoc_active = posthoc_du_norm > 1e-5f ? 1 : 0;
+        posthoc_failed = projection_failed ? 1 : 0;
+        problem.u.col(0) = filtered_command;
+        if (posthoc_active) {
+          reroll_horizon_from_first_input();
+        }
+
+        limo_h = posthoc_h;
+        limo_raw = posthoc_eval.raw;
+        limo_grad_norm = posthoc_gradient.norm();
+        limo_margin_eff = posthoc_margin;
+        limo_threshold = posthoc_margin;
+        limo_active = posthoc_active;
+        limo_active_count = posthoc_active;
+      }
+      if (is_embedded_limo()) {
         limo_embedded::update_saturation(
             &limo_embedded_runtime, problem.u.col(0),
             params.u_min.col(0), params.u_max.col(0));
+        limo_embedded::save_prediction(
+            &limo_embedded_runtime, problem.x.col(1));
       }
+      ++benchmark_step;
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
       }
@@ -765,7 +1103,7 @@ static void tinympcControllerTask(void *parameters)
       float trace_gap_k0 = 0.0f;
       float eta_min_k0 = 1000.0f;
       
-      if (!enable_limo && enable_psd && enable_obs_constraint) {
+      if (enable_psd && enable_obs_constraint) {
         // Check certificate for k=0 (current step)
         float px = problem.x(0, 0);
         float py = problem.x(1, 0);
@@ -812,8 +1150,8 @@ static void tinympcControllerTask(void *parameters)
 
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
-      memcpy(&mpc_setpoint, &mpc_setpoint_task, sizeof(tiny_VectorNx));
-      memcpy(&init_vel_z, &problem.x.col(0)(8), sizeof(float));
+      mpc_setpoint = mpc_setpoint_task;
+      init_vel_z = problem.x(8, 0);
       mpc_has_run = true; // Mark that MPC has computed at least once
       xSemaphoreGive(dataMutex);
     }
@@ -948,6 +1286,9 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 LOG_GROUP_START(tinympc)
 
 LOG_ADD(LOG_FLOAT, initial_velocity, &init_vel_z)
+LOG_ADD(LOG_UINT8, mode, &benchmark_mode)
+LOG_ADD(LOG_UINT8, maneuver, &benchmark_maneuver)
+LOG_ADD(LOG_UINT32, step, &benchmark_step)
 LOG_ADD(LOG_FLOAT, limo_h, &limo_h)
 LOG_ADD(LOG_FLOAT, limo_raw, &limo_raw)
 LOG_ADD(LOG_FLOAT, limo_grad, &limo_grad_norm)
@@ -962,6 +1303,12 @@ LOG_ADD(LOG_FLOAT, limo_qz, &limo_qz)
 LOG_ADD(LOG_UINT8, limo_w_idx, &limo_w_index)
 LOG_ADD(LOG_UINT8, limo_qz_idx, &limo_qz_index)
 LOG_ADD(LOG_UINT8, limo_cache, &limo_cache_ok)
+LOG_ADD(LOG_FLOAT, no_or_score, &limo_no_oracle_score)
+LOG_ADD(LOG_FLOAT, no_or_raw, &limo_no_oracle_score_raw)
+LOG_ADD(LOG_UINT8, no_or_act, &limo_no_oracle_active)
+LOG_ADD(LOG_UINT8, post_active, &posthoc_active)
+LOG_ADD(LOG_UINT8, post_failed, &posthoc_failed)
+LOG_ADD(LOG_FLOAT, post_du, &posthoc_du_norm)
 
 LOG_GROUP_STOP(tinympc)
 
@@ -979,8 +1326,15 @@ LOG_GROUP_STOP(tinympc)
 
 static struct param_s __params_limo[] __attribute__((section(".param.limo"), used)) = {
   PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_START, limo)
-  PARAM_VALUE_ENTRY(PARAM_UINT8, enable, &enable_limo)
-  PARAM_VALUE_ENTRY(PARAM_UINT8, embedded, &enable_limo_embedded)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, mode, &benchmark_mode)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, maneuver, &benchmark_maneuver)
+  PARAM_VALUE_ENTRY(PARAM_UINT8, maxIter, &benchmark_max_iter)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, duration, &traj_duration)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, radius, &traj_radius)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, omega, &traj_omega)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, speed, &traj_speed)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, distance, &traj_dist)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, height, &traj_height)
   PARAM_VALUE_ENTRY(PARAM_UINT8, activeH, &limo_active_horizon)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, margin, &limo_margin)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, mScale, &limo_margin_scale)
@@ -990,6 +1344,9 @@ static struct param_s __params_limo[] __attribute__((section(".param.limo"), use
   PARAM_VALUE_ENTRY(PARAM_FLOAT, gComp, &limo_gravity_comp)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, failRoll, &limo_fail_roll_deg)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, failPitch, &limo_fail_pitch_deg)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, guard, &limo_structural_guard_relax)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, skipZ, &limo_skip_z)
+  PARAM_VALUE_ENTRY(PARAM_FLOAT, skipVz, &limo_skip_vz)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, distBudget, &limo_dist_budget)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, distCoeff, &limo_dist_margin_coeff)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, highCut, &limo_dist_high_cut)

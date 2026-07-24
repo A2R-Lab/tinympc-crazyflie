@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math.h>
+#include <stdint.h>
 
 #include "authority_cache_bank_16x4_f32.hpp"
 #include "tinympc/types.hpp"
@@ -31,6 +32,17 @@ struct Runtime {
   tinytype requested_qz;
   tinytype applied_qz;
   tinytype saturation_ema;
+  tinytype saturation;
+  tinytype qz_runtime;
+  tinytype no_oracle_score;
+  tinytype no_oracle_score_raw;
+  tinytype previous_selected_margin;
+  tiny_VectorNx predicted_next;
+  bool prediction_valid;
+  bool margin_valid;
+  bool no_oracle_active;
+  int no_oracle_hold;
+  uint32_t step;
   int w_index;
   int qz_index;
   bool initialized;
@@ -119,13 +131,133 @@ static inline void update(Runtime *runtime, const tiny_VectorNx &x,
   runtime->applied_w = value_for_index(runtime->w_index, 0.0f, 1.0f,
                                        kAuthorityLevels);
 
-  // The deployed no-oracle layer requests up to +0.4 Qz under authority
-  // intervention. Quantize it independently to the frozen four-level bank.
-  runtime->requested_qz = kQzMin + (kQzMax - kQzMin) * runtime->requested_w;
+  // Qz is produced independently by the no-oracle residual detector below,
+  // then quantized into the second cache-bank dimension.
+  runtime->requested_qz =
+      runtime->qz_runtime > tinytype(0.0f) ? runtime->qz_runtime : kQzMin;
   runtime->qz_index = nearest_index(runtime->requested_qz, kQzMin, kQzMax,
                                     kQzLevels);
   runtime->applied_qz = value_for_index(runtime->qz_index, kQzMin, kQzMax,
                                         kQzLevels);
+}
+
+static inline tinytype unit_score(tinytype value, tinytype scale, tinytype cap)
+{
+  return clamp(value / fmaxf(scale, tinytype(1e-9f)), 0.0f, cap);
+}
+
+static inline tinytype selected_failure_margin(const tiny_VectorNx &x,
+                                               tinytype fail_roll_rad,
+                                               tinytype fail_pitch_rad)
+{
+  const tinytype floor_margin = x(2);
+  const tinytype roll_margin = fail_roll_rad - fabsf(x(3));
+  const tinytype pitch_margin = fail_pitch_rad - fabsf(x(4));
+  const tinytype rate_norm =
+      sqrtf(x(9) * x(9) + x(10) * x(10) + x(11) * x(11));
+  const tinytype rate_margin = kFailAngularVelocity - rate_norm;
+  return fminf(floor_margin,
+               fminf(roll_margin, fminf(pitch_margin, rate_margin)));
+}
+
+// Exact embedded form of the frozen no-oracle detector used by the quad
+// evaluation. Tracking-failure terms are omitted because the canonical
+// deployment leaves those thresholds disabled.
+static inline void observe_no_oracle(Runtime *runtime,
+                                     const tiny_VectorNx &x,
+                                     tinytype h_now,
+                                     tinytype margin_now,
+                                     tinytype fail_roll_rad,
+                                     tinytype fail_pitch_rad)
+{
+  if (runtime->qz_runtime <= tinytype(0.0f)) {
+    runtime->qz_runtime = kQzMin;
+  }
+  if (!runtime->prediction_valid) {
+    return;
+  }
+
+  const tinytype dx = x(0) - runtime->predicted_next(0);
+  const tinytype dy = x(1) - runtime->predicted_next(1);
+  const tinytype dz = x(2) - runtime->predicted_next(2);
+  const tinytype dvx = x(6) - runtime->predicted_next(6);
+  const tinytype dvy = x(7) - runtime->predicted_next(7);
+  const tinytype dvz = x(8) - runtime->predicted_next(8);
+  const tinytype droll = x(3) - runtime->predicted_next(3);
+  const tinytype dpitch = x(4) - runtime->predicted_next(4);
+  const tinytype dp = x(9) - runtime->predicted_next(9);
+  const tinytype dq = x(10) - runtime->predicted_next(10);
+  const tinytype dr = x(11) - runtime->predicted_next(11);
+
+  const tinytype pos_residual = sqrtf(dx * dx + dy * dy);
+  const tinytype z_residual = fabsf(dz);
+  const tinytype velocity_residual =
+      sqrtf(dvx * dvx + dvy * dvy + dvz * dvz);
+  const tinytype vz_residual = fabsf(dvz);
+  const tinytype attitude_residual =
+      sqrtf(droll * droll + dpitch * dpitch +
+            0.04f * (dp * dp + dq * dq + dr * dr));
+  const tinytype selected_margin =
+      selected_failure_margin(x, fail_roll_rad, fail_pitch_rad);
+  const tinytype shrink_rate = runtime->margin_valid
+      ? fmaxf(0.0f,
+              (runtime->previous_selected_margin - selected_margin) / 0.05f)
+      : 0.0f;
+  const tinytype barrier_deficit = fmaxf(0.0f, margin_now - h_now);
+
+  const tinytype score_raw =
+      0.25f * unit_score(pos_residual, 0.006f, 2.5f) +
+      0.20f * unit_score(z_residual, 0.004f, 2.0f) +
+      0.65f * unit_score(velocity_residual, 0.075f, 3.0f) +
+      0.45f * unit_score(vz_residual, 0.075f, 3.0f) +
+      0.25f * unit_score(attitude_residual, 0.06f, 2.0f) +
+      0.50f * unit_score(fmaxf(0.0f, 0.22f - selected_margin),
+                         0.22f, 2.5f) +
+      0.45f * unit_score(shrink_rate, 0.65f, 2.5f) +
+      0.35f * unit_score(barrier_deficit, 0.25f, 2.0f) +
+      0.20f * unit_score(fmaxf(0.0f, runtime->saturation - 0.50f),
+                         0.50f, 1.5f);
+
+  runtime->no_oracle_score_raw = score_raw;
+  runtime->no_oracle_score = runtime->step == 0
+      ? score_raw
+      : 0.65f * runtime->no_oracle_score + 0.35f * score_raw;
+  const bool severe =
+      (velocity_residual >= 0.12f || vz_residual >= 0.10f) &&
+      score_raw >= 1.80f && selected_margin <= 0.25f;
+  const bool enter = runtime->no_oracle_score >= 1.60f ||
+                     score_raw >= 2.0f || severe;
+  const bool exit = runtime->no_oracle_score < 0.80f;
+  const int requested_hold = severe ? 60 : 20;
+  if (runtime->no_oracle_active) {
+    if (enter) {
+      runtime->no_oracle_hold =
+          runtime->no_oracle_hold > requested_hold
+              ? runtime->no_oracle_hold : requested_hold;
+    } else if (runtime->no_oracle_hold > 0) {
+      --runtime->no_oracle_hold;
+    } else if (exit) {
+      runtime->no_oracle_active = false;
+    }
+  } else if (enter) {
+    runtime->no_oracle_active = true;
+    runtime->no_oracle_hold = requested_hold;
+  }
+
+  const tinytype qz_target =
+      runtime->no_oracle_active ? kQzMax : kQzMin;
+  runtime->qz_runtime =
+      0.80f * runtime->qz_runtime + 0.20f * qz_target;
+  runtime->previous_selected_margin = selected_margin;
+  runtime->margin_valid = true;
+  ++runtime->step;
+}
+
+static inline void save_prediction(Runtime *runtime,
+                                   const tiny_VectorNx &predicted_next)
+{
+  runtime->predicted_next = predicted_next;
+  runtime->prediction_valid = true;
 }
 
 static inline void update_saturation(Runtime *runtime,
@@ -134,14 +266,29 @@ static inline void update_saturation(Runtime *runtime,
                                      const tiny_VectorNu &upper)
 {
   tinytype proximity = 0.0f;
+  int saturated_inputs = 0;
   for (int i = 0; i < NINPUTS; ++i) {
-    const tinytype span = fmaxf(upper(i) - lower(i), 1e-6f);
-    const tinytype centered =
-        tinytype(2.0f) * (command(i) - lower(i)) / span - tinytype(1.0f);
-    proximity = fmaxf(proximity, fabsf(centered));
+    tinytype channel_proximity = 0.0f;
+    if (upper(i) > tinytype(1e-9f)) {
+      channel_proximity =
+          fmaxf(channel_proximity, command(i) / upper(i));
+    }
+    if (lower(i) < tinytype(-1e-9f)) {
+      channel_proximity =
+          fmaxf(channel_proximity, command(i) / lower(i));
+    }
+    proximity = fmaxf(
+        proximity, clamp(channel_proximity, tinytype(0.0f), tinytype(1.0f)));
+    if (fabsf(command(i) - upper(i)) < tinytype(1e-3f) ||
+        fabsf(command(i) - lower(i)) < tinytype(1e-3f)) {
+      ++saturated_inputs;
+    }
   }
   runtime->saturation_ema =
-      tinytype(0.9f) * runtime->saturation_ema + tinytype(0.1f) * proximity;
+      tinytype(0.8f) * runtime->saturation_ema + tinytype(0.2f) * proximity;
+  runtime->saturation =
+      static_cast<tinytype>(saturated_inputs) /
+      static_cast<tinytype>(NINPUTS);
 }
 
 static inline bool install_cache(const Runtime &runtime,
