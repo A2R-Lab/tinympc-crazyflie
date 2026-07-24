@@ -84,6 +84,7 @@ int main(void) {
            g_cylWorldX, g_cylWorldY,
            g_cylVarX, g_cylVarY, g_trackLoomingSupport,
            g_trackLoomingRate, flowObstacleLinkEmergencyBrake() ? 1u : 0u);
+    fflush(stdout);
   }
   return 0;
 }

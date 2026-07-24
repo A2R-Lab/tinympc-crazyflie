@@ -219,6 +219,7 @@ int main(void) {
              track->lk_err_q8, track->fb_err_q8);
     }
     putchar('\n');
+    fflush(stdout);
   }
   if (!feof(stdin)) {
     perror("replay input");

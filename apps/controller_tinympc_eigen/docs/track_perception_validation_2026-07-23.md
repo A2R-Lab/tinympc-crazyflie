@@ -148,6 +148,45 @@ restrained 1 m/s hardware approaches with measured detection and stopping
 clearance. The new `flowObsRx.fwdDepth` log identifies how many accepted
 tracks used forward expansion during those tests.
 
+## Continuous confined-course result
+
+A later exact-perception replay replaced independent approaches with
+continuous laps in a 4 m x 4 m arena. Four solid obstacles and four solid
+perimeter walls remain in the scene for the full run, and GAP8/STM32 estimator
+state is never reset between encounters.
+
+The existing firmware fails in this confined-course setting:
+
+| Course | Detections | False cylinders | Emergency frames | Collision contacts | Physical lap |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Firmware circuit geometry at 1 m/s | 4/4 | 0 | 0 | 31 | Failed |
+| Safe clockwise slalom | 0/4 | 0 | 0 | 0 | Completed |
+| Safe counterclockwise slalom | 1/4 | 0 | 0 | 0 | Completed |
+| Safe degraded clockwise slalom | 0/4 | 0 | 0 | 0 | Completed |
+
+On the firmware-circle replay, first detection clearances were 0.61-0.77 m.
+The full reference continues after contact so later perception can be
+measured; it is not counted as a physical lap.
+
+The course exposes a geometry mismatch: 120/121 firmware-circle frames and
+199/201 slalom frames exceed the forward-depth/looming yaw gate of 0.20 rad/s.
+At 1 m/s this gate requires a turn radius above 5 m, which cannot fit inside a
+4 m x 4 m arena. Lateral parallax still detects the four circle obstacles, but
+the looming emergency path remains suppressed.
+
+The simulator audits the controller defaults (`obsEnable=0`, `obsUseFlow=0`,
+`obsLogOnly=1`). Detected cylinders therefore do not affect the reference, and
+the only unconditional response is the looming current-position hold—which
+never activates here. Perfect reference tracking is used until collision,
+making this an optimistic upper bound rather than an exact TinyMPC/PID
+dynamics simulation.
+
+This continuous result supersedes any broad claim that the 14/14 straight
+approach corpus proves confined-track readiness. It shows that the compiled
+perception path can detect straight and some circular encounters, but the
+existing firmware configuration cannot safely complete a path-blocked 1 m/s
+course and has poor recall on the preplanned slalom.
+
 These deterministic cases support software regression claims only. The
 renderer is not a substitute for curated real-camera captures, and the
 hardware checklist in `OBSTACLE_PERCEPTION_HANDOFF.md` remains mandatory.

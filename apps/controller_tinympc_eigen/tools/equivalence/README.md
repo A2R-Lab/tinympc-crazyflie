@@ -148,3 +148,45 @@ causes earlier avoidance. The current degraded cases underestimate range by as
 much as 0.91 m, so this suite supports obstacle-detection timing, not precise
 localization. It also does not model flight-controller stopping distance,
 real HM01B0 statistics, UART scheduling, or physical hardware.
+
+## Continuous 4 m x 4 m course
+
+Run the persistent multi-obstacle course with:
+
+```sh
+python3 tools/equivalence/run_exact_track_course_sim.py \
+  --nanocockpit /home/cchen/tinympc-nanocockpit
+```
+
+This suite retains GAP8 and STM32 estimator state for an entire lap. It renders
+solid perimeter walls and four solid obstacles in a 4 m x 4 m arena. The
+production GAP8 and STM32 sources are used at the same compiled boundaries as
+the other exact suites. Runs include the firmware `circuitPoint` circular
+geometry translated into the arena and commanded at 1 m/s, safe clockwise and
+counterclockwise continuous slaloms, and a degraded-camera clockwise lap.
+
+Every frame is checked for obstacle contact and boundary violation. The suite
+reports first detection clearance, false cylinders, emergency cues, accepted
+depth tracks, cluster support, and yaw-gated frames. The complete reference is
+replayed after collision to measure later perception, but
+`physical_lap_completed` becomes false at first contact.
+
+The controller source is audited at runtime for `obsEnable=0`, `obsUseFlow=0`,
+and `obsLogOnly=1`. Cylinders therefore do not alter the circuit reference.
+The course assumes perfect reference tracking until collision—an optimistic
+upper bound, not an exact TinyMPC/PID or flight-dynamics simulation.
+
+The existing firmware does **not** pass this suite:
+
+- the 1 m/s firmware circle detects all four obstacles at 0.61-0.77 m
+  clearance with no false cylinders, but produces no emergency cue and
+  intersects obstacles because avoidance constraints are disabled;
+- the safe slalom detects 0/4 clockwise, 1/4 counterclockwise, and 0/4 under
+  degradation; and
+- almost every frame exceeds the 0.20 rad/s yaw gate (120/121 circle frames
+  and 199/201 slalom frames).
+
+This invalidates extrapolating the straight-line 1 m/s result to a confined
+racetrack. The next meaningful step is to enable and validate the production
+flow-cylinder constraints, followed by exact controller/dynamics or
+hardware-in-the-loop testing rather than weakening the course.
