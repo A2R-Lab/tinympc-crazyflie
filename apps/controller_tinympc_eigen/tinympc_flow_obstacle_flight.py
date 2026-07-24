@@ -164,7 +164,9 @@ def parse_args():
     p.add_argument("--freeze-on-support", action="store_true",
                    help="Latch as soon as live flow support passes the safety gates.")
     p.add_argument("--freeze-support-hold", type=int, default=1,
-                   help="Consecutive good support samples required before latching.")
+                   help="Consecutive good, distinct flow packets required before latching.")
+    p.add_argument("--freeze-position-spread", type=float, default=0.25,
+                   help="Maximum cylinder-center spread across held freeze samples [m].")
     p.add_argument("--peer-amp", type=float, default=0.25, help="Side-to-side peering amplitude [m].")
     p.add_argument("--peer-period-s", type=float, default=3.0)
     p.add_argument("--approach-s", type=float, default=0.0,
@@ -376,6 +378,8 @@ def flow_support_metrics(latest):
     ))
     cyl_valid = int(float(latest_get(latest, "flowObsRx.cylValid", 0) or 0))
     cyl_conf = float(latest_get(latest, "flowObsRx.cylConf", 0.0) or 0.0)
+    cyl_wx = float(latest_get(latest, "flowObsRx.cylWx", 0.0) or 0.0)
+    cyl_wy = float(latest_get(latest, "flowObsRx.cylWy", 0.0) or 0.0)
     track_rx = int(latest_get(latest, "flowObsRx.trackRx", 0) or 0)
     return {
         "baseline": baseline,
@@ -384,6 +388,8 @@ def flow_support_metrics(latest):
         "cylinder_sigma": cylinder_sigma,
         "cyl_valid": cyl_valid,
         "cyl_conf": cyl_conf,
+        "cyl_wx": cyl_wx,
+        "cyl_wy": cyl_wy,
         "track_rx": track_rx,
     }
 
@@ -406,11 +412,31 @@ def maybe_freeze_on_support(cf, latest, args, state):
         state["requested"] = True
         return True
     ok, metrics = flow_support_gate_ok(latest, args)
+    if metrics["track_rx"] == state.get("last_track_rx"):
+        return False
+    state["last_track_rx"] = metrics["track_rx"]
     if ok:
-        state["good_count"] = state.get("good_count", 0) + 1
+        history = state.setdefault("history", [])
+        history.append(metrics)
+        del history[:-max(1, args.freeze_support_hold)]
+        state["good_count"] = len(history)
     else:
         state["good_count"] = 0
+        state["history"] = []
     if state["good_count"] < max(1, args.freeze_support_hold):
+        return False
+    history = state.get("history", [metrics])
+    max_spread = 0.0
+    for a in history:
+        for b in history:
+            max_spread = max(max_spread, math.hypot(
+                a["cyl_wx"] - b["cyl_wx"], a["cyl_wy"] - b["cyl_wy"]))
+    if max_spread > args.freeze_position_spread:
+        print(
+            "WARN: good support window rejected by cylinder spread: "
+            f"spread={max_spread:.3f}m > {args.freeze_position_spread:.3f}m")
+        state["good_count"] = 0
+        state["history"] = []
         return False
     print(
         "support window good; requesting freeze: "
@@ -418,7 +444,8 @@ def maybe_freeze_on_support(cf, latest, args, state):
         f"baseline={metrics['baseline']:.3f}m "
         f"trackSigma={metrics['track_sigma']:.3f}m "
         f"cylinderSigma={metrics['cylinder_sigma']:.3f}m "
-        f"conf={metrics['cyl_conf']:.3f}"
+        f"conf={metrics['cyl_conf']:.3f} "
+        f"spread={max_spread:.3f}m"
     )
     set_param(cf, "obs.frzAfter", 0, delay=0.01)
     state["requested"] = True
