@@ -20,10 +20,11 @@ python3 tools/equivalence/replay_himax_capture.py /path/to/capture \
   --nanocockpit /path/to/tinympc-nanocockpit
 ```
 
-The replay uses the PNG grayscale samples unchanged and applies the production
-accumulated 66,667 us selection deadline. Its coverage section must be checked:
-Wi-Fi capture losses mean that a saved stream with non-nominal image gaps is
-diagnostic rather than an exact reconstruction of the on-board frame sequence.
+The replay uses native PNG or raw PGM grayscale samples unchanged and applies
+the production accumulated 66,667 us selection deadline. Its coverage section
+must be checked: Wi-Fi capture losses mean that a saved stream with non-nominal
+image gaps is diagnostic rather than an exact reconstruction of the on-board
+frame sequence.
 
 The STM32 executable directly includes
 `apps/controller_tinympc_eigen/src/flowdeck_obstacle_link.c`. Only the RTOS

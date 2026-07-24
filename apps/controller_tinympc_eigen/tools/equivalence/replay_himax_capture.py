@@ -79,6 +79,44 @@ def decode_gray_png(path: Path) -> bytes:
     return bytes(pixels)
 
 
+def decode_gray_pgm(path: Path) -> bytes:
+    """Decode the raw P5 format emitted by the low-overhead capture writer."""
+    raw = path.read_bytes()
+    tokens = []
+    pos = 0
+    while len(tokens) < 4:
+        while pos < len(raw) and raw[pos] in b" \t\r\n":
+            pos += 1
+        if pos < len(raw) and raw[pos] == ord("#"):
+            while pos < len(raw) and raw[pos] not in b"\r\n":
+                pos += 1
+            continue
+        start = pos
+        while pos < len(raw) and raw[pos] not in b" \t\r\n":
+            pos += 1
+        tokens.append(raw[start:pos])
+    if tokens != [b"P5", b"160", b"160", b"255"]:
+        raise ValueError(f"{path}: expected raw 160x160 8-bit PGM")
+    if pos >= len(raw) or raw[pos] not in b" \t\r\n":
+        raise ValueError(f"{path}: missing PGM raster separator")
+    if raw[pos:pos + 2] == b"\r\n":
+        pos += 2
+    else:
+        pos += 1
+    pixels = raw[pos:]
+    if len(pixels) != 160 * 160:
+        raise ValueError(f"{path}: expected 25,600 pixels, got {len(pixels)}")
+    return pixels
+
+
+def decode_gray_image(path: Path) -> bytes:
+    if path.suffix.lower() == ".png":
+        return decode_gray_png(path)
+    if path.suffix.lower() == ".pgm":
+        return decode_gray_pgm(path)
+    raise ValueError(f"{path}: unsupported capture image format")
+
+
 def number(row: dict[str, str], key: str, default: float = 0.0) -> float:
     try:
         return float(row[key])
@@ -101,7 +139,7 @@ def deadline_select(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def make_inputs(capture: Path) -> tuple[bytes, list[dict[str, float | int]],
-                                        list[dict[str, str]]]:
+                                        list[dict[str, str]], int]:
     with (capture / "frames.csv").open(newline="") as stream:
         all_rows = list(csv.DictReader(stream))
     rows = deadline_select(all_rows)
@@ -111,7 +149,7 @@ def make_inputs(capture: Path) -> tuple[bytes, list[dict[str, float | int]],
     previous_ts = None
     for frame, row in enumerate(rows):
         timestamp = int(row["frame_gap8_timestamp"])
-        image = decode_gray_png(capture / row["image"])
+        image = decode_gray_image(capture / row["image"])
         wire.extend(struct.pack("<III", 0, frame, timestamp))
         wire.extend(image)
         yaw = math.radians(number(row, "log_yaw_deg"))
@@ -132,12 +170,13 @@ def make_inputs(capture: Path) -> tuple[bytes, list[dict[str, float | int]],
             "yaw": yaw, "clock_bias_ms": 0,
         })
         previous_yaw, previous_ts = yaw, timestamp
-    return bytes(wire), states, rows
+    return bytes(wire), states, rows, len(all_rows)
 
 
 def summarize(capture_rows: list[dict[str, str]],
               gap_rows: list[dict[str, str]],
-              stm_rows: list[dict[str, str]]) -> dict[str, object]:
+              stm_rows: list[dict[str, str]],
+              saved_frames: int) -> dict[str, object]:
     gaps = []
     for first, second in zip(capture_rows, capture_rows[1:]):
         gaps.append(((int(second["frame_gap8_timestamp"]) -
@@ -162,11 +201,11 @@ def summarize(capture_rows: list[dict[str, str]],
         "implementation": {
             "gap8": "verbatim production functions extracted from pulp-frontnet/main.c",
             "stm32": "production flowdeck_obstacle_link.c directly included by host harness",
-            "pixels": "native 160x160 8-bit grayscale PNG samples; no resize or filtering",
+            "pixels": "native 160x160 8-bit grayscale samples; no resize or filtering",
             "selection": "production accumulated 66,667 us vision deadline applied to saved frames",
         },
         "coverage": {
-            "saved_frames": 270,
+            "saved_frames": saved_frames,
             "selected_frames": len(capture_rows),
             "selected_by_phase": dict(phase_counts),
             "selected_pair_gap_camera_frames": dict(sorted(Counter(
@@ -213,13 +252,13 @@ def main() -> int:
     parser.add_argument("--nanocockpit", type=Path, required=True)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    image_wire, states, capture_rows = make_inputs(args.capture)
+    image_wire, states, capture_rows, saved_frames = make_inputs(args.capture)
     repo = Path(__file__).resolve().parents[3]
     with tempfile.TemporaryDirectory(prefix="himax-capture-replay-") as tmp:
         gap, stm = build(repo, args.nanocockpit, Path(tmp))
         gap_rows = run_csv(gap, image_wire)
         stm_rows = run_csv(stm, stm32_wire(gap_rows, states))
-    result = summarize(capture_rows, gap_rows, stm_rows)
+    result = summarize(capture_rows, gap_rows, stm_rows, saved_frames)
     output = json.dumps(result, indent=2)
     print(output)
     if args.out:
