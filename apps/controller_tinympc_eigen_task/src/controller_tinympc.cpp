@@ -261,7 +261,10 @@ static uint8_t benchmark_mode = TINYMPC_FIRMWARE_MODE;
 static uint8_t benchmark_maneuver = TINYMPC_TRAJECTORY;
 static uint8_t previous_benchmark_mode = 255;
 static uint8_t previous_benchmark_maneuver = 255;
-static uint8_t benchmark_max_iter = 30;
+// Five ADMM iterations is the validated embedded budget (~11 ms at 50 Hz).
+// Thirty iterations overruns this 25 Hz task's 40 ms period and starves CRTP,
+// which fills radiolink's five-packet receive queue and resets the Crazyflie.
+static uint8_t benchmark_max_iter = 5;
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
