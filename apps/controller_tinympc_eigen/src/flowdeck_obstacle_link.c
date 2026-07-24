@@ -978,6 +978,13 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
     float y1;
     flowTrackUndistort(u0, v0, &x0, &y0);
     flowTrackUndistort(u0 + du, v0 + dv, &x1, &y1);
+    /*
+     * HIMAX_ORIENTATION=0x03 mirrors the deployed sensor's horizontal image
+     * axis relative to the body/camera azimuth convention. Convert both
+     * endpoints before deriving bearing, flow, and world position.
+     */
+    x0 = -x0;
+    x1 = -x1;
     if (!isfinite(x0) || !isfinite(y0) ||
         !isfinite(x1) || !isfinite(y1)) {
       g_trackDepthRejectedGeometry++;
@@ -1392,10 +1399,10 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     /* GAP8 sends normalized pinhole image coordinate q=(u-cx)/fx and its
      * derivative qdot=du/(fx*dt), not literal bearing/radial rate. Convert
      * through bearing=atan(q), whose derivative is qdot/(1+q^2). */
-    const float image_q = payload.sector[i].azimuth_rad;
+    const float image_q = -payload.sector[i].azimuth_rad;
     const float camera_az = atanf(image_q);
     const float az = camera_az + g_cameraYawRad;
-    const float measured_flow = payload.sector[i].flow_x_rad_s /
+    const float measured_flow = -payload.sector[i].flow_x_rad_s /
                                 (1.0f + image_q * image_q);
     float residual_flow = measured_flow - yaw_rate_rad_s;
     float vel_eff = camera_vx * sinf(camera_az) -

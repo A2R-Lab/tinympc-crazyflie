@@ -52,7 +52,9 @@ def render_gap8(scene: Scene, x: float, y: float, yaw: float,
             for blur_fraction in (-0.5, 0.5) if blur_active else (0.0,):
                 sample_x = x+blur_fraction*motion_blur_x
                 sample_y = y+blur_fraction*motion_blur_y
-                az = math.atan(q)
+                # HIMAX_ORIENTATION=0x03 mirrors horizontal sensor pixels
+                # relative to positive body/world y.
+                az = -math.atan(q)
                 distance, box, face = ray_hit(
                     sample_x, sample_y, yaw+az, scene.boxes)
                 wx = sample_x+distance*math.cos(yaw+az)

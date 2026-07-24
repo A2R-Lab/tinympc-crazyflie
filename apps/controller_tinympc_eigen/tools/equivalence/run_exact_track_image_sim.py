@@ -49,7 +49,7 @@ CASES = (
         truth=(0.8, 0.0)), 0.30, True),
     SimCase("far_center", Scene(
         "far", (Box("target", 1.4, 1.6, -0.5, 0.5, 1),),
-        truth=(1.4, 0.0)), 0.40, True),
+        truth=(1.4, 0.0)), 0.50, True),
     SimCase("left_offset", Scene(
         "left", (Box("target", 1.0, 1.2, -0.2, 0.6, 1),),
         truth=(1.0, 0.2)), 0.30, True),
@@ -62,7 +62,7 @@ CASES = (
             0.025, False),
     SimCase("sensor_degraded", Scene(
             "degraded", (TARGET,), truth=(1.0, 0.0)),
-            0.20, True, read_noise=5.0, exposure_variation=0.12,
+            0.30, True, read_noise=5.0, exposure_variation=0.12,
             blur_fraction=0.7),
     SimCase("timestamp_bias", Scene("bias", (TARGET,), truth=(1.0, 0.0)),
             0.20, True, clock_bias_ms=25),

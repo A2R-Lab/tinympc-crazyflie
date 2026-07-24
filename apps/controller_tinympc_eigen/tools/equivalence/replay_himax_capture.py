@@ -190,6 +190,9 @@ def summarize(capture_rows: list[dict[str, str]],
                    float(second["cyl_world_y"]) - float(first["cyl_world_y"]))
         for first, second in zip(valid, valid[1:])
     ]
+    phase_indexes: dict[str, list[int]] = {}
+    for index, source in enumerate(capture_rows):
+        phase_indexes.setdefault(source["phase"], []).append(index)
     def frame_info(output: dict[str, str]) -> dict[str, object]:
         index = int(output["frame"])
         source = capture_rows[index]
@@ -225,6 +228,16 @@ def summarize(capture_rows: list[dict[str, str]],
         },
         "estimator": {
             "frames_with_accepted_depth": len(accepted),
+            "accepted_depth_tracks_by_phase": {
+                phase: sum(int(stm_rows[index]["accepted"])
+                           for index in indexes)
+                for phase, indexes in phase_indexes.items()
+            },
+            "geometry_rejections_by_phase": {
+                phase: sum(int(stm_rows[index]["reject_geometry"])
+                           for index in indexes)
+                for phase, indexes in phase_indexes.items()
+            },
             "frames_with_observation": len(observations),
             "frames_with_valid_cylinder": len(valid),
             "max_accepted_tracks": max(int(row["accepted"]) for row in stm_rows),

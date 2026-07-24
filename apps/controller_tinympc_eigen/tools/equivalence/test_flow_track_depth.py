@@ -62,7 +62,7 @@ static int publish_forward_track(float body_vx, float yaw_rate,
 
 int main(void) {
   flowObstacleLinkInit();
-  if (publish_track(0.2f, -301, 26, 65535) != 0) return 1;
+  if (publish_track(0.2f, 301, 26, 65535) != 0) return 1;
   if (g_trackDepthAccepted != 1 || !g_trackDepthValid[0]) return 2;
   if (fabsf(g_trackRange[0] - 1.0f) > 0.08f) return 3;
   if (!(g_trackRangeSigma[0] > 0.0f &&
@@ -70,11 +70,11 @@ int main(void) {
   if (!g_trackDepthSyncValid || g_trackDepthSyncErrorMs != 0u) return 5;
 
   flow_equiv_tick_ms += 67;
-  if (publish_track(0.01f, -15, 26, 65535) != 0) return 6;
+  if (publish_track(0.01f, 15, 26, 65535) != 0) return 6;
   if (g_trackDepthAccepted != 0 || g_trackDepthRejectedMotion != 1) return 7;
 
   flow_equiv_tick_ms += 67;
-  if (publish_track(0.2f, -301, 8u * 256u, 65535) != 0) return 8;
+  if (publish_track(0.2f, 301, 8u * 256u, 65535) != 0) return 8;
   if (g_trackDepthAccepted != 0 ||
       g_trackDepthRejectedUncertainty != 1) return 9;
 
@@ -89,7 +89,7 @@ int main(void) {
   if (g_trackDepthAccepted != 0 || g_trackDepthValid[0]) return 15;
 
   flow_equiv_tick_ms += 500;
-  if (publish_track(0.2f, -301, 26, 65535) != 0) return 16;
+  if (publish_track(0.2f, 301, 26, 65535) != 0) return 16;
   if (g_trackDepthAccepted != 0 || g_trackDepthValid[0] ||
       g_trackDepthRejectedGeometry != 1) return 17;
 
