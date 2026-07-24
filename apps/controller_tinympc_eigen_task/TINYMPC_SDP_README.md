@@ -74,6 +74,22 @@ The `tinympc` log group exposes the compiled mode, maneuver, step, barrier activ
 post-hoc projection, no-oracle detector, authority weight, Qz level, and
 cache-validation telemetry.
 
+Every compiled maneuver, including hover, automatically lands when
+`limo.duration` expires. The benchmark controller stops solving, the stock
+Crazyflie position PID holds the measured final X/Y/yaw, and its Z reference
+ramps downward at `0.15 m/s`. The target is `-0.05 m` in the estimator frame.
+Motors turn off only after that target has been reached and the estimate
+indicates the vehicle is near the floor (`z <= 0.08 m`) and vertically settled
+(`|vz| <= 0.10 m/s`). This prevents the MPC-CBF or LIMO floor constraint from
+opposing the landing.
+
+The four landing constants are next to the mode and trajectory selectors at
+the top of `src/controller_tinympc.cpp`. The `tinympc.phase` log reports `0`
+while tracking, `1` while landing, and `2` after motor cutoff;
+`tinympc.land_zref` reports the descending Z reference. These thresholds assume
+the estimator's floor is approximately `z = 0`; verify that frame before a
+free-flight experiment.
+
 Mode `2` is the firmware realization of safe-reachability `main`'s canonical
 `posthoc_learned` arm (verified at `33421e84`, canonical audit commit
 `8dccdb7f`). It keeps the nominal fixed-Q/R solve free of learned horizon

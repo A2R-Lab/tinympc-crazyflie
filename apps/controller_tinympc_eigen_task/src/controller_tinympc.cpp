@@ -39,6 +39,8 @@
 #define TINYMPC_MODE_MPC_CBF       1
 #define TINYMPC_MODE_LIMO_POSTHOC  2
 #define TINYMPC_MODE_LIMO_EMBEDDED 3
+
+
 #ifndef TINYMPC_FIRMWARE_MODE
 #define TINYMPC_FIRMWARE_MODE 3
 #endif
@@ -59,6 +61,8 @@
 #define TINYMPC_TRAJECTORY_LINE_Y  2
 #define TINYMPC_TRAJECTORY_CIRCLE  3
 #define TINYMPC_TRAJECTORY_FIGURE8 4
+
+
 #ifndef TINYMPC_TRAJECTORY
 #define TINYMPC_TRAJECTORY 1
 #endif
@@ -66,6 +70,14 @@
     TINYMPC_TRAJECTORY > TINYMPC_TRAJECTORY_FIGURE8
 #error "TINYMPC_TRAJECTORY must be 0 (hover), 1 (X-line), 2 (Y-line), 3 (circle), or 4 (figure eight)"
 #endif
+
+// Every maneuver finishes with the same PID-controlled descent. The landing
+// target is intentionally below the estimated floor so the vehicle settles
+// before the motors are disabled.
+#define TINYMPC_LANDING_DESCENT_MPS       0.15f
+#define TINYMPC_LANDING_TARGET_Z_M       (-0.05f)
+#define TINYMPC_LANDING_TOUCHDOWN_Z_M     0.08f
+#define TINYMPC_LANDING_TOUCHDOWN_VZ_MPS  0.10f
 
 #include "Eigen.h"
 
@@ -211,7 +223,13 @@ static tiny_VectorNu u_lqr;
 static tiny_VectorNx current_state;
 
 // Helper variables
-static bool enable_traj = false;
+enum FlightPhase : uint8_t {
+  FLIGHT_PHASE_TRACKING = 0,
+  FLIGHT_PHASE_LANDING = 1,
+  FLIGHT_PHASE_COMPLETE = 2,
+};
+
+static bool enable_traj = true;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
@@ -223,8 +241,14 @@ static float traj_radius = 0.75f;
 static float traj_omega = 0.45f;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
+static uint8_t flight_phase = FLIGHT_PHASE_TRACKING;
+static uint32_t landing_start_tick = 0;
+static float landing_hold_x = 0.0f;
+static float landing_hold_y = 0.0f;
+static float landing_hold_yaw = 0.0f;
+static float landing_start_z = 0.0f;
+static float landing_reference_z = 0.0f;
 // static int mpc_steps_taken = 0;
-static uint64_t startTimestamp;
 // static uint32_t timestamp;
 static uint32_t mpc_start_timestamp;
 static uint32_t mpc_time_us;
@@ -526,6 +550,9 @@ static void reset_benchmark_run()
   benchmark_step = 0;
   enable_traj = true;
   mpc_has_run = false;
+  flight_phase = FLIGHT_PHASE_TRACKING;
+  landing_start_tick = 0;
+  landing_reference_z = traj_height;
   max_traj_index =
       static_cast<int>(positive_part(traj_duration) * MPC_RATE);
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
@@ -582,6 +609,12 @@ static inline void fill_hold_setpoint(setpoint_t *sp, const state_t *state)
   sp->position.y = state->position.y;
   sp->position.z = state->position.z;
   sp->attitude.yaw = state->attitude.yaw;
+}
+
+static inline void stop_motors(control_t *control)
+{
+  memset(control, 0, sizeof(control_t));
+  control->controlMode = controlModeLegacy;
 }
 
 void appMain()
@@ -681,6 +714,9 @@ void controllerOutOfTreeInit(void)
   mpc_has_run = false;
   traj_index = 0;
   max_traj_index = static_cast<int>(traj_duration * MPC_RATE);
+  flight_phase = FLIGHT_PHASE_TRACKING;
+  landing_start_tick = 0;
+  landing_reference_z = traj_height;
 
   // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
   // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
@@ -726,6 +762,7 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       float vy = 0.0f;
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER
       // Position and velocity stay at zero in X/Y.
+      (void)t;
 #elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_LINE_X
       x = fminf(traj_speed * t, traj_dist);
       vx = traj_speed * t < traj_dist ? traj_speed : 0.0f;
@@ -756,20 +793,20 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
     if (traj_index < max_traj_index) {
       traj_index++;
     } else {
-      // Trajectory done - disable trajectory to trigger motor kill
-      static bool traj_done_msg = false;
-      if (!traj_done_msg) {
-        DEBUG_PRINT("TRAJ DONE: idx=%d, max=%d\n", traj_index, max_traj_index);
-        traj_done_msg = true;
-      }
+      // Stop the benchmark controller before landing so a floor constraint
+      // cannot oppose the commanded descent.
+      DEBUG_PRINT("TRAJ DONE: idx=%d, max=%d; requesting landing\n",
+                  traj_index, max_traj_index);
       enable_traj = false;
       enable_obs_constraint = 0;
       params.Xref = Xref_end.replicate<1, NHORIZON>();
+      landing_start_tick = 0;
+      flight_phase = FLIGHT_PHASE_LANDING;
     }
   }
   else
   {
-    params.Xref = Xref_origin.replicate<1, NHORIZON>();
+    params.Xref = Xref_end.replicate<1, NHORIZON>();
   }
 }
 
@@ -785,8 +822,6 @@ static void tinympcControllerTask(void *parameters)
 
   uint32_t nowMs = T2M(xTaskGetTickCount());
   uint32_t nextMpcMs = nowMs;
-
-  startTimestamp = usecTimestamp();
 
   static uint32_t task_loop_count = 0;
   while (true)
@@ -829,17 +864,10 @@ static void tinympcControllerTask(void *parameters)
       }
       problem.max_iter = benchmark_max_iter > 0 ? benchmark_max_iter : 1;
 
-      // Skip MPC solve after landing (trajectory done)
-      if (!enable_traj && traj_index >= max_traj_index) {
-        continue;  // Don't solve, just wait
-      }
-
-      // Comment out when avoiding dynamic obstacle
-      // Uncomment if following reference trajectory
-      if (usecTimestamp() - startTimestamp > 1000000 * 2 && traj_index == 0 && !enable_traj)
-      {
-        DEBUG_PRINT("Enable trajectory!\n");
-        enable_traj = true;
+      // Landing uses the stock position PID. Stop TinyMPC/LIMO so the
+      // benchmark's floor-safety constraint cannot fight the descent.
+      if (flight_phase != FLIGHT_PHASE_TRACKING) {
+        continue;
       }
 
       // TODO: predict into the future and set initial x to wherever we think we'll be
@@ -912,9 +940,11 @@ static void tinympcControllerTask(void *parameters)
         if (!limo_cache_ok) {
           DEBUG_PRINT("LIMO embedded cache validation failed\n");
           // A compiled embedded-LIMO image cannot silently switch to another
-          // benchmark arm. Stop the run so the failure is explicit and safe.
+          // benchmark arm. End the run with the same controlled landing.
           enable_traj = false;
           mpc_has_run = true;
+          landing_start_tick = 0;
+          flight_phase = FLIGHT_PHASE_LANDING;
           restore_nominal_solver();
           reset_solver_warm_start();
         }
@@ -1290,45 +1320,76 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
   if (RATE_DO_EXECUTE(LOWLEVEL_RATE, tick))
   {
-    mpc_setpoint_pid.mode.yaw = modeAbs;
-    mpc_setpoint_pid.mode.x = modeAbs;
-    mpc_setpoint_pid.mode.y = modeAbs;
-    mpc_setpoint_pid.mode.z = modeAbs;
-    
-    // Use current position as fallback if MPC hasn't computed yet to avoid diving
-    const bool hold_output =
-        (!mpc_has_run) || ((tick - controller_activate_tick) < M2T(200));
-    if (!hold_output) {
-      mpc_setpoint_pid.position.x = mpc_setpoint(0);
-      mpc_setpoint_pid.position.y = mpc_setpoint(1);
-      mpc_setpoint_pid.position.z = mpc_setpoint(2);
-      mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
-    } else {
-      // Hold current position until MPC is ready
-      mpc_setpoint_pid.position.x = state->position.x;
-      mpc_setpoint_pid.position.y = state->position.y;
-      mpc_setpoint_pid.position.z = state->position.z;
-      mpc_setpoint_pid.attitude.yaw = state->attitude.yaw;
-    }
-
-    // if (RATE_DO_EXECUTE(RATE_25_HZ, tick)) {
-    //   // DEBUG_PRINT("z: %.4f\n", mpc_setpoint(2));
-    //   DEBUG_PRINT("h: %.4f\n", mpc_setpoint(4));
-    //   // DEBUG_PRINT("x: %.4f\n", setpoint->position.x);
-    // }
-
-    // Kill motors if trajectory finished (enable_traj goes false)
-    if (!enable_traj && mpc_has_run) {
-      static bool landed_msg = false;
-      if (!landed_msg) {
-        DEBUG_PRINT("LANDING: traj done, killing motors\n");
-        landed_msg = true;
+    if (flight_phase == FLIGHT_PHASE_LANDING) {
+      if (landing_start_tick == 0) {
+        landing_start_tick = tick;
+        landing_hold_x = state->position.x;
+        landing_hold_y = state->position.y;
+        landing_hold_yaw = state->attitude.yaw;
+        landing_start_z = state->position.z;
+        landing_reference_z = landing_start_z;
+        DEBUG_PRINT("LANDING: start z=%.2f, hold=(%.2f,%.2f)\n",
+                    (double)landing_start_z,
+                    (double)landing_hold_x,
+                    (double)landing_hold_y);
       }
-      control->thrust = 0;
-      control->roll = 0;
-      control->pitch = 0;
-      control->yaw = 0;
+
+      const float landing_elapsed_s =
+          0.001f * static_cast<float>(T2M(tick - landing_start_tick));
+      landing_reference_z =
+          fmaxf(TINYMPC_LANDING_TARGET_Z_M,
+                landing_start_z -
+                    TINYMPC_LANDING_DESCENT_MPS * landing_elapsed_s);
+
+      memset(&mpc_setpoint_pid, 0, sizeof(mpc_setpoint_pid));
+      mpc_setpoint_pid.mode.yaw = modeAbs;
+      mpc_setpoint_pid.mode.x = modeAbs;
+      mpc_setpoint_pid.mode.y = modeAbs;
+      mpc_setpoint_pid.mode.z = modeAbs;
+      mpc_setpoint_pid.position.x = landing_hold_x;
+      mpc_setpoint_pid.position.y = landing_hold_y;
+      mpc_setpoint_pid.position.z = landing_reference_z;
+      mpc_setpoint_pid.attitude.yaw = landing_hold_yaw;
+      controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
+
+      const bool landing_reference_complete =
+          landing_reference_z <= TINYMPC_LANDING_TARGET_Z_M + 1e-4f;
+      const bool near_floor =
+          state->position.z <= TINYMPC_LANDING_TOUCHDOWN_Z_M;
+      const bool vertically_settled =
+          fabsf(state->velocity.z) <= TINYMPC_LANDING_TOUCHDOWN_VZ_MPS;
+      if (landing_reference_complete && near_floor && vertically_settled) {
+        flight_phase = FLIGHT_PHASE_COMPLETE;
+        stop_motors(control);
+        DEBUG_PRINT("LANDING COMPLETE: z=%.2f, vz=%.2f; motors off\n",
+                    (double)state->position.z,
+                    (double)state->velocity.z);
+      }
+    } else if (flight_phase == FLIGHT_PHASE_COMPLETE) {
+      stop_motors(control);
     } else {
+      memset(&mpc_setpoint_pid, 0, sizeof(mpc_setpoint_pid));
+      mpc_setpoint_pid.mode.yaw = modeAbs;
+      mpc_setpoint_pid.mode.x = modeAbs;
+      mpc_setpoint_pid.mode.y = modeAbs;
+      mpc_setpoint_pid.mode.z = modeAbs;
+
+      // Use current position as fallback if MPC hasn't computed yet to avoid diving
+      const bool hold_output =
+          (!mpc_has_run) || ((tick - controller_activate_tick) < M2T(200));
+      if (!hold_output) {
+        mpc_setpoint_pid.position.x = mpc_setpoint(0);
+        mpc_setpoint_pid.position.y = mpc_setpoint(1);
+        mpc_setpoint_pid.position.z = mpc_setpoint(2);
+        mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
+      } else {
+        // Hold current position until MPC is ready
+        mpc_setpoint_pid.position.x = state->position.x;
+        mpc_setpoint_pid.position.y = state->position.y;
+        mpc_setpoint_pid.position.z = state->position.z;
+        mpc_setpoint_pid.attitude.yaw = state->attitude.yaw;
+      }
+
       controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
     }
   }
@@ -1381,6 +1442,8 @@ LOG_GROUP_START(tinympc)
 LOG_ADD(LOG_FLOAT, initial_velocity, &init_vel_z)
 LOG_ADD(LOG_UINT8, mode, &benchmark_mode)
 LOG_ADD(LOG_UINT8, maneuver, &benchmark_maneuver)
+LOG_ADD(LOG_UINT8, phase, &flight_phase)
+LOG_ADD(LOG_FLOAT, land_zref, &landing_reference_z)
 LOG_ADD(LOG_UINT32, step, &benchmark_step)
 LOG_ADD(LOG_FLOAT, limo_h, &limo_h)
 LOG_ADD(LOG_FLOAT, limo_raw, &limo_raw)
