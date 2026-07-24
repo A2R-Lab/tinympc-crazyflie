@@ -114,3 +114,37 @@ and limitations.
 `run_15hz_equivalence.py` remains useful for exposing drift in the older Python
 sector mirror. It is not the validation authority for the per-track planner
 path and is expected to fail while that mirror differs from production.
+
+## Exact 1 m/s race simulation
+
+Run the no-peering race corpus with:
+
+```sh
+python3 tools/equivalence/run_exact_track_race_sim.py \
+  --nanocockpit /home/cchen/tinympc-nanocockpit
+```
+
+Like the image regression above, this compiles the GAP8 functions extracted
+verbatim from production `main.c` and directly includes the production STM32
+estimator. It does not use the older Python estimator mirror.
+
+The 14 deterministic cases use 160x160 calibrated uint8 images at the deployed
+15 Hz cadence. Every obstacle approach travels at 1 m/s with zero lateral
+peering. Coverage includes centered, narrow, left/right offset, cluttered,
+three texture/noise/exposure/forward-blur variants, both gentle-yaw directions,
+and a 5 ms timing-jitter sequence with one doubled capture interval. Empty
+clean/degraded backgrounds and pure yaw are required negatives.
+
+An obstacle case passes only if:
+
+- the first cylinder is published with at least 1.0 m of true forward
+  clearance;
+- range is not overestimated by more than 0.35 m;
+- lateral error is at most 0.35 m; and
+- the estimate remains at least 0.30 m in front of the vehicle.
+
+Conservative range underestimation is reported but is not a failure because it
+causes earlier avoidance. The current degraded cases underestimate range by as
+much as 0.91 m, so this suite supports obstacle-detection timing, not precise
+localization. It also does not model flight-controller stopping distance,
+real HM01B0 statistics, UART scheduling, or physical hardware.

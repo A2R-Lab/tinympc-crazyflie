@@ -68,6 +68,7 @@ LOG_BLOCKS = [
     ]),
     ("flow_tracks", 100, [
         ("flowObsRx.depthN", "uint8_t"),
+        ("flowObsRx.fwdDepth", "uint8_t"),
         ("flowObsRx.trkSupport", "uint8_t"),
         ("flowObsRx.trkSigma", "float"),
         ("flowObsRx.baseline", "float"),

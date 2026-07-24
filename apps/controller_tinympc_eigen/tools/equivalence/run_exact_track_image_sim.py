@@ -60,9 +60,9 @@ CASES = (
             0.0, False),
     SimCase("insufficient_peer", Scene("small", (TARGET,), truth=(1.0, 0.0)),
             0.025, False),
-    SimCase("sensor_degraded_safe_miss", Scene(
+    SimCase("sensor_degraded", Scene(
             "degraded", (TARGET,), truth=(1.0, 0.0)),
-            0.20, False, read_noise=5.0, exposure_variation=0.12,
+            0.20, True, read_noise=5.0, exposure_variation=0.12,
             blur_fraction=0.7),
     SimCase("timestamp_bias", Scene("bias", (TARGET,), truth=(1.0, 0.0)),
             0.20, True, clock_bias_ms=25),
@@ -76,7 +76,7 @@ CASES = (
         truth=(1.0, 0.0), detectable=False), 0.20, False),
     SimCase("looming_emergency", Scene(
         "looming", (TARGET,), truth=(1.0, 0.0)),
-        0.0, False, approach_span=0.55, expect_emergency=True),
+        0.0, True, approach_span=0.55, expect_emergency=True),
 )
 
 

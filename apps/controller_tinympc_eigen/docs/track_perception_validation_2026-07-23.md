@@ -75,11 +75,11 @@ behaviors:
 | 0.20 m nominal peering, 1 m obstacle | Detect | Detect, 0.030 m center error |
 | No motion | Reject as unobservable | No cylinder |
 | 0.025 m peering | Reject for baseline/motion | No cylinder |
-| Severe noise/exposure/blur | Safe degradation | No cylinder; insufficient persistence |
+| Severe noise/exposure/blur | Detect or reject safely | Detect, 0.189 m center error |
 | 25 ms timestamp bias | Detect with degradation | Detect, 0.036 m error |
 | Mixed 1.0/1.8 m depths | Select robust near component | Detect, 0.070 m error |
 | Low-texture obstacle | Avoid false positive | No cylinder |
-| Forward looming without baseline | Emergency cue only | No cylinder; brake cue on 3 frames |
+| Forward looming without lateral baseline | Detect and emergency cue | Detect, 0.085 m error; brake cue on 2 frames |
 | Centered obstacle at 0.8 m, 0.30 m sweep | Detect | Detect, 0.047 m center error |
 | Centered obstacle at 1.4 m, 0.40 m sweep | Detect | Detect, 0.062 m center error |
 | Obstacle 0.2 m left at 1.0 m, 0.30 m sweep | Detect | Detect, 0.065 m center error |
@@ -91,6 +91,62 @@ far case required more baseline, and reversing the sweep restored sufficient
 track persistence for the right-offset case. This is evidence that flight
 tests must exercise both peering directions and record achieved baseline;
 detectability at one bearing does not imply symmetric coverage.
+
+## 1 m/s race approach without peering
+
+The follow-up race corpus runs the same compiled production boundaries at
+1 m/s with no lateral peering. The baseline firmware passed only the
+empty-background case (1/8): forward-flow tracks were mostly rejected and the
+final cylinder required a lateral-only baseline.
+
+Firmware changes driven by the failures:
+
+- forward optical expansion now supplies per-track axial depth when its
+  propagated range uncertainty passes the same absolute and relative gates as
+  lateral parallax;
+- yaw flow is removed with the fixed-world image-motion sign, and pure yaw is
+  an explicit negative;
+- the baseline gate now measures achieved camera translation rather than only
+  the component perpendicular to the obstacle bearing;
+- two consistent tracks can form a candidate, while the 2-of-9 temporal,
+  spatial, uncertainty, baseline, and map gates remain;
+- redundant post-map far-cylinder confirmations were removed to avoid adding
+  several 15 Hz periods after temporal validation;
+- the evaluated 36-feature GAP8 configuration is now the default; the
+  32-track wire selection retains bounded spatial coverage; and
+- the renderer integrates forward blur along the approach axis instead of
+  incorrectly applying it as lateral smear.
+
+The final 14-case result was 14/14:
+
+| Scenario | First true clearance | Range overestimate | Lateral error |
+| --- | ---: | ---: | ---: |
+| Centered clean | 1.635 m | -0.004 m | 0.119 m |
+| Left offset | 1.570 m | 0.089 m | 0.166 m |
+| Right offset | 1.245 m | 0.028 m | 0.003 m |
+| Narrow centered | 1.375 m | 0.118 m | 0.047 m |
+| Cluttered | 1.500 m | -0.020 m | 0.025 m |
+| Degraded texture 1 | 1.375 m | -0.907 m | 0.152 m |
+| Degraded texture 2 | 1.310 m | -0.407 m | 0.001 m |
+| Degraded texture 3 | 1.310 m | -0.441 m | 0.033 m |
+| Gentle yaw | 1.440 m | 0.182 m | 0.098 m |
+| Opposite gentle yaw | 1.505 m | -0.037 m | 0.280 m |
+| Timing jitter and doubled interval | 1.505 m | 0.060 m | 0.174 m |
+| Clean background | No cylinder | n/a | n/a |
+| Degraded background | No cylinder | n/a | n/a |
+| Pure yaw | No cylinder | n/a | n/a |
+
+Negative range-overestimate values are conservative: the estimate is closer
+than truth. The largest conservative error is 0.91 m. This is acceptable for
+the avoidance timing gate but not evidence of accurate obstacle localization.
+All positive overestimates remained below 0.35 m.
+
+There were no real Himax captures in either repository, so real-image replay
+could not be added. These results do not establish physical stopping distance
+or reliable racing. The next evidence gate remains capture replay followed by
+restrained 1 m/s hardware approaches with measured detection and stopping
+clearance. The new `flowObsRx.fwdDepth` log identifies how many accepted
+tracks used forward expansion during those tests.
 
 These deterministic cases support software regression claims only. The
 renderer is not a substitute for curated real-camera captures, and the

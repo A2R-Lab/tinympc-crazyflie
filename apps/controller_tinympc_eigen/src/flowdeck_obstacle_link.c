@@ -92,9 +92,12 @@
 #define FLOW_TRACK_UNDISTORT_ITERS 4
 #define FLOW_TRACK_CLUSTER_RADIUS_M 0.40f
 #define FLOW_TRACK_CLUSTER_RANGE_GATE_M 0.45f
-#define FLOW_TRACK_CLUSTER_MIN_SUPPORT 3
+#define FLOW_TRACK_CLUSTER_MIN_SUPPORT 2
 #define FLOW_TRACK_MIN_BASELINE_M 0.04f
 #define FLOW_TRACK_MAX_CLUSTER_SIGMA_M 0.20f
+#define FLOW_TRACK_CYL_VALID_CONF 0.04f
+#define FLOW_TRACK_CYL_VALID_ACCEPTS 1
+#define FLOW_TRACK_MAP_VALID_EVIDENCE 0.04f
 #define FLOW_TRACK_EMERGENCY_MIN_SUPPORT 3
 #define FLOW_TRACK_EMERGENCY_MIN_LOOMING_S_INV 1.0f
 
@@ -130,9 +133,12 @@ static float g_trackBaselineAxisX = 0.0f;
 static float g_trackBaselineAxisY = 1.0f;
 static float g_trackBaselineMin = 0.0f;
 static float g_trackBaselineMax = 0.0f;
+static float g_trackBaselineOriginX = 0.0f;
+static float g_trackBaselineOriginY = 0.0f;
 static uint8_t g_trackLoomingSupport = 0;
 static float g_trackLoomingRate = 0.0f;
 static uint8_t g_trackEmergencyBrake = 0;
+static uint8_t g_trackForwardDepthAccepted = 0;
 /* 0: legacy sectors, 1: feature tracks with automatic legacy fallback. */
 static uint8_t g_perceptionMode = 1;
 static float g_trackRange[FLOW_TRACK_MAX] = {0};
@@ -257,17 +263,19 @@ static uint8_t flowObstacleGroupRoot(uint8_t parent[FLOW_OBS_SECT_MAX],
 static bool flowObstacleCylinderMeetsValidity(void) {
   const float range = sqrtf(g_cylBodyX * g_cylBodyX +
                             g_cylBodyY * g_cylBodyY);
+  const bool track_mode = g_perceptionMode == 1u && g_trackRxOk > 0u;
   uint8_t required_accepts =
       range > FLOW_OBS_CYL_FAR_RANGE_M ?
       FLOW_OBS_CYL_FAR_VALID_ACCEPTS : FLOW_OBS_CYL_VALID_ACCEPTS;
-  if (g_perceptionMode == 1u && g_trackRxOk > 0u) {
-    required_accepts =
-        range > FLOW_OBS_CYL_FAR_RANGE_M ? 3u : 2u;
+  if (track_mode) {
+    required_accepts = FLOW_TRACK_CYL_VALID_ACCEPTS;
   }
+  const float required_confidence =
+      track_mode ? FLOW_TRACK_CYL_VALID_CONF : FLOW_OBS_CYL_VALID_CONF;
   const bool map_valid =
-      g_cylConf >= FLOW_OBS_CYL_VALID_CONF &&
+      g_cylConf >= required_confidence &&
       g_cylAccepts >= required_accepts;
-  if (g_perceptionMode == 1u && g_trackRxOk > 0u) {
+  if (track_mode) {
     return map_valid &&
            g_trackValidatedSupport >= FLOW_TRACK_CLUSTER_MIN_SUPPORT &&
            g_trackValidatedSigma <= FLOW_TRACK_MAX_CLUSTER_SIGMA_M &&
@@ -342,8 +350,11 @@ static void flowObstacleExtractCylinder(float world_x_m,
                                         float world_y_m,
                                         float yaw_rad) {
   flowObstacleDecayMap(1.0f);
+  const float valid_evidence =
+      (g_perceptionMode == 1u && g_trackRxOk > 0u) ?
+      FLOW_TRACK_MAP_VALID_EVIDENCE : FLOW_OBS_MAP_VALID_EVIDENCE;
 
-  if (g_mapPeak < FLOW_OBS_MAP_VALID_EVIDENCE) {
+  if (g_mapPeak < valid_evidence) {
     g_cylConf = g_mapPeak;
     g_cylValid = 0.0f;
     g_cylAge += 1.0f;
@@ -360,7 +371,7 @@ static void flowObstacleExtractCylinder(float world_x_m,
   uint8_t tracked_idx = g_mapBestIdx;
   float tracked_innovation_d2 = INFINITY;
   for (uint8_t i = 0; i < FLOW_OBS_MAP_CELLS; i++) {
-    if (g_mapEvidence[i] < FLOW_OBS_MAP_VALID_EVIDENCE) {
+    if (g_mapEvidence[i] < valid_evidence) {
       continue;
     }
     const float dx = g_mapX[i] - world_x_m;
@@ -385,7 +396,7 @@ static void flowObstacleExtractCylinder(float world_x_m,
    * and map jitter. A new component may take over only when it is materially
    * closer to the vehicle; this still lets a near foreground obstacle replace
    * a previously confirmed far wall. */
-  if (g_cylConf >= FLOW_OBS_CYL_VALID_CONF) {
+  if (g_cylConf >= valid_evidence) {
     const float old_dx = g_cylWorldX - world_x_m;
     const float old_dy = g_cylWorldY - world_y_m;
     const float old_range = sqrtf(old_dx * old_dx + old_dy * old_dy);
@@ -576,6 +587,9 @@ static void flowObstacleResetEstimator(void) {
   g_trackBaselineM = 0.0f;
   g_trackBaselineMin = 0.0f;
   g_trackBaselineMax = 0.0f;
+  g_trackBaselineOriginX = 0.0f;
+  g_trackBaselineOriginY = 0.0f;
+  g_trackForwardDepthAccepted = 0;
   g_resetCount++;
 }
 
@@ -851,6 +865,27 @@ static uint8_t flowTrackGroupRoot(uint8_t parent[FLOW_TRACK_MAX],
   return index;
 }
 
+static void flowTrackStoreForwardDepth(uint8_t index,
+                                       float axial_depth,
+                                       float normalized_x,
+                                       float slant_sigma) {
+  const float camera_x = axial_depth;
+  const float camera_y = axial_depth * normalized_x;
+  const float camera_yaw_c = cosf(g_cameraYawRad);
+  const float camera_yaw_s = sinf(g_cameraYawRad);
+  g_trackRange[index] = hypotf(camera_x, camera_y);
+  g_trackRangeSigma[index] = slant_sigma;
+  g_trackBodyX[index] =
+      g_cameraForwardM +
+      camera_yaw_c * camera_x - camera_yaw_s * camera_y;
+  g_trackBodyY[index] =
+      g_cameraLeftM +
+      camera_yaw_s * camera_x + camera_yaw_c * camera_y;
+  g_trackDepthValid[index] = 1;
+  g_trackDepthAccepted++;
+  g_trackForwardDepthAccepted++;
+}
+
 static bool flowTrackUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
                                  float yaw_rate_rad_s,
@@ -912,6 +947,7 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
       -camera_yaw_s * camera_body_vx + camera_yaw_c * camera_body_vy;
   float looming_sum = 0.0f;
   uint8_t looming_count = 0;
+  g_trackForwardDepthAccepted = 0;
 
   for (uint8_t i = 0; i < payload.count; i++) {
     const flow_track_wire_t *wire = &payload.track[i];
@@ -930,47 +966,6 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
       g_trackDepthRejectedGeometry++;
       continue;
     }
-    const float radius2 = x0 * x0 + y0 * y0;
-    if (camera_vx >= FLOW_MIN_FORWARD_LOOMING_M_S &&
-        fabsf(yaw_rate_rad_s) < FLOW_MAX_LOOMING_YAW_RATE_RAD_S &&
-        radius2 > 0.01f &&
-        wire->fb_err_q8 <= (uint16_t)(0.75f * 256.0f)) {
-      const float radial_rate =
-          (x0 * (x1 - x0) + y0 * (y1 - y0)) /
-          (radius2 * dt_s);
-      if (isfinite(radial_rate) && radial_rate > 0.0f) {
-        looming_sum += radial_rate;
-        looming_count++;
-      }
-    }
-
-    const float bearing0 = atanf(x0);
-    const float bearing1 = atanf(x1);
-    const float measured_rate =
-        atan2f(sinf(bearing1 - bearing0), cosf(bearing1 - bearing0)) / dt_s;
-    const float residual_rate = measured_rate - yaw_rate_rad_s;
-    const float vel_eff =
-        camera_vx * sinf(bearing0) - camera_vy * cosf(bearing0);
-    if (fabsf(vel_eff) < FLOW_TRACK_MIN_TRANSLATION_M_S) {
-      g_trackDepthRejectedMotion++;
-      continue;
-    }
-    if (fabsf(residual_rate) < FLOW_TRACK_MIN_RESIDUAL_RAD_S) {
-      g_trackDepthRejectedGeometry++;
-      continue;
-    }
-    const float inv_depth = residual_rate / vel_eff;
-    if (!isfinite(inv_depth) || inv_depth <= 0.0f ||
-        inv_depth > FLOW_MAX_INV_DEPTH_M) {
-      g_trackDepthRejectedGeometry++;
-      continue;
-    }
-    const float range = 1.0f / inv_depth;
-    if (range > FLOW_OBS_CANDIDATE_MAX_RANGE_M) {
-      g_trackDepthRejectedGeometry++;
-      continue;
-    }
-
     float pixel_sigma =
         FLOW_TRACK_PIXEL_SIGMA_FLOOR +
         FLOW_TRACK_FB_SIGMA_GAIN * ((float)wire->fb_err_q8 / 256.0f) +
@@ -978,6 +973,106 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
     if (pixel_sigma > FLOW_TRACK_PIXEL_SIGMA_MAX) {
       pixel_sigma = FLOW_TRACK_PIXEL_SIGMA_MAX;
     }
+    const float radius2 = x0 * x0 + y0 * y0;
+    float radial_rate = 0.0f;
+    bool radial_valid = false;
+    if (camera_vx >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(yaw_rate_rad_s) < FLOW_MAX_LOOMING_YAW_RATE_RAD_S &&
+        radius2 > 0.01f &&
+        wire->fb_err_q8 <= (uint16_t)(0.75f * 256.0f)) {
+      /* A positive body yaw moves a fixed-world feature toward negative
+       * camera bearing. Add the body rate to recover translational flow. */
+      const float q_rate = (x1 - x0) / dt_s +
+                           yaw_rate_rad_s * (1.0f + x0 * x0);
+      const float p_rate = (y1 - y0) / dt_s +
+                           yaw_rate_rad_s * x0 * y0;
+      radial_rate = (x0 * q_rate + y0 * p_rate) / radius2;
+      if (isfinite(radial_rate) && radial_rate > 0.0f) {
+        looming_sum += radial_rate;
+        looming_count++;
+        radial_valid = true;
+      }
+    }
+
+    bool forward_depth_valid = false;
+    float forward_axial_depth = 0.0f;
+    float forward_slant_sigma = 0.0f;
+    if (radial_valid) {
+      forward_axial_depth = camera_vx / radial_rate;
+      const float radial_pixel_sigma =
+          1.41421356f * pixel_sigma /
+          (FLOW_TRACK_FX * sqrtf(radius2) * dt_s);
+      const float radial_time_sigma =
+          radial_rate * FLOW_TRACK_TIMESTAMP_SIGMA_S / dt_s;
+      const float radial_sigma = sqrtf(
+          radial_pixel_sigma * radial_pixel_sigma +
+          radial_time_sigma * radial_time_sigma +
+          FLOW_OBS_GYRO_SIGMA_RAD_S * FLOW_OBS_GYRO_SIGMA_RAD_S);
+      const float axial_sigma_flow =
+          camera_vx * radial_sigma / (radial_rate * radial_rate);
+      const float axial_sigma_velocity =
+          FLOW_OBS_VELOCITY_SIGMA_M_S / radial_rate;
+      const float slant_scale = sqrtf(1.0f + x0 * x0);
+      forward_slant_sigma = slant_scale * sqrtf(
+          axial_sigma_flow * axial_sigma_flow +
+          axial_sigma_velocity * axial_sigma_velocity);
+      const float forward_slant_range = forward_axial_depth * slant_scale;
+      forward_depth_valid =
+          isfinite(forward_axial_depth) && forward_axial_depth > 0.0f &&
+          forward_slant_range <= FLOW_OBS_CANDIDATE_MAX_RANGE_M &&
+          isfinite(forward_slant_sigma) &&
+          forward_slant_sigma <= FLOW_OBS_MAX_RANGE_SIGMA_M &&
+          forward_slant_sigma <=
+              FLOW_OBS_MAX_REL_RANGE_SIGMA * forward_slant_range;
+    }
+
+    const float bearing0 = atanf(x0);
+    const float bearing1 = atanf(x1);
+    const float measured_rate =
+        atan2f(sinf(bearing1 - bearing0), cosf(bearing1 - bearing0)) / dt_s;
+    const float residual_rate = measured_rate + yaw_rate_rad_s;
+    const float vel_eff =
+        camera_vx * sinf(bearing0) - camera_vy * cosf(bearing0);
+    if (fabsf(vel_eff) < FLOW_TRACK_MIN_TRANSLATION_M_S) {
+      if (forward_depth_valid) {
+        flowTrackStoreForwardDepth(
+            i, forward_axial_depth, x0, forward_slant_sigma);
+        continue;
+      }
+      g_trackDepthRejectedMotion++;
+      continue;
+    }
+    if (fabsf(residual_rate) < FLOW_TRACK_MIN_RESIDUAL_RAD_S) {
+      if (forward_depth_valid) {
+        flowTrackStoreForwardDepth(
+            i, forward_axial_depth, x0, forward_slant_sigma);
+        continue;
+      }
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+    const float inv_depth = residual_rate / vel_eff;
+    if (!isfinite(inv_depth) || inv_depth <= 0.0f ||
+        inv_depth > FLOW_MAX_INV_DEPTH_M) {
+      if (forward_depth_valid) {
+        flowTrackStoreForwardDepth(
+            i, forward_axial_depth, x0, forward_slant_sigma);
+        continue;
+      }
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+    const float range = 1.0f / inv_depth;
+    if (range > FLOW_OBS_CANDIDATE_MAX_RANGE_M) {
+      if (forward_depth_valid) {
+        flowTrackStoreForwardDepth(
+            i, forward_axial_depth, x0, forward_slant_sigma);
+        continue;
+      }
+      g_trackDepthRejectedGeometry++;
+      continue;
+    }
+
     const float bearing_sigma =
         pixel_sigma / (FLOW_TRACK_FX * (1.0f + x0 * x0));
     const float rate_sigma_pixels =
@@ -1001,6 +1096,11 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
     if (!isfinite(range_sigma) ||
         range_sigma > FLOW_OBS_MAX_RANGE_SIGMA_M ||
         range_sigma > FLOW_OBS_MAX_REL_RANGE_SIGMA * range) {
+      if (forward_depth_valid) {
+        flowTrackStoreForwardDepth(
+            i, forward_axial_depth, x0, forward_slant_sigma);
+        continue;
+      }
       g_trackDepthRejectedUncertainty++;
       continue;
     }
@@ -1124,34 +1224,24 @@ static bool flowTrackUpdateDepth(float body_vx_m_s,
     g_obsWorldX = world_x_m + yaw_c * best_bx - yaw_s * best_by;
     g_obsWorldY = world_y_m + yaw_s * best_bx + yaw_c * best_by;
     if (!g_trackBaselineValid) {
-      const float norm =
-          sqrtf(best_bx * best_bx + best_by * best_by);
-      if (norm > 0.05f) {
-        const float world_forward_x =
-            yaw_c * best_bx - yaw_s * best_by;
-        const float world_forward_y =
-            yaw_s * best_bx + yaw_c * best_by;
-        g_trackBaselineAxisX = -world_forward_y / norm;
-        g_trackBaselineAxisY = world_forward_x / norm;
-        const float projection =
-            g_trackBaselineAxisX * world_x_m +
-            g_trackBaselineAxisY * world_y_m;
-        g_trackBaselineMin = projection;
-        g_trackBaselineMax = projection;
-        g_trackBaselineValid = 1;
-      }
+      g_trackBaselineOriginX = world_x_m;
+      g_trackBaselineOriginY = world_y_m;
+      g_trackBaselineMin = 0.0f;
+      g_trackBaselineMax = 0.0f;
+      g_trackBaselineValid = 1;
     } else {
-      const float projection =
-          g_trackBaselineAxisX * world_x_m +
-          g_trackBaselineAxisY * world_y_m;
-      if (projection < g_trackBaselineMin) {
-        g_trackBaselineMin = projection;
+      const float displacement_x = world_x_m - g_trackBaselineOriginX;
+      const float displacement_y = world_y_m - g_trackBaselineOriginY;
+      const float displacement =
+          hypotf(displacement_x, displacement_y);
+      if (displacement > g_trackBaselineMax) {
+        g_trackBaselineMax = displacement;
+        if (displacement > 1.0e-4f) {
+          g_trackBaselineAxisX = displacement_x / displacement;
+          g_trackBaselineAxisY = displacement_y / displacement;
+        }
       }
-      if (projection > g_trackBaselineMax) {
-        g_trackBaselineMax = projection;
-      }
-      g_trackBaselineM =
-          g_trackBaselineMax - g_trackBaselineMin;
+      g_trackBaselineM = g_trackBaselineMax;
     }
     g_obsValid =
         g_obsHits >= FLOW_OBS_PERSIST_REQUIRED ? 1.0f : 0.0f;
@@ -1650,6 +1740,7 @@ LOG_ADD(LOG_UINT8, trackN, &g_trackPayload.count)
 LOG_ADD(LOG_UINT8, trackVer, &g_trackPayload.version)
 LOG_ADD(LOG_UINT32, trackTick, &g_trackRxTick)
 LOG_ADD(LOG_UINT8, depthN, &g_trackDepthAccepted)
+LOG_ADD(LOG_UINT8, fwdDepth, &g_trackForwardDepthAccepted)
 LOG_ADD(LOG_UINT8, depthMot, &g_trackDepthRejectedMotion)
 LOG_ADD(LOG_UINT8, depthGeo, &g_trackDepthRejectedGeometry)
 LOG_ADD(LOG_UINT8, depthSig, &g_trackDepthRejectedUncertainty)

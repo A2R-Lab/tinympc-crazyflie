@@ -40,6 +40,7 @@ def _noise(seed: int, row: int, col: int) -> float:
 def render_gap8(scene: Scene, x: float, y: float, yaw: float,
                 exposure_scale: float = 1.0, brightness: float = 0.0,
                 read_noise: float = 0.0, seed: int = 0,
+                motion_blur_x: float = 0.0,
                 motion_blur_y: float = 0.0) -> list[list[int]]:
     """Render through measured calibration with deterministic sensor effects."""
     image = [[0] * W for _ in range(H)]
@@ -47,12 +48,14 @@ def render_gap8(scene: Scene, x: float, y: float, yaw: float,
         for row in range(H):
             q, p = undistort_pixel(col+0.5, row+0.5)
             samples = []
-            for blur_fraction in (-0.5, 0.5) if motion_blur_y else (0.0,):
+            blur_active = motion_blur_x != 0.0 or motion_blur_y != 0.0
+            for blur_fraction in (-0.5, 0.5) if blur_active else (0.0,):
+                sample_x = x+blur_fraction*motion_blur_x
                 sample_y = y+blur_fraction*motion_blur_y
                 az = math.atan(q)
                 distance, box, face = ray_hit(
-                    x, sample_y, yaw+az, scene.boxes)
-                wx = x+distance*math.cos(yaw+az)
+                    sample_x, sample_y, yaw+az, scene.boxes)
+                wx = sample_x+distance*math.cos(yaw+az)
                 wy = sample_y+distance*math.sin(yaw+az)
                 z = 1.0-p*distance
                 samples.append(texture(
