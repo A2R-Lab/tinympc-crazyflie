@@ -1,0 +1,90 @@
+Hover benchmark 1: nominal TinyMPC vs embedded LIMO
+===================================================
+
+Date: 2026-07-24
+Vehicle: Crazyflie 2.1 Brushless with Flow deck
+Estimator: Kalman
+Controller selection in CFClient: OutOfTree (6)
+Trajectory: hover (maneuver 0)
+Reference: x=0.00 m, y=0.00 m, z=0.50 m
+Commanded duration: 12 s, followed by controlled landing
+Solver limit: 6 ADMM iterations
+Firmware branch: LIMO
+
+Reproduction
+------------
+
+Edit apps/controller_tinympc_eigen_task/src/controller_tinympc.cpp:
+
+  TINYMPC_FIRMWARE_MODE=0: nominal TinyMPC
+  TINYMPC_FIRMWARE_MODE=3: embedded LIMO
+  TINYMPC_TRAJECTORY=0: hover
+
+From apps/controller_tinympc_eigen_task, run:
+
+  make -j8 cload
+
+For the complete trajectory, configure CFClient to record tinympc.posX and
+tinympc.posY. Use a 40 ms log period for nominal (25 Hz) and a 50 ms period
+for embedded LIMO (20 Hz).
+
+Summary from the supplied console logs
+--------------------------------------
+
+Metric                              Nominal             Embedded LIMO
+Mode                                0                   3
+MPC/model rate                      25 Hz               20 Hz / 20 Hz
+Trajectory samples                  300                 240
+Duration                            12 s                12 s
+Initial position (x,y,z), m         (0.01,-0.04,0.56)  (0.02,0.00,0.56)
+Initial velocity (x,y,z), m/s       (0.07,0.02,-0.01)  (0.07,0.01,0.00)
+Landing-start position (x,y), m     (-0.55,-0.05)      (-0.31,-0.11)
+Landing-start altitude, m           0.56                0.53
+Final horizontal error, m           0.552               0.329
+Final altitude error, m             0.06                0.03
+Observed MPC solve time, ms          32.989-33.424       30.611-34.764
+Observed LIMO evaluation time, ms    n/a                 12.561-14.466
+Observed eval + solve time, ms       32.989-33.424       43.568-49.230
+MPC stack free, words               1209                954
+Landing completed                   yes                 yes
+
+The embedded LIMO run reduced final horizontal displacement by 40.4% relative
+to nominal (0.552 m to 0.329 m). Absolute X error fell by 43.6% (0.55 m to
+0.31 m); absolute Y error rose from 0.05 m to 0.11 m. The comparison assumes
+the two manual wind disturbances were comparable.
+
+This first run did not retain the CFClient position time series. Therefore the
+file reports console-observable initial and landing-start positions only; it
+does not claim trajectory RMSE, peak displacement, or recovery time.
+
+Nominal raw console excerpts
+----------------------------
+
+  MPCTASK: Benchmark mode 0, maneuver 0, max_iter 6, task_pri 0
+  MPCTASK: x0: pos=(0.01,-0.04,0.56) vel=(0.07,0.02,-0.01)
+  MPCTASK: ref: (0.0,0.0,0.50)
+  MPCTASK: MPC solve done, iter=6
+  MPCTASK: MPC time=33424 us
+  MPCTASK: MPC stack free=1209 words
+  MPCTASK: setpoint: x=0.01 z=0.55 preview_z=0.55
+  MPCTASK: MPC time=32989 us
+  MPCTASK: TRAJ DONE: idx=300, max=300; requesting landing
+  MPCTASK: LANDING: start z=0.56, hold=(-0.55,-0.05)
+  MPCTASK: LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
+
+Embedded LIMO raw console excerpts
+----------------------------------
+
+  MPCTASK: Benchmark mode 3, maneuver 0, max_iter 6, task_pri 0
+  MPCTASK: LIMO integration: mpc_hz=20 model_hz=20 bridge=x4 z_guard=ref..ref+0.20 evals=1
+  MPCTASK: x0: pos=(0.02,-0.0,0.56) vel=(0.07,0.01,-0.0)
+  MPCTASK: ref: (0.0,0.0,0.50)
+  MPCTASK: SAFE TV mode=3: h=-0.137 raw=0.104 grad=0.557 margin=0.069 thr=0.300 active0=1 active_count=3 eval=14466 us
+  MPCTASK: Cache level changed: 0 -> 1
+  MPCTASK: MPC solve done, iter=6
+  MPCTASK: MPC time=34764 us
+  MPCTASK: MPC stack free=954 words
+  MPCTASK: setpoint: x=0.04 z=0.52 preview_z=0.52
+  MPCTASK: TRAJ DONE: idx=240, max=240; requesting landing
+  MPCTASK: LANDING: start z=0.53, hold=(-0.31,-0.11)
+  MPCTASK: LANDING COMPLETE: z=-0.0, vz=-0.09; motors off

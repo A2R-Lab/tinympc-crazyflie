@@ -34,7 +34,7 @@
 //   1 = MPC-CBF (analytic linear constraints)
 //   2 = LIMO posthoc
 //   3 = LIMO embedded
-// Change only the number below, then run `make -j8` and `make cload`.
+// Change only the number below, then run `make -j8 cload`.
 #define TINYMPC_MODE_NOMINAL       0
 #define TINYMPC_MODE_MPC_CBF       1
 #define TINYMPC_MODE_LIMO_POSTHOC  2
@@ -55,7 +55,7 @@
 //   2 = Y-axis line
 //   3 = circle
 //   4 = figure eight
-// Change only the number below, then run `make -j8` and `make cload`.
+// Change only the number below, then run `make -j8 cload`.
 #define TINYMPC_TRAJECTORY_HOVER   0
 #define TINYMPC_TRAJECTORY_LINE_X  1
 #define TINYMPC_TRAJECTORY_LINE_Y  2
@@ -133,6 +133,9 @@ extern "C"
 // #include "quadrotor_250hz_params.hpp"
 #include "quadrotor_50hz_params_unconstrained.hpp"
 #include "quadrotor_50hz_params_constrained.hpp"
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+#include "limo_20hz_model.hpp"
+#endif
 
 // Trajectory
 // #include "quadrotor_100hz_ref_hover.hpp"
@@ -146,9 +149,13 @@ extern "C"
 #define DEBUG_MODULE "MPCTASK"
 #include "debug.h"
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+#define MPC_RATE 20  // Match the 20 Hz model used to generate the LIMO cache bank
+#else
 // #define MPC_RATE RATE_250_HZ  // control frequency
 // #define MPC_RATE RATE_50_HZ  // 50Hz gives 20ms period, solve is ~11ms
 #define MPC_RATE RATE_25_HZ  // 25Hz MPC task period
+#endif
 // #define MPC_RATE RATE_100_HZ
 //#define MPC_RATE 10
 #define LOWLEVEL_RATE RATE_500_HZ
@@ -261,10 +268,9 @@ static uint8_t benchmark_mode = TINYMPC_FIRMWARE_MODE;
 static uint8_t benchmark_maneuver = TINYMPC_TRAJECTORY;
 static uint8_t previous_benchmark_mode = 255;
 static uint8_t previous_benchmark_maneuver = 255;
-// Five ADMM iterations is the validated embedded budget (~11 ms at 50 Hz).
-// Thirty iterations overruns this 25 Hz task's 40 ms period and starves CRTP,
-// which fills radiolink's five-packet receive queue and resets the Crazyflie.
-static uint8_t benchmark_max_iter = 5;
+// One barrier evaluation plus six ADMM iterations fits the embedded LIMO
+// controller's 50 ms period. Larger counts must be revalidated on hardware.
+static uint8_t benchmark_max_iter = 6;
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
@@ -314,6 +320,19 @@ static uint8_t posthoc_failed = 0;
 static float posthoc_du_norm = 0.0f;
 static uint32_t benchmark_step = 0;
 
+// Raw state logging for offline wind-response analysis. Hover references are
+// known (x=0, y=0, z=traj_height), so RMSE/peaks/recovery are reconstructed
+// from the timestamped samples instead of spending firmware work on metrics.
+static float tracking_pos_x = 0.0f;
+static float tracking_pos_y = 0.0f;
+static float tracking_pos_z = 0.0f;
+static float tracking_vel_x = 0.0f;
+static float tracking_vel_y = 0.0f;
+static float tracking_vel_z = 0.0f;
+static float tracking_cmd_z = 0.0f;
+static float tracking_preview_z = 0.0f;
+static uint32_t controller_total_us = 0;
+
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
 static Eigen::Matrix<tinytype, 3, 1> obs_start;     // Initial obstacle position
@@ -330,15 +349,12 @@ static inline tinytype positive_part(tinytype value)
   return value > tinytype(0.0f) ? value : tinytype(0.0f);
 }
 
-#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF || \
-    TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
 static inline tinytype clamp_tiny(tinytype value,
                                   tinytype lower,
                                   tinytype upper)
 {
   return value < lower ? lower : (value > upper ? upper : value);
 }
-#endif
 
 #if TINYMPC_FIRMWARE_MODE != TINYMPC_MODE_NOMINAL
 static tinytype limo_effective_margin(const tiny_VectorNx &xbar, int stage)
@@ -442,6 +458,19 @@ static void restore_nominal_solver()
   params.Q[1] = Eigen::Map<tiny_VectorNx>(Q_constrained_data);
   params.Qf[1] = Eigen::Map<tiny_VectorNx>(Qf_constrained_data);
   params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+  // The embedded LIMO Riccati bank was generated from this exact 20 Hz
+  // plant. Keep A/B synchronized with that bank whenever solver state is
+  // restored; the remaining benchmark modes retain their legacy model.
+  for (int level = 0; level < 2; ++level) {
+    params.cache.Adyn[level] =
+        Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+            limo_Adyn_20hz_data);
+    params.cache.Bdyn[level] =
+        Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+            limo_Bdyn_20hz_data);
+  }
+#endif
 }
 
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
@@ -672,6 +701,18 @@ void controllerOutOfTreeInit(void)
   cache.AmBKt[1] = Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(AmBKt_constrained_data);
   cache.coeff_d2p[1] = Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(coeff_d2p_constrained_data);
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+  // Match the 20 Hz dynamics used by authority_cache_bank_16x4_f32.
+  for (int level = 0; level < 2; ++level) {
+    cache.Adyn[level] =
+        Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
+            limo_Adyn_20hz_data);
+    cache.Bdyn[level] =
+        Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
+            limo_Bdyn_20hz_data);
+  }
+#endif
+
   // Copy parameter data
   params.Q[0] = Eigen::Map<tiny_VectorNx>(Q_unconstrained_data);
   params.Qf[0] = Eigen::Map<tiny_VectorNx>(Qf_unconstrained_data);
@@ -739,6 +780,10 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+  DEBUG_PRINT("LIMO integration: mpc_hz=%u model_hz=20 bridge=x4 z_guard=ref..ref+0.20 evals=1\n",
+              (unsigned int)MPC_RATE);
+#endif
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
   // ASSERT(runTaskSemaphore);
@@ -894,6 +939,13 @@ static void tinympcControllerTask(void *parameters)
 
       // Get command reference
       UpdateHorizonReference(&setpoint_task);
+
+      tracking_pos_x = state_task.position.x;
+      tracking_pos_y = state_task.position.y;
+      tracking_pos_z = state_task.position.z;
+      tracking_vel_x = state_task.velocity.x;
+      tracking_vel_y = state_task.velocity.y;
+      tracking_vel_z = state_task.velocity.z;
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("ref: (%.2f,%.2f,%.2f)\n",
@@ -910,13 +962,19 @@ static void tinympcControllerTask(void *parameters)
       limo_no_oracle_score_raw = 0.0f;
       limo_no_oracle_active = 0;
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+      // One MLP forward/backward pass per MPC update. The same local
+      // linearization is reused over the short active horizon below.
+      LimoBarrierEval embedded_eval_x0;
+      uint32_t embedded_eval_us = 0;
       {
-        LimoBarrierEval embedded_eval;
-        limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
-                          radians(limo_fail_roll_deg),
-                          radians(limo_fail_pitch_deg), &embedded_eval);
+        const uint32_t embedded_eval_start_us = usecTimestamp();
+        limo_eval_barrier(
+            problem.x.col(0), limo_az_coeff, limo_gravity_comp,
+            radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
+            &embedded_eval_x0);
+        embedded_eval_us = usecTimestamp() - embedded_eval_start_us;
         const tinytype embedded_h =
-            guarded_limo_h(problem.x.col(0), embedded_eval.h);
+            guarded_limo_h(problem.x.col(0), embedded_eval_x0.h);
         const tinytype embedded_margin =
             limo_effective_margin(problem.x.col(0), 0);
         limo_embedded::observe_no_oracle(
@@ -981,7 +1039,11 @@ static void tinympcControllerTask(void *parameters)
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
       const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+      limo_eval_us = embedded_eval_us;
+#else
       limo_eval_us = 0;
+#endif
       limo_h = 0.0f;
       limo_raw = 0.0f;
       limo_active = 0;
@@ -1017,17 +1079,15 @@ static void tinympcControllerTask(void *parameters)
           }
 #else
           {
-            LimoBarrierEval eval;
-            const uint32_t eval_start_us = usecTimestamp();
-            limo_eval_barrier(
-                xbar, limo_az_coeff, limo_gravity_comp,
-                radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
-                &eval);
-            limo_eval_us += usecTimestamp() - eval_start_us;
-            raw_h = eval.raw;
-            barrier_h = guarded_limo_h(xbar, eval.h);
-            constraint_h = eval.h;
-            grad = eval.grad;
+            // Frozen first-order model about the measured x0. This preserves
+            // the LTV constraint form without paying for three additional
+            // 128x128 MLP backward passes on the F405.
+            grad = embedded_eval_x0.grad;
+            const tinytype linearized_delta =
+                grad.dot(xbar - problem.x.col(0));
+            raw_h = embedded_eval_x0.raw + linearized_delta;
+            constraint_h = embedded_eval_x0.h + linearized_delta;
+            barrier_h = guarded_limo_h(xbar, constraint_h);
           }
 #endif
           for (int j = 0; j < NSTATES; ++j) {
@@ -1215,6 +1275,7 @@ static void tinympcControllerTask(void *parameters)
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
       }
       mpc_time_us = usecTimestamp() - mpc_start_timestamp;
+      controller_total_us = mpc_time_us + limo_eval_us;
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC time=%lu us\n", mpc_time_us);
       }
@@ -1270,10 +1331,24 @@ static void tinympcControllerTask(void *parameters)
         // }
       }
 
-      mpc_setpoint_task = problem.x.col(NHORIZON-1);
+      // Keep the stock 500 Hz PID as the hardware inner loop. A 200 ms MPC
+      // preview gives it a meaningful outer-loop target without exposing the
+      // brushless vehicle to the unstable 20 Hz direct-motor path.
+      constexpr int kPidBridgeIndex = 4;
+      const tinytype preview_z = problem.x(2, kPidBridgeIndex);
+      const tinytype reference_z = params.Xref(2, 0);
+      mpc_setpoint_task = problem.x.col(kPidBridgeIndex);
+      tracking_preview_z = preview_z;
+      // Tracking/LIMO may request extra altitude for safety, but the partial
+      // solve is never allowed to pull the vehicle below the nominal path.
+      mpc_setpoint_task(2) =
+          clamp_tiny(preview_z, reference_z, reference_z + tinytype(0.20f));
+      tracking_cmd_z = mpc_setpoint_task(2);
       
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("setpoint: x=%.2f z=%.2f\n", (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2));
+        DEBUG_PRINT("setpoint: x=%.2f z=%.2f preview_z=%.2f\n",
+                    (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2),
+                    (double)preview_z);
       }
 
       // Skip event triggers for now to simplify debugging
@@ -1473,6 +1548,17 @@ LOG_ADD(LOG_UINT8, no_or_act, &limo_no_oracle_active)
 LOG_ADD(LOG_UINT8, post_active, &posthoc_active)
 LOG_ADD(LOG_UINT8, post_failed, &posthoc_failed)
 LOG_ADD(LOG_FLOAT, post_du, &posthoc_du_norm)
+
+LOG_ADD(LOG_FLOAT, posX, &tracking_pos_x)
+LOG_ADD(LOG_FLOAT, posY, &tracking_pos_y)
+LOG_ADD(LOG_FLOAT, posZ, &tracking_pos_z)
+LOG_ADD(LOG_FLOAT, velX, &tracking_vel_x)
+LOG_ADD(LOG_FLOAT, velY, &tracking_vel_y)
+LOG_ADD(LOG_FLOAT, velZ, &tracking_vel_z)
+LOG_ADD(LOG_FLOAT, cmdZ, &tracking_cmd_z)
+LOG_ADD(LOG_FLOAT, previewZ, &tracking_preview_z)
+LOG_ADD(LOG_UINT32, mpc_us, &mpc_time_us)
+LOG_ADD(LOG_UINT32, total_us, &controller_total_us)
 
 LOG_GROUP_STOP(tinympc)
 
