@@ -46,11 +46,13 @@ from aideck_cpx_streamer.cpx import StreamerClient  # noqa: E402
 DEFAULT_URI = "radio://0/80/2M/E7E7E7E7E8"
 
 LOG_BLOCKS = [
-    ("state", 50, [
+    ("state_pos", 50, [
         ("stateEstimate.x", "float"),
         ("stateEstimate.y", "float"),
         ("stateEstimate.z", "float"),
         ("stateEstimate.yaw", "float"),
+    ]),
+    ("state_vel", 50, [
         ("stateEstimate.vx", "float"),
         ("stateEstimate.vy", "float"),
         ("stateEstimate.vz", "float"),
@@ -134,15 +136,12 @@ def as_u8_image(frame):
     return cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
 
-def streamer_thread(args, cap, stop_event, first_frame_event):
+def streamer_thread(args, cap, stop_event, first_frame_event, streamer_errors, client):
     frames_dir = args.out / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     csv_path = args.out / "frames.csv"
-    client = None
     count = 0
     try:
-        client = StreamerClient(host=args.host, port=args.port,
-                                udp_send=args.udp_send, log_fn=lambda *a, **k: None)
         with csv_path.open("w", newline="") as fp:
             fieldnames = [
                 "image", "host_time", "phase", "cmd_x", "cmd_y", "cmd_z",
@@ -204,11 +203,13 @@ def streamer_thread(args, cap, stop_event, first_frame_event):
                 first_frame_event.set()
     except Exception as exc:  # noqa: BLE001
         if not stop_event.is_set():
+            streamer_errors.append(str(exc))
+            first_frame_event.set()
             print(f"streamer stopped: {exc}")
     finally:
-        if client is not None:
-            client.shutdown()
-        first_frame_event.set()
+        if count == 0 and not stop_event.is_set() and not streamer_errors:
+            streamer_errors.append("stream ended before any frame was received")
+            first_frame_event.set()
         print(f"streamer saved {count} frames")
 
 
@@ -275,16 +276,23 @@ def main():
     cap = CaptureState()
     stop_event = threading.Event()
     first_frame_event = threading.Event()
+    streamer_errors = []
+    client = StreamerClient(host=args.host, port=args.port,
+                            udp_send=args.udp_send, log_fn=lambda *a, **k: None)
 
     thread = threading.Thread(
         target=streamer_thread,
-        args=(args, cap, stop_event, first_frame_event),
+        args=(args, cap, stop_event, first_frame_event, streamer_errors, client),
         daemon=True,
     )
     thread.start()
     print(f"waiting for AI-deck image stream at {args.host}:{args.port}")
-    if not first_frame_event.wait(args.stream_timeout_s):
+    got_stream_event = first_frame_event.wait(args.stream_timeout_s)
+    if (not got_stream_event) or streamer_errors:
         stop_event.set()
+        client.shutdown()
+        if streamer_errors:
+            raise SystemExit(f"ABORT: image streamer failed before arming: {streamer_errors[-1]}")
         raise SystemExit("ABORT: no image stream before arming")
 
     state_fp, state_writer = log_writer(args.out / "state_log.csv")
@@ -369,6 +377,7 @@ def main():
         print("abort requested")
     finally:
         stop_event.set()
+        client.shutdown()
         for lc in configs:
             try:
                 lc.stop()
