@@ -41,6 +41,12 @@ _Static_assert(sizeof(gate8_msg_t) == 44, "gate packet ABI changed");
 
 /* Init UART1/USART3 and start the RX task. Call once at startup. */
 void gate8LinkInit(void);
+void gate8LinkSendState(uint32_t timestamp_ms,
+                        float world_x_m, float world_y_m, float world_z_m,
+                        float world_vx_m_s, float world_vy_m_s,
+                        float world_vz_m_s, uint32_t compressed_quat,
+                        float roll_rate_rad_s, float pitch_rate_rad_s,
+                        float yaw_rate_rad_s);
 
 /* Copy the latest corners, seqlock-safe. False until the first valid message. */
 bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms);

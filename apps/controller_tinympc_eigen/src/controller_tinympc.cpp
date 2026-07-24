@@ -56,6 +56,7 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 #include "estimator.h"         // estimatorEnqueuePosition (Stage 4: vision -> EKF)
+#include "quatcompress.h"
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
 #include "flowdeck_obstacle_link.h"  // AI-deck obstacle-flow sector receiver
@@ -796,6 +797,27 @@ static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sens
       (1.0f - 2.0f * (q->x*q->x + q->z*q->z)) * state->velocity.y +
       2.0f * (q->y*q->z + q->w*q->x) * state->velocity.z;
   const float yaw_rate = radians(sensors->gyro.z);
+  const float roll_rate = radians(sensors->gyro.x);
+  const float pitch_rate = radians(sensors->gyro.y);
+  const uint32_t now_ms = (uint32_t)xTaskGetTickCount();
+
+  flowObstacleLinkRecordState(now_ms, body_vx, body_vy, yaw_rate,
+                              state->position.x, state->position.y, yaw);
+
+  /* Forward state at 100 Hz. GAP8 maps each camera exposure into this STM32
+   * tick domain and echoes the capture tick in its flow packet. */
+  static uint32_t last_state_tx_ms = 0;
+  if ((uint32_t)(now_ms - last_state_tx_ms) >= 10u) {
+    const float quat_xyzw[4] = {
+      q->x, q->y, q->z, q->w
+    };
+    gate8LinkSendState(now_ms,
+                       state->position.x, state->position.y, state->position.z,
+                       state->velocity.x, state->velocity.y, state->velocity.z,
+                       quatcompress(quat_xyzw),
+                       roll_rate, pitch_rate, yaw_rate);
+    last_state_tx_ms = now_ms;
+  }
 
   flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,
                               state->position.x, state->position.y, yaw);

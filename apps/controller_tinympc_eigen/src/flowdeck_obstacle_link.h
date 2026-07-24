@@ -20,6 +20,7 @@ typedef struct __attribute__((packed)) {
   float azimuth_rad;
   float flow_x_rad_s;
   float flow_y_rad_s;
+  float flow_sigma_rad_s;
   float confidence;
 } flow_obstacle_sector_t;
 
@@ -41,20 +42,27 @@ typedef struct __attribute__((packed)) {
 
 #ifdef __cplusplus
 static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
-static_assert(sizeof(flow_obstacle_payload_t) == 160,
+static_assert(sizeof(flow_obstacle_payload_t) == 196,
               "flow payload ABI changed");
-static_assert(sizeof(flow_obstacle_msg_t) == 168, "flow packet ABI changed");
+static_assert(sizeof(flow_obstacle_msg_t) == 204, "flow packet ABI changed");
 #else
 _Static_assert(sizeof(float) == 4, "vision wire protocol requires float32");
-_Static_assert(sizeof(flow_obstacle_payload_t) == 160,
+_Static_assert(sizeof(flow_obstacle_payload_t) == 196,
                "flow payload ABI changed");
-_Static_assert(sizeof(flow_obstacle_msg_t) == 168, "flow packet ABI changed");
+_Static_assert(sizeof(flow_obstacle_msg_t) == 204, "flow packet ABI changed");
 #endif
 
 void flowObstacleLinkInit(void);
 bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg);
 void flowObstacleLinkNoteBadRx(void);
 void flowObstacleLinkNoteCrcErr(void);
+void flowObstacleLinkRecordState(uint32_t timestamp_ms,
+                                 float body_vx_m_s,
+                                 float body_vy_m_s,
+                                 float yaw_rate_rad_s,
+                                 float world_x_m,
+                                 float world_y_m,
+                                 float yaw_rad);
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
                                  float yaw_rate_rad_s,

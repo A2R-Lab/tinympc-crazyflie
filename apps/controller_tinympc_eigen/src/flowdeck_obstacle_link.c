@@ -60,6 +60,12 @@
 #define FLOW_OBS_MAP_EXTRACT_RADIUS_M 0.30f
 #define FLOW_OBS_MAP_VALID_EVIDENCE 0.10f
 #define FLOW_OBS_MAP_CELL_SIGMA_M2 0.01f
+#define FLOW_OBS_STATE_HISTORY 64
+#define FLOW_OBS_MAX_SYNC_ERROR_MS 100
+#define FLOW_OBS_VELOCITY_SIGMA_M_S 0.03f
+#define FLOW_OBS_GYRO_SIGMA_RAD_S 0.02f
+#define FLOW_OBS_MAX_RANGE_SIGMA_M 0.35f
+#define FLOW_OBS_MAX_REL_RANGE_SIGMA 0.60f
 
 static volatile uint32_t g_seq = 0;
 static flow_obstacle_payload_t g_payload;
@@ -84,6 +90,7 @@ static float g_resFlow[FLOW_OBS_SECT_MAX] = {0};
 static float g_velEff[FLOW_OBS_SECT_MAX] = {0};
 static float g_invDepth[FLOW_OBS_SECT_MAX] = {0};
 static float g_range[FLOW_OBS_SECT_MAX] = {0};
+static float g_rangeSigma[FLOW_OBS_SECT_MAX] = {0};
 static float g_valid[FLOW_OBS_SECT_MAX] = {0};
 static float g_bodyX[FLOW_OBS_SECT_MAX] = {0};
 static float g_bodyY[FLOW_OBS_SECT_MAX] = {0};
@@ -141,6 +148,24 @@ static float g_mapX[FLOW_OBS_MAP_CELLS] = {0};
 static float g_mapY[FLOW_OBS_MAP_CELLS] = {0};
 static float g_mapEvidence[FLOW_OBS_MAP_CELLS] = {0};
 static uint8_t g_mapHits[FLOW_OBS_MAP_CELLS] = {0};
+typedef struct {
+  uint32_t timestamp_ms;
+  float body_vx;
+  float body_vy;
+  float yaw_rate;
+  float world_x;
+  float world_y;
+  float yaw;
+} flow_state_sample_t;
+static flow_state_sample_t g_stateHistory[FLOW_OBS_STATE_HISTORY];
+static uint8_t g_stateHistoryHead = 0;
+static uint8_t g_stateHistoryCount = 0;
+static uint8_t g_syncValid = 0;
+static uint32_t g_syncErrorMs = 0;
+static uint32_t g_syncMiss = 0;
+static float g_cameraYawRad = 0.0f;
+static float g_cameraForwardM = 0.0f;
+static float g_cameraLeftM = 0.0f;
 static float g_mapPeak = 0.0f;
 static uint8_t g_mapActive = 0;
 static uint8_t g_mapBestIdx = 0;
@@ -478,10 +503,13 @@ bool flowObstacleLinkPublishFromRx(const flow_obstacle_msg_t *msg) {
     if (!isfinite(sector->azimuth_rad) ||
         !isfinite(sector->flow_x_rad_s) ||
         !isfinite(sector->flow_y_rad_s) ||
+        !isfinite(sector->flow_sigma_rad_s) ||
         !isfinite(sector->confidence) ||
         fabsf(sector->azimuth_rad) > 2.0f ||
         fabsf(sector->flow_x_rad_s) > 25.0f ||
         fabsf(sector->flow_y_rad_s) > 25.0f ||
+        sector->flow_sigma_rad_s < 0.0f ||
+        sector->flow_sigma_rad_s > 25.0f ||
         sector->confidence < 0.0f || sector->confidence > 1.0f) {
       g_invalidRx++;
       return false;
@@ -530,6 +558,79 @@ void flowObstacleLinkNoteCrcErr(void) {
   g_crcErr++;
 }
 
+void flowObstacleLinkRecordState(uint32_t timestamp_ms,
+                                 float body_vx_m_s,
+                                 float body_vy_m_s,
+                                 float yaw_rate_rad_s,
+                                 float world_x_m,
+                                 float world_y_m,
+                                 float yaw_rad) {
+  flow_state_sample_t *sample = &g_stateHistory[g_stateHistoryHead];
+  sample->timestamp_ms = timestamp_ms;
+  sample->body_vx = body_vx_m_s;
+  sample->body_vy = body_vy_m_s;
+  sample->yaw_rate = yaw_rate_rad_s;
+  sample->world_x = world_x_m;
+  sample->world_y = world_y_m;
+  sample->yaw = yaw_rad;
+  g_stateHistoryHead =
+      (uint8_t)((g_stateHistoryHead + 1u) % FLOW_OBS_STATE_HISTORY);
+  if (g_stateHistoryCount < FLOW_OBS_STATE_HISTORY) {
+    g_stateHistoryCount++;
+  }
+}
+
+static float flowLerp(float a, float b, float t) {
+  return a + t * (b - a);
+}
+
+static bool flowObstacleStateAt(uint32_t timestamp_ms,
+                                flow_state_sample_t *out) {
+  const flow_state_sample_t *before = NULL;
+  const flow_state_sample_t *after = NULL;
+  int32_t before_dt = INT32_MIN;
+  int32_t after_dt = INT32_MAX;
+  for (uint8_t i = 0; i < g_stateHistoryCount; i++) {
+    const flow_state_sample_t *sample = &g_stateHistory[i];
+    const int32_t dt = (int32_t)(sample->timestamp_ms - timestamp_ms);
+    if (dt <= 0 && dt > before_dt) {
+      before = sample;
+      before_dt = dt;
+    }
+    if (dt >= 0 && dt < after_dt) {
+      after = sample;
+      after_dt = dt;
+    }
+  }
+  uint32_t nearest_error = UINT32_MAX;
+  if (before) nearest_error = (uint32_t)(-before_dt);
+  if (after && (uint32_t)after_dt < nearest_error) {
+    nearest_error = (uint32_t)after_dt;
+  }
+  g_syncErrorMs = nearest_error;
+  if (nearest_error > FLOW_OBS_MAX_SYNC_ERROR_MS) return false;
+  if (!before) {
+    *out = *after;
+    return true;
+  }
+  if (!after) {
+    *out = *before;
+    return true;
+  }
+  const int32_t span = after_dt - before_dt;
+  const float t = span > 0 ? (float)(-before_dt) / (float)span : 0.0f;
+  out->timestamp_ms = timestamp_ms;
+  out->body_vx = flowLerp(before->body_vx, after->body_vx, t);
+  out->body_vy = flowLerp(before->body_vy, after->body_vy, t);
+  out->yaw_rate = flowLerp(before->yaw_rate, after->yaw_rate, t);
+  out->world_x = flowLerp(before->world_x, after->world_x, t);
+  out->world_y = flowLerp(before->world_y, after->world_y, t);
+  const float yaw_delta = atan2f(sinf(after->yaw - before->yaw),
+                                 cosf(after->yaw - before->yaw));
+  out->yaw = before->yaw + t * yaw_delta;
+  return true;
+}
+
 void flowObstacleLinkUpdateDepth(float body_vx_m_s,
                                  float body_vy_m_s,
                                  float yaw_rate_rad_s,
@@ -550,6 +651,20 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     flowObstacleDecayCylinder(world_x_m, world_y_m, yaw_rad);
     return;
   }
+  flow_state_sample_t synchronized;
+  g_syncValid = 0;
+  if (payload.stm32_ts_echo != 0u &&
+      flowObstacleStateAt(payload.stm32_ts_echo, &synchronized)) {
+    body_vx_m_s = synchronized.body_vx;
+    body_vy_m_s = synchronized.body_vy;
+    yaw_rate_rad_s = synchronized.yaw_rate;
+    world_x_m = synchronized.world_x;
+    world_y_m = synchronized.world_y;
+    yaw_rad = synchronized.yaw;
+    g_syncValid = 1;
+  } else if (payload.stm32_ts_echo != 0u) {
+    g_syncMiss++;
+  }
   const bool new_sample = sample != g_lastDepthSample;
   g_sampleAgeMs = age_ms;
   g_lastSampleWasNew = new_sample ? 1u : 0u;
@@ -569,9 +684,20 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
   g_nearBodyY = 0.0f;
   g_nearWorldX = 0.0f;
   g_nearWorldY = 0.0f;
+  memset(g_rangeSigma, 0, sizeof(g_rangeSigma));
 
   const float yaw_c = cosf(yaw_rad);
   const float yaw_s = sinf(yaw_rad);
+  const float camera_yaw_c = cosf(g_cameraYawRad);
+  const float camera_yaw_s = sinf(g_cameraYawRad);
+  const float camera_body_vx =
+      body_vx_m_s - yaw_rate_rad_s * g_cameraLeftM;
+  const float camera_body_vy =
+      body_vy_m_s + yaw_rate_rad_s * g_cameraForwardM;
+  const float camera_vx =
+      camera_yaw_c * camera_body_vx + camera_yaw_s * camera_body_vy;
+  const float camera_vy =
+      -camera_yaw_s * camera_body_vx + camera_yaw_c * camera_body_vy;
   uint8_t candidate_ok[FLOW_OBS_SECT_MAX] = {0};
   g_aggregateDisplacement = 0.0f;
   float yaw_displacement = 0.0f;
@@ -598,21 +724,23 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
      * derivative qdot=du/(fx*dt), not literal bearing/radial rate. Convert
      * through bearing=atan(q), whose derivative is qdot/(1+q^2). */
     const float image_q = payload.sector[i].azimuth_rad;
-    const float az = atanf(image_q);
+    const float camera_az = atanf(image_q);
+    const float az = camera_az + g_cameraYawRad;
     const float measured_flow = payload.sector[i].flow_x_rad_s /
                                 (1.0f + image_q * image_q);
     float residual_flow = measured_flow - yaw_rate_rad_s;
-    float vel_eff = body_vx_m_s * sinf(az) - body_vy_m_s * cosf(az);
+    float vel_eff = camera_vx * sinf(camera_az) -
+                    camera_vy * cosf(camera_az);
     const float confidence = payload.sector[i].confidence;
     g_aggregateDisplacement += confidence * fabsf(measured_flow) * payload.dt_s;
     yaw_displacement += confidence * fabsf(yaw_rate_rad_s) * payload.dt_s;
     const bool parallax_observable = fabsf(vel_eff) >= FLOW_MIN_TRANSLATION_M_S;
     const bool looming_observable =
-        fabsf(body_vx_m_s) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(camera_vx) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
         fabsf(payload.sector[i].flow_y_rad_s) >= 1.0e-3f;
     if (parallax_observable && looming_observable) {
       const float disagreement = fabsf(residual_flow / vel_eff -
-                                         payload.sector[i].flow_y_rad_s / body_vx_m_s);
+                                         payload.sector[i].flow_y_rad_s / camera_vx);
       if (disagreement > g_depthDisagreement) {
         g_depthDisagreement = disagreement;
       }
@@ -636,12 +764,12 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
      * translation observable where horizontal parallax is near zero. */
     const bool use_looming =
         fabsf(vel_eff) < FLOW_MIN_TRANSLATION_M_S &&
-        fabsf(body_vx_m_s) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
+        fabsf(camera_vx) >= FLOW_MIN_FORWARD_LOOMING_M_S &&
         fabsf(yaw_rate_rad_s) < FLOW_MAX_LOOMING_YAW_RATE_RAD_S &&
         fabsf(payload.sector[i].flow_y_rad_s) >= 1.0e-3f;
     if (use_looming) {
       residual_flow = payload.sector[i].flow_y_rad_s;
-      vel_eff = body_vx_m_s;
+      vel_eff = camera_vx;
     }
 
     g_resFlow[i] = residual_flow;
@@ -679,10 +807,28 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     if (g_range[i] > FLOW_MAX_RANGE_M) {
       g_range[i] = FLOW_MAX_RANGE_M;
     }
+    const float flow_sigma = sqrtf(
+        payload.sector[i].flow_sigma_rad_s *
+            payload.sector[i].flow_sigma_rad_s +
+        FLOW_OBS_GYRO_SIGMA_RAD_S * FLOW_OBS_GYRO_SIGMA_RAD_S);
+    const float inv_sigma_flow = flow_sigma / fabsf(vel_eff);
+    const float inv_sigma_velocity =
+        fabsf(residual_flow) * FLOW_OBS_VELOCITY_SIGMA_M_S /
+        (vel_eff * vel_eff);
+    const float inv_sigma = sqrtf(inv_sigma_flow * inv_sigma_flow +
+                                  inv_sigma_velocity * inv_sigma_velocity);
+    g_rangeSigma[i] = inv_sigma / (inv_depth * inv_depth);
+    if (g_rangeSigma[i] > FLOW_OBS_MAX_RANGE_SIGMA_M ||
+        g_rangeSigma[i] > FLOW_OBS_MAX_REL_RANGE_SIGMA * g_range[i]) {
+      g_invDepth[i] = 0.0f;
+      g_range[i] = 0.0f;
+      g_valid[i] = 0.0f;
+      continue;
+    }
     g_valid[i] = 1.0f;
 
-    g_bodyX[i] = g_range[i] * cosf(az);
-    g_bodyY[i] = g_range[i] * sinf(az);
+    g_bodyX[i] = g_cameraForwardM + g_range[i] * cosf(az);
+    g_bodyY[i] = g_cameraLeftM + g_range[i] * sinf(az);
     g_worldX[i] = world_x_m + yaw_c * g_bodyX[i] - yaw_s * g_bodyY[i];
     g_worldY[i] = world_y_m + yaw_s * g_bodyX[i] + yaw_c * g_bodyY[i];
 
@@ -756,6 +902,7 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
     }
     uint8_t count = 0;
     float confidence_sum = 0.0f;
+    float weight_sum = 0.0f;
     float range_sum = 0.0f;
     float range_min = FLOW_MAX_RANGE_M;
     float range_max = 0.0f;
@@ -766,9 +913,17 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
           flowObstacleGroupRoot(parent, i) != component) {
         continue;
       }
-      const float weight = payload.sector[i].confidence > 1.0e-3f ?
-                           payload.sector[i].confidence : 1.0e-3f;
-      confidence_sum += weight;
+      const float relative_sigma =
+          g_rangeSigma[i] / (g_range[i] > 0.05f ? g_range[i] : 0.05f);
+      const float uncertainty_quality =
+          1.0f / (1.0f + relative_sigma * relative_sigma);
+      const float quality = payload.sector[i].confidence *
+                            uncertainty_quality;
+      const float variance = g_rangeSigma[i] * g_rangeSigma[i] + 0.0025f;
+      const float weight = (quality > 1.0e-3f ? quality : 1.0e-3f) /
+                           variance;
+      confidence_sum += quality;
+      weight_sum += weight;
       bx_sum += weight * g_bodyX[i];
       by_sum += weight * g_bodyY[i];
       range_sum += g_range[i];
@@ -785,8 +940,8 @@ void flowObstacleLinkUpdateDepth(float body_vx_m_s,
       }
       continue;
     }
-    const float bx = bx_sum / confidence_sum;
-    const float by = by_sum / confidence_sum;
+    const float bx = bx_sum / weight_sum;
+    const float by = by_sum / weight_sum;
     float temporal = 1.0f;
     for (uint8_t h = 0; h < FLOW_OBS_PERSIST_WINDOW; h++) {
       if (!g_obsHistoryValid[h]) continue;
@@ -944,6 +1099,15 @@ LOG_ADD(LOG_FLOAT,  flowY5, &g_payload.sector[5].flow_y_rad_s)
 LOG_ADD(LOG_FLOAT,  flowY6, &g_payload.sector[6].flow_y_rad_s)
 LOG_ADD(LOG_FLOAT,  flowY7, &g_payload.sector[7].flow_y_rad_s)
 LOG_ADD(LOG_FLOAT,  flowY8, &g_payload.sector[8].flow_y_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma0, &g_payload.sector[0].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma1, &g_payload.sector[1].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma2, &g_payload.sector[2].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma3, &g_payload.sector[3].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma4, &g_payload.sector[4].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma5, &g_payload.sector[5].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma6, &g_payload.sector[6].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma7, &g_payload.sector[7].flow_sigma_rad_s)
+LOG_ADD(LOG_FLOAT,  sigma8, &g_payload.sector[8].flow_sigma_rad_s)
 LOG_ADD(LOG_FLOAT,  conf0,  &g_payload.sector[0].confidence)
 LOG_ADD(LOG_FLOAT,  conf1,  &g_payload.sector[1].confidence)
 LOG_ADD(LOG_FLOAT,  conf2,  &g_payload.sector[2].confidence)
@@ -956,6 +1120,9 @@ LOG_ADD(LOG_FLOAT,  conf8,  &g_payload.sector[8].confidence)
 LOG_ADD(LOG_FLOAT,  bodyVx, &g_bodyVx)
 LOG_ADD(LOG_FLOAT,  bodyVy, &g_bodyVy)
 LOG_ADD(LOG_FLOAT,  yawRate, &g_yawRate)
+LOG_ADD(LOG_UINT8,  syncOk,  &g_syncValid)
+LOG_ADD(LOG_UINT32, syncErr, &g_syncErrorMs)
+LOG_ADD(LOG_UINT32, syncMiss, &g_syncMiss)
 LOG_ADD(LOG_FLOAT,  resX0,  &g_resFlow[0])
 LOG_ADD(LOG_FLOAT,  resX1,  &g_resFlow[1])
 LOG_ADD(LOG_FLOAT,  resX2,  &g_resFlow[2])
@@ -992,6 +1159,15 @@ LOG_ADD(LOG_FLOAT,  range5, &g_range[5])
 LOG_ADD(LOG_FLOAT,  range6, &g_range[6])
 LOG_ADD(LOG_FLOAT,  range7, &g_range[7])
 LOG_ADD(LOG_FLOAT,  range8, &g_range[8])
+LOG_ADD(LOG_FLOAT,  rangeSig0, &g_rangeSigma[0])
+LOG_ADD(LOG_FLOAT,  rangeSig1, &g_rangeSigma[1])
+LOG_ADD(LOG_FLOAT,  rangeSig2, &g_rangeSigma[2])
+LOG_ADD(LOG_FLOAT,  rangeSig3, &g_rangeSigma[3])
+LOG_ADD(LOG_FLOAT,  rangeSig4, &g_rangeSigma[4])
+LOG_ADD(LOG_FLOAT,  rangeSig5, &g_rangeSigma[5])
+LOG_ADD(LOG_FLOAT,  rangeSig6, &g_rangeSigma[6])
+LOG_ADD(LOG_FLOAT,  rangeSig7, &g_rangeSigma[7])
+LOG_ADD(LOG_FLOAT,  rangeSig8, &g_rangeSigma[8])
 LOG_ADD(LOG_FLOAT,  valid0, &g_valid[0])
 LOG_ADD(LOG_FLOAT,  valid1, &g_valid[1])
 LOG_ADD(LOG_FLOAT,  valid2, &g_valid[2])
@@ -1070,3 +1246,9 @@ LOG_GROUP_STOP(flowObsRx)
 PARAM_GROUP_START(flowObsCtl)
 PARAM_ADD(PARAM_UINT8, reset, &g_resetRequested)
 PARAM_GROUP_STOP(flowObsCtl)
+
+PARAM_GROUP_START(flowCal)
+PARAM_ADD(PARAM_FLOAT, camYaw, &g_cameraYawRad)
+PARAM_ADD(PARAM_FLOAT, camFwd, &g_cameraForwardM)
+PARAM_ADD(PARAM_FLOAT, camLeft, &g_cameraLeftM)
+PARAM_GROUP_STOP(flowCal)

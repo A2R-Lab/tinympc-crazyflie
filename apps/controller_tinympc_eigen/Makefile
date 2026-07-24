@@ -38,6 +38,8 @@ EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
+# The capture-time state channel uses a dedicated UART1 DMA sender task.
+EXTRA_CFLAGS += -DENABLE_UART1_DMA
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
