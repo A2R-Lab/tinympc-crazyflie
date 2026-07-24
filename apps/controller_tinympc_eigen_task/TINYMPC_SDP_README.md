@@ -2,18 +2,44 @@
 
 ## Benchmark controller
 
-The out-of-tree Eigen task contains four runtime-selectable benchmark arms.
-Set `limo.mode` before a run:
+The out-of-tree Eigen task supports four benchmark controllers, but each
+firmware image compiles exactly one of them. Learned weights, cache banks, and
+mode-specific controller code for the other arms are not linked into that
+image.
 
-| Value | Controller |
-|------:|------------|
-| `0` | Nominal TinyMPC |
-| `1` | MPC-CBF with the analytic floor barrier inserted as horizon linear constraints |
-| `2` | Post-hoc LIMO: nominal TinyMPC followed by the learned-barrier input projection |
-| `3` | Embedded LIMO: learned horizon constraints plus the frozen authority policy, causal no-oracle detector, and 16×4 float32 Riccati cache bank |
+Build the selected image from this directory:
 
-The default is mode `3`. Changing mode resets the trajectory, solver warm
-start, embedded detector, and benchmark step counter.
+```sh
+make FIRMWARE_MODE=0  # nominal TinyMPC
+make FIRMWARE_MODE=1  # MPC-CBF
+make FIRMWARE_MODE=2  # LIMO posthoc
+make FIRMWARE_MODE=3  # LIMO embedded
+```
+
+The result to flash with cfclient is `build/cf2.bin`. Kbuild tracks the
+compiler-definition change, so changing `FIRMWARE_MODE` rebuilds the
+controller and relinks the image. Use `make clean` first only if you want a
+fully clean rebuild.
+
+Alternatively, edit the single default-selection line near the top of
+`src/controller_tinympc.cpp`:
+
+```cpp
+#define TINYMPC_FIRMWARE_MODE TINYMPC_MODE_LIMO_EMBEDDED
+```
+
+The supported selections are:
+
+| Value | Name in `controller_tinympc.cpp` | Controller |
+|------:|----------------------------------|------------|
+| `0` | `TINYMPC_MODE_NOMINAL` | Nominal TinyMPC |
+| `1` | `TINYMPC_MODE_MPC_CBF` | MPC-CBF with the analytic floor barrier inserted as horizon linear constraints |
+| `2` | `TINYMPC_MODE_LIMO_POSTHOC` | Post-hoc LIMO: nominal TinyMPC followed by the learned-barrier input projection |
+| `3` | `TINYMPC_MODE_LIMO_EMBEDDED` | Embedded LIMO: learned horizon constraints plus the frozen authority policy, causal no-oracle detector, and 16×4 float32 Riccati cache bank |
+
+The source default is embedded LIMO (`3`). `tinympc.mode` is a read-only log
+value identifying the flashed image; there is intentionally no runtime
+`limo.mode` parameter.
 
 Set `limo.maneuver` to select a common reference maneuver:
 
@@ -28,7 +54,7 @@ Set `limo.maneuver` to select a common reference maneuver:
 The shared trajectory parameters are `limo.duration`, `limo.radius`,
 `limo.omega`, `limo.speed`, `limo.distance`, and `limo.height`.
 `limo.maxIter` controls the common ADMM iteration cap and defaults to `30`.
-The `tinympc` log group exposes mode, maneuver, step, barrier activation,
+The `tinympc` log group exposes the compiled mode, maneuver, step, barrier activation,
 post-hoc projection, no-oracle detector, authority weight, Qz level, and
 cache-validation telemetry.
 

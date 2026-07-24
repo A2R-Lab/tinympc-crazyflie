@@ -29,13 +29,32 @@
  * Single lap
  */
 
+// Select exactly one controller for this firmware image. The build system can
+// override this with `make FIRMWARE_MODE=<0..3>` without editing the file.
+#define TINYMPC_MODE_NOMINAL       0
+#define TINYMPC_MODE_MPC_CBF       1
+#define TINYMPC_MODE_LIMO_POSTHOC  2
+#define TINYMPC_MODE_LIMO_EMBEDDED 3
+#ifndef TINYMPC_FIRMWARE_MODE
+#define TINYMPC_FIRMWARE_MODE TINYMPC_MODE_LIMO_EMBEDDED
+#endif
+#if TINYMPC_FIRMWARE_MODE < TINYMPC_MODE_NOMINAL || \
+    TINYMPC_FIRMWARE_MODE > TINYMPC_MODE_LIMO_EMBEDDED
+#error "TINYMPC_FIRMWARE_MODE must be 0 (nominal), 1 (MPC-CBF), 2 (LIMO posthoc), or 3 (LIMO embedded)"
+#endif
+
 #include "Eigen.h"
 
 // TinyMPC headers (C++, must be before extern "C")
 #include "tinympc/admm.hpp"
 #include "tinympc/psd_support.hpp"
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC || \
+    TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
 #include "limo_barrier.hpp"
+#endif
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
 #include "limo_embedded.hpp"
+#endif
 
 #ifdef __cplusplus
 extern "C"
@@ -188,12 +207,6 @@ static uint32_t mpc_time_us;
 static struct vec phi; // For converting from the current state estimate's quaternion to Rodrigues parameters
 static bool isInit = false;
 static int prev_cache_level = 0; // Track cache_level changes
-enum BenchmarkMode : uint8_t {
-  BENCH_NOMINAL = 0,
-  BENCH_MPC_CBF = 1,
-  BENCH_LIMO_POSTHOC = 2,
-  BENCH_LIMO_EMBEDDED = 3,
-};
 enum BenchmarkManeuver : uint8_t {
   MANEUVER_HOVER = 0,
   MANEUVER_LINE_X = 1,
@@ -201,7 +214,9 @@ enum BenchmarkManeuver : uint8_t {
   MANEUVER_CIRCLE = 3,
   MANEUVER_FIGURE8 = 4,
 };
-static uint8_t benchmark_mode = BENCH_LIMO_EMBEDDED;
+// Kept as a byte for logging. It is deliberately not a runtime parameter:
+// changing controller arms requires building/flashing a different image.
+static uint8_t benchmark_mode = TINYMPC_FIRMWARE_MODE;
 static uint8_t benchmark_maneuver = MANEUVER_LINE_X;
 static uint8_t previous_benchmark_mode = 255;
 static uint8_t previous_benchmark_maneuver = 255;
@@ -238,7 +253,9 @@ static float limo_threshold = 0.0f;
 static uint32_t limo_eval_us = 0;
 static uint8_t limo_active = 0;
 static uint8_t limo_active_count = 0;
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
 static limo_embedded::Runtime limo_embedded_runtime = {};
+#endif
 static float limo_authority_w = 0.0f;
 static float limo_authority_w_requested = 0.0f;
 static float limo_qz = 1.0f;
@@ -269,6 +286,17 @@ static inline tinytype positive_part(tinytype value)
   return value > tinytype(0.0f) ? value : tinytype(0.0f);
 }
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF || \
+    TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+static inline tinytype clamp_tiny(tinytype value,
+                                  tinytype lower,
+                                  tinytype upper)
+{
+  return value < lower ? lower : (value > upper ? upper : value);
+}
+#endif
+
+#if TINYMPC_FIRMWARE_MODE != TINYMPC_MODE_NOMINAL
 static tinytype limo_effective_margin(const tiny_VectorNx &xbar, int stage)
 {
   const tinytype budget = positive_part(limo_dist_budget);
@@ -286,21 +314,7 @@ static tinytype limo_effective_margin(const tiny_VectorNx &xbar, int stage)
 
   return margin;
 }
-
-static inline bool is_embedded_limo()
-{
-  return benchmark_mode == BENCH_LIMO_EMBEDDED;
-}
-
-static inline bool is_posthoc_limo()
-{
-  return benchmark_mode == BENCH_LIMO_POSTHOC;
-}
-
-static inline bool is_mpc_cbf()
-{
-  return benchmark_mode == BENCH_MPC_CBF;
-}
+#endif
 
 static inline tinytype structural_floor_h(const tiny_VectorNx &x)
 {
@@ -386,6 +400,7 @@ static void restore_nominal_solver()
   params.R[1] = Eigen::Map<tiny_VectorNu>(R_constrained_data);
 }
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
 // Firmware port of safe-reachability's solve_posthoc_cbf_qp. The nominal
 // action is the box-projected ADMM iterate z, exactly as in posthoc_learned.
 static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
@@ -475,7 +490,9 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
   *failed = h_linearized < margin - 1e-4f;
   return command;
 }
+#endif
 
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
 static void reroll_horizon_from_first_input()
 {
   for (int i = 0; i < NHORIZON - 1; ++i) {
@@ -484,6 +501,7 @@ static void reroll_horizon_from_first_input()
         params.cache.Bdyn[problem.cache_level] * problem.u.col(i);
   }
 }
+#endif
 
 static void reset_benchmark_run()
 {
@@ -493,7 +511,9 @@ static void reset_benchmark_run()
   mpc_has_run = false;
   max_traj_index =
       static_cast<int>(positive_part(traj_duration) * MPC_RATE);
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
   limo_embedded_runtime = {};
+#endif
   limo_cache_ok = 0;
   limo_no_oracle_score = 0.0f;
   limo_no_oracle_score_raw = 0.0f;
@@ -770,9 +790,6 @@ static void tinympcControllerTask(void *parameters)
     {
       nextMpcMs = nowMs + (1000.0f / MPC_RATE);
 
-      if (benchmark_mode > BENCH_LIMO_EMBEDDED) {
-        benchmark_mode = BENCH_LIMO_EMBEDDED;
-      }
       if (benchmark_maneuver > MANEUVER_FIGURE8) {
         benchmark_maneuver = MANEUVER_FIGURE8;
       }
@@ -785,10 +802,12 @@ static void tinympcControllerTask(void *parameters)
         DEBUG_PRINT("Benchmark reset: mode=%u maneuver=%u\n",
                     (unsigned int)benchmark_mode,
                     (unsigned int)benchmark_maneuver);
-      } else if (!is_embedded_limo()) {
+#if TINYMPC_FIRMWARE_MODE != TINYMPC_MODE_LIMO_EMBEDDED
+      } else {
         // Embedded LIMO replaces the Riccati cache/cost online. Restore the
         // untouched TinyMPC data for every other benchmark arm.
         restore_nominal_solver();
+#endif
       }
       problem.max_iter = benchmark_max_iter > 0 ? benchmark_max_iter : 1;
 
@@ -840,7 +859,8 @@ static void tinympcControllerTask(void *parameters)
       limo_no_oracle_score = 0.0f;
       limo_no_oracle_score_raw = 0.0f;
       limo_no_oracle_active = 0;
-      if (is_embedded_limo()) {
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+      {
         LimoBarrierEval embedded_eval;
         limo_eval_barrier(problem.x.col(0), limo_az_coeff, limo_gravity_comp,
                           radians(limo_fail_roll_deg),
@@ -873,12 +893,15 @@ static void tinympcControllerTask(void *parameters)
             limo_embedded_runtime.no_oracle_active ? 1 : 0;
         if (!limo_cache_ok) {
           DEBUG_PRINT("LIMO embedded cache validation failed\n");
-          benchmark_mode = BENCH_NOMINAL;
-          previous_benchmark_mode = BENCH_NOMINAL;
+          // A compiled embedded-LIMO image cannot silently switch to another
+          // benchmark arm. Stop the run so the failure is explicit and safe.
+          enable_traj = false;
+          mpc_has_run = true;
           restore_nominal_solver();
           reset_solver_warm_start();
         }
       }
+#endif
 
       float obs_elapsed = 0.0f;
       if (enable_obs_constraint) {
@@ -924,20 +947,24 @@ static void tinympcControllerTask(void *parameters)
         params.x_max[i] = tiny_VectorNc::Constant(1000);
         params.A_constraints[i] = tiny_MatrixNcNx::Zero();
 
-        if ((is_embedded_limo() || is_mpc_cbf()) &&
-            !constraint_hold && i < limo_active_horizon) {
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF || \
+    TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+        if (!constraint_hold && i < limo_active_horizon) {
           const tiny_VectorNx xbar = problem.x.col(i);
           tiny_VectorNx grad = tiny_VectorNx::Zero();
           tinytype barrier_h = 0.0f;
           tinytype constraint_h = 0.0f;
           tinytype raw_h = 0.0f;
-          if (is_mpc_cbf()) {
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF
+          {
             barrier_h = structural_floor_h(xbar);
             constraint_h = barrier_h;
             raw_h = barrier_h;
             grad(2) = 1.0f;
             grad(8) = xbar(8) < 0.0f ? 0.20f : 0.0f;
-          } else {
+          }
+#else
+          {
             LimoBarrierEval eval;
             const uint32_t eval_start_us = usecTimestamp();
             limo_eval_barrier(
@@ -950,8 +977,9 @@ static void tinympcControllerTask(void *parameters)
             constraint_h = eval.h;
             grad = eval.grad;
           }
+#endif
           for (int j = 0; j < NSTATES; ++j) {
-            grad(j) = limo_barrier::clamp(grad(j), tinytype(-2.0f), tinytype(2.0f));
+            grad(j) = clamp_tiny(grad(j), tinytype(-2.0f), tinytype(2.0f));
           }
           const tinytype grad_norm = grad.norm();
           const tinytype margin_eff = limo_effective_margin(xbar, i);
@@ -980,6 +1008,7 @@ static void tinympcControllerTask(void *parameters)
             }
           }
         }
+#endif
 
         if (enable_obs_constraint && !constraint_hold) {
           // Predict obstacle position for this horizon step
@@ -1006,13 +1035,16 @@ static void tinympcControllerTask(void *parameters)
         DEBUG_PRINT("OBS: %d active, obs_y=%.2f, drone=(%.2f,%.2f)\n", cstr_active_count,
                     (double)obs_center(1), (double)state_task.position.x, (double)state_task.position.y);
       }
-      if ((is_embedded_limo() || is_mpc_cbf()) && task_loop_count <= 3) {
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF || \
+    TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+      if (task_loop_count <= 3) {
         DEBUG_PRINT("SAFE TV mode=%u: h=%.3f raw=%.3f grad=%.3f margin=%.3f thr=%.3f active0=%u active_count=%u eval=%lu us\n",
                     (unsigned int)benchmark_mode,
                     (double)limo_h, (double)limo_raw, (double)limo_grad_norm,
                     (double)limo_margin_eff, (double)limo_threshold,
                     (unsigned int)limo_active, (unsigned int)limo_active_count, limo_eval_us);
       }
+#endif
       
       const int requested_cache_level = cstr_active_count > 0 ? 1 : 0;
       if (requested_cache_level != prev_cache_level) {
@@ -1061,7 +1093,8 @@ static void tinympcControllerTask(void *parameters)
       }
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
-      if (is_posthoc_limo()) {
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
+      {
         LimoBarrierEval posthoc_eval;
         const uint32_t eval_start_us = usecTimestamp();
         limo_eval_barrier(
@@ -1115,13 +1148,16 @@ static void tinympcControllerTask(void *parameters)
         limo_active = posthoc_active;
         limo_active_count = posthoc_active;
       }
-      if (is_embedded_limo()) {
+#endif
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
+      {
         limo_embedded::update_saturation(
             &limo_embedded_runtime, problem.u.col(0),
             params.u_min.col(0), params.u_max.col(0));
         limo_embedded::save_prediction(
             &limo_embedded_runtime, problem.x.col(1));
       }
+#endif
       ++benchmark_step;
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
@@ -1365,7 +1401,6 @@ LOG_GROUP_STOP(tinympc)
 
 static struct param_s __params_limo[] __attribute__((section(".param.limo"), used)) = {
   PARAM_GROUP_ENTRY(PARAM_GROUP | PARAM_START, limo)
-  PARAM_VALUE_ENTRY(PARAM_UINT8, mode, &benchmark_mode)
   PARAM_VALUE_ENTRY(PARAM_UINT8, maneuver, &benchmark_maneuver)
   PARAM_VALUE_ENTRY(PARAM_UINT8, maxIter, &benchmark_max_iter)
   PARAM_VALUE_ENTRY(PARAM_FLOAT, duration, &traj_duration)

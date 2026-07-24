@@ -1,1 +1,8 @@
 obj-y += controller_tinympc.o
+
+# Keep the benchmark selector local to this C++ translation unit. Command-line
+# make variables propagate to the firmware sub-make, and a per-object flag
+# avoids recompiling the complete Crazyflie C firmware when the mode changes.
+ifdef FIRMWARE_MODE
+ccflags-y += -DTINYMPC_FIRMWARE_MODE=$(FIRMWARE_MODE)
+endif
