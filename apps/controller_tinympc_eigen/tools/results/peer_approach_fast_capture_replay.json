@@ -31,35 +31,35 @@
     "non_nominal_pairs": 30
   },
   "frontend": {
-    "frames_with_tracks": 495,
-    "max_track_count": 26
+    "frames_with_tracks": 502,
+    "max_track_count": 29
   },
   "estimator": {
-    "frames_with_accepted_depth": 105,
+    "frames_with_accepted_depth": 126,
     "accepted_depth_tracks_by_phase": {
       "init": 0,
       "takeoff": 0,
       "settle": 0,
-      "peer": 142,
-      "approach": 12,
-      "approach_hold": 43,
+      "peer": 205,
+      "approach": 21,
+      "approach_hold": 55,
       "land": 1
     },
     "geometry_rejections_by_phase": {
-      "init": 14,
-      "takeoff": 15,
+      "init": 20,
+      "takeoff": 22,
       "settle": 0,
-      "peer": 671,
-      "approach": 83,
-      "approach_hold": 145,
-      "land": 20
+      "peer": 977,
+      "approach": 115,
+      "approach_hold": 190,
+      "land": 23
     },
-    "frames_with_observation": 26,
-    "frames_with_valid_cylinder": 133,
+    "frames_with_observation": 50,
+    "frames_with_valid_cylinder": 163,
     "max_accepted_tracks": 6,
     "max_cluster_support": 6,
     "max_baseline_m": 0.418437004,
-    "max_map_peak": 0.484362274,
+    "max_map_peak": 1.0,
     "first_accepted": {
       "replay_frame": 173,
       "image": "frames/frame_000338.pgm",
@@ -86,22 +86,22 @@
       "world_x_m": 0.015964556485414505,
       "world_y_m": 0.14488297700881958,
       "yaw_deg": 0.5473272800445557,
-      "estimated_world_x_m": 0.9628613,
-      "estimated_world_y_m": 0.196361765,
-      "confidence": 0.0897116214
+      "estimated_world_x_m": 0.948586881,
+      "estimated_world_y_m": 0.12908788,
+      "confidence": 0.10735596
     },
-    "max_valid_cylinder_step_m": 0.00840626832407833,
+    "max_valid_cylinder_step_m": 0.009056488805856548,
     "last_valid_cylinder": {
-      "replay_frame": 455,
-      "image": "frames/frame_000891.pgm",
-      "phase": "approach_hold",
-      "gap8_timestamp": 61961486,
-      "world_x_m": 0.4300652742385864,
-      "world_y_m": 0.019972816109657288,
-      "yaw_deg": -2.2565879821777344,
-      "estimated_world_x_m": 0.957350552,
-      "estimated_world_y_m": 0.174876735,
-      "confidence": 0.356117398
+      "replay_frame": 465,
+      "image": "frames/frame_000909.pgm",
+      "phase": "land",
+      "gap8_timestamp": 62694763,
+      "world_x_m": 0.38128194212913513,
+      "world_y_m": 0.03594053164124489,
+      "yaw_deg": -2.5622448921203613,
+      "estimated_world_x_m": 0.926090956,
+      "estimated_world_y_m": 0.105775982,
+      "confidence": 0.992028058
     }
   },
   "limitations": [
