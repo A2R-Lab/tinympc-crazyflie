@@ -93,7 +93,34 @@ int main(void) {
   if (g_trackDepthAccepted != 0 || g_trackDepthValid[0] ||
       g_trackDepthRejectedGeometry != 1) return 17;
 
-  puts("PASS per-track depth: lateral/forward range, yaw, sync, uncertainty, and capture-gap gates");
+  /* A single inconsistent near observation must not replace an established
+   * cylinder. A second independent vote confirms a genuine nearer obstacle. */
+  flowObstacleResetEstimator();
+  g_trackRxOk = 1;
+  g_trackValidatedSupport = 3;
+  g_trackValidatedSigma = 0.11f;
+  g_trackSafetyAge = 0;
+  g_trackBaselineM = 0.20f;
+  g_mapX[0] = 1.066f;
+  g_mapY[0] = 0.058f;
+  g_mapEvidence[0] = 0.067f;
+  g_mapHits[0] = 1;
+  g_mapX[1] = 0.433f;
+  g_mapY[1] = 0.259f;
+  g_mapEvidence[1] = 0.051f;
+  g_mapHits[1] = 1;
+  g_cylWorldX = g_mapX[0];
+  g_cylWorldY = g_mapY[0];
+  g_cylConf = g_mapEvidence[0];
+  flowObstacleExtractCylinder(0.018f, -0.014f, 0.0f);
+  if (fabsf(g_cylWorldX - g_mapX[0]) > 0.01f ||
+      fabsf(g_cylWorldY - g_mapY[0]) > 0.01f) return 18;
+  g_mapHits[1] = FLOW_OBS_CYL_SWITCH_MIN_HITS;
+  flowObstacleExtractCylinder(0.018f, -0.014f, 0.0f);
+  if (fabsf(g_cylWorldX - g_mapX[1]) > 0.01f ||
+      fabsf(g_cylWorldY - g_mapY[1]) > 0.01f) return 19;
+
+  puts("PASS per-track depth: range, yaw, sync, uncertainty, capture-gap, and cylinder-switch gates");
   return 0;
 }
 """

@@ -67,8 +67,12 @@
       "gap8_timestamp": 53162292,
       "world_x_m": 0.0032133650965988636,
       "world_y_m": 0.02781151793897152,
-      "yaw_deg": -1.7077147960662842
+      "yaw_deg": -1.7077147960662842,
+      "estimated_world_x_m": 1.06613767,
+      "estimated_world_y_m": 0.0576765984,
+      "confidence": 0.0676454827
     },
+    "max_valid_cylinder_step_m": 0.0,
     "last_valid_cylinder": {
       "replay_frame": 338,
       "image": "frames/frame_000660.pgm",
@@ -77,9 +81,9 @@
       "world_x_m": 0.06947895884513855,
       "world_y_m": 0.0288325734436512,
       "yaw_deg": 1.6273294687271118,
-      "estimated_world_x_m": 0.432766467,
-      "estimated_world_y_m": 0.258740276,
-      "confidence": 0.0507587306
+      "estimated_world_x_m": 1.06613767,
+      "estimated_world_y_m": 0.0576765984,
+      "confidence": 0.0668381825
     }
   },
   "limitations": [

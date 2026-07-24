@@ -47,6 +47,7 @@
 #define FLOW_OBS_CYL_GATE_RANGE_FRAC 0.20f
 #define FLOW_OBS_CYL_GATE_MAX_M 0.50f
 #define FLOW_OBS_CYL_SWITCH_MARGIN_M 0.50f
+#define FLOW_OBS_CYL_SWITCH_MIN_HITS 2
 #define FLOW_OBS_CYL_COV_ALPHA 0.15f
 #define FLOW_OBS_CYL_COV_INIT_M2 0.04f
 #define FLOW_OBS_CYL_COV_INFLATE_M2 0.002f
@@ -411,9 +412,21 @@ static void flowObstacleExtractCylinder(float world_x_m,
       const float tracked_range =
           sqrtf(tracked_dx * tracked_dx + tracked_dy * tracked_dy);
       const float nearest_range = sqrtf(nearest_d2);
-      if (nearest_range + FLOW_OBS_CYL_SWITCH_MARGIN_M >= tracked_range) {
+      if ((nearest_idx != tracked_idx &&
+           g_mapHits[nearest_idx] < FLOW_OBS_CYL_SWITCH_MIN_HITS) ||
+          nearest_range + FLOW_OBS_CYL_SWITCH_MARGIN_M >= tracked_range) {
         nearest_idx = tracked_idx;
       }
+    } else if (nearest_idx != tracked_idx &&
+               g_mapHits[nearest_idx] < FLOW_OBS_CYL_SWITCH_MIN_HITS) {
+      /*
+       * An out-of-gate component may be a genuinely nearer obstacle, but one
+       * validated map vote is not enough to replace an existing cylinder.
+       * Require a second independent observation before switching. This
+       * prevents a transient state/flow error from causing a large range and
+       * bearing jump while retaining bounded takeover latency at 15 Hz.
+       */
+      nearest_idx = tracked_idx;
     }
   }
   g_mapBestIdx = nearest_idx;

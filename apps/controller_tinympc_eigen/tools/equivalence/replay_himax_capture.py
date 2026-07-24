@@ -185,6 +185,11 @@ def summarize(capture_rows: list[dict[str, str]],
     valid = [row for row in stm_rows if int(float(row["cyl_valid"]))]
     observations = [row for row in stm_rows if int(float(row["obs_valid"]))]
     accepted = [row for row in stm_rows if int(row["accepted"]) > 0]
+    valid_steps = [
+        math.hypot(float(second["cyl_world_x"]) - float(first["cyl_world_x"]),
+                   float(second["cyl_world_y"]) - float(first["cyl_world_y"]))
+        for first, second in zip(valid, valid[1:])
+    ]
     def frame_info(output: dict[str, str]) -> dict[str, object]:
         index = int(output["frame"])
         source = capture_rows[index]
@@ -228,7 +233,13 @@ def summarize(capture_rows: list[dict[str, str]],
             "max_map_peak": max(float(row["map_peak"]) for row in stm_rows),
             "first_accepted": frame_info(accepted[0]) if accepted else None,
             "first_observation": frame_info(observations[0]) if observations else None,
-            "first_valid_cylinder": frame_info(valid[0]) if valid else None,
+            "first_valid_cylinder": ({
+                **frame_info(valid[0]),
+                "estimated_world_x_m": float(valid[0]["cyl_world_x"]),
+                "estimated_world_y_m": float(valid[0]["cyl_world_y"]),
+                "confidence": float(valid[0]["cyl_conf"]),
+            } if valid else None),
+            "max_valid_cylinder_step_m": max(valid_steps, default=0.0),
             "last_valid_cylinder": ({
                 **frame_info(valid[-1]),
                 "estimated_world_x_m": float(valid[-1]["cyl_world_x"]),
