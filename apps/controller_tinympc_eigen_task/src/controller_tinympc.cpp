@@ -34,7 +34,7 @@
 //   1 = MPC-CBF (analytic linear constraints)
 //   2 = LIMO posthoc
 //   3 = LIMO embedded
-// Change only the number below, then run `make -j8 cload`.
+// Change only the number below, run `make -j8`, then run `make cload`.
 #define TINYMPC_MODE_NOMINAL       0
 #define TINYMPC_MODE_MPC_CBF       1
 #define TINYMPC_MODE_LIMO_POSTHOC  2
@@ -55,7 +55,7 @@
 //   2 = Y-axis line
 //   3 = circle
 //   4 = figure eight
-// Change only the number below, then run `make -j8 cload`.
+// Change only the number below, run `make -j8`, then run `make cload`.
 #define TINYMPC_TRAJECTORY_HOVER   0
 #define TINYMPC_TRAJECTORY_LINE_X  1
 #define TINYMPC_TRAJECTORY_LINE_Y  2
@@ -78,6 +78,14 @@
 #define TINYMPC_LANDING_TARGET_Z_M       (-0.05f)
 #define TINYMPC_LANDING_TOUCHDOWN_Z_M     0.08f
 #define TINYMPC_LANDING_TOUCHDOWN_VZ_MPS  0.10f
+
+// Compact XYZ console samples: 0=off, 1=20 Hz, 2=10 Hz, 4=5 Hz.
+// Ten hertz is sufficient for hover RMSE without recreating the CRTP
+// starvation caused by printing a full diagnostic block every MPC update.
+#define TINYMPC_XYZ_CONSOLE_DECIMATION 2
+#if TINYMPC_XYZ_CONSOLE_DECIMATION < 0
+#error "TINYMPC_XYZ_CONSOLE_DECIMATION must be zero or positive"
+#endif
 
 #include "Eigen.h"
 
@@ -248,9 +256,10 @@ static uint8_t benchmark_mode = TINYMPC_FIRMWARE_MODE;
 static uint8_t benchmark_maneuver = TINYMPC_TRAJECTORY;
 static uint8_t previous_benchmark_mode = 255;
 static uint8_t previous_benchmark_maneuver = 255;
-// One barrier evaluation plus six ADMM iterations fits the embedded LIMO
-// controller's 50 ms period. Larger counts must be revalidated on hardware.
-static uint8_t benchmark_max_iter = 6;
+// One barrier evaluation plus five ADMM iterations fits the embedded LIMO
+// controller's 50 ms period with margin; six ran it at ~49 of 50 ms on
+// hardware. Larger counts must be revalidated on hardware.
+static uint8_t benchmark_max_iter = 5;
 static uint8_t enable_obs_constraint = 0; // Obstacle LTV constraints disabled for LIMO deploy
 static uint8_t enable_psd = 0; // PSD disabled for LIMO deploy
 
@@ -258,6 +267,7 @@ static tinytype limo_margin = tinytype(0.01f);
 static tinytype limo_margin_scale = tinytype(1.5f);
 static tinytype limo_h_deadband = tinytype(0.30f);
 static tinytype limo_act_slack = tinytype(0.20f);
+static tinytype limo_demand_cap = tinytype(0.05f);
 static tinytype limo_az_coeff = tinytype(8.0f);
 static tinytype limo_gravity_comp = tinytype(0.0f);
 static tinytype limo_fail_roll_deg = tinytype(50.0f);
@@ -661,11 +671,15 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
 
-  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4\n");
+  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4 guards=z[ref,ref+0.20],xy+-0.10 cap=0.05\n");
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-  DEBUG_PRINT("LIMO adaptive: cache=16x4 z_guard=ref..ref+0.20 evals=1\n");
+  DEBUG_PRINT("LIMO adaptive: cache=16x4 evals=1\n");
 #else
   DEBUG_PRINT("Fixed baseline: w=0 qz=1 adaptive_cache=off\n");
+#endif
+#if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
+  DEBUG_PRINT("XYZ console: every=%u MPC steps; fields=mode,step,x,y,z\n",
+              (unsigned int)TINYMPC_XYZ_CONSOLE_DECIMATION);
 #endif
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -989,8 +1003,15 @@ static void tinympcControllerTask(void *parameters)
 
           if (active) {
             params.A_constraints[i] = -grad.transpose();
-            params.x_max[i](0) =
-                constraint_h - grad.dot(xbar) - margin_eff;
+            // Ask for at most a per-step-reachable h recovery. The full
+            // deficit (margin - h, ~0.27 at benign hover) cannot be closed
+            // within one 50 ms step, and demanding it winds up the ADMM
+            // duals until the truncated solve outputs a descent transient.
+            tinytype demand = margin_eff - constraint_h;
+            if (demand > limo_demand_cap) {
+              demand = limo_demand_cap;
+            }
+            params.x_max[i](0) = -(grad.dot(xbar) + demand);
             cstr_active_count++;
             if (limo_active_count < 255) {
               limo_active_count++;
@@ -1148,6 +1169,15 @@ static void tinympcControllerTask(void *parameters)
       }
 #endif
       ++benchmark_step;
+#if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
+      if ((benchmark_step % TINYMPC_XYZ_CONSOLE_DECIMATION) == 0) {
+        DEBUG_PRINT("XYZ mode=%u step=%lu x=%.3f y=%.3f z=%.3f\n",
+                    (unsigned int)benchmark_mode,
+                    (unsigned long)benchmark_step,
+                    (double)tracking_pos_x, (double)tracking_pos_y,
+                    (double)tracking_pos_z);
+      }
+#endif
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
       }
@@ -1221,6 +1251,15 @@ static void tinympcControllerTask(void *parameters)
       mpc_setpoint_task(2) =
           clamp_tiny(preview_z, reference_z, reference_z + tinytype(0.20f));
       tracking_cmd_z = mpc_setpoint_task(2);
+      // Under slow drift the preview follows current velocity, which bypasses
+      // the PID's position stiffness; anchor the lateral target to the
+      // reference so wind cannot walk the vehicle off the path.
+      mpc_setpoint_task(0) = clamp_tiny(mpc_setpoint_task(0),
+                                        params.Xref(0, 0) - tinytype(0.10f),
+                                        params.Xref(0, 0) + tinytype(0.10f));
+      mpc_setpoint_task(1) = clamp_tiny(mpc_setpoint_task(1),
+                                        params.Xref(1, 0) - tinytype(0.10f),
+                                        params.Xref(1, 0) + tinytype(0.10f));
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("setpoint: x=%.2f z=%.2f preview_z=%.2f\n",

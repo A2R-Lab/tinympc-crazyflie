@@ -87,46 +87,60 @@ static_assert(kCacheData[0] == 5.0f,
 
 static inline void install(struct tiny_params *params)
 {
-  const float *source = kCacheData;
-  int offset = 0;
-  const tinytype rho = source[offset++];
-  const tiny_MatrixNuNx kinf =
-      Eigen::Map<const Eigen::Matrix<float, NINPUTS, NSTATES, Eigen::RowMajor>>(
-          source + offset);
-  offset += NINPUTS * NSTATES;
-  const tiny_MatrixNxNx pinf =
-      Eigen::Map<const Eigen::Matrix<float, NSTATES, NSTATES, Eigen::RowMajor>>(
-          source + offset);
-  offset += NSTATES * NSTATES;
-  const tiny_MatrixNuNu quu_inv =
-      Eigen::Map<const Eigen::Matrix<float, NINPUTS, NINPUTS, Eigen::RowMajor>>(
-          source + offset);
-  offset += NINPUTS * NINPUTS;
-  const tiny_MatrixNxNx ambkt =
-      Eigen::Map<const Eigen::Matrix<float, NSTATES, NSTATES, Eigen::RowMajor>>(
-          source + offset);
+  // controllerOutOfTreeInit runs on the 1.8 KB stabilizer stack. Copy every
+  // coefficient as a scalar so Eigen cannot materialize the four cache
+  // matrices as ~1.5 KB of local temporaries.
+  constexpr int kKinfOffset = 1;
+  constexpr int kPinfOffset = kKinfOffset + NINPUTS * NSTATES;
+  constexpr int kQuuInvOffset = kPinfOffset + NSTATES * NSTATES;
+  constexpr int kAmBKtOffset = kQuuInvOffset + NINPUTS * NINPUTS;
+  constexpr int kUnusedTailOffset = kAmBKtOffset + NSTATES * NSTATES;
+  static_assert(kUnusedTailOffset + NINPUTS * NINPUTS == kCacheScalars,
+                "Unexpected shared LIMO cache layout");
+
+  static constexpr tinytype q_weights[NSTATES] = {
+      100.0f, 100.0f, 100.0f,
+      4.0f, 4.0f, 400.0f,
+      4.0f, 4.0f, 4.0f,
+      2.0408163f, 2.0408163f, 4.0f
+  };
 
   for (int level = 0; level < 2; ++level) {
-    params->cache.Adyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NSTATES, Eigen::RowMajor>>(
-            limo_Adyn_20hz_data);
-    params->cache.Bdyn[level] =
-        Eigen::Map<Matrix<tinytype, NSTATES, NINPUTS, Eigen::RowMajor>>(
-            limo_Bdyn_20hz_data);
-    params->cache.rho[level] = rho;
-    params->cache.Kinf[level] = kinf;
-    params->cache.Pinf[level] = pinf;
-    params->cache.Quu_inv[level] = quu_inv;
-    params->cache.AmBKt[level] = ambkt;
-    params->cache.coeff_d2p[level].setZero();
+    for (int row = 0; row < NSTATES; ++row) {
+      for (int col = 0; col < NSTATES; ++col) {
+        params->cache.Adyn[level](row, col) =
+            limo_Adyn_20hz_data[row * NSTATES + col];
+        params->cache.Pinf[level](row, col) =
+            kCacheData[kPinfOffset + row * NSTATES + col];
+        params->cache.AmBKt[level](row, col) =
+            kCacheData[kAmBKtOffset + row * NSTATES + col];
+      }
+      for (int col = 0; col < NINPUTS; ++col) {
+        params->cache.Bdyn[level](row, col) =
+            limo_Bdyn_20hz_data[row * NINPUTS + col];
+        params->cache.coeff_d2p[level](row, col) = tinytype(0.0f);
+      }
+    }
 
-    params->Q[level] <<
-        100.0f, 100.0f, 100.0f,
-        4.0f, 4.0f, 400.0f,
-        4.0f, 4.0f, 4.0f,
-        2.0408163f, 2.0408163f, 4.0f;
-    params->Qf[level] = params->Q[level];
-    params->R[level].setConstant(kInputWeight);
+    for (int row = 0; row < NINPUTS; ++row) {
+      for (int col = 0; col < NSTATES; ++col) {
+        params->cache.Kinf[level](row, col) =
+            kCacheData[kKinfOffset + row * NSTATES + col];
+      }
+      for (int col = 0; col < NINPUTS; ++col) {
+        params->cache.Quu_inv[level](row, col) =
+            kCacheData[kQuuInvOffset + row * NINPUTS + col];
+      }
+    }
+
+    params->cache.rho[level] = kCacheData[0];
+    for (int state = 0; state < NSTATES; ++state) {
+      params->Q[level](state) = q_weights[state];
+      params->Qf[level](state) = q_weights[state];
+    }
+    for (int input = 0; input < NINPUTS; ++input) {
+      params->R[level](input) = kInputWeight;
+    }
   }
 }
 

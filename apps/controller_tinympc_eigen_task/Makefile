@@ -92,8 +92,3 @@ OOT_ARGS += TRAJECTORY=$(TRAJECTORY)
 endif
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
-
-# The upstream cload target only flashes the bin already on disk. Make the app
-# build a prerequisite so changing TINYMPC_FIRMWARE_MODE or TINYMPC_TRAJECTORY
-# in controller_tinympc.cpp can never leave cload flashing a stale image.
-cload: all
