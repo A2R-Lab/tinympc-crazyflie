@@ -1,100 +1,191 @@
 Hover benchmark 1: nominal TinyMPC vs embedded LIMO
 ===================================================
 
-STATUS: PRE-MATCHING PILOT ONLY. Do not use this run as the fair benchmark.
-The nominal and LIMO controller models/costs were not matched when these data
-were collected. The raw observations are retained for traceability.
+STATUS: COMPLETE SINGLE-RUN CLAMP-ON PAIR. Matched embedded-LIMO and
+nominal runs recorded. Results are descriptive; repeat trials are required
+for a statistical controller-performance claim.
 
-Date: 2026-07-24
+Date: 2026-07-25
 Vehicle: Crazyflie 2.1 Brushless with Flow deck
 Estimator: Kalman
-Controller selection in CFClient: OutOfTree (6)
+Controller selected in CFclient: OutOfTree (6)
 Trajectory: hover (maneuver 0)
 Reference: x=0.00 m, y=0.00 m, z=0.50 m
-Commanded duration: 12 s, followed by controlled landing
-Solver limit: 6 ADMM iterations
-Firmware branch: LIMO
+Duration: 12 s, followed by controlled landing
+Disturbance: fan level 1 for both runs
+Fan geometry: directly in front of the vehicle, airflow into the front face,
+              approximately 0.20 m from the vehicle
+Fan onset: approximately 3 s after selecting OutOfTree controller 6
+Fan duration: remained on until controlled landing
+Firmware branch/commit: LIMO / f22c1a8
+Raw LIMO log: hover1_limo_raw.txt
+Raw nominal log: hover1_nominal_raw.txt
 
-Reproduction
-------------
+Fan-on timing
+-------------
 
-Edit apps/controller_tinympc_eigen_task/src/controller_tinympc.cpp:
+Selecting OutOfTree controller 6 activates this MPC benchmark and resets its
+step counter. At 20 Hz, MPC step 60 is approximately 3 s after OOT
+activation, matching the physical fan protocol. A later firmware bug made
+the printed t_ms field include the sensor-calibration startup offset by
+mixing the stabilizer and FreeRTOS clocks; that bug does not affect this
+step-based hover1 alignment.
 
-  TINYMPC_FIRMWARE_MODE=0: nominal TinyMPC
-  TINYMPC_FIRMWARE_MODE=3: embedded LIMO
-  TINYMPC_TRAJECTORY=0: hover
+Hover1 remains a separate clamp-on comparison. Use hover2 for the new
+unclamped four-mode benchmark.
 
-From apps/controller_tinympc_eigen_task, run:
+Matched controller configuration
+--------------------------------
 
-  make -j8 cload
+MPC/model rate: 20 Hz / 20 Hz
+Solver limit: 5 ADMM iterations
+Common baseline: rho=5, base w=0, base qz=1, Qz=100, R=4
+PID bridge: horizon state x4
+Setpoint guards: z=[reference, reference+0.20 m], x/y=reference +/-0.10 m
+Embedded-LIMO demand cap: 0.05
+XYZ console sampling: 10 Hz (every 2 MPC steps)
 
-For the complete trajectory, configure CFClient to record tinympc.posX and
-tinympc.posY. The corrected benchmark runs every mode at 20 Hz, so use a
-50 ms log period for all modes.
+Embedded LIMO run
+-----------------
 
-Summary from the supplied console logs
---------------------------------------
+Mode: 3
+Recorded XYZ samples: 120
+Initial state: position=(-0.04,-0.01,0.54) m,
+               velocity=(-0.02,0.06,0.00) m/s
+Observed barrier evaluation time: 10.748 ms
+Observed MPC solve time: 27.952 ms
+Observed evaluation + solve time: 38.700 ms
+MPC stack free: 954 words
+Landing completed: yes
 
-Metric                              Nominal             Embedded LIMO
-Mode                                0                   3
-MPC/model rate                      25 Hz               20 Hz / 20 Hz
-Trajectory samples                  300                 240
-Duration                            12 s                12 s
-Initial position (x,y,z), m         (0.01,-0.04,0.56)  (0.02,0.00,0.56)
-Initial velocity (x,y,z), m/s       (0.07,0.02,-0.01)  (0.07,0.01,0.00)
-Landing-start position (x,y), m     (-0.55,-0.05)      (-0.31,-0.11)
-Landing-start altitude, m           0.56                0.53
-Final horizontal error, m           0.552               0.329
-Final altitude error, m             0.06                0.03
-Observed MPC solve time, ms          32.989-33.424       30.611-34.764
-Observed LIMO evaluation time, ms    n/a                 12.561-14.466
-Observed eval + solve time, ms       32.989-33.424       43.568-49.230
-MPC stack free, words               1209                954
-Landing completed                   yes                 yes
+Metric                              Full 12 s       Fan on (t >= 3 s)
+X mean, m                           -0.080383       -0.100692
+Y mean, m                           -0.023608       -0.030824
+Z mean, m                            0.505425        0.524187
+X RMSE from reference, m             0.100246        0.114415
+Y RMSE from reference, m             0.053262        0.060858
+Planar RMSE sqrt(mean(x^2+y^2)), m   0.113517        0.129593
+Z RMSE from 0.50 m, m                0.040371        0.026245
+Maximum planar error, m              0.205353        0.205353
+Time of maximum planar error, s     10.80           10.80
+Minimum Z, m (time, s)               0.388 (0.90)    0.489 (3.00)
+Maximum Z, m (time, s)               0.542 (9.00)    0.542 (9.00)
 
-The embedded LIMO run reduced final horizontal displacement by 40.4% relative
-to nominal (0.552 m to 0.329 m). Absolute X error fell by 43.6% (0.55 m to
-0.31 m); absolute Y error rose from 0.05 m to 0.11 m. The comparison assumes
-the two manual wind disturbances were comparable. It is descriptive only:
-the old nominal arm used a 50 Hz model at a 25 Hz task rate with Qz=10000 and
-R=100, while LIMO used its 20 Hz model with rho=5 and adaptive Q/R.
+The fan-off activation interval is the first approximately 3 s. Its vertical
+metric contains the repeatable controller activation transient: altitude
+fell from about 0.54 m to 0.388 m during the first 0.9 s, then recovered.
+The t>=3 s column is the fan-on interval. The maximum reference-relative
+horizontal error was 0.205 m at t=10.8 s, at
+(x,y)=(-0.181,-0.097) m.
 
-This first run did not retain the CFClient position time series. Therefore the
-file reports console-observable initial and landing-start positions only; it
-does not claim trajectory RMSE, peak displacement, or recovery time.
+The run completed all 240 MPC steps and the controlled landing:
 
-After this pilot, all modes were matched to LIMO's canonical 20 Hz plant,
-rho=5, and w=0/qz=1 base cache (Qz=100, R=4). New matched flights must be
-recorded before making a controller-performance claim.
+  TRAJ DONE: idx=240, max=240; requesting landing
+  LANDING: start z=0.51, hold=(-0.09,-0.09)
+  LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
 
-Nominal raw console excerpts
-----------------------------
+Matched nominal run
+-------------------
 
-  MPCTASK: Benchmark mode 0, maneuver 0, max_iter 6, task_pri 0
-  MPCTASK: x0: pos=(0.01,-0.04,0.56) vel=(0.07,0.02,-0.01)
-  MPCTASK: ref: (0.0,0.0,0.50)
-  MPCTASK: MPC solve done, iter=6
-  MPCTASK: MPC time=33424 us
-  MPCTASK: MPC stack free=1209 words
-  MPCTASK: setpoint: x=0.01 z=0.55 preview_z=0.55
-  MPCTASK: MPC time=32989 us
-  MPCTASK: TRAJ DONE: idx=300, max=300; requesting landing
-  MPCTASK: LANDING: start z=0.56, hold=(-0.55,-0.05)
-  MPCTASK: LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
+Mode: 0
+Recorded XYZ samples: 120
+Initial state: position=(0.00,-0.08,0.54) m,
+               velocity=(0.02,0.01,-0.03) m/s
+Observed MPC solve time: 26.155 ms
+MPC stack free: 1211 words
+Landing completed: yes
 
-Embedded LIMO raw console excerpts
-----------------------------------
+Metric                              Full 12 s       Fan on (t >= 3 s)
+X mean, m                           -0.045950       -0.066055
+Y mean, m                           -0.076267       -0.066714
+Z mean, m                            0.518317        0.540407
+X RMSE from reference, m             0.084532        0.096254
+Y RMSE from reference, m             0.082715        0.073435
+Planar RMSE sqrt(mean(x^2+y^2)), m   0.118269        0.121069
+Z RMSE from 0.50 m, m                0.051686        0.045801
+Maximum planar error, m              0.225743        0.225743
+Time of maximum planar error, s      8.20            8.20
+Minimum Z, m (time, s)               0.388 (1.00)    0.492 (3.00)
+Maximum Z, m (time, s)               0.576 (7.00)    0.576 (7.00)
 
-  MPCTASK: Benchmark mode 3, maneuver 0, max_iter 6, task_pri 0
-  MPCTASK: LIMO integration: mpc_hz=20 model_hz=20 bridge=x4 z_guard=ref..ref+0.20 evals=1
-  MPCTASK: x0: pos=(0.02,-0.0,0.56) vel=(0.07,0.01,-0.0)
-  MPCTASK: ref: (0.0,0.0,0.50)
-  MPCTASK: SAFE TV mode=3: h=-0.137 raw=0.104 grad=0.557 margin=0.069 thr=0.300 active0=1 active_count=3 eval=14466 us
-  MPCTASK: Cache level changed: 0 -> 1
-  MPCTASK: MPC solve done, iter=6
-  MPCTASK: MPC time=34764 us
-  MPCTASK: MPC stack free=954 words
-  MPCTASK: setpoint: x=0.04 z=0.52 preview_z=0.52
-  MPCTASK: TRAJ DONE: idx=240, max=240; requesting landing
-  MPCTASK: LANDING: start z=0.53, hold=(-0.31,-0.11)
-  MPCTASK: LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
+The nominal run completed all 240 MPC steps and the controlled landing:
+
+  TRAJ DONE: idx=240, max=240; requesting landing
+  LANDING: start z=0.50, hold=(-0.0,-0.03)
+  LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
+
+Matched single-run comparison
+-----------------------------
+
+Metric                              Nominal          Embedded LIMO   LIMO change
+Full planar RMSE, m                 0.118269         0.113517        -4.0%
+Fan-on planar RMSE, m               0.121069         0.129593        +7.0%
+Full Z RMSE, m                      0.051686         0.040371        -21.9%
+Fan-on Z RMSE, m                    0.045801         0.026245        -42.7%
+Maximum planar error, m             0.225743         0.205353        -9.0%
+Maximum Z, m                        0.576            0.542           -0.034 m
+Minimum Z, m                        0.388            0.388            0.000 m
+
+Negative percentage changes mean lower error for LIMO. LIMO had slightly
+lower horizontal error over the complete flight and a lower horizontal peak,
+but nominal had 7.0% lower fan-on absolute planar RMSE. The clearest advantage
+in this pair is vertical regulation: LIMO reduced fan-on Z RMSE by 42.7% and
+removed 3.4 cm of the nominal altitude overshoot.
+
+Wind-response normalization
+---------------------------
+
+The primary wind-response metric subtracts each run's mean state over the
+last 0.5 s before fan onset (2.5 <= t < 3.0 s), then evaluates the resulting
+delta state over the fan-on interval (t >= 3.0 s). Averaging five samples is
+less noise-sensitive than subtracting a single sample at t=3.0 s.
+
+Pre-fan mean state, m:
+
+  Nominal:       (x,y,z)=(0.0256,-0.1120,0.4854)
+  Embedded LIMO: (x,y,z)=(-0.0252,0.0054,0.4798)
+
+Metric                              Nominal          Embedded LIMO   LIMO change
+Delta-X RMSE, m                     0.115335         0.093010        -19.4%
+Delta-Y RMSE, m                     0.054706         0.063763        +16.6%
+Delta-planar RMSE, m                0.127652         0.112768        -11.7%
+Maximum delta-planar error, m       0.221600         0.188317        -15.0%
+Delta-Z RMSE, m                     0.059083         0.045541        -22.9%
+Mean delta-Z, m                     0.055007         0.044387        -19.3%
+
+By these pre-fan-baseline-relative metrics, embedded LIMO handled the wind
+better overall: it reduced planar disturbance RMSE by 11.7%, peak planar
+displacement by 15.0%, and vertical disturbance RMSE by 22.9%. Its Delta-Y
+RMSE was 16.6% worse, indicating more cross-axis motion.
+
+Absolute reference tracking remains a secondary but important metric. Nominal
+had lower fan-on reference-relative planar RMSE (0.1211 m versus 0.1296 m)
+and ended closer to the reference (0.0377 m versus 0.1372 m). Thus the result
+supports improved disturbance attenuation and vertical regulation for LIMO,
+not uniformly better reference tracking.
+
+Fan-on start to landing-start displacement
+------------------------------------------
+
+The old console format stopped XYZ sampling when the 12 s hover ended, before
+the controlled descent. Therefore these are displacements to the last hover
+sample / landing start, not exact touchdown displacements:
+
+Metric                              Nominal          Embedded LIMO
+t=3.0 s position (x,y), m           (0.021,-0.108)   (-0.013,0.001)
+Landing-start position (x,y), m     (-0.007,-0.037)  (-0.097,-0.097)
+Planar displacement, m              0.0763           0.1291
+
+Using the less noise-sensitive 2.5--3.0 s pre-fan mean instead of the single
+t=3.0 s sample gives 0.0818 m for nominal and 0.1251 m for embedded LIMO.
+Nominal therefore ended the hover closer to where it was at fan onset in this
+single pair, even though LIMO had lower fan-on delta-planar RMS and peak
+displacement over the complete disturbed interval.
+
+Future firmware records actual x/y at LANDING COMPLETE, so this endpoint
+metric can be computed to touchdown rather than only to landing start.
+
+The adaptive authority w and qz selections were not captured in this console
+log, so the mechanism is not proven by this run. The fan remained on through
+landing, so there is no fan-off recovery interval. One fan-level-1 trial per
+controller is insufficient for a statistical safety or superiority claim.

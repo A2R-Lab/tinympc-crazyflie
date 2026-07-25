@@ -1,0 +1,175 @@
+SYS: Crazyflie 2.1 Brushless is up and running!
+SYS: Build 2:de14ff9f08ae (2025.09.1 +2) MODIFIED
+SYS: I am 0x373930393434471500370039 and I have 1024KB of flash!
+CFGBLK: v1, verification [OK]
+DECK_DISCOVERY: Backend found: onewire
+DECK_DISCOVERY: Backend found: deckctrl
+DECK_CORE: 1 deck(s) found
+DECK_CORE: Calling INIT on driver bcFlow2 for deck 0
+ZR2: Z-down sensor [OK]
+PMW: Motion chip id: 0x49:0xB6
+IMU: BMI088: Using I2C interface.
+IMU: BMI088 Gyro connection [OK].
+IMU: BMI088 Accel connection [OK]
+IMU: BMP390 I2C connection [OK]
+ESTIMATOR: Using Kalman (2) estimator
+CONTROLLER: Using PID (1) controller
+MTR-DRV: Using brushless motor driver
+SYS: About to run tests in system.c.
+SYS: NRF51 version: 2026.04 (C21B)
+EEPROM: I2C connection [OK].
+STORAGE: Storage check [OK].
+IMU: BMI088 gyro self-test [OK]
+DECK_CORE: Deck 0 test [OK].
+SYS: Self test passed!
+STAB: Wait for sensor calibration...
+SYS: Free heap: 15048 bytes
+MPCTASK: Waiting for activation ...
+STAB: Starting stabilizer loop
+ESTKALMAN: State out of bounds, resetting
+STAB: WARNING: stabilizer loop rate is off (1004)
+SUP: Ready to fly
+MPCTASK: Benchmark mode 0, maneuver 0, max_iter 5, task_pri 0
+MPCTASK: Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4 guards=z[ref,ref+0.20],xy+-0.10 cap=0.05
+MPCTASK: Fixed baseline: w=0 qz=1 adaptive_cache=off
+MPCTASK: XYZ console: every=2 MPC steps; fields=mode,step,x,y,z
+CONTROLLER: Using OutOfTree (6) controller
+MPCTASK: OOT activated at z=0.54
+MPCTASK: OOT loop 1 done
+MPCTASK: MPC task loop 1
+MPCTASK: OOT loop 2 done
+MPCTASK: Benchmark reset: mode=0 MPCTASK: OOT loop 3 done
+maneuver=0
+MPCTASK: x0: pos=(0.0,-0.08,0.54) vel=(0.02,0.01,-0.03)
+MPCTASK: ref: (0.0,0.0,0.50)
+MPCTASK: MPC solve start
+MPCTASK: MPC solve done, iter=5
+MPCTASK: MPC time=26155 us
+MPCTASK: MPC stack free=1211 words
+MPCTASK: setpoint: x=0.0 z=0.52 preview_z=0.52
+MPCTASK: MPC task loop 2
+MPCTASK: MPC task loop 3
+MPCTASK: XYZ mode=0 step=2 x=0.006 y=-0.089 z=0.548
+MPCTASK: XYZ mode=0 step=4 x=0.007 y=-0.099 z=0.534
+MPCTASK: XYZ mode=0 step=6 x=0.008 y=-0.109 z=0.506
+MPCTASK: XYZ mode=0 step=8 x=0.004 y=-0.121 z=0.474
+MPCTASK: XYZ mode=0 step=10 x=0.009 y=-0.128 z=0.445
+MPCTASK: XYZ mode=0 step=12 x=-0.019 y=-0.127 z=0.419
+MPCTASK: XYZ mode=0 step=14 x=-0.014 y=-0.121 z=0.405
+MPCTASK: XYZ mode=0 step=16 x=-0.008 y=-0.113 z=0.395
+MPCTASK: XYZ mode=0 step=18 x=0.006 y=-0.105 z=0.389
+MPCTASK: XYZ mode=0 step=20 x=0.013 y=-0.099 z=0.388
+MPCTASK: XYZ mode=0 step=22 x=0.022 y=-0.095 z=0.390
+MPCTASK: XYZ mode=0 step=24 x=0.031 y=-0.095 z=0.396
+MPCTASK: XYZ mode=0 step=26 x=0.036 y=-0.097 z=0.403
+MPCTASK: XYZ mode=0 step=28 x=0.036 y=-0.101 z=0.409
+MPCTASK: XYZ mode=0 step=30 x=0.038 y=-0.105 z=0.418
+MPCTASK: XYZ mode=0 step=32 x=0.035 y=-0.108 z=0.425
+MPCTASK: XYZ mode=0 step=34 x=0.029 y=-0.109 z=0.432
+MPCTASK: XYZ mode=0 step=36 x=0.022 y=-0.109 z=0.441
+MPCTASK: XYZ mode=0 step=38 x=0.017 y=-0.106 z=0.448
+MPCTASK: XYZ mode=0 step=40 x=0.016 y=-0.102 z=0.455
+MPCTASK: XYZ mode=0 step=42 x=0.017 y=-0.100 z=0.462
+MPCTASK: XYZ mode=0 step=44 x=0.016 y=-0.094 z=0.465
+MPCTASK: XYZ mode=0 step=46 x=0.020 y=-0.092 z=0.471
+MPCTASK: XYZ mode=0 step=48 x=0.022 y=-0.097 z=0.476
+MPCTASK: XYZ mode=0 step=50 x=0.026 y=-0.103 z=0.481
+MPCTASK: XYZ mode=0 step=52 x=0.026 y=-0.112 z=0.482
+MPCTASK: XYZ mode=0 step=54 x=0.027 y=-0.116 z=0.485
+MPCTASK: XYZ mode=0 step=56 x=0.027 y=-0.116 z=0.489
+MPCTASK: XYZ mode=0 step=58 x=0.022 y=-0.113 z=0.490
+MPCTASK: XYZ mode=0 step=60 x=0.021 y=-0.108 z=0.492
+MPCTASK: XYZ mode=0 step=62 x=0.020 y=-0.091 z=0.496
+MPCTASK: XYZ mode=0 step=64 x=0.022 y=-0.085 z=0.499
+MPCTASK: XYZ mode=0 step=66 x=0.022 y=-0.077 z=0.501
+MPCTASK: XYZ mode=0 step=68 x=0.023 y=-0.080 z=0.500
+MPCTASK: XYZ mode=0 step=70 x=0.023 y=-0.084 z=0.504
+MPCTASK: XYZ mode=0 step=72 x=0.021 y=-0.089 z=0.511
+MPCTASK: XYZ mode=0 step=74 x=0.019 y=-0.093 z=0.513
+MPCTASK: XYZ mode=0 step=76 x=0.011 y=-0.091 z=0.516
+MPCTASK: XYZ mode=0 step=78 x=0.004 y=-0.086 z=0.519
+MPCTASK: XYZ mode=0 step=80 x=-0.0 y=-0.078 z=0.522
+MPCTASK: XYZ mode=0 step=82 x=0.002 y=-0.066 z=0.525
+MPCTASK: XYZ mode=0 step=84 x=0.006 y=-0.057 z=0.529
+MPCTASK: XYZ mode=0 step=86 x=0.011 y=-0.049 z=0.530
+MPCTASK: XYZ mode=0 step=88 x=0.014 y=-0.044 z=0.534
+MPCTASK: XYZ mode=0 step=90 x=0.017 y=-0.036 z=0.531
+MPCTASK: XYZ mode=0 step=92 x=0.021 y=-0.037 z=0.532
+MPCTASK: XYZ mode=0 step=94 x=0.027 y=-0.044 z=0.533
+MPCTASK: XYZ mode=0 step=96 x=0.028 y=-0.048 z=0.534
+MPCTASK: XYZ mode=0 step=98 x=0.024 y=-0.049 z=0.535
+MPCTASK: XYZ mode=0 step=100 x=0.015 y=-0.049 z=0.534
+MPCTASK: XYZ mode=0 step=102 x=0.008 y=-0.041 z=0.539
+MPCTASK: XYZ mode=0 step=104 x=0.001 y=-0.033 z=0.545
+MPCTASK: XYZ mode=0 step=106 x=-0.006 y=-0.024 z=0.549
+MPCTASK: XYZ mode=0 step=108 x=-0.011 y=-0.016 z=0.551
+MPCTASK: XYZ mode=0 step=110 x=-0.014 y=-0.012 z=0.549
+MPCTASK: XYZ mode=0 step=112 x=-0.020 y=-0.016 z=0.552
+MPCTASK: XYZ mode=0 step=114 x=-0.030 y=-0.020 z=0.555
+MPCTASK: XYZ mode=0 step=116 x=-0.033 y=-0.028 z=0.558
+MPCTASK: XYZ mode=0 step=118 x=-0.033 y=-0.033 z=0.560
+MPCTASK: XYZ mode=0 step=120 x=-0.032 y=-0.038 z=0.561
+MPCTASK: XYZ mode=0 step=122 x=-0.037 y=-0.044 z=0.566
+MPCTASK: XYZ mode=0 step=124 x=-0.041 y=-0.054 z=0.568
+MPCTASK: XYZ mode=0 step=126 x=-0.047 y=-0.060 z=0.568
+MPCTASK: XYZ mode=0 step=128 x=-0.056 y=-0.070 z=0.568
+MPCTASK: XYZ mode=0 step=130 x=-0.064 y=-0.079 z=0.568
+MPCTASK: XYZ mode=0 step=132 x=-0.079 y=-0.087 z=0.566
+MPCTASK: XYZ mode=0 step=134 x=-0.094 y=-0.097 z=0.567
+MPCTASK: XYZ mode=0 step=136 x=-0.108 y=-0.103 z=0.569
+MPCTASK: XYZ mode=0 step=138 x=-0.120 y=-0.111 z=0.572
+MPCTASK: XYZ mode=0 step=140 x=-0.130 y=-0.116 z=0.576
+MPCTASK: XYZ mode=0 step=142 x=-0.138 y=-0.126 z=0.576
+MPCTASK: XYZ mode=0 step=144 x=-0.142 y=-0.132 z=0.574
+MPCTASK: XYZ mode=0 step=146 x=-0.141 y=-0.129 z=0.573
+MPCTASK: XYZ mode=0 step=148 x=-0.138 y=-0.123 z=0.572
+MPCTASK: XYZ mode=0 step=150 x=-0.125 y=-0.118 z=0.571
+MPCTASK: XYZ mode=0 step=152 x=-0.124 y=-0.111 z=0.568
+MPCTASK: XYZ mode=0 step=154 x=-0.132 y=-0.105 z=0.566
+MPCTASK: XYZ mode=0 step=156 x=-0.147 y=-0.104 z=0.562
+MPCTASK: XYZ mode=0 step=158 x=-0.171 y=-0.101 z=0.559
+MPCTASK: XYZ mode=0 step=160 x=-0.183 y=-0.103 z=0.556
+MPCTASK: XYZ mode=0 step=162 x=-0.194 y=-0.108 z=0.557
+MPCTASK: XYZ mode=0 step=164 x=-0.196 y=-0.112 z=0.558
+MPCTASK: XYZ mode=0 step=166 x=-0.187 y=-0.116 z=0.556
+MPCTASK: XYZ mode=0 step=168 x=-0.178 y=-0.118 z=0.554
+MPCTASK: XYZ mode=0 step=170 x=-0.168 y=-0.110 z=0.550
+MPCTASK: XYZ mode=0 step=172 x=-0.164 y=-0.104 z=0.548
+MPCTASK: XYZ mode=0 step=174 x=-0.165 y=-0.093 z=0.546
+MPCTASK: XYZ mode=0 step=176 x=-0.168 y=-0.079 z=0.547
+MPCTASK: XYZ mode=0 step=178 x=-0.176 y=-0.063 z=0.545
+MPCTASK: XYZ mode=0 step=180 x=-0.176 y=-0.055 z=0.544
+MPCTASK: XYZ mode=0 step=182 x=-0.170 y=-0.043 z=0.544
+MPCTASK: XYZ mode=0 step=184 x=-0.166 y=-0.034 z=0.542
+MPCTASK: XYZ mode=0 step=186 x=-0.154 y=-0.035 z=0.541
+MPCTASK: XYZ mode=0 step=188 x=-0.142 y=-0.033 z=0.543
+MPCTASK: XYZ mode=0 step=190 x=-0.128 y=-0.041 z=0.548
+MPCTASK: XYZ mode=0 step=192 x=-0.117 y=-0.047 z=0.552
+MPCTASK: XYZ mode=0 step=194 x=-0.111 y=-0.049 z=0.546
+MPCTASK: XYZ mode=0 step=196 x=-0.105 y=-0.055 z=0.543
+MPCTASK: XYZ mode=0 step=198 x=-0.103 y=-0.055 z=0.541
+MPCTASK: XYZ mode=0 step=200 x=-0.102 y=-0.054 z=0.539
+MPCTASK: XYZ mode=0 step=202 x=-0.101 y=-0.057 z=0.539
+MPCTASK: XYZ mode=0 step=204 x=-0.097 y=-0.063 z=0.536
+MPCTASK: XYZ mode=0 step=206 x=-0.094 y=-0.064 z=0.533
+MPCTASK: XYZ mode=0 step=208 x=-0.090 y=-0.061 z=0.534
+MPCTASK: XYZ mode=0 step=210 x=-0.081 y=-0.062 z=0.534
+MPCTASK: XYZ mode=0 step=212 x=-0.067 y=-0.058 z=0.534
+MPCTASK: XYZ mode=0 step=214 x=-0.052 y=-0.053 z=0.533
+MPCTASK: XYZ mode=0 step=216 x=-0.044 y=-0.053 z=0.531
+MPCTASK: XYZ mode=0 step=218 x=-0.037 y=-0.050 z=0.529
+MPCTASK: XYZ mode=0 step=220 x=-0.034 y=-0.045 z=0.527
+MPCTASK: XYZ mode=0 step=222 x=-0.029 y=-0.044 z=0.526
+MPCTASK: XYZ mode=0 step=224 x=-0.026 y=-0.043 z=0.522
+MPCTASK: XYZ mode=0 step=226 x=-0.027 y=-0.040 z=0.517
+MPCTASK: XYZ mode=0 step=228 x=-0.023 y=-0.042 z=0.513
+MPCTASK: XYZ mode=0 step=230 x=-0.024 y=-0.043 z=0.512
+MPCTASK: XYZ mode=0 step=232 x=-0.026 y=-0.044 z=0.511
+MPCTASK: XYZ mode=0 step=234 x=-0.018 y=-0.046 z=0.510
+MPCTASK: XYZ mode=0 step=236 x=-0.015 y=-0.045 z=0.506
+MPCTASK: XYZ mode=0 step=238 x=-0.013 y=-0.042 z=0.506
+MPCTASK: XYZ mode=0 step=240 x=-0.007 y=-0.037 z=0.506
+MPCTASK: TRAJ DONE: idx=240, max=240; requesting landing
+MPCTASK: LANDING: start z=0.50, hold=(-0.0,-0.03)
+MPCTASK: LANDING COMPLETE: z=-0.0, vz=-0.09; motors off
+SUP: Disarming

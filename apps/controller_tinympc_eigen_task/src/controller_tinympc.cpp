@@ -42,7 +42,7 @@
 
 
 #ifndef TINYMPC_FIRMWARE_MODE
-#define TINYMPC_FIRMWARE_MODE 3
+#define TINYMPC_FIRMWARE_MODE 2
 #endif
 #if TINYMPC_FIRMWARE_MODE < TINYMPC_MODE_NOMINAL || \
     TINYMPC_FIRMWARE_MODE > TINYMPC_MODE_LIMO_EMBEDDED
@@ -79,9 +79,9 @@
 #define TINYMPC_LANDING_TOUCHDOWN_Z_M     0.08f
 #define TINYMPC_LANDING_TOUCHDOWN_VZ_MPS  0.10f
 
-// Compact XYZ console samples: 0=off, 1=20 Hz, 2=10 Hz, 4=5 Hz.
-// Ten hertz is sufficient for hover RMSE without recreating the CRTP
-// starvation caused by printing a full diagnostic block every MPC update.
+// One compact, integer-only experiment record shared by all controller modes:
+// 0=off, 1=20 Hz, 2=10 Hz, 4=5 Hz. Integer scaling keeps 10 Hz logging cheap
+// enough for the CRTP link and avoids float-formatting work in the MPC task.
 #define TINYMPC_XYZ_CONSOLE_DECIMATION 2
 #if TINYMPC_XYZ_CONSOLE_DECIMATION < 0
 #error "TINYMPC_XYZ_CONSOLE_DECIMATION must be zero or positive"
@@ -236,6 +236,10 @@ static float traj_radius = 0.75f;
 static float traj_omega = 0.45f;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
+// controllerOutOfTree() receives a stabilizer-step counter, while the MPC task
+// runs on the FreeRTOS tick clock. Keep both activation timestamps; subtracting
+// one clock from the other adds the sensor-calibration startup offset.
+static uint32_t controller_activate_rtos_tick = 0;
 static uint8_t flight_phase = FLIGHT_PHASE_TRACKING;
 static uint32_t landing_start_tick = 0;
 static float landing_hold_x = 0.0f;
@@ -319,9 +323,19 @@ static float tracking_pos_z = 0.0f;
 static float tracking_vel_x = 0.0f;
 static float tracking_vel_y = 0.0f;
 static float tracking_vel_z = 0.0f;
+static float tracking_roll_deg = 0.0f;
+static float tracking_pitch_deg = 0.0f;
+static float tracking_yaw_deg = 0.0f;
+static float tracking_cmd_x = 0.0f;
+static float tracking_cmd_y = 0.0f;
 static float tracking_cmd_z = 0.0f;
 static float tracking_preview_z = 0.0f;
 static uint32_t controller_total_us = 0;
+
+static inline long console_scaled(float value, float scale)
+{
+  return static_cast<long>(value * scale);
+}
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -671,14 +685,18 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
 
-  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4 guards=z[ref,ref+0.20],xy+-0.10 cap=0.05\n");
+  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4 guards=z[ref,ref+0.20] xy=free cap=0.05\n");
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
   DEBUG_PRINT("LIMO adaptive: cache=16x4 evals=1\n");
 #else
   DEBUG_PRINT("Fixed baseline: w=0 qz=1 adaptive_cache=off\n");
 #endif
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF
+  DEBUG_PRINT("MPC-CBF LTV rows: activation-gated, active_horizon=%u\n",
+              (unsigned int)limo_active_horizon);
+#endif
 #if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
-  DEBUG_PRINT("XYZ console: every=%u MPC steps; fields=mode,step,x,y,z\n",
+  DEBUG_PRINT("EXP every=%u: m,s,tms,p3[mm],v3[mmps],att3[cdeg],ref3[mm],cmd3[mm],h/raw/grad/mar/thr[milli],act/ac/bind,wi/qi/cache/noa,pa/pf/du[milli],it,mpc/eval/total[us]\n",
               (unsigned int)TINYMPC_XYZ_CONSOLE_DECIMATION);
 #endif
   /* Begin task initialization */
@@ -837,11 +855,15 @@ static void tinympcControllerTask(void *parameters)
       tracking_vel_x = state_task.velocity.x;
       tracking_vel_y = state_task.velocity.y;
       tracking_vel_z = state_task.velocity.z;
+      tracking_roll_deg = state_task.attitude.roll;
+      tracking_pitch_deg = state_task.attitude.pitch;
+      tracking_yaw_deg = state_task.attitude.yaw;
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("ref: (%.2f,%.2f,%.2f)\n",
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
+      const uint32_t controller_cycle_start_us = usecTimestamp();
 
       limo_cache_ok = 0;
       limo_authority_w = 0.0f;
@@ -926,7 +948,8 @@ static void tinympcControllerTask(void *parameters)
 
       // Dynamic obstacle avoidance via LTV linear constraints
       const bool constraint_hold =
-          (!mpc_has_run) || ((xTaskGetTickCount() - controller_activate_tick) < M2T(500));
+          (!mpc_has_run) ||
+          ((xTaskGetTickCount() - controller_activate_rtos_tick) < M2T(500));
       static uint32_t cstr_log_cnt = 0;
       int cstr_active_count = 0;
       const float dt_horizon = 1.0f / MPC_RATE;  // Time step per horizon
@@ -954,7 +977,13 @@ static void tinympcControllerTask(void *parameters)
 
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_MPC_CBF || \
     TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-        if (!constraint_hold && i < limo_active_horizon) {
+        // Both in-solver safety arms are event-triggered: rows are installed
+        // only near the safety boundary and only over the short active
+        // horizon. MPC-CBF uses the analytic barrier below; embedded LIMO
+        // supplies the learned barrier and its frozen first-order gradient.
+        const bool install_safety_row =
+            !constraint_hold && i < limo_active_horizon;
+        if (install_safety_row) {
           const tiny_VectorNx xbar = problem.x.col(i);
           tiny_VectorNx grad = tiny_VectorNx::Zero();
           tinytype barrier_h = 0.0f;
@@ -1003,11 +1032,10 @@ static void tinympcControllerTask(void *parameters)
 
           if (active) {
             params.A_constraints[i] = -grad.transpose();
-            // Ask for at most a per-step-reachable h recovery. The full
-            // deficit (margin - h, ~0.27 at benign hover) cannot be closed
-            // within one 50 ms step, and demanding it winds up the ADMM
-            // duals until the truncated solve outputs a descent transient.
             tinytype demand = margin_eff - constraint_h;
+            // Ask for at most a per-step-reachable h recovery. Demanding the
+            // full barrier deficit winds up the ADMM duals before the
+            // truncated solve can converge.
             if (demand > limo_demand_cap) {
               demand = limo_demand_cap;
             }
@@ -1103,6 +1131,7 @@ static void tinympcControllerTask(void *parameters)
       }
       mpc_start_timestamp = usecTimestamp();
       solve_admm(&problem, &params);
+      mpc_time_us = usecTimestamp() - mpc_start_timestamp;
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
       {
         LimoBarrierEval posthoc_eval;
@@ -1169,20 +1198,9 @@ static void tinympcControllerTask(void *parameters)
       }
 #endif
       ++benchmark_step;
-#if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
-      if ((benchmark_step % TINYMPC_XYZ_CONSOLE_DECIMATION) == 0) {
-        DEBUG_PRINT("XYZ mode=%u step=%lu x=%.3f y=%.3f z=%.3f\n",
-                    (unsigned int)benchmark_mode,
-                    (unsigned long)benchmark_step,
-                    (double)tracking_pos_x, (double)tracking_pos_y,
-                    (double)tracking_pos_z);
-      }
-#endif
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC solve done, iter=%d\n", problem.iter);
       }
-      mpc_time_us = usecTimestamp() - mpc_start_timestamp;
-      controller_total_us = mpc_time_us + limo_eval_us;
       if (task_loop_count <= 3) {
         DEBUG_PRINT("MPC time=%lu us\n", mpc_time_us);
       }
@@ -1251,15 +1269,62 @@ static void tinympcControllerTask(void *parameters)
       mpc_setpoint_task(2) =
           clamp_tiny(preview_z, reference_z, reference_z + tinytype(0.20f));
       tracking_cmd_z = mpc_setpoint_task(2);
-      // Under slow drift the preview follows current velocity, which bypasses
-      // the PID's position stiffness; anchor the lateral target to the
-      // reference so wind cannot walk the vehicle off the path.
-      mpc_setpoint_task(0) = clamp_tiny(mpc_setpoint_task(0),
-                                        params.Xref(0, 0) - tinytype(0.10f),
-                                        params.Xref(0, 0) + tinytype(0.10f));
-      mpc_setpoint_task(1) = clamp_tiny(mpc_setpoint_task(1),
-                                        params.Xref(1, 0) - tinytype(0.10f),
-                                        params.Xref(1, 0) + tinytype(0.10f));
+      // x/y are intentionally unclamped: each arm's own lateral authority is
+      // part of what the wind benchmark measures, and a reference-anchored
+      // box would assist off-center runs asymmetrically.
+      tracking_cmd_x = mpc_setpoint_task(0);
+      tracking_cmd_y = mpc_setpoint_task(1);
+      controller_total_us = usecTimestamp() - controller_cycle_start_us;
+
+#if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
+      if ((benchmark_step % TINYMPC_XYZ_CONSOLE_DECIMATION) == 0) {
+        const uint32_t experiment_elapsed_ms =
+            T2M(xTaskGetTickCount() - controller_activate_rtos_tick);
+        DEBUG_PRINT(
+            "EXP,%u,%lu,%lu,"
+            "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,"
+            "%ld,%ld,%ld,%ld,%ld,%ld,"
+            "%ld,%ld,%ld,%ld,%ld,"
+            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%ld,%d,%lu,%lu,%lu\n",
+            (unsigned int)benchmark_mode,
+            (unsigned long)benchmark_step,
+            (unsigned long)experiment_elapsed_ms,
+            console_scaled(tracking_pos_x, 1000.0f),
+            console_scaled(tracking_pos_y, 1000.0f),
+            console_scaled(tracking_pos_z, 1000.0f),
+            console_scaled(tracking_vel_x, 1000.0f),
+            console_scaled(tracking_vel_y, 1000.0f),
+            console_scaled(tracking_vel_z, 1000.0f),
+            console_scaled(tracking_roll_deg, 100.0f),
+            console_scaled(tracking_pitch_deg, 100.0f),
+            console_scaled(tracking_yaw_deg, 100.0f),
+            console_scaled(params.Xref(0, 0), 1000.0f),
+            console_scaled(params.Xref(1, 0), 1000.0f),
+            console_scaled(params.Xref(2, 0), 1000.0f),
+            console_scaled(tracking_cmd_x, 1000.0f),
+            console_scaled(tracking_cmd_y, 1000.0f),
+            console_scaled(tracking_cmd_z, 1000.0f),
+            console_scaled(limo_h, 1000.0f),
+            console_scaled(limo_raw, 1000.0f),
+            console_scaled(limo_grad_norm, 1000.0f),
+            console_scaled(limo_margin_eff, 1000.0f),
+            console_scaled(limo_threshold, 1000.0f),
+            (unsigned int)limo_active,
+            (unsigned int)limo_active_count,
+            (unsigned int)problem.intersect,
+            (unsigned int)limo_w_index,
+            (unsigned int)limo_qz_index,
+            (unsigned int)limo_cache_ok,
+            (unsigned int)limo_no_oracle_active,
+            (unsigned int)posthoc_active,
+            (unsigned int)posthoc_failed,
+            console_scaled(posthoc_du_norm, 1000.0f),
+            problem.iter,
+            (unsigned long)mpc_time_us,
+            (unsigned long)limo_eval_us,
+            (unsigned long)controller_total_us);
+      }
+#endif
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("setpoint: x=%.2f z=%.2f preview_z=%.2f\n",
@@ -1307,6 +1372,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       (last_controller_tick == 0) || ((tick - last_controller_tick) > M2T(200));
   if (controller_reactivated) {
     controller_activate_tick = tick;
+    controller_activate_rtos_tick = xTaskGetTickCount();
     mpc_has_run = false;
     // Initialize to current state to avoid a bad setpoint on first switch
     mpc_setpoint = tiny_VectorNx::Zero();
@@ -1360,7 +1426,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       if (landing_reference_complete && near_floor && vertically_settled) {
         flight_phase = FLIGHT_PHASE_COMPLETE;
         stop_motors(control);
-        DEBUG_PRINT("LANDING COMPLETE: z=%.2f, vz=%.2f; motors off\n",
+        DEBUG_PRINT("LANDING COMPLETE: t=%lu ms, x=%.3f, y=%.3f, z=%.3f, vz=%.3f; motors off\n",
+                    (unsigned long)T2M(tick - controller_activate_tick),
+                    (double)state->position.x,
+                    (double)state->position.y,
                     (double)state->position.z,
                     (double)state->velocity.z);
       }
