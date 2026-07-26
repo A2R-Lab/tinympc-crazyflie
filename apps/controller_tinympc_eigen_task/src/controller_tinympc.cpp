@@ -149,6 +149,12 @@ extern "C"
 #define MPC_RATE 20
 #define LOWLEVEL_RATE RATE_500_HZ
 
+// Every benchmark arm uses the same 500 ms MPC preview as the position-PID
+// bridge. A single compile-time index keeps controller comparisons matched.
+constexpr int kPidBridgeIndex = 10;
+static_assert(kPidBridgeIndex < NHORIZON,
+              "kPidBridgeIndex must be inside the MPC horizon");
+
 // Semaphore to signal that we got data from the stabilizer loop to process
 static SemaphoreHandle_t runTaskSemaphore;
 
@@ -230,10 +236,21 @@ static int traj_index = 0;
 static int max_traj_index = 0;
 static float traj_speed = 0.2f; // m/s
 static float traj_dist = 1.0f;  // m
-static float traj_height = 0.5f;
+static float traj_height = 1.0f;
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+// At the default radius this keeps approximately the previous 0.45 rad/s
+// speed while allowing the normalized generator to close exactly one cycle.
+static float traj_duration = 14.0f;
+#else
 static float traj_duration = 12.0f;
+#endif
 static float traj_radius = 0.75f;
 static float traj_omega = 0.45f;
+// Moving maneuvers are expressed relative to the position at which controller
+// 6 is activated. Hover intentionally remains at the estimator origin so its
+// wind-response metrics retain the known (0,0) reference.
+static float trajectory_origin_x = 0.0f;
+static float trajectory_origin_y = 0.0f;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 // controllerOutOfTree() receives a stabilizer-step counter, while the MPC task
@@ -419,6 +436,10 @@ static void restore_shared_baseline()
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
 // Firmware port of safe-reachability's solve_posthoc_cbf_qp. The nominal
 // action is the box-projected ADMM iterate z, exactly as in posthoc_learned.
+// The simulator returns the saturation-maximizing action when the requested
+// half-space is infeasible. That direct-actuation recovery is unsafe when
+// translated through this firmware's rerolled-horizon position-PID bridge,
+// so hardware fails closed to the nominal command and reports failed=true.
 static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
                                           tinytype h,
                                           tinytype margin,
@@ -453,16 +474,14 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
   const tiny_VectorNu nominal_clamped = command;
   const tinytype target = input_gradient.dot(nominal_clamped) + deficit;
   tinytype maximum = 0.0f;
-  tiny_VectorNu maximum_command;
   for (int j = 0; j < NINPUTS; ++j) {
-    maximum_command(j) = input_gradient(j) >= 0.0f
+    const tinytype maximum_input = input_gradient(j) >= 0.0f
         ? params.u_max(j, 0) : params.u_min(j, 0);
-    maximum += input_gradient(j) * maximum_command(j);
+    maximum += input_gradient(j) * maximum_input;
   }
   if (maximum < target - 1e-6f) {
-    *du_norm = (maximum_command - command).norm();
     *failed = true;
-    return maximum_command;
+    return nominal_clamped;
   }
   tinytype low = 0.0f;
   tinytype high = 1.0f;
@@ -485,9 +504,8 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
     ++grow;
   }
   if (phi_high < target - 1e-6f) {
-    *du_norm = (maximum_command - command).norm();
     *failed = true;
-    return maximum_command;
+    return nominal_clamped;
   }
 
   for (int iteration = 0; iteration < 80; ++iteration) {
@@ -500,10 +518,13 @@ static tiny_VectorNu project_posthoc_limo(const tiny_VectorNu &nominal,
       low = middle;
     }
   }
-  *du_norm = (command - nominal_clamped).norm();
   const tinytype h_linearized =
       h + input_gradient.dot(command - nominal_clamped);
-  *failed = h_linearized < margin - 1e-4f;
+  if (h_linearized < margin - 1e-4f) {
+    *failed = true;
+    return nominal_clamped;
+  }
+  *du_norm = (command - nominal_clamped).norm();
   return command;
 }
 #endif
@@ -685,7 +706,8 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
 
-  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x4 guards=z[ref,ref+0.20] xy=free cap=0.05\n");
+  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x%u guards=z[ref,ref+0.20] xy=free cap=0.05\n",
+              (unsigned int)kPidBridgeIndex);
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
   DEBUG_PRINT("LIMO adaptive: cache=16x4 evals=1\n");
 #else
@@ -695,9 +717,16 @@ void controllerOutOfTreeInit(void)
   DEBUG_PRINT("MPC-CBF LTV rows: activation-gated, active_horizon=%u\n",
               (unsigned int)limo_active_horizon);
 #endif
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
+  DEBUG_PRINT("LIMO posthoc: infeasible=nominal_fallback\n");
+#endif
 #if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
   DEBUG_PRINT("EXP every=%u: m,s,tms,p3[mm],v3[mmps],att3[cdeg],ref3[mm],cmd3[mm],h/raw/grad/mar/thr[milli],act/ac/bind,wi/qi/cache/noa,pa/pf/du[milli],it,mpc/eval/total[us]\n",
               (unsigned int)TINYMPC_XYZ_CONSOLE_DECIMATION);
+#endif
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+  DEBUG_PRINT("Figure8: front_back=1 closed_cycle=1 duration=%.1f s radius=%.2f m origin=OOT_activation\n",
+              (double)traj_duration, (double)traj_radius);
 #endif
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
@@ -740,14 +769,30 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       vx = traj_radius * traj_omega * cosf(traj_omega * t);
       vy = traj_radius * traj_omega * sinf(traj_omega * t);
 #elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
-      x = traj_radius * sinf(traj_omega * t);
-      y = 0.5f * traj_radius * sinf(2.0f * traj_omega * t);
-      vx = traj_radius * traj_omega * cosf(traj_omega * t);
-      vy = traj_radius * traj_omega * cosf(2.0f * traj_omega * t);
+      // Normalize phase by the requested duration so the reference always
+      // executes one complete, closed Figure-8 before landing. Clamp horizon
+      // samples at the endpoint instead of leaking into a second cycle.
+      const float duration = fmaxf(traj_duration, dt);
+      const float path_t = fminf(t, duration);
+      const float phase_rate = 2.0f * static_cast<float>(M_PI) / duration;
+      const float phase = phase_rate * path_t;
+      // Front/back orientation: X is the long fore/aft axis and Y is the
+      // smaller lateral crossover axis.
+      x = traj_radius * sinf(phase);
+      y = 0.5f * traj_radius * sinf(2.0f * phase);
+      if (t < duration) {
+        vx = traj_radius * phase_rate * cosf(phase);
+        vy = traj_radius * phase_rate * cosf(2.0f * phase);
+      }
 #endif
       params.Xref.col(i).setZero();
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER
       params.Xref(0, i) = x;
       params.Xref(1, i) = y;
+#else
+      params.Xref(0, i) = trajectory_origin_x + x;
+      params.Xref(1, i) = trajectory_origin_y + y;
+#endif
       params.Xref(2, i) = traj_height;
       params.Xref(6, i) = vx;
       params.Xref(7, i) = vy;
@@ -1166,9 +1211,10 @@ static void tinympcControllerTask(void *parameters)
         posthoc_failed = projection_failed ? 1 : 0;
 
         // This task-controller drives the stock Crazyflie PID with the MPC
-        // terminal state. Apply the exact canonical delta-u to the primal
-        // horizon and reroll it so the posthoc action reaches that bridge
-        // without changing the nominal no-intervention path.
+        // preview state. Apply a feasible posthoc delta-u to the primal
+        // horizon and reroll it so the action reaches that bridge. An
+        // infeasible projection returns the nominal command with du=0, so it
+        // cannot inject a saturated recovery into the PID bridge.
         if (posthoc_du_norm > 1e-5f) {
           problem.u.col(0) =
               (problem.u.col(0) + filtered_command - nominal_command)
@@ -1256,10 +1302,8 @@ static void tinympcControllerTask(void *parameters)
         // }
       }
 
-      // Keep the stock 500 Hz PID as the hardware inner loop. A 200 ms MPC
-      // preview gives it a meaningful outer-loop target without exposing the
-      // brushless vehicle to the unstable 20 Hz direct-motor path.
-      constexpr int kPidBridgeIndex = 4;
+      // Keep the stock 500 Hz PID as the hardware inner loop. All controller
+      // arms and axes use the same 500 ms MPC preview.
       const tinytype preview_z = problem.x(2, kPidBridgeIndex);
       const tinytype reference_z = params.Xref(2, 0);
       mpc_setpoint_task = problem.x.col(kPidBridgeIndex);
@@ -1327,8 +1371,9 @@ static void tinympcControllerTask(void *parameters)
 #endif
       
       if (task_loop_count <= 3) {
-        DEBUG_PRINT("setpoint: x=%.2f z=%.2f preview_z=%.2f\n",
-                    (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(2),
+        DEBUG_PRINT("setpoint: x=%.2f y=%.2f z=%.2f preview_z=%.2f\n",
+                    (double)mpc_setpoint_task(0), (double)mpc_setpoint_task(1),
+                    (double)mpc_setpoint_task(2),
                     (double)preview_z);
       }
 
@@ -1374,6 +1419,13 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     controller_activate_tick = tick;
     controller_activate_rtos_tick = xTaskGetTickCount();
     mpc_has_run = false;
+#if TINYMPC_TRAJECTORY != TINYMPC_TRAJECTORY_HOVER
+    trajectory_origin_x = state->position.x;
+    trajectory_origin_y = state->position.y;
+    DEBUG_PRINT("Trajectory origin: x=%.2f y=%.2f\n",
+                (double)trajectory_origin_x,
+                (double)trajectory_origin_y);
+#endif
     // Initialize to current state to avoid a bad setpoint on first switch
     mpc_setpoint = tiny_VectorNx::Zero();
     mpc_setpoint(0) = state->position.x;
