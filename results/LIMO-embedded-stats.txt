@@ -1,0 +1,719 @@
+LIMO embedded hardware statistics and instrumentation ledger
+=============================================================
+
+Generated: 2026-07-26
+Firmware branch: LIMO
+Current controller commit: 09504d9
+Target: Crazyflie 2.1 Brushless, STM32F405 at 168 MHz
+Control rate / deadline: 20 Hz / 50 ms = 8,400,000 CPU cycles
+
+Purpose
+-------
+
+This file separates measurements that already exist from measurements that
+still require cycle-accurate instrumentation. It is intentionally conservative:
+the existing usecTimestamp() fields are not relabeled as DWT cycle counts, and
+sampled console records are not presented as an every-step deadline audit.
+
+Critical calibration note
+-------------------------
+
+Sections 1--4 retain the legacy 0.50 m diagnostic flights for implementation
+and failure-analysis history. Those flights ran below the frozen scheduler's
+canonical 1.00 m operating point and must not be pooled with the final tests.
+
+The new "Current calibrated result" section reports the completed 1.00 m,
+five-pair hover-under-wind campaign with DWT timing. It supersedes the earlier
+statements that no calibrated flights or cycle-instrumented flights existed.
+
+Timing logger added after commit 09504d9:
+
+  tinympc.bar_cyc    raw DWT cycles for the learned barrier MLP + gradient
+  tinympc.rl_cyc     raw DWT cycles for the complete authority-RL stage
+  tinympc.cache_cyc  raw DWT cycles for static-bank installation
+
+The same three values are appended to each EXP console record after total_us.
+The final calibrated campaign contains 600 printed embedded-LIMO EXP records,
+including these fields. The primary OOT+3-s window contains 450 records.
+
+
+Current calibrated result: hover under wind at 1.00 m
+------------------------------------------------------
+
+Source of truth:
+
+  results/hover_wind_L3_paired_runs.txt
+
+Conditions:
+
+  Five matched embedded-LIMO/posthoc pairs
+  Hover reference: (0, 0, 1.00) m
+  Fan: level 3, directly in front, approximately 75 cm from the drone
+  Fan onset: manual, approximately OOT+1--2 s
+  Primary window: first EXP at/after OOT+3.0 s through TRAJ DONE
+  MPC/model rate: 20 Hz / 20 Hz
+  Solver limit: five ADMM iterations
+  PID bridge: x10 (500 ms)
+  Primary samples: 450 per controller
+
+Final pooled controller comparison:
+
+Metric                                  Embedded LIMO        Posthoc
+--------------------------------------  -------------------  -------------------
+Boundary-relative RMSE, m               0.0855               0.1352
+Peak boundary-relative error, m         0.2162               0.3100
+Tilt RMSE, deg                          1.854                1.933
+Peak tilt, deg                          4.741                5.444
+Lateral tracking RMSE, m                0.1153               0.1290
+Z tracking RMSE, m                      0.0278               0.0285
+Maximum absolute Z error, m             0.0480               0.0550
+Median total computation, ms           33.026               33.461
+P99 total computation, ms              41.353               41.145
+Maximum total computation, ms          42.899               44.202
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  65 / 58 (89.23%)
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded LIMO reduced pooled boundary RMSE by 36.7%, peak boundary error
+by 30.3%, lateral tracking RMSE by 10.6%, Z RMSE by 2.3%, and maximum
+absolute Z error by 12.7%. All five paper pairs favored embedded LIMO on
+boundary RMSE.
+
+Primary-window DWT timing across the five embedded-LIMO flights:
+
+Stage                         Median       p99          Maximum
+----------------------------  -----------  -----------  -----------
+Barrier forward + gradient     11.317 ms    14.428 ms    16.663 ms
+Authority-RL stage              0.011 ms     0.621 ms     1.153 ms
+16x4 cache installation         0.418 ms     1.655 ms     1.962 ms
+ADMM solve                     20.527 ms    28.682 ms    29.705 ms
+Complete control algorithm     33.026 ms    41.353 ms    42.899 ms
+
+The worst sampled complete step used 7,207,060 cycles, or 85.80% of the
+8,400,000-cycle deadline. The cumulative every-step overrun counter ended at
+zero in all five flights.
+
+Posthoc primary-window timing:
+
+Stage                         Median       p99          Maximum
+----------------------------  -----------  -----------  -----------
+Barrier forward + gradient     11.846 ms    15.532 ms    17.287 ms
+ADMM solve                     21.231 ms    29.171 ms    30.576 ms
+Complete control algorithm     33.461 ms    41.145 ms    44.202 ms
+
+Posthoc attempted 65 projections over the five whole flights; 58 were
+infeasible. Every attempt occurred during the initial climb, and there were
+zero posthoc projection attempts in all five primary wind windows. Therefore
+the posthoc wind-window tracking result reflects its nominal fallback rather
+than successful online projection.
+
+Whole-flight embedded-LIMO quantization across 600 printed records:
+
+  Authority error, applied minus requested:
+    mean signed                         -0.00679
+    mean absolute                        0.01743
+    RMSE                                 0.01982
+    p99 absolute                         0.03300
+    maximum absolute                     0.03400
+
+  Qz error, applied minus requested:
+    mean signed                          0.00164
+    mean absolute                        0.00354
+    RMSE                                 0.01091
+    p99 absolute                         0.05400
+    maximum absolute                     0.06200
+
+  Authority indices used:              2--15, excluding index 9
+  Unique (authority,Qz) cache entries: 15 / 64
+  Authority upper-rail fraction:        6.83%
+  Authority lower-rail fraction:        0.00%
+  Qz upper-rail fraction:              96.67%
+  Qz lower-rail fraction:               0.00%
+  Authority-index switches:            80 (1.34/s at printed cadence)
+  Qz-index switches:                   10 (0.17/s at printed cadence)
+  Combined cache-entry switches:       90 (1.51/s at printed cadence)
+  Index consistency failures:           0 within EXP's 0.001 precision
+
+Inside the primary wind window, authority occupied indices 2, 3, and 4;
+Qz remained at index 3. Unlike the legacy 0.50 m flights, the calibrated
+campaign did not pin authority at 15 throughout.
+
+Paper run 5 is old numeric run 6 relabeled. Old numeric run 5 is excluded
+because it reversed the controller order, and run 7 is excluded because both
+flights used a depleted battery. Their raw logs and metrics remain archived
+as explicitly labeled fun runs in the campaign ledger.
+
+
+1. Embedded-LIMO flight inventory
+---------------------------------
+
+Seven unique, complete mode-3 flights are available after SHA-256
+deduplication. All used 20 Hz MPC/model dynamics, five ADMM iterations, one
+barrier evaluation per MPC update, and the float32 16x4 cache bank. All seven
+reached TRAJ DONE and controlled LANDING COMPLETE.
+
+Run                       Maneuver / condition             Bridge       Records
+------------------------  -------------------------------  -----------  -------
+hover1                    hover, fan level 1, xy clamp     x4           120 XYZ
+hover2                    hover, fan level 1, xy free      x4           120 EXP
+hover3                    hover, fan level 3, xy free      x4           120 EXP
+hover4                    hover, fan level 2, xy free      x10          120 EXP
+hover-x2-debug            hover debugging, xy free         xy:x2,z:x4   120 EXP
+figure8-x2-debug          Figure-8 debugging               xy:x2,z:x4   120 EXP
+figure8-x19-debug         Figure-8 debugging               xy:x19,z:x4  120 EXP
+
+Raw-log identities:
+
+  hover1:
+    results/hover1_limo_raw.txt
+    SHA-256 e6c45363b7b9f3fc9e4e8b3dad945d56836e9f93580ff97877ab0c0bd81deb2b
+
+  hover2:
+    results/hover2_embedded_limo_raw.txt
+    SHA-256 9ce0ad10d3532db9fddfc5b4ae703205b317b0a5b6cd294dffb96077ecf4b163
+
+  hover3:
+    results/hover3_embedded_limo_level3_raw.txt
+    SHA-256 10a3003e38c4f3d9c029ba4f444dba6ba94e4d4cc60544f3dad2a082b781f107
+
+  hover4:
+    results/hover4_embedded_limo_level2_x10_raw.txt
+    SHA-256 3f0b0f2a725c47d725e4bca4a87a42609142dcdb68af95d09699366f7c56d0d0
+
+  hover-x2-debug:
+    attachment e0a6edd6-ddc0-4615-9099-73f2da173aca
+    SHA-256 15c58c1c291badc34f0b0d609703a00fd6fe1cb9713664c00288d2e32568db0c
+
+  figure8-x2-debug:
+    attachment c78b2665-7039-452b-bdc0-d2f1760ff023
+    SHA-256 5a981a1174584db8a3eb76d824288ecce2e9c2edac17aea447848511efd2cdb1
+
+  figure8-x19-debug:
+    attachment 2e5bd9d7-eaa7-4f2d-88d0-dedd6024df02
+    SHA-256 12da1c06737e166396bac8a583a7d1c023889d487bb173324cd90ceadb721b99
+
+The two Figure-8 runs were trajectory-debugging flights and must not be used
+as valid Figure-8 tracking results. Their timing records remain usable.
+
+
+2. Existing hover performance evidence
+--------------------------------------
+
+These rows report the embedded-LIMO arm only. Conditions differ, so values
+must not be pooled as repeated trials. "Delta" metrics are relative to each
+flight's pre-fan position. All references were z=0.50 m.
+
+Run     Delta planar  Peak delta  Delta-Z    Absolute XY  Absolute Z  Fan-on to
+        RMSE (m)      planar (m)  RMSE (m)   RMSE (m)    RMSE (m)    touchdown (m)
+------  ------------  ----------  ----------  -----------  ----------  -------------
+hover1      0.11277      0.18832     0.04554      0.12959     0.02625   unavailable
+hover2      0.14877      0.32038     0.03549      0.19179     0.02209      0.31890
+hover3      0.49454      0.68874     0.02530      0.51812     0.04530      0.65148
+hover4      0.13720      0.25180     0.02190      0.13760     0.01170      0.04620
+
+Matched nominal comparison summaries:
+
+  hover1, fan level 1, clamp on:
+    LIMO reduced pre-fan-relative planar RMSE by 11.7%, peak planar
+    displacement by 15.0%, and Delta-Z RMSE by 22.9%. Nominal had 7.0%
+    lower absolute fan-on planar RMSE.
+
+  hover2, fan level 1, clamp off:
+    LIMO Delta-planar RMSE was 11.5% worse and peak displacement was 53.1%
+    worse. LIMO reduced Delta-Z RMSE by 23.3% and absolute-Z RMSE by 39.8%.
+
+  hover3, fan level 3, clamp off:
+    LIMO Delta-planar RMSE was 24.5% worse and peak displacement was 41.8%
+    worse. LIMO reduced Delta-Z RMSE by 11.0%; absolute-Z RMSE was
+    effectively tied.
+
+  hover4, fan level 2, unified x10 bridge:
+    Nominal had lower Delta-planar RMSE (0.1137 m versus 0.1372 m) and lower
+    peak displacement (0.2222 m versus 0.2518 m). LIMO had slightly lower
+    Delta-Z and absolute-Z RMSE.
+
+Interpretation:
+
+  These runs consistently show some vertical-regulation benefit but do not
+  show a consistent lateral win. That is expected to be confounded by the
+  wrong 0.50 m operating altitude: the policy was at maximum authority and
+  minimum lateral tracking weight throughout. Re-run every arm at 1.00 m
+  before making a controller-performance claim.
+
+
+3. Adaptive-mechanism evidence from all full EXP logs
+-----------------------------------------------------
+
+Six runs provide 720 EXP records, sampled every two MPC steps:
+
+  Valid cache-bank installation:       720 / 720 records
+  Authority index 15 of 15:            720 / 720 records
+  Learned row active:                  690 / 720 records
+  No-oracle detector active:           713 / 720 records
+  Qz cache index distribution:
+    index 0:                             7 records
+    index 1:                            10 records
+    index 2:                            14 records
+    index 3:                           689 records
+  ADMM iteration distribution:
+    3 iterations:                        9 records
+    4 iterations:                        8 records
+    5 iterations:                      703 records
+  Guarded h range:                  -0.321 to 0.000
+
+The initial inactive samples are the intentional activation hold. The
+authority result is the important diagnostic: all archived 0.50 m flights
+were pinned, so they did not exercise the intended 16-level scheduling range.
+
+By fixed control flow, each complete 240-step episode executes one barrier
+evaluation and one cache installation per MPC update:
+
+  Expected barrier evaluations across seven flights: 1,680
+  Expected cache installations across seven flights:  1,680
+
+These are control-flow-derived counts, not explicit runtime counters. The
+current logs prove 720 sampled cache successes but do not record cumulative
+episode counts. The embedded path installs a frozen cache entry and does not
+call an in-loop Riccati rebuild, but a runtime recomputation counter has not
+yet been logged. Do not publish "zero recomputations" as a measured result
+until that counter exists.
+
+
+4. Existing on-target timing
+----------------------------
+
+What is currently timed:
+
+  eval_us:
+    One learned barrier MLP forward pass plus input gradient. It excludes the
+    11-parameter scheduler, quantization, cache installation, and ADMM solve.
+
+  bar_cyc:
+    Raw 168 MHz DWT cycles for stage 1: the learned barrier MLP forward pass
+    plus its input gradient.
+
+  tanh_cyc:
+    PROFILE_TANH=1 bench builds only: raw DWT cycles accumulated around the
+    256 tanhf() calls in the barrier. It includes two DWT register reads per
+    call, so it is an attribution sub-counter, not a replacement for bar_cyc.
+    Clean bench and normal flight builds report zero.
+
+  rl_cyc:
+    Raw DWT cycles for stage 2: the frozen authority update, including feature
+    construction, the 11-parameter dot product, sigmoid, smoothing, and
+    authority/Qz quantization. The separate residual observer is excluded.
+
+  cache_cyc:
+    Raw DWT cycles for install_cache(), kept separate from rl_cyc. This
+    includes the 16x4 bank lookup/copy and the corresponding cost updates.
+
+  mpc_us:
+    solve_admm() only.
+
+  solve_cyc:
+    Raw DWT cycles for solve_admm().
+
+  total_us:
+    State packing, reference generation, safety/scheduler/cache, constraint
+    build, solve, and PID-bridge setpoint generation.
+
+  total_cyc:
+    Raw DWT cycles over the same complete control-algorithm interval as
+    total_us.
+
+  overruns:
+    Cumulative count of control steps whose total_cyc exceeded 8,400,000
+    cycles, the exact 50 ms budget at 168 MHz. This is checked on every step,
+    including steps not emitted by the decimated console logger.
+
+What total_us/total_cyc exclude:
+
+  Task wakeup, mutex-protected copying of the latest stabilizer data, and
+  console output. The measured interval is the complete controller algorithm,
+  not the surrounding task transport.
+
+The archived values below come from usecTimestamp(), not DWT->CYCCNT. The new
+DWT fields require a new flight and therefore do not appear in the tables
+below. Their archived total_us field also used the earlier, narrower subtotal
+that omitted state packing and reference generation. p99 uses the nearest-rank
+definition.
+
+Float-precision audit (mode-3 ARM ELF, 2026-07-26):
+
+  Toolchain:                 Arm GNU 14.2.1
+  Optimization:              -Os; CONFIG_DEBUG is unset
+  Floating-point ABI:        hard, VFP register arguments
+  ELF FP architecture:       VFPv4-D16, SP-only use
+  Double arithmetic calls
+    in tinympcControllerTask: 0
+    in solve_admm():          0
+  Barrier activation:        tanhf(), two static loop call sites
+  Authority activation:      expf(), one call per policy evaluation
+
+The ELF contains __aeabi_d* helpers globally because other firmware modules
+use double precision. The TinyMPC controller task contains __aeabi_f2d only
+for explicit double conversions required by DEBUG_PRINT float formatting;
+those conversions are outside bar_cyc, rl_cyc, and solve_admm(). The barrier,
+authority policy, cache path, and ADMM solve use hardware single-precision
+instructions and single-precision library functions. Therefore adding
+-fsingle-precision-constant would not remove a double-emulation bottleneck
+from these timed paths and was not applied.
+
+Barrier-gradient and numeric-build audit (2026-07-26):
+
+  Gradient method:             analytic reverse-mode backpropagation
+  Barrier forward evaluations: exactly one per limo_eval_barrier() call
+  tanhf() calls per evaluation: 128 + 128 = 256
+  Extra tanhf() in backprop:    zero
+  Finite-difference passes:     zero
+
+The forward pass stores both tanh activation vectors. Backprop computes
+tanh'(z) as 1 - activation^2, propagates the output adjoint through W2 and W1,
+and then applies the feature-chain derivatives. There is no seven-forward
+finite-difference implementation to remove.
+
+  NDEBUG:                       defined in the normal app build
+  EIGEN_NO_MALLOC:              defined
+  EIGEN_FAST_MATH:              defined
+  TinyMPC scalar:               float
+  TinyMPC matrices:             compile-time fixed-size Eigen matrices
+  Barrier 128x128 storage:      static float arrays, not MatrixXf
+  FPU flags:                    -mfloat-abi=hard -mfpu=fpv4-sp-d16
+  F405 flash setup:             PRFTEN | ICEN | DCEN | LATENCY_5WS
+
+An opt-in NUMERIC_O2=1 build now applies a trailing -O2 only to
+controller_tinympc.cpp and admm.cpp; every other firmware translation unit
+stays at -Os. The actual stored Kbuild command lines were checked to contain
+"-Os ... -O2" for exactly those two numeric units. NUMERIC_O2 remains zero by
+default until the on-target DWT A/B establishes the cycle improvement.
+
+Safe bench profiler:
+
+  Build embedded LIMO:
+    make FIRMWARE_MODE=3 BENCH_PROFILE=1 NUMERIC_O2=0 -j8
+    make FIRMWARE_MODE=3 BENCH_PROFILE=1 NUMERIC_O2=1 -j8
+    make FIRMWARE_MODE=3 BENCH_PROFILE=1 PROFILE_TANH=1 -j8
+
+  Build posthoc LIMO:
+    make FIRMWARE_MODE=2 BENCH_PROFILE=1 NUMERIC_O2=0 -j8
+    make FIRMWARE_MODE=2 BENCH_PROFILE=1 NUMERIC_O2=1 -j8
+    make FIRMWARE_MODE=2 BENCH_PROFILE=1 PROFILE_TANH=1 -j8
+
+BENCH_PROFILE=1 replaces x0 with five deterministic one-second state
+plateaus and forces controller 6 motor output off on every stabilizer
+iteration. Its boot banner explicitly says "MOTORS FORCED OFF."
+This image is for USB/props-off profiling only and must never be used for a
+flight. BENCH_PROFILE defaults to zero. PROFILE_TANH defaults to zero and may
+only be enabled with BENCH_PROFILE=1. Run the clean bench first for exact
+bar/solve/total timings, then a separate PROFILE_TANH=1 build for activation
+attribution; the latter includes DWT read overhead in bar_cyc/total_cyc. Mode
+2 keeps rl_cyc/cache_cyc at zero; mode 3 reports both fields.
+
+Pooled across 720 EXP records:
+
+Stage                         Median       p99          Maximum
+----------------------------  -----------  -----------  -----------
+Barrier forward + gradient     10.825 ms    14.403 ms    14.888 ms
+ADMM solve                     24.279 ms    29.383 ms    30.333 ms
+Measured control subtotal      35.932 ms    41.880 ms    43.763 ms
+
+Per-run measured control subtotal:
+
+Run                       Median       p99          Maximum
+------------------------  -----------  -----------  -----------
+hover2                     35.061 ms    41.669 ms    41.904 ms
+hover3                     36.004 ms    42.918 ms    43.763 ms
+hover4                     36.022 ms    41.880 ms    42.832 ms
+hover-x2-debug              35.643 ms    40.919 ms    41.742 ms
+figure8-x2-debug            36.118 ms    41.684 ms    42.622 ms
+figure8-x19-debug           36.641 ms    42.190 ms    42.393 ms
+
+The older hover1 log contains only one timing observation:
+
+  barrier eval: 10.748 ms
+  ADMM solve:   27.952 ms
+  sum:          38.700 ms
+
+Observed deadline status:
+
+  Sampled total_us records above 50 ms: 0 / 720
+  Largest measured subtotal:            43.763 ms
+  Largest measured subtotal / deadline: 87.526%
+  Remaining measured margin:             6.237 ms
+
+This is not yet a valid "zero deadline overruns across N steps" claim:
+EXP is emitted only every second MPC step, total_us is a subtotal, and
+usecTimestamp() is not the requested cycle counter.
+
+Offline time-equivalent cycles at exactly 168 MHz, for orientation only:
+
+Stage                         Median       p99          Maximum
+----------------------------  -----------  -----------  -----------
+Barrier forward + gradient     1,818,600    2,419,704    2,501,184
+ADMM solve                     4,078,788    4,936,344    5,095,944
+Measured control subtotal      6,036,576    7,035,840    7,352,184
+
+These are usecTimestamp values multiplied by 168; they are not measured DWT
+cycles and must not be described that way in the paper.
+
+
+5. Legacy posthoc LIMO evidence
+-------------------------------
+
+One archived mode-2 diagnostic flight exists:
+
+  results/hover4_posthoc_level2_x10_INVALID_crash_raw.txt
+
+It used the old infeasible fallback, diverged before the fan-analysis
+boundary, and is not a valid performance trial. Its 120 sampled records show:
+
+  Posthoc active records:             87
+  Posthoc infeasible records:         80
+  Infeasible / active:             91.95%
+
+Timing from that diagnostic:
+
+Stage                         Median       p99          Maximum
+----------------------------  -----------  -----------  -----------
+Barrier forward + gradient     11.696 ms    15.101 ms    15.576 ms
+ADMM solve                     24.003 ms    28.100 ms    28.104 ms
+Measured control subtotal      36.674 ms    42.070 ms    43.878 ms
+
+This diagnostic is superseded by the five corrected 1.00 m posthoc flights
+in "Current calibrated result." The corrected nominal fallback was exercised
+there, and the final conditional infeasibility rate was 57 / 65 = 87.69%.
+
+
+6. Exact firmware memory from fresh map builds
+----------------------------------------------
+
+Fresh builds were made from the same source state and configuration, changing
+only TINYMPC_FIRMWARE_MODE. The source and working firmware image were restored
+to mode 2 after measurement.
+
+The linker folds read-only data into .text. "Flash" below is the build's
+.text + .data occupancy. Main SRAM is .bss + .data; CCM is reported
+separately.
+
+Arm                         Flash       Main SRAM   CCM RAM     Combined RAM
+--------------------------  ----------  ----------  ----------  ------------
+Mode 0 nominal              294,236 B   110,464 B    55,744 B     166,208 B
+Mode 2 posthoc LIMO         369,872 B   111,536 B    55,744 B     167,280 B
+Mode 3 embedded LIMO        467,916 B   111,664 B    55,744 B     167,408 B
+
+Delta versus mode-0 nominal:
+
+Arm                         Flash delta  Main-RAM delta  CCM delta
+--------------------------  -----------  --------------  ---------
+Mode 2 posthoc LIMO            75,636 B         1,072 B        0 B
+Mode 3 embedded LIMO          173,680 B         1,200 B        0 B
+
+Capacity usage:
+
+  Build flash region:                    1,032,192 B
+  Nominal flash usage:                      28.506%
+  Posthoc flash usage:                      35.833%
+  Embedded-LIMO flash usage:                45.332%
+  Embedded-LIMO flash delta:                16.826% of flash
+
+  Physical SRAM + CCM:                    196,608 B
+  Nominal combined RAM usage:                84.538%
+  Embedded-LIMO combined RAM usage:          85.148%
+  Embedded-LIMO RAM delta:                    0.610% of total RAM
+
+Read-only learned payload in mode 3:
+
+  Float32 barrier parameters:
+    17,537 parameters x 4 B =              70,148 B
+
+  Barrier input mean and standard deviation:
+    12 float32 values x 4 B =                  48 B
+
+  Frozen authority/Qz cache bank:
+    64 entries x 369 float32/entry
+    1,476 B per entry =                     94,464 B
+
+  Scheduler policy:
+    11 float32 weights =                       44 B
+
+  Total model + normalization + bank + policy:
+                                             164,704 B
+                                               15.956% of flash
+
+The remaining difference between that payload and the 173,680 B measured
+mode-3 flash delta is 8,976 B of integration/evaluation code and associated
+constants.
+
+Mode 3 runtime storage:
+
+  Scheduler weights:                         44 B read-only
+  Core scheduler EMA state:
+    requested authority + saturation EMA      8 B RAM
+  Full embedded adaptive Runtime object:     128 B RAM
+
+The full Runtime also contains Qz/no-oracle state and a 12-state prediction,
+so the 128 B value is the honest total rather than only the scheduler's two
+EMA scalars.
+
+The deployed barrier and cache are float32. An int8 barrier would contain
+17,537 parameter bytes, but no int8 firmware or accuracy validation exists.
+That number is a design option, not a measured result.
+
+
+7. Existing stack evidence
+--------------------------
+
+The TinyMPC task has a statically allocated 6,000 B stack (1,500 32-bit
+StackType_t words). The firmware currently prints
+uxTaskGetStackHighWaterMark() during the first controller update only:
+
+Run                       Free words   Used by first update
+------------------------  -----------  --------------------
+hover1                           954          2,184 B
+hover2                           881          2,476 B
+hover3                           902          2,392 B
+hover4                           891          2,436 B
+hover-x2-debug                   877          2,492 B
+figure8-x2-debug                 897          2,412 B
+figure8-x19-debug                930          2,280 B
+
+Worst observed at the first update:
+
+  877 words / 3,508 B free
+  623 words / 2,492 B used
+  41.53% of the task stack used
+
+Because the watermark is printed near the start rather than after landing,
+this is not the episode peak. Log the watermark at TRAJ DONE and LANDING
+COMPLETE, or scan the fill pattern after the episode, before publishing peak
+stack usage.
+
+
+8. DWT cycle instrumentation status
+-----------------------------------
+
+Enable once during controller initialization:
+
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+Record uint32_t raw cycle deltas without division inside the control loop.
+Use unsigned subtraction so normal 32-bit counter wrap is handled.
+
+Implemented per-step cycle fields:
+
+  1. bar_cyc
+     Exact MLP forward + gradient region.
+
+  2. rl_cyc
+     Complete 11-parameter authority update; residual observer excluded.
+
+  3. cache_cyc
+     install_cache() bank selection/copy and cost-field installation.
+
+Also implemented in the calibrated campaign:
+
+  4. solve_cyc
+     solve_admm() only.
+
+  5. total_cyc
+     Complete control-algorithm interval, including reference update, state
+     packing, safety logic, solver, and bridge construction. Console
+     transmission remains outside the timed interval.
+
+Additional cumulative episode counters still worth adding:
+
+  barrier_evaluation_count
+  cache_lookup_count
+  riccati_recomputation_count
+  maximum_step_cycles
+
+deadline_overrun_count is already implemented and ended at zero in every
+flight of the calibrated campaign.
+
+Required offline summaries for every stage and every arm:
+
+  median, p99, maximum raw cycles
+  median, p99, maximum milliseconds using cycles / 168,000
+  maximum-step budget fraction using max cycles / 8,400,000
+  explicit deadline overruns / total measured steps
+
+Do not print one line per 20 Hz update. Accumulate counters and a compact
+binary/log block, or emit decimated raw samples plus exact cumulative
+max/overrun/count fields. Console printing must not become part of the
+controller workload being compared.
+
+
+9. Motor-saturation instrumentation
+------------------------------------
+
+The existing embedded scheduler has a saturation feature, but firmware
+currently updates it from the MPC command. Because this implementation sends
+an outer-loop position setpoint to the stock 500 Hz PID, that is not the same
+as physical post-PID/mixer motor saturation.
+
+For the hardware paper, accumulate at 500 Hz from the actual mixed motor
+commands:
+
+  any_motor_saturated_count
+  motor_sample_count
+  minimum_motor_headroom
+  maximum_motor_saturation_proximity
+
+Report per episode:
+
+  saturation fraction =
+      any_motor_saturated_count / motor_sample_count
+  minimum headroom
+  maximum proximity
+
+Add only the compact cumulative/interval values to the 10 Hz EXP record.
+Printing four raw motor commands at 10 Hz can miss short peaks and increases
+console load.
+
+
+10. Publishable measurement protocol
+------------------------------------
+
+Before collecting final numbers:
+
+  1. Fly all four arms at the calibrated 1.00 m reference:
+       mode 0 nominal
+       mode 1 canonical activation-gated analytic MPC-CBF
+       mode 2 corrected posthoc LIMO
+       mode 3 embedded LIMO
+
+  2. Use identical 20 Hz dynamics, five-iteration limit, Q/R/rho, x10 bridge,
+     trajectory duration, takeoff/settling procedure, and fan timing.
+
+  3. Collect DWT timing and cumulative counts on every step, not every second
+     step.
+
+  4. Collect actual post-mixer motor saturation at 500 Hz.
+
+  5. Log stack watermark after the trajectory and after landing.
+
+  6. Use both:
+       a lateral fan test for tracking/disturbance rejection, and
+       a downward-disturbance test for floor recovery/survival.
+
+  7. Report controller outcome and embedded cost together:
+       tracking error, minimum z, recovery time, survival,
+       motor saturation/headroom, cycle budget, overruns, flash, and RAM.
+
+
+Bottom line from current evidence
+---------------------------------
+
+The calibrated five-pair 1.00 m hover-under-wind campaign is complete.
+Embedded LIMO reduced pooled fixed-boundary RMSE by 36.7%, peak boundary
+error by 30.3%, and absolute lateral tracking RMSE by 10.6% relative to
+posthoc. It had zero deadline overruns; sampled complete-step median/p99/max
+were 33.026/41.353/42.899 ms.
+
+Posthoc failed 58 of 65 active projection attempts and made zero attempts
+inside every primary wind window. Exact builds show an embedded-LIMO cost of
+173,680 B flash and 1,200 B main RAM over the nominal image. Remaining
+instrumentation gaps are physical motor saturation, final episode stack
+watermark, and explicit barrier/cache/Riccati cumulative counters.

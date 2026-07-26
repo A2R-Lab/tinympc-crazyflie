@@ -1,0 +1,256 @@
+METRICS I CARE ABOUT
+====================
+
+Primary comparison
+------------------
+
+  Mode 3: LIMO embedded / in-solver
+  Mode 2: LIMO posthoc
+
+Use matched builds and conditions:
+
+  - 20 Hz MPC/model, five ADMM iterations, x10 PID bridge.
+  - Identical Q, R, rho, trajectory, 1.00 m height, and landing logic.
+  - Fan directly in front of the Crazyflie, approximately 75 cm away.
+  - Switch to OOT controller 6 at t=0.
+  - Fan is switched on manually approximately 1--2 s after OOT activation
+    and stays on through landing.
+  - Begin the primary analysis at the fixed OOT+3.0 s boundary. This gives
+    time for the operator to reach the fan and for fan startup without
+    pretending that the exact fan-on instant was measured.
+  - Record fan level, battery, build hash, mode, maneuver, and trial number.
+  - Paper-pair controller order is embedded LIMO first, then posthoc. Runs
+    with reversed order are retained as diagnostics but excluded from the
+    paper average.
+  - Use a non-depleted battery for both arms of a paper pair. Depleted-battery
+    runs are retained as diagnostics but excluded from the paper average.
+  - Do not use BENCH_PROFILE or PROFILE_TANH during flight.
+
+Analysis windows
+----------------
+
+  Primary delayed sustained-wind window:
+    First EXP sample with elapsed time t >= 3000 ms after OOT controller 6
+    activates through the last EXP sample before TRAJ DONE requests landing.
+    Use this fixed window for tracking, drift, safety, timing, control effort,
+    mechanism activity, and the primary paired comparison. A nominal 12 s
+    hover yields approximately 9 s of analyzed data.
+
+  Landing outcome:
+    Use LANDING COMPLETE only to record successful controlled landing and
+    motor-off completion. Never mix the PID landing segment into MPC
+    tracking or drift metrics.
+
+  Secondary sensitivity only:
+    Full-OOT and final-2/5/10-s windows may be retained as diagnostics but are
+    not the selected primary result.
+
+
+1. Hover under wind: in-solver versus posthoc
+------------------------------------------------
+
+Accuracy relative to the hover reference:
+
+  ex = x - ref_x
+  ey = y - ref_y
+  ez = z - ref_z
+  lateral_error = sqrt(ex^2 + ey^2)
+
+Fixed-boundary disturbance displacement:
+
+  dx_3s(t) = x(t) - x(first EXP sample at/after OOT+3.0 s)
+  dy_3s(t) = y(t) - y(first EXP sample at/after OOT+3.0 s)
+  drift_3s = sqrt(dx_3s^2 + dy_3s^2)
+
+Call this fixed-boundary sustained-wind drift, not exact fan-onset drift.
+The boundary is repeatable even though manual fan onset is not.
+
+Timing:
+
+  For bar_cyc, rl_cyc, cache_cyc, solve_cyc, and total_cyc, report:
+
+  - Median, p99, and maximum raw cycles.
+  - Offline time in milliseconds: cycles / 168000.
+  - Worst-case deadline usage: max(total_cyc) / 8400000.
+  - Final cumulative overruns; required result is zero.
+
+2. Figure-eight under wind: in-solver versus posthoc
+-------------------------------------------------------
+
+Use the same timing, safety, mechanism, and outcome metrics as hover.
+
+Reference requirement:
+
+  - Firmware must play back apps/controller_tinympc_eigen_task/src/
+    traj_fig8_12.h, resampled from its stored 100 Hz states to the 20 Hz MPC
+    horizon.
+  - Translate its X/Y position to the OOT-activation origin and translate its
+    stored Z position to the configured 1.00 m height. Preserve every stored
+    velocity, attitude, and angular-rate reference.
+  - Accept a run only when the boot log says:
+      Figure8: source=traj_fig8_12.h source_hz=100 samples=1205
+  - Analytically generated Figure-8 flights are noncanonical diagnostics and
+    must not enter the final comparison.
+
+Tracking accuracy over the primary delayed sustained-wind window:
+
+  ex = x - ref_x
+  ey = y - ref_y
+  ez = z - ref_z
+  xy_tracking_error = sqrt(ex^2 + ey^2)
+
+Generalized boundary-relative tracking-error RMSE for any trajectory:
+
+  ex(t) = x(t) - ref_x(t)
+  ey(t) = y(t) - ref_y(t)
+  delta_ex(t) = ex(t) - ex(t_boundary)
+  delta_ey(t) = ey(t) - ey(t_boundary)
+
+  boundary_relative_rmse =
+    sqrt(mean(delta_ex(t)^2 + delta_ey(t)^2))
+
+  peak_boundary_error =
+    max(sqrt(delta_ex(t)^2 + delta_ey(t)^2))
+
+For hover, the reference is constant, so this equals position drift from the
+fixed boundary. For figure-eight and other moving references, subtracting
+reference motion prevents the commanded maneuver itself from being counted
+as drift. Raw displacement from the boundary position may be logged as a
+diagnostic but is never a tracking-accuracy metric.
+
+
+Required summary for every run
+------------------------------
+
+For every embedded-LIMO, posthoc, nominal, and MPC-CBF run, report over the
+selected OOT+3-s-to-TRAJ-DONE primary window:
+
+  - Generalized boundary-relative tracking-error RMSE.
+  - Peak generalized boundary-relative tracking error.
+  - Tilt RMS and peak tilt.
+  - Lateral/XY reference-tracking RMSE.
+  - Z reference-tracking RMSE and maximum absolute Z error.
+  - Median, p99, and maximum total computation time; deadline overruns.
+  - Posthoc active attempts, infeasible attempts, and conditional
+    infeasibility rate. Report 0/0 and N/A for non-posthoc modes.
+
+Do not add other metrics to the headline per-run table. Retain extra logged
+fields only as diagnostics when investigating a failure.
+
+Posthoc counts come from the final POSTHOC SUMMARY over the whole OOT
+episode. If all attempts occurred before the OOT+3-s boundary, state that
+the primary-window active/infeasible count was 0/0.
+
+
+3. Posthoc infeasibility
+------------------------
+
+Firmware cumulative counters:
+
+  post_act_n  = number of active posthoc projection attempts
+  post_fail_n = number of infeasible active projection attempts
+
+Primary metric:
+
+  posthoc_infeasibility_rate = post_fail_n / post_act_n
+
+Also report:
+
+  - Active-attempt fraction = post_act_n / total MPC tracking steps.
+  - Successful projection count = post_act_n - post_fail_n.
+  - Successful-projection fraction = 1 - infeasibility rate.
+  - Distribution of post_du on successful projections only.
+  - Tracking/safety outcomes separated by feasible versus failed steps.
+
+Use the final console line as the episode source of truth:
+
+  POSTHOC SUMMARY: active=<post_act_n> infeasible=<post_fail_n>
+
+Never divide post_fail_n by all MPC steps when comparing with the simulation's
+96.8%; the simulation number is conditional on an active projection attempt.
+
+Existing diagnostic hardware evidence:
+
+  - 80 infeasible among 87 active sampled attempts = 91.95%.
+  - This supports the mechanism but is not a final hardware confirmation:
+    it used the old fallback, 0.50 m altitude, decimated flags, and one
+    divergent flight.
+
+
+4. Quantization metrics
+-----------------------
+
+Authority quantization (16 levels):
+
+  requested authority: tinympc.limo_w_req
+  applied authority:   tinympc.limo_w
+  selected index:      tinympc.limo_w_idx
+
+  authority_error = applied_w - requested_w
+  expected applied_w from index = limo_w_idx / 15
+  authority step size = 1 / 15 = 0.0666667
+  theoretical nearest-bin maximum absolute error = 1 / 30 = 0.0333333
+
+Report:
+
+  - Mean signed error, mean absolute error, RMSE, p99, and maximum absolute
+    authority quantization error.
+  - Count of index-consistency failures between applied_w and index/15.
+  - Fraction of time in each of the 16 authority levels.
+  - Fraction at the lower and upper authority rails.
+  - Number of authority-index switches and switches per second.
+
+Qz quantization (4 levels from 1.0 to 1.4):
+
+  requested Qz:    tinympc.limo_qz_req
+  applied Qz:      tinympc.limo_qz
+  selected index:  tinympc.limo_qz_idx
+
+  qz_error = applied_qz - requested_qz
+  expected applied_qz from index = 1.0 + limo_qz_idx * (0.4 / 3)
+  Qz step size = 0.1333333
+  theoretical nearest-bin maximum absolute error = 0.0666667
+
+Report:
+
+  - Mean signed error, mean absolute error, RMSE, p99, and maximum absolute
+    Qz quantization error.
+  - Count of index-consistency failures.
+  - Fraction of time in each of the four Qz levels.
+  - Fraction at Qz=1.0 and Qz=1.4.
+  - Number of Qz-index switches and switches per second.
+
+The EXP console line ends with requested/applied authority and requested/
+applied Qz, all scaled by 1000, so both quantization errors can be recovered
+without a separate cfclient log block.
+
+Combined 16x4 cache-bank metrics:
+
+  - Occupancy of every (w_idx, qz_idx) pair.
+  - Number of unique cache entries used per flight.
+  - Cache-bank switch count and switches per second.
+  - Cache validation failures; required result is zero.
+  - Median/p99/max cache_cyc.
+  - Timing and tracking metrics grouped by selected cache entry.
+
+
+Minimum result table for each trajectory and fan level
+------------------------------------------------------
+
+  method
+  trial count
+  boundary-relative RMSE
+  peak boundary-relative error
+  tilt RMSE
+  peak tilt
+  lateral tracking RMSE
+  Z tracking RMSE
+  maximum absolute Z error
+  median / p99 / max total computation
+  deadline overruns
+  whole-flight posthoc active / infeasible attempts and conditional rate
+  primary-window posthoc active / infeasible attempts
+
+Keep quantization results in their own quantization table. Do not mix the
+stage-level timing breakdown or other diagnostic fields into the headline
+controller-comparison table.

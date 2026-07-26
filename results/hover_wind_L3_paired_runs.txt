@@ -1,0 +1,326 @@
+HOVER UNDER WIND LEVEL 3: EMBEDDED LIMO VS LIMO POSTHOC
+=======================================================
+
+Status
+------
+
+The paper dataset contains five protocol-consistent matched pairs and 450
+primary-window samples per controller. Paper runs 1--4 retain their original
+labels. Old numeric run 6 is relabeled as paper run 5.
+
+Old numeric run 5 is excluded because posthoc was flown before embedded,
+reversing the controller order used by the paper set. Run 7 is excluded
+because both flights used a depleted battery. All excluded logs are retained
+under explicit fun-run aliases; no raw data was deleted.
+
+Window and boundary
+-------------------
+
+Metrics use the first EXP sample at/after OOT+3.0 s through the final EXP
+sample before TRAJ DONE. PID landing is excluded.
+
+At the first sample, boundary-relative error is defined as zero:
+
+  delta_e_xy(t) = e_xy(t) - e_xy(OOT+3-s boundary)
+
+Boundary RMSE therefore measures additional lateral error accumulated after
+the fixed wind boundary. Lateral tracking RMSE measures absolute error from
+the hover reference over the same samples.
+
+Conditions
+----------
+
+Trajectory: hover at (0,0,1.00) m
+Wind: fan level 3, directly in front, approximately 75 cm from the drone
+Fan timing: manually enabled approximately OOT+1--2 s
+MPC/model rate: 20 Hz / 20 Hz
+Solver limit: 5 ADMM iterations
+PID bridge: x10 (500 ms)
+Samples per controller per trial: 90 at 10 Hz
+
+Raw logs and SHA-256
+--------------------
+
+Embedded trial 1: hover_wind_L3_embedded_run1.txt
+  36e15ec10e090be928a61f8505ffbbb4ecb0a31b00467d1ba8612824b805367d
+Posthoc trial 1: hover_wind_L3_posthoc_run1.txt
+  8021a89c6b88c9bd3ec06e893996395a626eeb594966615eafe181758d2e06b3
+Embedded trial 2: hover_wind_L3_embedded_run2.txt
+  e49623c32d47bd21ece8a938de5413af660445b60bc2d1c13b01cd50104f55ad
+Posthoc trial 2: hover_wind_L3_posthoc_run2.txt
+  abfa216b28ff7f8beb9b771748c05a236761c284b8015fc8768d0e32b20a7cb8
+Embedded trial 3: hover_wind_L3_embedded_run3.txt
+  5f19f11bb01572db51b8dc45ce17a771c2df09d5dcdda3efb553e77870ba0fe0
+Posthoc trial 3: hover_wind_L3_posthoc_run3.txt
+  9f28a2b58560d085170d9a7e748459131ab45eabb71664660b871b6d495d7739
+Embedded trial 4: hover_wind_L3_embedded_run4.txt
+  4a4d9eb204eaae93ff25c2da7c49364be676a266db52234eb3e5dff35a57b5ea
+Posthoc trial 4: hover_wind_L3_posthoc_run4.txt
+  54eeec8eed26ba8e8bd8f146ebdc1ea46d6e4fbb9e22c6600955e49777fd92d5
+Paper trial 5 embedded: hover_wind_L3_paper_run5_embedded.txt
+  dc0d52b77cd04a835e2c47e28ca3f1b67fcf748163a090486a45c998950cff07
+Paper trial 5 posthoc: hover_wind_L3_paper_run5_posthoc.txt
+  953349dd3874990f562110e8065fa095df473ff52d40a6f5a6e3aa73a6b2f08d
+
+Excluded order-reversed embedded:
+  hover_wind_L3_fun_run5_order_reversed_embedded.txt
+  affa52e4b6b1e3400e00638fe29832b86be77e8611b325fa61b8356210f0752d
+Excluded order-reversed posthoc:
+  hover_wind_L3_fun_run5_order_reversed_posthoc.txt
+  b1ecebb731bc7a36ba69a4449a20982d86c55c35ca7b310e2c5295709f51ce58
+Excluded depleted-battery embedded:
+  hover_wind_L3_fun_run7_depleted_battery_embedded.txt
+  0c6bcff5ac37ed2f8a968c45c49962e0f5f9c5f41b8bf90ecee071dc42104cda
+Excluded depleted-battery posthoc:
+  hover_wind_L3_fun_run7_depleted_battery_posthoc.txt
+  068f5ccaf68b3a13b01641ffda128935bd4792f9415901bc5379426d725f5187
+
+The original numeric run5/run6 source files remain as immutable aliases.
+
+
+Matched pair 1
+--------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.0886               0.1416
+Peak boundary-relative error, m         0.1922               0.2763
+Tilt RMSE, deg                          1.724                1.990
+Peak tilt, deg                          4.484                4.666
+Lateral tracking RMSE, m                0.1326               0.1332
+Z tracking RMSE, m                      0.0285               0.0281
+Maximum absolute Z error, m             0.0450               0.0460
+Median total computation, ms           33.117               32.615
+P99 total computation, ms              41.460               39.875
+Maximum total computation, ms          42.534               41.705
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 10
+Posthoc infeasibility rate              N/A                  76.92%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded versus posthoc:
+
+  Boundary RMSE:             37.4% lower
+  Peak boundary error:       30.4% lower
+  Tilt RMSE:                 13.4% lower
+  Peak tilt:                  3.9% lower
+  Lateral tracking RMSE:      0.5% lower (effectively tied)
+  Z tracking RMSE:            1.2% higher (effectively tied)
+  Maximum absolute Z error:   2.2% lower
+
+
+Matched pair 2
+--------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.0776               0.0959
+Peak boundary-relative error, m         0.1360               0.1863
+Tilt RMSE, deg                          1.831                1.732
+Peak tilt, deg                          4.048                3.612
+Lateral tracking RMSE, m                0.1133               0.1164
+Z tracking RMSE, m                      0.0268               0.0273
+Maximum absolute Z error, m             0.0470               0.0440
+Median total computation, ms           33.159               32.792
+P99 total computation, ms              41.423               39.522
+Maximum total computation, ms          42.899               40.544
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 10
+Posthoc infeasibility rate              N/A                  76.92%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded versus posthoc:
+
+  Boundary RMSE:             19.1% lower
+  Peak boundary error:       27.0% lower
+  Tilt RMSE:                  5.7% higher
+  Peak tilt:                 12.1% higher
+  Lateral tracking RMSE:      2.7% lower
+  Z tracking RMSE:            2.0% lower
+  Maximum absolute Z error:   6.8% higher
+
+
+Matched pair 3
+--------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.1039               0.1511
+Peak boundary-relative error, m         0.2162               0.3100
+Tilt RMSE, deg                          2.086                1.933
+Peak tilt, deg                          4.741                5.444
+Lateral tracking RMSE, m                0.1228               0.1473
+Z tracking RMSE, m                      0.0270               0.0291
+Maximum absolute Z error, m             0.0430               0.0550
+Median total computation, ms           32.642               34.055
+P99 total computation, ms              41.272               43.742
+Maximum total computation, ms          42.008               44.202
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 13
+Posthoc infeasibility rate              N/A                  100.00%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded versus posthoc:
+
+  Boundary RMSE:             31.2% lower
+  Peak boundary error:       30.3% lower
+  Tilt RMSE:                  7.9% higher
+  Peak tilt:                 12.9% lower
+  Lateral tracking RMSE:     16.6% lower
+  Z tracking RMSE:            7.1% lower
+  Maximum absolute Z error:  21.8% lower
+  Median computation:         4.1% lower
+  P99 computation:            5.6% lower
+  Maximum computation:        5.0% lower
+
+
+Matched pair 4
+--------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.0859               0.0907
+Peak boundary-relative error, m         0.1584               0.1565
+Tilt RMSE, deg                          1.676                1.829
+Peak tilt, deg                          3.980                3.896
+Lateral tracking RMSE, m                0.1011               0.1118
+Z tracking RMSE, m                      0.0283               0.0290
+Maximum absolute Z error, m             0.0430               0.0460
+Median total computation, ms           32.134               33.672
+P99 total computation, ms              40.583               40.953
+Maximum total computation, ms          40.974               41.334
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 13
+Posthoc infeasibility rate              N/A                  100.00%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded versus posthoc:
+
+  Boundary RMSE:              5.3% lower
+  Peak boundary error:        1.2% higher (effectively tied)
+  Tilt RMSE:                  8.4% lower
+  Peak tilt:                  2.2% higher
+  Lateral tracking RMSE:      9.6% lower
+  Z tracking RMSE:            2.5% lower
+  Maximum absolute Z error:   6.5% lower
+  Median computation:         4.6% lower
+  P99 computation:            0.9% lower
+  Maximum computation:        0.9% lower
+
+
+Matched pair 5
+--------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.0671               0.1762
+Peak boundary-relative error, m         0.1298               0.2946
+Tilt RMSE, deg                          1.922                2.154
+Peak tilt, deg                          4.058                5.149
+Lateral tracking RMSE, m                0.1039               0.1333
+Z tracking RMSE, m                      0.0285               0.0288
+Maximum absolute Z error, m             0.0480               0.0550
+Median total computation, ms           33.710               33.439
+P99 total computation, ms              41.380               40.926
+Maximum total computation, ms          41.395               43.306
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 12
+Posthoc infeasibility rate              N/A                  92.31%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Embedded versus posthoc:
+
+  Boundary RMSE:             61.9% lower
+  Peak boundary error:       55.9% lower
+  Tilt RMSE:                 10.8% lower
+  Peak tilt:                 21.2% lower
+  Lateral tracking RMSE:     22.0% lower
+  Z tracking RMSE:            1.1% lower
+  Maximum absolute Z error:  12.7% lower
+  Median computation:         0.8% higher
+  P99 computation:            1.1% higher
+  Maximum computation:        4.4% lower
+
+This paper pair is old numeric run 6 relabeled as run 5.
+
+
+Five-pair aggregate
+-------------------
+
+RMSE values are pooled over 450 primary-window samples per controller.
+Peaks are the maximum observed across all five trials. Computation
+percentiles are calculated from all 450 per-step cycle counts.
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.0855               0.1352
+Peak boundary-relative error, m         0.2162               0.3100
+Tilt RMSE, deg                          1.854                1.933
+Peak tilt, deg                          4.741                5.444
+Lateral tracking RMSE, m                0.1153               0.1290
+Z tracking RMSE, m                      0.0278               0.0285
+Maximum absolute Z error, m             0.0480               0.0550
+Median total computation, ms           33.026               33.461
+P99 total computation, ms              41.353               41.145
+Maximum total computation, ms          42.899               44.202
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  65 / 58
+Posthoc infeasibility rate              N/A                  89.23%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Aggregate embedded-LIMO difference versus posthoc:
+
+  Boundary RMSE:             36.7% lower
+  Peak boundary error:       30.3% lower
+  Tilt RMSE:                  4.1% lower
+  Peak tilt:                 12.9% lower
+  Lateral tracking RMSE:     10.6% lower
+  Z tracking RMSE:            2.3% lower
+  Maximum absolute Z error:  12.7% lower
+  Median computation:         1.3% lower
+  P99 computation:            0.5% higher
+  Maximum computation:        2.9% lower
+
+All five paper pairs favor embedded LIMO on boundary RMSE, and four of five
+favor it on peak boundary error. There were no deadline overruns. Posthoc
+attempted its projection only during the initial climb: 58 of 65 whole-flight
+attempts were infeasible, and it made zero projection attempts inside every
+primary wind window.
+
+
+Excluded fun run: old numeric run 5, controller order reversed
+----------------------------------------------------------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.1365               0.0870
+Peak boundary-relative error, m         0.2753               0.1441
+Tilt RMSE, deg                          1.903                1.811
+Peak tilt, deg                          5.385                5.340
+Lateral tracking RMSE, m                0.1380               0.0934
+Z tracking RMSE, m                      0.0281               0.0292
+Maximum absolute Z error, m             0.0450               0.0570
+Median total computation, ms           32.614               34.164
+P99 total computation, ms              40.253               39.385
+Maximum total computation, ms          41.747               39.584
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 11
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Exclusion reason: posthoc was flown before embedded, reversing the controller
+order used for every paper pair.
+
+
+Excluded fun run 7: depleted battery
+------------------------------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.1128               0.0912
+Peak boundary-relative error, m         0.2098               0.1749
+Tilt RMSE, deg                          2.086                1.649
+Peak tilt, deg                          3.581                3.673
+Lateral tracking RMSE, m                0.1361               0.1255
+Z tracking RMSE, m                      0.0326               0.0307
+Maximum absolute Z error, m             0.0590               0.0460
+Median total computation, ms           34.203               33.523
+P99 total computation, ms              44.956               41.619
+Maximum total computation, ms          45.182               42.871
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  14 / 12
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Exclusion reason: both flights used a depleted battery. These values are
+retained for transparency and are not included in the paper average.
