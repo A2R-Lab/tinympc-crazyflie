@@ -1,0 +1,57 @@
+Figure-8 0.70 m, forced 3 s start — three-way two-run average
+
+Dataset
+- Nominal mode 0, posthoc LIMO mode 2, embedded LIMO mode 3
+- Two matched downward-wind batches
+- Figure-8 forced 3000 ms after OOT takeoff start
+- Two full laps per flight
+- Analysis window: trajectory start through trajectory end
+- Flights: 2 per method, 6 total
+- Each value below is the arithmetic mean of the two per-flight metrics.
+- Lower is better for every listed metric.
+
+Metric                    Nominal       Posthoc       Embedded      Winner and margin over runner-up
+Lateral RMSE              0.4861 m      0.5326 m      0.5920 m      Nominal by 8.7%
+Peak lateral error        0.9064 m      1.1935 m      0.9347 m      Nominal by 3.0%
+Z RMSE                    0.0478 m      0.0691 m      0.0444 m      Embedded by 7.2%
+Maximum Z error           0.2680 m      0.2590 m      0.2800 m      Posthoc by 3.4%
+Tilt RMSE                 11.5799 deg   12.9681 deg   9.4820 deg    Embedded by 18.1%
+Peak tilt                 21.4765 deg   26.5951 deg   22.7252 deg   Nominal by 5.5%
+Median control step       22.377 ms     33.667 ms     33.781 ms     Nominal by 33.5%
+Maximum control step      30.458 ms     41.027 ms     42.865 ms     Nominal by 25.8%
+Deadline overruns         0             0             0             Tie
+
+Embedded versus posthoc
+- Lateral RMSE: 11.2% higher
+- Peak lateral error: 21.7% lower
+- Z RMSE: 35.8% lower
+- Maximum Z error: 8.1% higher
+- Tilt RMSE: 26.9% lower
+- Peak tilt: 14.6% lower
+- Median computation: 0.3% higher
+- Maximum computation: 4.5% higher
+
+Posthoc mechanism across both runs
+- Projection attempts: 579
+- Infeasible projections: 319/579 = 55.1%
+- Successful interventions: 260/579 = 44.9%
+
+Outcome
+- All six flights completed both laps and controlled landing.
+- All six flights recorded zero deadline overruns.
+- Nominal wins average lateral tracking, average peak lateral error, average
+  peak tilt, and computation.
+- Embedded wins average Z RMSE and tilt RMSE.
+- Posthoc wins average maximum Z error by a narrow 3.4% margin over nominal.
+- At two flights per method, this remains an interim average.
+
+Raw logs
+- figure8_070_forced3s_nominal_run1.txt
+- figure8_070_forced3s_nominal_run2.txt
+- figure8_070_forced3s_posthoc_run1.txt
+- figure8_070_forced3s_posthoc_run2.txt
+- figure8_070_forced3s_embedded_run1.txt
+- figure8_070_forced3s_embedded_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

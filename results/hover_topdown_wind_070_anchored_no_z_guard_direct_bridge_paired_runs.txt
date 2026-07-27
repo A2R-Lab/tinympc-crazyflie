@@ -1,0 +1,83 @@
+ACTIVATION-ANCHORED HOVER UNDER TOP-DOWN WIND: DIRECT MPC-TO-PID BRIDGE
+============================================================================
+
+Protocol
+--------
+- Maneuver: hover, z_ref = 0.70 m, 12 s OOT phase.
+- Fan: directly above the vehicle, blowing down; enabled at/near OOT activation.
+- Each flight captures estimated (x, y) at controller-6 activation.
+- Direct bridge signature:
+  MPC->PID: xyz=x10 raw, yaw=Rodrigues_to_deg,
+  output_hold=first_solve_only, safety_hold=first_solve_only
+- TINYMPC_COMMON_Z_GUARD = 0; raw x10 MPC preview Z reaches the inner PID.
+- XY is free (no common clamp).
+- Analysis window: all 120 EXP samples during OOT, excluding landing.
+- Lateral error: sqrt((x-x_ref)^2 + (y-y_ref)^2).
+- Z error: abs(z-0.70 m); maximum includes the intentional initial climb.
+- Post-climb Z RMSE uses t >= 2.5 s.
+- Tilt magnitude: sqrt(roll^2 + pitch^2).
+- Timing uses DWT cycles at 168 MHz; deadline is 8,400,000 cycles (50 ms).
+
+Pair 1
+------
+Embedded raw:
+  hover_topdown_wind_070_anchored_no_z_guard_direct_bridge_embedded_run2.txt
+  Reference: (0.011, -0.052, 0.700) m
+
+Posthoc raw:
+  hover_topdown_wind_070_anchored_no_z_guard_direct_bridge_posthoc_run1.txt
+  Reference: (0.035, 0.098, 0.700) m
+
+Metric                              Embedded LIMO    Posthoc LIMO
+Lateral RMSE (m)                         0.12013          0.08585
+Peak lateral error (m)                   0.21587          0.16904
+Final lateral error (m)                  0.16420          0.11258
+Z RMSE (m)                               0.07381          0.07923
+Maximum Z error (m)                      0.21300          0.22800
+Post-climb Z RMSE, t >= 2.5 s (m)        0.02481          0.01957
+Tilt RMSE (deg)                          2.02591          2.02536
+Peak tilt (deg)                          5.24605          5.60711
+Median control step (ms)                37.55618         33.79415
+Exact maximum control step (ms)         48.56866         46.45744
+Deadline utilization (%)                97.13732         92.91488
+Deadline overruns                              0                0
+Posthoc active / infeasible                    -        241 / 241
+Posthoc infeasibility rate                     -          100.00%
+
+Stage timing: median / p99 / sampled max (ms)
+------------------------------------------------
+Barrier MLP:
+  embedded 11.43359 / 15.42345 / 16.21590
+  posthoc  12.07068 / 14.96964 / 15.44151
+RL scheduler:
+  embedded  0.01087 /  0.58518 /  0.60701
+  posthoc   0.00000 /  0.00000 /  0.00000
+Cache lookup:
+  embedded  0.42547 /  1.66261 /  1.89649
+  posthoc   0.00000 /  0.00000 /  0.00000
+ADMM solve:
+  embedded 25.27232 / 28.72589 / 30.45999
+  posthoc  21.09724 / 29.96314 / 31.24120
+
+Pair-1 interpretation
+---------------------
+- Posthoc has 28.53% lower lateral RMSE, 21.70% lower peak lateral error,
+  and 31.44% lower final lateral error.
+- Embedded has 6.84% lower full-flight Z RMSE, 6.58% lower maximum Z error,
+  while posthoc has 21.09% lower post-climb Z RMSE.
+- Tilt RMSE is effectively identical; embedded has 6.44% lower peak tilt.
+- Posthoc is 3.762 ms (10.02%) faster at the median and 2.111 ms faster at
+  the exact maximum. Both meet the deadline with zero overruns.
+- Every posthoc projection was infeasible. The corrected fallback returned
+  du=0 on all 241 active steps, so this flight is operationally nominal MPC
+  plus barrier-evaluation overhead, not a successfully projected controller.
+- Embedded LIMO was active throughout, with mean requested authority 0.993
+  and quantized authority w=1.000 at every logged sample.
+- Consequently, this pair does not show an embedded-LIMO tracking advantage:
+  nominal fallback tracks laterally better here. More matched pairs are
+  required before making a campaign-level claim.
+
+Additional replicate
+--------------------
+hover_topdown_wind_070_anchored_no_z_guard_direct_bridge_embedded_run1.txt
+is retained as an embedded-only replicate and is not included in Pair 1.

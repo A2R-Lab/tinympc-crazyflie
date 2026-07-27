@@ -1,0 +1,216 @@
+Hover benchmark 3: fan-level-3 four-mode comparison
+===================================================
+
+STATUS: IN PROGRESS. Valid nominal and embedded-LIMO single trials are
+recorded; matched MPC-CBF and LIMO-posthoc trials remain.
+
+Date: 2026-07-25
+Vehicle: Crazyflie 2.1 Brushless with Flow deck
+Estimator: Kalman
+Controller selected in CFclient: OutOfTree (6)
+Trajectory: hover (maneuver 0), reference=(0.00,0.00,0.50) m
+Duration: 12 s, followed by controlled landing
+Disturbance: fan level 3, directly in front of the vehicle at approximately
+0.20 m, kept on through landing
+Lateral PID bridge: x/y free (no reference +/-0.10 m clamp)
+Official nominal raw log: hover3_nominal_level3_raw.txt
+Official embedded-LIMO raw log: hover3_embedded_limo_level3_raw.txt
+
+Fan-on alignment
+----------------
+
+The airflow signature in this log begins near OOT+5.0 s, not OOT+3.0 s:
+position remains near the hover point through step 98 (4.876 s), followed by
+a sharp negative-X velocity and displacement at steps 100--102. To exclude
+calm samples, this result uses step 102 (5.084 s) as the first clearly
+wind-exposed sample and steps 90--98 as the pre-fan baseline.
+
+This onset is inferred from the state trace because the physical fan switch is
+not electronically timestamped. If the operator-recorded switch time differs,
+recompute the window before using this trial in a final comparison.
+
+This fan-level-3 set is separate from Hover 2's fan-level-1 set. Do not pool
+or directly pair trials across the two disturbance levels.
+
+Matched controller configuration
+--------------------------------
+
+MPC/model rate: 20 Hz / 20 Hz
+Solver limit: 5 ADMM iterations
+Common baseline: rho=5, base w=0, base qz=1, Qz=100, R=4
+PID bridge: horizon state x4
+Vertical setpoint guard: z=[reference, reference+0.20 m]
+Horizontal setpoint guard: none
+Console sampling: 10 Hz (every two MPC steps)
+
+Nominal TinyMPC: valid trial 1
+------------------------------
+
+Mode: 0
+Console records: 120
+Fan-on records from step 102: 70
+First console timestamp: 72 ms after OOT activation
+Last hover timestamp: 11987 ms after OOT activation
+Landing completed: yes
+
+Pre-fan mean state over steps 90--98:
+
+  (x,y,z)=(0.0090,0.0268,0.5236) m
+
+Fan-on disturbance response relative to the pre-fan mean:
+
+  Delta-X RMSE:             0.38411 m
+  Delta-Y RMSE:             0.10064 m
+  Delta-planar RMSE:        0.39708 m
+  Peak delta-planar error:  0.48589 m at MPC step 180 (8.982 s)
+  Delta-Z RMSE:             0.02842 m
+  Mean delta-Z:            +0.01510 m
+
+Fan-on absolute reference tracking:
+
+  X RMSE:                   0.37548 m
+  Y RMSE:                   0.07755 m
+  Planar RMSE:              0.38340 m
+  Peak planar error:        0.46871 m at MPC step 180 (8.982 s)
+  Z RMSE from 0.50 m:       0.04558 m
+  Mean Z:                   0.53870 m
+  Fan-on Z range:           [0.490,0.568] m
+
+Fan-on motion:
+
+  Roll RMSE / peak:         0.853 / 2.44 deg
+  Pitch RMSE / peak:        1.206 / 3.13 deg
+  Yaw RMSE / peak:          2.029 / 5.38 deg
+  Vx/Vy/Vz RMSE:            0.0444/0.0312/0.0301 m/s
+  Peak 3-D speed:           0.1533 m/s
+
+Endpoint displacement:
+
+  First wind-exposed sample: step 102 (5.084 s), (x,y)=(-0.024,0.034) m
+  Landing-start sample:      step 240 (11.987 s), (x,y)=(-0.419,-0.057) m
+  Touchdown:                 t=15.837 s, (x,y)=(-0.412,-0.065) m
+  Fan-on sample to landing start: 0.40535 m
+  Fan-on sample to touchdown:     0.40043 m
+  Pre-fan mean to touchdown:      0.43089 m
+
+Timing:
+
+  MPC time mean / p95 / max:   19.05 / 24.13 / 27.54 ms
+  Total time mean / p95 / max: 19.13 / 24.17 / 27.58 ms
+  ADMM iterations mean / max:   3.96 / 5
+
+Run completion:
+
+  TRAJ DONE: idx=240, max=240; requesting landing
+  LANDING: start z=0.50, hold=(-0.41,-0.05)
+  LANDING COMPLETE: t=15837 ms, x=-0.412, y=-0.065, z=-0.005,
+                    vz=-0.092; motors off
+
+Embedded LIMO: valid trial 1
+----------------------------
+
+Mode: 3
+Console records: 120
+Fan-on records from shared step 102 boundary: 70
+First console timestamp: 79 ms after OOT activation
+Last hover timestamp: 11995 ms after OOT activation
+Landing completed: yes
+
+For a fair paired comparison, this run uses the same step-102 analysis
+boundary and step-90--98 pre-fan baseline window as the level-3 nominal run.
+The boundary is not shifted based on when LIMO's state begins moving.
+
+Pre-fan mean state over steps 90--98:
+
+  (x,y,z)=(0.0022,-0.1098,0.5302) m
+
+Fan-on disturbance response relative to the pre-fan mean:
+
+  Delta-X RMSE:             0.48902 m
+  Delta-Y RMSE:             0.07365 m
+  Delta-planar RMSE:        0.49454 m
+  Peak delta-planar error:  0.68874 m at MPC step 234 (11.696 s)
+  Delta-Z RMSE:             0.02530 m
+  Mean delta-Z:            +0.00827 m
+
+Fan-on absolute reference tracking:
+
+  X RMSE:                   0.48711 m
+  Y RMSE:                   0.17656 m
+  Planar RMSE:              0.51812 m
+  Peak planar error:        0.69955 m at MPC step 234 (11.696 s)
+  Z RMSE from 0.50 m:       0.04530 m
+  Mean Z:                   0.53847 m
+  Fan-on Z range:           [0.499,0.578] m
+
+Fan-on motion:
+
+  Roll RMSE / peak:         0.982 / 2.72 deg
+  Pitch RMSE / peak:        1.256 / 2.92 deg
+  Yaw RMSE / peak:          2.951 / 6.71 deg
+  Vx/Vy/Vz RMSE:            0.0363/0.0356/0.0372 m/s
+  Peak 3-D speed:           0.1209 m/s
+
+Endpoint displacement:
+
+  Shared boundary sample:   step 102 (5.090 s), (x,y)=(0.005,-0.115) m
+  Landing-start sample:     step 240 (11.995 s), (x,y)=(-0.668,-0.137) m
+  Touchdown:                t=15.695 s, (x,y)=(-0.646,-0.140) m
+  Boundary sample to landing start: 0.67336 m
+  Boundary sample to touchdown:     0.65148 m
+  Pre-fan mean to touchdown:         0.64890 m
+
+Embedded safety activity over the shared fan-on window:
+
+  Learned h range:             [-0.203,-0.122]
+  Learned raw range:           [-0.045,0.140]
+  Active samples:              70/70
+  Active rows per sample:      3/3
+  Binding/intersecting rows:   3/3 on 70/70 samples
+  Authority w index:           15 on 70/70 samples
+  Qz index:                    3 on 70/70 samples
+  Valid adaptive cache:        70/70 samples
+  No-oracle gate active:       70/70 samples
+
+Timing:
+
+  MPC time mean / p95 / max:   25.01 / 28.77 / 29.02 ms
+  Eval time mean / p95 / max:  10.94 / 13.29 / 14.60 ms
+  Total time mean / p95 / max: 36.82 / 40.77 / 43.76 ms
+  ADMM iterations mean / max:   5.00 / 5
+
+Run completion:
+
+  TRAJ DONE: idx=240, max=240; requesting landing
+  LANDING: start z=0.49, hold=(-0.66,-0.13)
+  LANDING COMPLETE: t=15695 ms, x=-0.646, y=-0.140, z=0.015,
+                    vz=-0.093; motors off
+
+Matched fan-level-3 nominal versus embedded-LIMO comparison
+-----------------------------------------------------------
+
+Metric                              Nominal       Embedded LIMO   LIMO change
+Delta-planar RMSE, m                0.39708       0.49454         +24.5%
+Peak delta-planar error, m          0.48589       0.68874         +41.8%
+Delta-Z RMSE, m                     0.02842       0.02530         -11.0%
+Mean delta-Z, m                     0.01510       0.00827         -45.2%
+Absolute planar RMSE, m             0.38340       0.51812         +35.1%
+Absolute Z RMSE, m                  0.04558       0.04530          -0.6%
+Boundary-to-touchdown displacement  0.40043       0.65148         +62.7%
+Total compute mean, ms             19.13         36.82          +92.5%
+
+Negative changes indicate lower error for embedded LIMO. Under level-3 wind,
+embedded LIMO reduced baseline-relative vertical motion but provided
+essentially no absolute-Z RMSE improvement. It worsened planar disturbance
+RMSE, planar peak displacement, absolute planar tracking, and endpoint
+displacement. The learned constraints and maximum authority were active
+throughout, so this is not explained by failure to engage the LIMO mechanism.
+
+Remaining matched fan-level-3 trials
+------------------------------------
+
+  Mode 1: activation-gated analytic MPC-CBF
+  Mode 2: canonical LIMO posthoc
+
+Repeat trials will be required before making a statistical
+controller-performance claim.

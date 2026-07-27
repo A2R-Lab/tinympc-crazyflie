@@ -1,0 +1,47 @@
+POST-CRASH SANITY CHECK: 0.70 M EMBEDDED-LIMO HOVER
+====================================================
+
+Purpose
+-------
+
+This was a diagnostic hover performed only to confirm that the vehicle,
+estimator, controller, and landing sequence still operated correctly after
+the preceding crash.
+
+This is not the 3 g attached-paper payload experiment. Do not pool this flight
+with the matched nominal/embedded/posthoc payload results or use it in their
+paper averages.
+
+Outcome
+-------
+
+  Gated controller-6 takeoff:  completed
+  Hover trajectory:            full 12.0 s completed
+  Controlled landing:          completed
+  Deadline overruns:           0
+  Exact maximum step time:     41.196 ms of the 50 ms budget
+
+Diagnostic metrics
+------------------
+
+Window:
+  TRAJ START + 3 s through TRAJ DONE; landing excluded.
+
+  Lateral RMSE:                0.0611 m
+  Peak lateral error:          0.1326 m
+  Z RMSE:                      0.00774 m
+  Peak absolute Z error:       0.0210 m
+  Tilt RMSE:                   1.147 deg
+  Peak tilt:                   3.421 deg
+
+Conclusion
+----------
+
+The post-crash functional check passed: embedded LIMO completed the full
+takeoff-hover-land sequence without a reset, supervisor lock, or missed
+control deadline.
+
+Raw log
+-------
+
+  hover_070_post_crash_sanity_embedded_run1.txt

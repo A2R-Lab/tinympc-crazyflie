@@ -1,5 +1,21 @@
 obj-y += controller_tinympc.o
 
+# Optional numeric-kernel A/B build. This directory contains only the
+# controller translation unit, including the inlined barrier and scheduler.
+# Use ccflags-y because this firmware's C++ Kbuild path expands its per-object
+# CFLAGS before basetarget is known.
+ifeq ($(NUMERIC_O2),1)
+ccflags-y += -O2
+endif
+
+ifeq ($(BENCH_PROFILE),1)
+ccflags-y += -DTINYMPC_BENCH_PROFILE=1
+endif
+
+ifeq ($(PROFILE_TANH),1)
+ccflags-y += -DTINYMPC_PROFILE_TANH=1
+endif
+
 # Keep the benchmark selector local to this C++ translation unit. Command-line
 # make variables propagate to the firmware sub-make, and a per-object flag
 # avoids recompiling the complete Crazyflie C firmware when the mode changes.

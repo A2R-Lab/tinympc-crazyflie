@@ -1,0 +1,49 @@
+Figure-8 0.70 m, forced 3 s start — embedded LIMO run 2
+
+Classification
+- Mode 3: embedded LIMO
+- Disturbance: downward wind
+- Firmware boot print: forced_trajectory_start=3000ms
+- This flight is not part of the forced-5-second campaign.
+
+Trajectory
+- Start deadline: 3000 ms after OOT takeoff start
+- Start state: z=0.43 m, vz=+0.22 m/s
+- Samples: 241
+- Full two-lap trajectory completed
+- Controlled landing completed
+
+Metrics, trajectory start through trajectory end
+- Lateral tracking RMSE: 0.5987 m
+- Peak lateral tracking error: 0.9867 m
+- Z tracking RMSE: 0.0401 m
+- Maximum absolute Z error: 0.2490 m
+- Tilt RMSE: 9.0004 deg
+- Peak tilt: 18.6854 deg
+- Median complete control step: 34.084 ms
+- Exact maximum control step: 44.035 ms
+- Deadline overruns: 0
+
+Relative to forced-3-second embedded run 1
+- Lateral RMSE: 2.3% higher
+- Peak lateral error: 11.8% higher
+- Z RMSE: 17.7% lower
+- Maximum Z error: 19.9% lower
+- Tilt RMSE: 9.7% lower
+- Peak tilt: 30.2% lower
+- Median computation: 1.8% higher
+- Maximum computation: 5.6% higher
+
+Embedded mechanism
+- Learned row active at stage 0: 204/241 = 84.6% of logged samples
+- Learned constraint binding: 229/241 = 95.0%
+- Authority index: 15/15 for 241/241 samples
+- Mean applied authority: 1.000
+- Mean applied Qz scale: 1.400
+- The policy was therefore saturated at full authority throughout this run.
+
+Raw log
+- figure8_070_forced3s_embedded_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachment.

@@ -1,0 +1,230 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD: RUN 1
+================================================================
+
+Status
+------
+
+Single matched three-way payload triplet:
+
+  - nominal TinyMPC (mode 0)
+  - embedded LIMO (mode 3)
+  - posthoc LIMO (mode 2)
+
+All three flights completed controller-6 takeoff, both Figure-8 laps, and
+controlled landing without a deadline overrun or crash.
+
+Experimental condition
+----------------------
+
+Test identity:
+  This is the earlier matched nominal-versus-embedded-LIMO-versus-posthoc-LIMO
+  experiment in which a physical 3 g paper payload was attached to the
+  vehicle. "Aerodynamic payload test" in these notes always means this
+  attached-paper experiment. It does not mean a no-payload fan test, and it
+  must not be confused with later post-crash hover sanity checks.
+
+Payload:
+  3 g of paper attached to the front-right propeller guard.
+
+Attachment consistency:
+  The same 3 g paper placement was used for all three arms in this matched
+  triplet. The payload remained physically attached throughout each flight.
+
+Interpretation:
+  This is an asymmetric payload/center-of-mass and aerodynamic perturbation,
+  not merely a centered added-mass test.
+
+How the payload breaks the initial model:
+
+  No payload-specific mass, center-of-mass, inertia, aerodynamic, motor, or
+  propeller-flow correction was introduced into the MPC dynamics, reference
+  generator, learned barrier, or frozen authority policy. Relative to the
+  model used to construct the controller, the attached paper therefore adds:
+
+    1. Added mass, changing hover thrust and translational acceleration.
+    2. An off-center center of mass, producing a static roll/pitch moment and
+       asymmetric motor loading.
+    3. A changed inertia tensor and principal axes, perturbing the modeled
+       attitude and angular-rate dynamics.
+    4. Orientation- and velocity-dependent aerodynamic force and torque: the
+       paper behaves as a small sail even in nominally calm air because the
+       vehicle moves rapidly through the Figure-8.
+    5. Local propeller/guard inflow interference at the front-right rotor.
+    6. Possible flexible-body flutter, making the disturbance time varying
+       rather than a single fixed parameter offset.
+
+  This is therefore a coupled structured sim-to-real plant mismatch, designed
+  to violate the initial rigid-body/nominal-aerodynamics model rather than to
+  isolate added mass alone. The barrier and authority-policy weights remained
+  frozen. These data support robustness to the combined mismatch; they do not
+  identify which individual mechanism caused each observed error.
+
+Wind:
+  No wind was reported for this triplet; treat it as a calm-air payload test.
+  If an external fan is added in a later payload trial, record its level,
+  direction, distance, onset, and attachment orientation separately. The paper
+  couples strongly to airflow, so such a trial is a payload-plus-aerodynamic-
+  disturbance experiment and must not be pooled with this calm-air triplet.
+
+Common firmware configuration:
+
+  Reference altitude:       0.70 m
+  Trajectory:               traj_fig8_12.h
+  Laps:                     2
+  Trajectory duration:      approximately 24.1 s
+  MPC/model rate:           20 Hz
+  ADMM iterations:          5
+  MPC-to-PID bridge:        x10 (500 ms)
+  Shared Z guard:           [reference Z, reference Z + 0.20 m]
+  OOT takeoff ramp:         0.15 m/s
+  OOT takeoff settle rule:  |z - 0.70| <= 0.05 m and |vz| <= 0.10 m/s
+                            continuously for 1.0 s
+
+Primary analysis window
+-----------------------
+
+Use:
+
+  TRAJ START + 3 s through TRAJ DONE
+
+Historical notes may call this "OOT + 3 s," but that name is no longer exact
+for this gated-takeoff firmware. Controller 6 is activated on the ground about
+9 s before the Figure-8 starts. The firmware resets the EXP timestamp at
+TRAJ START, so the primary filter is:
+
+  EXP tms >= 3000
+
+Landing is excluded. The first retained console samples occur at approximately
+3.08 s, and each arm contributes 211 decimated samples.
+
+Metric definitions:
+
+  Lateral RMSE = sqrt(mean((x - x_ref)^2 + (y - y_ref)^2))
+  Peak lateral error = max(sqrt((x - x_ref)^2 + (y - y_ref)^2))
+  Z RMSE = sqrt(mean((z - z_ref)^2))
+  Peak Z error = max(|z - z_ref|)
+  Tilt = sqrt(roll^2 + pitch^2), in degrees
+
+Primary results: TRAJ START + 3 s through TRAJ DONE
+---------------------------------------------------
+
+Metric                         Nominal       Embedded LIMO    Posthoc LIMO
+Lateral RMSE, m                0.4847        0.6111           0.5184
+Peak lateral error, m          0.8060        0.9135           0.8249
+Z RMSE, m                      0.01645       0.00889          0.03849
+Peak absolute Z error, m       0.0420        0.0250           0.0960
+Tilt RMSE, deg                 11.119        7.465            10.452
+Peak tilt, deg                 18.674        14.456           16.948
+
+Relative effects
+----------------
+
+Embedded LIMO relative to nominal:
+
+  Z RMSE improvement:          45.9%
+  Peak Z error improvement:    40.5%
+  Tilt RMSE improvement:       32.9%
+  Peak tilt improvement:       22.6%
+  Lateral RMSE degradation:    26.1%
+  Peak lateral degradation:    13.3%
+
+Embedded LIMO relative to posthoc:
+
+  Z RMSE improvement:          76.9%
+  Peak Z error improvement:    74.0%
+  Tilt RMSE improvement:       28.6%
+  Peak tilt improvement:       14.7%
+  Lateral RMSE degradation:    17.9%
+  Peak lateral degradation:    10.7%
+
+Interpretation:
+
+  Nominal produces the best lateral tracking on the aggressive Figure-8.
+  Embedded LIMO gives up lateral tracking authority but provides substantially
+  tighter vertical regulation and lower attitude excursion under the
+  asymmetric payload. Posthoc lies between the two laterally, but has the
+  worst vertical regulation.
+
+Posthoc mechanism
+-----------------
+
+Whole trajectory after the tracking-counter reset:
+
+  Projection attempts:         383
+  Infeasible projections:      240
+  Infeasibility rate:          62.7%
+  Feasible interventions:      143
+
+Within the decimated primary window:
+
+  Active samples:              176/211
+  Infeasible samples:          113/176 active = 64.2%
+  Feasible intervention rows:  63
+
+Vertical behavior in the primary window:
+
+  Embedded actual Z range:     0.675 to 0.724 m
+  Embedded commanded Z range:  0.699 to 0.700 m
+  Posthoc actual Z range:      0.685 to 0.796 m
+  Posthoc commanded Z range:   0.699 to 0.893 m
+
+The posthoc arm's successful projections repeatedly raise the vertical
+setpoint; its corrected infeasible path returns the nominal command. This
+switching is consistent with its larger Z error and tilt.
+
+On-target timing
+----------------
+
+Metric                         Nominal       Embedded LIMO    Posthoc LIMO
+Median control step, ms        23.038        35.138           34.626
+P99 sampled step, ms           27.754        43.905           40.227
+Exact cumulative maximum, ms   29.564        44.331           41.229
+Worst 50 ms deadline use       59.13%        88.66%           82.46%
+Deadline overruns              0             0                0
+
+The learned embedded and posthoc arms have nearly identical median cost in
+this run; posthoc is only 1.5% faster at the median. Nominal remains much
+cheaper because it evaluates no learned barrier.
+
+Takeoff and full-flight event data
+----------------------------------
+
+Metric                         Nominal       Embedded LIMO    Posthoc LIMO
+Takeoff + settle, s            9.356         9.326            9.040
+Trajectory duration, s         24.104        24.117           24.108
+Takeoff to TRAJ DONE, s        33.460        33.443           33.148
+Takeoff-to-land duration, s    38.692        38.666           38.300
+Net XY takeoff endpoint drift  0.061 m       0.076 m          0.030 m
+Net XY takeoff-to-land offset  0.194 m       0.125 m          0.320 m
+
+Dense EXP records are intentionally suppressed during takeoff and landing in
+this firmware. These endpoint offsets and phase durations are valid, but a
+takeoff-to-TRAJ-DONE RMSE or tilt RMSE cannot be reconstructed from these
+logs. Do not combine the sparse takeoff endpoints with the dense trajectory
+records as if they were uniformly sampled.
+
+Raw logs
+--------
+
+  figure8_070_payload3g_front_right_nominal_run1.txt
+  figure8_070_payload3g_front_right_embedded_run1.txt
+  figure8_070_payload3g_front_right_posthoc_run1.txt
+
+Reporting status
+----------------
+
+This is one matched triplet. It is suitable as a feasibility/mechanism result,
+but repeat trials are required before reporting a mean, dispersion, or
+statistical comparison.
+
+Follow-on payload-limit observation
+-----------------------------------
+
+A later embedded-LIMO hover attempt used 5 g of paper on the front-left
+propeller guard. The supervisor locked during takeoff, before TAKEOFF
+COMPLETE or TRAJ START. It is recorded separately as:
+
+  hover_070_payload5g_front_left_embedded_takeoff_failure_run1.txt
+
+Do not add that failed attempt to the successful 3 g triplet or interpret it
+as a clean mass-scaling result: both payload mass and attachment side changed.

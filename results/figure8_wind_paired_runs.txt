@@ -1,0 +1,76 @@
+FIGURE-EIGHT UNDER WIND: EMBEDDED LIMO VS LIMO POSTHOC
+======================================================
+
+Status
+------
+
+INVALID FOR THE CANONICAL FIGURE-EIGHT COMPARISON.
+
+These archived images generated an analytic Figure-8 inside
+controller_tinympc.cpp instead of playing traj_fig8_12.h. The numbers below
+are retained only as implementation diagnostics and must not enter the paper
+or be pooled with the new table-driven runs.
+
+A new run is canonical only when its boot log contains:
+
+  Figure8: source=traj_fig8_12.h source_hz=100 samples=1205
+
+Window and boundary
+-------------------
+
+Metrics use the first EXP sample at/after OOT+3.0 s through the final EXP
+sample before TRAJ DONE. PID landing is excluded.
+
+At the first sample, boundary-relative tracking error is defined as zero:
+
+  e_xy(t) = position_xy(t) - reference_xy(t)
+  delta_e_xy(t) = e_xy(t) - e_xy(OOT+3-s boundary)
+
+This removes both the initial tracking offset and the commanded Figure-8
+motion. Lateral tracking RMSE measures absolute error from the reference over
+the same time window.
+
+Archived sources
+----------------
+
+Embedded raw log: figure8_wind_embedded_run1.txt
+Posthoc raw log: figure8_wind_posthoc_run1.txt
+Reference used by these logs: noncanonical analytic Figure-8
+
+Selected diagnostic metrics
+---------------------------
+
+Metric                                  Embedded LIMO        Posthoc
+Boundary-relative RMSE, m               0.2732               0.2263
+Peak boundary-relative error, m         0.4410               0.4480
+Tilt RMSE, deg                          1.832                2.275
+Peak tilt, deg                          4.077                5.215
+Lateral tracking RMSE, m                0.1898               0.1650
+Z tracking RMSE, m                      0.0242               0.0240
+Maximum absolute Z error, m             0.0430               0.0480
+Median total computation, ms           37.441               37.536
+P99 total computation, ms              42.285               44.333
+Maximum total computation, ms          42.385               44.755
+Deadline overruns                       0                    0
+Whole-flight posthoc active/infeasible  N/A                  13 / 11
+Posthoc infeasibility rate              N/A                  84.62%
+Primary-window posthoc active/infeasible N/A                 0 / 0
+
+Archived diagnostic comparison
+------------------------------
+
+Embedded LIMO versus posthoc:
+
+  Boundary RMSE:             20.7% higher
+  Peak boundary error:        1.6% lower
+  Tilt RMSE:                 19.5% lower
+  Peak tilt:                 21.8% lower
+  Lateral tracking RMSE:     15.0% higher
+  Z tracking RMSE:            0.8% higher (effectively tied)
+  Maximum absolute Z error:  10.4% lower
+  Median computation:         0.3% lower
+  P99 computation:            4.6% lower
+  Maximum computation:        5.3% lower
+
+Do not interpret this archived pair as the canonical Figure-8 result. Replace
+this table after matched embedded/posthoc flights using traj_fig8_12.h.

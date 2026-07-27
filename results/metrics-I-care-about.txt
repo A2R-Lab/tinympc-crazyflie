@@ -10,7 +10,10 @@ Primary comparison
 Use matched builds and conditions:
 
   - 20 Hz MPC/model, five ADMM iterations, x10 PID bridge.
-  - Identical Q, R, rho, trajectory, 1.00 m height, and landing logic.
+  - Identical nominal Q/R/rho baseline, trajectory, and landing logic within
+    each campaign. Embedded LIMO's learned policy then installs its
+    method-specific authority/Qz cache entry; posthoc remains on the fixed
+    nominal cache by definition.
   - Fan directly in front of the Crazyflie, approximately 75 cm away.
   - Switch to OOT controller 6 at t=0.
   - Fan is switched on manually approximately 1--2 s after OOT activation
@@ -45,6 +48,21 @@ Analysis windows
     Full-OOT and final-2/5/10-s windows may be retained as diagnostics but are
     not the selected primary result.
 
+Paper interpretation locked before result tables
+-------------------------------------------------
+
+With a constant hover reference, there is almost no lateral tracking
+performance to give up, so backing off the lateral weight costs almost
+nothing and the reallocated authority appears as improved disturbance
+rejection. On an aggressive trajectory there is real tracking to sacrifice,
+so the same backoff has a visible lateral-tracking price. The trade costs
+performance only when there is a task to sacrifice.
+
+Treat the Figure-8 result as a safety--tracking Pareto shift, not a universal
+tracking win. Report the XY cost beside the Z and tilt benefits. Hover,
+Figure-8 top-to-bottom wind, and Figure-8 bottom-to-top wind are separate
+conditions and must not be pooled.
+
 
 1. Hover under wind: in-solver versus posthoc
 ------------------------------------------------
@@ -58,12 +76,15 @@ Accuracy relative to the hover reference:
 
 Fixed-boundary disturbance displacement:
 
-  dx_3s(t) = x(t) - x(first EXP sample at/after OOT+3.0 s)
-  dy_3s(t) = y(t) - y(first EXP sample at/after OOT+3.0 s)
-  drift_3s = sqrt(dx_3s^2 + dy_3s^2)
+  delta_ex(t) = ex(t) - ex(first EXP sample at/after OOT+3.0 s)
+  delta_ey(t) = ey(t) - ey(first EXP sample at/after OOT+3.0 s)
+  delta_ez(t) = ez(t) - ez(first EXP sample at/after OOT+3.0 s)
+  delta_roll(t) = roll(t) - roll(first EXP sample at/after OOT+3.0 s)
+  delta_pitch(t) = pitch(t) - pitch(first EXP sample at/after OOT+3.0 s)
 
-Call this fixed-boundary sustained-wind drift, not exact fan-onset drift.
-The boundary is repeatable even though manual fan onset is not.
+The primary RMSE/peak table uses these fully boundary-refreshed channels.
+Call this fixed-boundary sustained-wind response, not exact fan-onset
+response. The boundary is repeatable even though manual fan onset is not.
 
 Timing:
 
@@ -71,7 +92,8 @@ Timing:
 
   - Median, p99, and maximum raw cycles.
   - Offline time in milliseconds: cycles / 168000.
-  - Worst-case deadline usage: max(total_cyc) / 8400000.
+  - Exact all-step maximum from cumulative tinympc.max_step_cyc.
+  - Worst-case deadline usage: max_step_cyc / 8400000.
   - Final cumulative overruns; required result is zero.
 
 2. Figure-eight under wind: in-solver versus posthoc
@@ -85,7 +107,7 @@ Reference requirement:
     traj_fig8_12.h, resampled from its stored 100 Hz states to the 20 Hz MPC
     horizon.
   - Translate its X/Y position to the OOT-activation origin and translate its
-    stored Z position to the configured 1.00 m height. Preserve every stored
+    stored Z position to the configured 0.70 m stress-test height. Preserve every stored
     velocity, attitude, and angular-rate reference.
   - Accept a run only when the boot log says:
       Figure8: source=traj_fig8_12.h source_hz=100 samples=1205
@@ -221,8 +243,9 @@ Report:
   - Number of Qz-index switches and switches per second.
 
 The EXP console line ends with requested/applied authority and requested/
-applied Qz, all scaled by 1000, so both quantization errors can be recovered
-without a separate cfclient log block.
+applied Qz, all scaled by 1000, followed by cumulative max_step_cycles.
+Both quantization errors and the exact all-step maximum can therefore be
+recovered without a separate cfclient log block.
 
 Combined 16x4 cache-bank metrics:
 

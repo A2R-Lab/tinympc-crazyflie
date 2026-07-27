@@ -1,6 +1,15 @@
 #pragma once
 
 #include <math.h>
+#include <stdint.h>
+
+#ifndef TINYMPC_PROFILE_TANH
+#define TINYMPC_PROFILE_TANH 0
+#endif
+
+#if TINYMPC_PROFILE_TANH
+#include "stm32f4xx.h"
+#endif
 
 #include "tinympc/types.hpp"
 #include "limo_barrier_params.hpp"
@@ -9,6 +18,9 @@ struct LimoBarrierEval {
   tinytype h;
   tinytype raw;
   tiny_VectorNx grad;
+  // Nonzero only in PROFILE_TANH bench builds. This intentionally includes
+  // two DWT reads per tanhf call; use the clean bench for total timing.
+  uint32_t activation_cycles;
 };
 
 namespace limo_barrier {
@@ -39,9 +51,24 @@ static inline tinytype sign_abs_grad(tinytype value)
   return value >= tinytype(0.0f) ? tinytype(-1.0f) : tinytype(1.0f);
 }
 
+static inline tinytype eval_tanh(tinytype value, uint32_t *activation_cycles)
+{
+#if TINYMPC_PROFILE_TANH
+  const uint32_t activation_start_cycles = DWT->CYCCNT;
+  const tinytype result = tanhf(value);
+  *activation_cycles += DWT->CYCCNT - activation_start_cycles;
+  return result;
+#else
+  (void)activation_cycles;
+  return tanhf(value);
+#endif
+}
+
 static inline void eval_mlp(const tinytype features[learned_floor_barrier::kInputDim], LimoBarrierEval *out)
 {
   using namespace learned_floor_barrier;
+
+  out->activation_cycles = 0;
 
   for (int i = 0; i < kInputDim; ++i) {
     norm_input[i] = (features[i] - kInputMean[i]) / kInputStd[i];
@@ -52,7 +79,7 @@ static inline void eval_mlp(const tinytype features[learned_floor_barrier::kInpu
     for (int i = 0; i < kInputDim; ++i) {
       pre += norm_input[i] * kW1[i * kHidden1 + j];
     }
-    hidden1[j] = tanhf(pre);
+    hidden1[j] = eval_tanh(pre, &out->activation_cycles);
   }
 
   for (int j = 0; j < kHidden2; ++j) {
@@ -60,7 +87,7 @@ static inline void eval_mlp(const tinytype features[learned_floor_barrier::kInpu
     for (int i = 0; i < kHidden1; ++i) {
       pre += hidden1[i] * kW2[i * kHidden2 + j];
     }
-    hidden2[j] = tanhf(pre);
+    hidden2[j] = eval_tanh(pre, &out->activation_cycles);
   }
 
   tinytype raw = kB3;

@@ -69,6 +69,37 @@ ifneq ($(filter $(TRAJECTORY),0 1 2 3 4),$(TRAJECTORY))
 $(error TRAJECTORY must be 0, 1, 2, 3, or 4)
 endif
 endif
+
+# Optional numeric-only optimization experiment:
+#   make FIRMWARE_MODE=3 NUMERIC_O2=0  # firmware-wide -Os baseline
+#   make FIRMWARE_MODE=3 NUMERIC_O2=1  # -O2 for controller + ADMM only
+# Keep the default at zero until an on-target DWT A/B test demonstrates the
+# cycle/flash tradeoff.
+NUMERIC_O2 ?= 0
+ifneq ($(filter $(NUMERIC_O2),0 1),$(NUMERIC_O2))
+$(error NUMERIC_O2 must be 0 or 1)
+endif
+
+# Safe, deterministic on-target profiling image:
+#   make FIRMWARE_MODE=3 BENCH_PROFILE=1 NUMERIC_O2=0
+#   make FIRMWARE_MODE=3 BENCH_PROFILE=1 NUMERIC_O2=1
+# Add PROFILE_TANH=1 for a separate activation-attribution run. Keeping it
+# off preserves clean bar_cyc and total_cyc measurements.
+# The controller task receives a canned state sequence and controller 6 always
+# commands motors off. BENCH_PROFILE=0 is the normal flight build.
+BENCH_PROFILE ?= 0
+ifneq ($(filter $(BENCH_PROFILE),0 1),$(BENCH_PROFILE))
+$(error BENCH_PROFILE must be 0 or 1)
+endif
+PROFILE_TANH ?= 0
+ifneq ($(filter $(PROFILE_TANH),0 1),$(PROFILE_TANH))
+$(error PROFILE_TANH must be 0 or 1)
+endif
+ifeq ($(PROFILE_TANH),1)
+ifneq ($(BENCH_PROFILE),1)
+$(error PROFILE_TANH=1 requires BENCH_PROFILE=1)
+endif
+endif
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
@@ -84,6 +115,9 @@ OOT_ARGS := -C $(CRAZYFLIE_BASE) OOT=$(PWD) EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
 # recursive Crazyflie build from appending nosys/nano specs more than once on
 # macOS Arm GNU Toolchain 14, while retaining the normal embedded link setup.
 OOT_ARGS += LDFLAGS="--specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -nostdlib"
+OOT_ARGS += NUMERIC_O2=$(NUMERIC_O2)
+OOT_ARGS += BENCH_PROFILE=$(BENCH_PROFILE)
+OOT_ARGS += PROFILE_TANH=$(PROFILE_TANH)
 ifdef FIRMWARE_MODE
 OOT_ARGS += FIRMWARE_MODE=$(FIRMWARE_MODE)
 endif

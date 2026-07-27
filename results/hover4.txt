@@ -1,0 +1,132 @@
+Hover benchmark 4: level-2 fan, unified x10 bridge
+==================================================
+
+STATUS: TWO VALID RUNS (nominal and embedded LIMO). The LIMO-posthoc
+attempt is INVALID because the controller diverged before the fan-on
+analysis boundary and the supervisor reported a crash. The MPC-CBF attempt
+is also INVALID for the intended benchmark because its firmware was
+activation-gated and installed zero linear constraint rows during the run.
+
+Date: 2026-07-25
+Vehicle: Crazyflie 2.1 Brushless with Flow deck
+Estimator: Kalman
+Controller selected in CFclient: OutOfTree (6)
+Trajectory: hover (maneuver 0), reference=(0.00,0.00,0.50) m
+Duration: 12 s, followed by controlled landing
+Disturbance: fan level 2
+Primary fan-on analysis boundary: MPC step 60 (OOT+approximately 3.0 s)
+Observed airflow-response onset: approximately MPC step 102 (OOT+5.1 s)
+
+Matched firmware configuration
+------------------------------
+
+MPC/model rate: 20 Hz / 20 Hz
+Solver limit: 5 ADMM iterations
+Common baseline: rho=5, base w=0, base qz=1, Qz=100, R=4
+PID bridge: horizon state x10 (500 ms), shared by every controller arm
+Vertical guard: z=[reference, reference+0.20 m]
+Horizontal guard: none
+Console sampling: 10 Hz (every two MPC steps)
+
+Archived logs
+-------------
+
+Valid embedded-LIMO run:
+
+  hover4_embedded_limo_level2_x10_raw.txt
+  SHA-256: 3f0b0f2a725c47d725e4bca4a87a42609142dcdb68af95d09699366f7c56d0d0
+
+Valid nominal run:
+
+  hover4_nominal_level2_x10_raw.txt
+  SHA-256: c9072cbb503855e471ce3ca6e9069acb18acb32782b6125af650c61e830ba9af
+
+Invalid LIMO-posthoc diagnostic run:
+
+  hover4_posthoc_level2_x10_INVALID_crash_raw.txt
+  SHA-256: 4329fda84d388bd403490ba74bd7ccea6152effcd66304ddd50d440320ab7ea0
+
+Invalid activation-gated MPC-CBF diagnostic run:
+
+  hover4_mpccbf_level2_x10_INVALID_gated_raw.txt
+  SHA-256: 98eda9de91a4a55f5f0623ae4cd46cb506c376688f3d382f5066f45e072ce327
+
+Matched valid-run comparison
+----------------------------
+
+Metrics below use the common, preregistered MPC-step-60 boundary and each
+run's mean state over steps 50--58 as its pre-fan baseline.
+
+Metric                                      Nominal       Embedded LIMO
+Delta-planar RMSE, m                        0.1137        0.1372
+Peak delta-planar displacement, m           0.2222        0.2518
+Absolute planar RMSE, m                     0.1036        0.1376
+Delta-Z RMSE, m                             0.0241        0.0219
+Absolute Z RMSE from 0.50 m, m              0.0121        0.0117
+Boundary-to-landing-start displacement, m   0.0277        0.0516
+Boundary-to-touchdown displacement, m       0.0302        0.0462
+Mean total controller time, ms              18.9          36.8
+
+Nominal had 17.1% lower delta-planar RMSE and 11.8% lower peak lateral
+displacement than embedded LIMO in this single matched pair. Embedded LIMO's
+vertical errors were slightly lower, but the absolute-Z RMSE difference was
+only 0.4 mm and is not meaningful without repeat trials.
+
+Using the common observed-response boundary at step 102 gives the same
+qualitative result: delta-planar RMSE was 0.0896 m for nominal and 0.1604 m
+for embedded LIMO.
+
+Invalid posthoc attempt
+-----------------------
+
+The posthoc attempt is not a wind result. It diverged immediately after OOT
+activation, well before step 60:
+
+  step 2:  position y=-0.204 m, command y=-0.276 m,
+           posthoc active=1, failed=1, delta-u norm=1.015
+  step 58: position y=-2.593 m, command y=-4.172 m,
+           posthoc active=1, failed=1, delta-u norm=1.044
+
+At activation, learned h=-0.156 and the requested margin was 0.069. The
+one-step posthoc projection therefore demanded a 0.225 barrier increase,
+found that request infeasible, and returned a saturated recovery command.
+That command was injected into the first MPC input and the horizon was
+rerolled; the x10 PID bridge then exposed the divergent predicted X/Y state
+to the position PID. The Z guard remained effective only on the Z command
+and could not contain X/Y.
+
+The supervisor reported a crash at approximately 5.2 s, followed by multiple
+Kalman out-of-bounds resets. Landing coordinates after those resets are not
+physically meaningful. Do not fly firmware mode 2 again until the posthoc
+projection-to-PID bridge is corrected and validated without propellers.
+
+Post-run remediation: the firmware now preserves the canonical projection on
+feasible steps but returns the nominal command with failed=1 and delta-u=0
+when the requested half-space is infeasible. The simulator instead returns
+the saturation-maximizing command on that failure path; that direct-action
+behavior is intentionally not passed through the hardware position-PID
+bridge.
+
+Invalid MPC-CBF attempt
+-----------------------
+
+The mode-1 flight remained stable and completed the full 12 s hover, but it
+does not satisfy the intended always-installed linear-constraint definition
+of the MPC-CBF benchmark. Its own boot record says:
+
+  MPC-CBF LTV rows: activation-gated, active_horizon=3
+
+Every one of the 91 records from the step-60 analysis boundary through the
+end of hover reported active=0 and active_count=0. Therefore this flight was
+effectively another fixed-baseline MPC trial, not a valid always-installed
+MPC-CBF trial. The supplied text also ends at LANDING start and does not
+contain LANDING COMPLETE.
+
+Diagnostic metrics, not for the official comparison:
+
+  Delta-planar RMSE:                      0.1353 m
+  Peak delta-planar displacement:         0.2542 m
+  Absolute planar RMSE:                   0.1318 m
+  Absolute Z RMSE from 0.50 m:            0.0165 m
+  Boundary-to-landing-start displacement: 0.1133 m
+  Mean total controller time:             19.0 ms

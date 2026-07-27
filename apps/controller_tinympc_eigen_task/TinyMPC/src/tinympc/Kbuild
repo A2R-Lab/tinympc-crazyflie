@@ -1,1 +1,7 @@
 obj-y += admm.o
+
+# Optional numeric-kernel A/B build. This directory contains only admm.cpp.
+# See the controller Kbuild note for why this uses ccflags-y.
+ifeq ($(NUMERIC_O2),1)
+ccflags-y += -O2
+endif

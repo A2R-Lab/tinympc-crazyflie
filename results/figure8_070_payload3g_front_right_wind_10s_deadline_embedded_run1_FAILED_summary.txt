@@ -1,0 +1,93 @@
+10 S MISSION-DEADLINE TEST: EMBEDDED LIMO RUN 1 — FAILED
+================================================================
+
+Configuration
+-------------
+
+  Mode:                         3, embedded LIMO
+  Maneuver:                     4, two-lap canonical Figure-8
+  Reference altitude:           0.70 m
+  Mission-readiness deadline:   10.000 s after TAKEOFF START
+  Required settle rule:         |z - 0.70| <= 0.05 m and
+                                |vz| <= 0.10 m/s for 1.000 s
+  Deadline failure action:      request controlled landing
+
+This run belongs to the 3 g front-right paper-payload plus wind campaign,
+subject to confirmation of the fan metadata.
+
+Outcome
+-------
+
+Mission failure. The vehicle never reached TRAJ START.
+
+The flight became physically/estimator-wise invalid before the 10 s mission
+decision:
+
+  - 7.600 s: z=1.029 m, vz=+0.400 m/s
+  - 7.696 s: z=0.748 m, vz=-1.708 m/s
+  - 7.794 s: z=0.592 m, vz=-3.204 m/s
+  - 8.196 s: reported z=-0.197 m
+  - approximately 8.3 s: supervisor locked; reboot required
+  - 10.000 s: MISSION FAIL printed with settle_hold=0 ms
+  - after the lock: estimator state went out of bounds and reset
+
+The deadline logic requested landing at 10 s, but the supervisor had already
+locked the vehicle. Therefore this is not a successful controlled deadline
+abort and must not be described as one.
+
+The fixed-deadline branch performs no pass/fail action before 10.000 s. The
+large state excursion began around 7.6 s and the supervisor locked around
+8.3 s, so the deadline decision itself did not trigger the lock. The deadline
+experiment was nevertheless disabled after this exploratory attempt.
+
+Supervisor-state interpretation:
+
+  "Locked" is reached through the Crazyflie supervisor exception state.
+  Depending on its state immediately beforehand, the trigger is a commander
+  watchdog timeout, emergency stop, or a tumble while already in the
+  warning-level-out state. A plain tumble directly from the normal Flying
+  state would print "Crashed, recovery required" instead. The condition bits
+  were not dumped in this log, so the exact branch cannot be identified
+  retrospectively.
+
+Takeoff-Z diagnostic
+--------------------
+
+For OOT/takeoff + 3 s through the last OOTZ sample before the supervisor-lock
+line (3.085 to 8.297 s):
+
+  Samples:                      52
+  Z RMSE against ramp/hover ref 0.2231 m
+  Peak absolute Z error:        0.897 m
+  Reported Z range:             -0.197 to 1.029 m
+  Peak absolute vertical speed: 3.204 m/s
+
+These numbers include the physical failure and describe its severity. Samples
+after the supervisor lock are estimator-invalid and are excluded.
+
+Timing
+------
+
+  Exact maximum step:           44.404 ms
+  Worst 50 ms deadline use:     88.81%
+  Deadline overruns:            0
+
+The failure was not preceded by a measured 50 ms MPC deadline overrun.
+
+Validity and interpretation
+---------------------------
+
+This run is valid as an end-to-end mission failure and must be counted in the
+deadline campaign. It is invalid for Figure-8 lateral/tilt tracking because
+the trajectory never began.
+
+The OOTZ trace shows large vertical oscillation followed by a catastrophic
+state change, but it does not contain attitude, motor, or learned-mechanism
+flags. The log alone cannot distinguish aerodynamic upset, physical contact,
+loss of attitude control, or estimator corruption as the initiating event.
+Do not claim a controller-specific causal mechanism from this attempt.
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_wind_10s_deadline_embedded_run1_FAILED.txt

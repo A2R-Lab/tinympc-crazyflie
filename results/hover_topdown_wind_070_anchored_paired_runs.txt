@@ -1,0 +1,55 @@
+ACTIVATION-ANCHORED HOVER UNDER TOP-DOWN WIND
+============================================================
+
+Protocol
+--------
+- Maneuver: hover, z_ref = 0.70 m, 12 s OOT phase.
+- Fan: directly above the vehicle, blowing down; enabled at/near OOT activation.
+- Each firmware image captures the estimated (x, y) at controller-6 activation
+  and commands that point throughout hover.
+- Analysis window: every logged EXP sample in the OOT phase (approximately
+  0.09 s after activation through 12.00 s). Landing is excluded.
+- Lateral error: sqrt((x - x_ref)^2 + (y - y_ref)^2).
+- Z error: abs(z - 0.70 m). Its maximum includes the intentional initial climb.
+- Tilt magnitude: sqrt(roll^2 + pitch^2).
+- Times use raw DWT cycles at 168 MHz. Exact maximum comes from the cumulative
+  max_step_cycles counter; the deadline is 8,400,000 cycles (50 ms).
+
+Pair 1
+------
+Embedded raw:
+  hover_topdown_wind_070_anchored_embedded_run1.txt
+  Captured reference: (-0.045, 0.102, 0.700) m
+
+Posthoc raw:
+  hover_topdown_wind_070_anchored_posthoc_run1.txt
+  Captured reference: (0.004, 0.004, 0.700) m
+
+Metric                              Embedded LIMO    Posthoc LIMO
+Lateral RMSE (m)                         0.08999          0.09076
+Peak lateral error (m)                   0.16981          0.18001
+Final lateral error (m)                  0.10653          0.10512
+Z RMSE (m)                               0.04924          0.04915
+Maximum Z error (m)                      0.19800          0.19000
+Tilt RMSE (deg)                          1.46925          2.03226
+Peak tilt (deg)                          4.40528          4.58940
+Median control step (ms)                36.88254         32.07348
+Exact maximum control step (ms)         47.49982         43.31848
+Deadline overruns                              0                0
+Posthoc active / infeasible                    -        241 / 233
+Posthoc infeasibility rate                     -           96.68%
+
+Pair-1 interpretation
+---------------------
+- Lateral tracking is effectively tied: embedded has 0.85% lower RMSE and
+  5.67% lower peak error; posthoc has 1.33% lower final error.
+- Embedded has 27.70% lower tilt RMSE and 4.01% lower peak tilt.
+- Z RMSE is effectively tied; posthoc has a 4.04% lower maximum Z error,
+  dominated by the initial climb.
+- Embedded costs 4.81 ms more at the median and 4.18 ms more at the exact
+  maximum, while both meet the 50 ms deadline.
+- Posthoc is infeasible on 96.68% of active steps and therefore uses the
+  corrected nominal fallback on 233/241 steps. This independently matches the
+  approximately 96.8% infeasibility reported by the canonical simulation.
+
+This is one matched pair, not a campaign average.

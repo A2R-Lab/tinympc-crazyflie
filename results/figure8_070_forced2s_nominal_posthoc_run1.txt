@@ -1,0 +1,43 @@
+Figure-8 0.70 m, forced 2 s start — nominal/posthoc interim run 1
+
+Protocol
+- Nominal mode 0 versus posthoc LIMO mode 2
+- Takeoff ramp: 0.15 m/s
+- Trajectory forced 2000 ms after OOT takeoff start
+- Disturbance: downward wind
+- Analysis window: trajectory start through trajectory end
+- Samples per arm: 241
+
+Start states
+- Nominal: z=0.18 m, vz=+0.25 m/s
+- Posthoc: z=0.14 m, vz=+0.21 m/s
+
+Metric                         Nominal        Posthoc        Winner
+Lateral tracking RMSE          0.4957 m       0.5171 m       Nominal by 4.1%
+Peak lateral tracking error    0.8510 m       1.0286 m       Nominal by 17.3%
+Z tracking RMSE                0.0691 m       0.0843 m       Nominal by 18.0%
+Maximum absolute Z error       0.5020 m       0.5390 m       Nominal by 6.9%
+Tilt RMSE                      12.3857 deg    11.0207 deg    Posthoc by 11.0%
+Peak tilt                      24.3785 deg    21.5141 deg    Posthoc by 11.7%
+Median complete control step   22.675 ms      34.204 ms      Nominal by 33.7%
+Exact maximum control step     28.553 ms      41.262 ms      Nominal by 30.8%
+Deadline overruns              0              0              Tie
+
+Posthoc mechanism
+- Projection attempts: 295
+- Infeasible projections: 181/295 = 61.4%
+- Successful interventions: 114/295 = 38.6%
+
+Outcome
+- Both arms completed both laps and controlled landing.
+- Both arms recorded zero deadline overruns.
+- Posthoc reduced attitude excursion but worsened lateral and vertical
+  tracking relative to nominal.
+- Embedded LIMO is still required to complete the three-way comparison.
+
+Raw logs
+- figure8_070_forced2s_nominal_run1.txt
+- figure8_070_forced2s_posthoc_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

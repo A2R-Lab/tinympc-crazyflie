@@ -1,0 +1,45 @@
+Figure-8 0.70 m, forced 5 s start — posthoc LIMO run 2
+
+Classification
+- Mode 2: posthoc LIMO
+- Disturbance: downward wind
+- Firmware boot print: forced_trajectory_start=5000ms
+
+Trajectory
+- Start deadline: 5000 ms after OOT takeoff start
+- Start state: z=0.74 m, vz=0.00 m/s
+- Samples: 241
+- Full two-lap trajectory completed
+- Controlled landing completed
+
+Metrics, trajectory start through trajectory end
+- Lateral tracking RMSE: 0.5199 m
+- Peak lateral tracking error: 0.9598 m
+- Z tracking RMSE: 0.0468 m
+- Maximum absolute Z error: 0.1200 m
+- Tilt RMSE: 10.8521 deg
+- Peak tilt: 21.1292 deg
+- Median complete control step: 34.178 ms
+- Exact maximum control step: 40.441 ms
+- Deadline overruns: 0
+
+Relative to forced-5-second posthoc run 1
+- Lateral RMSE: 4.3% higher
+- Peak lateral error: 3.5% higher
+- Z RMSE: 4.3% lower
+- Maximum Z error: 0.8% higher
+- Tilt RMSE: 2.7% lower
+- Peak tilt: 11.8% lower
+- Median computation: 0.8% higher
+- Maximum computation: 3.2% lower
+
+Posthoc mechanism
+- Projection attempts: 335
+- Infeasible projections: 212/335 = 63.3%
+- Successful interventions: 123/335 = 36.7%
+
+Raw log
+- figure8_070_forced5s_posthoc_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachment.

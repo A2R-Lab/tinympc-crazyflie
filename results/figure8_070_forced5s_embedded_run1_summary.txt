@@ -1,0 +1,35 @@
+Figure-8 0.70 m, forced 5 s start — embedded LIMO run 1
+
+Configuration
+- Mode: 3 (embedded LIMO)
+- Maneuver: 4 (two-lap Figure-8)
+- Takeoff ramp: 0.15 m/s
+- Trajectory start: forced at 5000 ms; settle gate bypassed
+- Trajectory duration: 24.07 s
+
+Execution
+- Forced-start state: z=0.75 m, vz=0.03 m/s
+- Full trajectory completed
+- Controlled landing completed at t=34.196 s
+- No supervisor lock, estimator reset, or deadline overrun
+
+Trajectory-start to trajectory-end metrics (241 console samples)
+- Lateral tracking RMSE: 0.5668 m
+- Peak lateral tracking error: 0.9089 m
+- Z tracking RMSE: 0.0279 m
+- Maximum absolute Z error: 0.0770 m
+- Tilt RMSE: 7.7356 deg
+- Peak tilt: 13.9093 deg
+- Median MPC solve: 22.825 ms
+- Median barrier evaluation: 10.086 ms
+- Median complete control step: 33.906 ms
+- Exact maximum control step: 44.282 ms (88.56% of 50 ms)
+- Deadline overruns: 0
+- Mean applied authority: 1.000
+- Learned barrier active in 205/241 sampled records (85.1%)
+
+Raw log
+- figure8_070_forced5s_embedded_run1.txt
+
+Disturbance and payload metadata were not supplied with this attachment and
+must be added before using this run in a paper comparison.

@@ -1,0 +1,169 @@
+FIGURE-EIGHT AT 0.70 M, IMMEDIATE ALTITUDE-TRIGGERED START: THREE-WAY RUN 1
+============================================================================
+
+Protocol
+--------
+
+Controller arms:
+
+  - Embedded LIMO: mode 3
+  - Posthoc LIMO: mode 2
+  - Nominal TinyMPC: mode 0
+
+Common firmware configuration:
+
+  - Trajectory: traj_fig8_12.h
+  - Reference altitude: 0.70 m
+  - The 12.04 s source header already contains three complete physical
+    Figure-8 circuits
+  - Firmware header repetitions: 2
+  - Actual executed trajectory: six physical Figure-8 circuits, approximately
+    24.1 s
+  - MPC/model rate: 20 Hz
+  - ADMM iterations: 5
+  - MPC-to-PID bridge: x10 (500 ms preview)
+  - Shared Z guard: [reference Z, reference Z + 0.20 m]
+  - OOT takeoff ramp: 0.15 m/s
+  - Trajectory trigger: first measured sample with z >= 0.70 m
+  - No elapsed-time start, velocity gate, or settling hold
+
+The console strings "forced_3s_start" in these images are stale cosmetic
+labels. The boot line and transition records confirm that the actual trigger
+was z >= 0.70 m.
+
+The console field "laps=2" means two repetitions of the complete source
+header, not two physical Figure-8 circuits. The source passes through a full
+two-lobe Figure-8 approximately every 4 s, so this run executed six circuits.
+
+The exact fan/wind/payload condition was not written in the three attachments.
+Do not pool this run with a named disturbance condition until that metadata is
+confirmed.
+
+Outcome
+-------
+
+Method          Valid 0.70 m start   Full trajectory   Controlled landing
+Embedded LIMO   yes                  yes               initiated; final line absent
+Posthoc LIMO    yes                  yes               yes
+Nominal         no                   no                no
+
+Embedded LIMO:
+
+  TAKEOFF COMPLETE: t=4214 ms, z=0.70 m, vz=+0.16 m/s
+  TRAJ START immediately at z=0.70 m
+  Completed all 482 MPC trajectory indices
+  Landing requested at z=0.70 m
+  The attachment ends at the timing summary and does not contain the final
+  LANDING COMPLETE line.
+
+Posthoc LIMO:
+
+  TAKEOFF COMPLETE: t=4238 ms, z=0.70 m, vz=+0.18 m/s
+  TRAJ START immediately at z=0.70 m
+  Completed all 482 MPC trajectory indices
+  Controlled landing completed normally.
+
+Nominal:
+
+  SUP: Locked, reboot required occurred during OOT takeoff, before a valid
+  0.70 m trajectory start.
+  The Kalman estimator then reset.
+  A corrupted post-reset estimate of z=2.84 m falsely satisfied the altitude
+  trigger at t=7120 ms. Subsequent samples include physically impossible
+  multi-meter positions and approximately -8 m/s vertical velocity, followed
+  by additional estimator resets.
+  There is no valid nominal trajectory window, TRAJ DONE, or controlled
+  landing. Nominal tracking RMSE is therefore undefined and must not be
+  calculated from the post-lock samples.
+
+Completed-arm tracking metrics
+------------------------------
+
+Analysis window:
+
+  TRAJ START through TRAJ DONE
+
+Each completed arm contributes 241 decimated samples spanning approximately
+0.08 through 24.11 s. Landing is excluded.
+
+Metric                         Embedded LIMO   Posthoc LIMO   Relative winner
+Lateral tracking RMSE          0.5789 m        0.5035 m       Posthoc 13.0%
+Peak lateral tracking error    0.9432 m        0.8798 m       Posthoc 6.7%
+Z tracking RMSE                0.02790 m       0.04894 m      Embedded 43.0%
+Maximum absolute Z error       0.0800 m        0.1120 m       Embedded 28.6%
+Tilt RMSE                      8.218 deg       10.673 deg     Embedded 23.0%
+Peak tilt                      13.660 deg      19.004 deg     Embedded 28.1%
+
+Definitions:
+
+  Lateral RMSE = sqrt(mean((x - x_ref)^2 + (y - y_ref)^2))
+  Peak lateral error = max(sqrt((x - x_ref)^2 + (y - y_ref)^2))
+  Z RMSE = sqrt(mean((z - z_ref)^2))
+  Maximum Z error = max(abs(z - z_ref))
+  Tilt = sqrt(roll^2 + pitch^2)
+
+Observed Z ranges:
+
+  Embedded LIMO: 0.678 to 0.779 m
+  Posthoc LIMO:  0.692 to 0.812 m
+
+Mechanism
+---------
+
+Embedded LIMO:
+
+  - Quantized authority w=1.000 for all 241 recorded trajectory samples
+  - Learned stage-0 row active: 212/241 = 88.0%
+  - At least one learned row binding: 223/241 = 92.5%
+  - Full authority reduces the lateral position weight while increasing
+    vertical/attitude authority. The observed lateral-versus-Z/tilt tradeoff
+    is consistent with that mechanism.
+
+Posthoc LIMO:
+
+  - Projection attempts: 325
+  - Infeasible projections: 211/325 = 64.9%
+  - Feasible interventions: 114
+  - Posthoc preserves nominal MPC's stronger lateral tracking objective, while
+    its successful projection interventions act primarily through the
+    vertical channel. It therefore tracks laterally better here but has
+    materially worse Z regulation and attitude excursion.
+
+On-target timing
+----------------
+
+Metric                         Embedded LIMO   Posthoc LIMO
+Median complete step           36.296 ms       34.297 ms
+P99 complete step              42.278 ms       41.213 ms
+Exact cumulative maximum       43.264 ms       42.496 ms
+Worst deadline utilization     86.5%           85.0%
+Deadline overruns              0               0
+
+Posthoc is 5.5% faster at the median and 1.8% faster at the exact maximum.
+Both completed arms remain below the 50 ms control deadline.
+
+Interpretation
+--------------
+
+This is a trajectory-completion comparison, not a complete three-way RMSE
+table. Embedded and posthoc completed the full trajectory; nominal failed
+during takeoff and has no valid tracking metrics. Posthoc also recorded
+LANDING COMPLETE. Embedded requested landing normally, but its attachment
+ended before the final landing-complete record.
+
+Among completed arms, posthoc wins lateral tracking while embedded LIMO wins
+all vertical and attitude metrics by larger margins. This is consistent with
+the learned authority mechanism rather than a universal tracking win.
+
+The nominal failure is a valid binary mission outcome if all physical
+conditions were matched, but one trial cannot establish its cause or failure
+rate. A paper-facing result should retain the failure, report completion rate,
+and collect additional matched/interleaved trials rather than replacing the
+failure with corrupted RMSE values.
+
+Raw logs
+--------
+
+  - figure8_070_immediate_start_embedded_run1.txt
+  - figure8_070_immediate_start_posthoc_run1.txt
+  - figure8_070_immediate_start_nominal_failed_run1.txt

@@ -1,0 +1,73 @@
+Figure-8 0.70 m, forced 3 s start — three-way run 1
+
+Protocol
+- Nominal mode 0, posthoc LIMO mode 2, embedded LIMO mode 3
+- Takeoff ramp: 0.15 m/s
+- Settle gate bypassed; trajectory forced at 3000 ms
+- Disturbance: downward wind for all three arms
+- Two-lap Figure-8 duration: 24.07 s
+- Analysis window: trajectory start through trajectory end
+- Samples per arm: 241
+
+Trajectory-start timing and state
+- Nominal:  t=3000 ms, z=0.40 m, vz=+0.29 m/s
+- Posthoc:  t=3000 ms, z=0.42 m, vz=+0.24 m/s
+- Embedded: t=3000 ms, z=0.37 m, vz=+0.21 m/s
+- All three arms queued and activated the Figure-8 immediately at the same
+  forced deadline. There is no mode-specific reference-start pause.
+
+Metric                         Nominal        Posthoc        Embedded
+Lateral tracking RMSE          0.4682 m       0.5558 m       0.5853 m
+Peak lateral tracking error    0.9137 m       1.4669 m       0.8827 m
+Z tracking RMSE                0.0484 m       0.0791 m       0.0487 m
+Maximum absolute Z error       0.2780 m       0.2650 m       0.3110 m
+Tilt RMSE                      11.3360 deg    12.9617 deg    9.9636 deg
+Peak tilt                      19.7437 deg    28.9414 deg    26.7651 deg
+Median complete control step   22.313 ms      34.039 ms      33.477 ms
+Exact maximum control step     30.608 ms      40.417 ms      41.694 ms
+Deadline overruns              0              0              0
+
+Embedded versus nominal
+- Lateral RMSE: 25.0% higher
+- Peak lateral error: 3.4% lower
+- Z RMSE: 0.5% higher (effectively tied)
+- Maximum Z error: 11.9% higher
+- Tilt RMSE: 12.1% lower
+- Peak tilt: 35.6% higher
+- Median computation: 50.0% higher
+
+Posthoc versus nominal
+- Lateral RMSE: 18.7% higher
+- Peak lateral error: 60.6% higher
+- Z RMSE: 63.3% higher
+- Maximum Z error: 4.7% lower
+- Tilt RMSE: 14.3% higher
+- Peak tilt: 46.6% higher
+- Median computation: 52.6% higher
+
+Posthoc mechanism
+- Projection attempts: 270
+- Infeasible projections: 158/270 = 58.5%
+
+Outcome and interpretation
+- All three arms started at 3000 ms, completed the full 24.07 s trajectory,
+  requested controlled landing, and recorded zero deadline overruns.
+- The nominal attachment ends at the timing summary and does not contain the
+  final LANDING COMPLETE record.
+- Nominal gives the lowest lateral RMSE and peak tilt in this single trial.
+- Embedded gives the lowest peak lateral error and tilt RMSE; its Z RMSE is
+  effectively tied with nominal.
+- Posthoc is worst on most aggregate metrics, while 58.5% of its attempted
+  projections are infeasible.
+- These are forced aggressive-start stress tests: every arm begins the
+  trajectory far below the 0.70 m reference while still climbing. Differences
+  in visible motion onset are closed-loop transients, not different trajectory
+  start times.
+
+Raw logs
+- figure8_070_forced3s_nominal_run1.txt
+- figure8_070_forced3s_posthoc_run1.txt
+- figure8_070_forced3s_embedded_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

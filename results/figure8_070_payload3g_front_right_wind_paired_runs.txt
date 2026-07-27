@@ -1,0 +1,120 @@
+FIGURE-EIGHT AT 0.70 M: 3 G FRONT-RIGHT PAPER + WIND, PAIRED RUN 1
+===============================================================================
+
+Status
+------
+
+First matched pair:
+
+  - embedded LIMO, mode 3
+  - posthoc LIMO, mode 2 with corrected nominal fallback
+
+Both arms completed gated controller-6 takeoff, both Figure-8 laps, controlled
+landing, and motors-off without an estimator reset, supervisor lock, watchdog,
+hard fault, or deadline overrun.
+
+Experimental condition
+----------------------
+
+Physical payload:
+  3 g of paper attached to the front-right propeller guard for both arms.
+
+Disturbance:
+  External wind plus the attached paper's orientation-dependent aerodynamic
+  force/torque, off-center mass, changed inertia, asymmetric motor loading,
+  and possible local propeller-flow interference.
+
+The firmware log does not encode fan level, direction, distance, or onset.
+Add those experimental metadata before paper reporting and confirm that they
+were held fixed across the two arms.
+
+No payload- or wind-specific correction was applied to the nominal model,
+reference generator, learned barrier, or frozen authority policy.
+
+Primary analysis window
+-----------------------
+
+Use:
+  TRAJ START + 3 s through TRAJ DONE; landing excluded.
+
+The EXP clock resets at TRAJ START. Both arms contribute 211 decimated
+samples over approximately 3.09 s through 24.1 s. Lateral error uses the
+time-varying full-state reference in traj_fig8_12.h.
+
+Primary results
+---------------
+
+Metric                         Embedded LIMO    Posthoc LIMO    Embedded effect
+Lateral trajectory RMSE, m     0.5752           0.5258           9.4% worse
+Peak lateral error, m          0.8771           0.8416           4.2% worse
+Z RMSE, m                      0.00979          0.03827         74.4% better
+Peak absolute Z error, m       0.0270           0.0970          72.2% better
+Tilt RMSE, deg                 7.842            10.407          24.6% better
+Peak tilt, deg                 14.738           18.577          20.7% better
+
+Interpretation:
+  Posthoc tracks the aggressive lateral Figure-8 somewhat more tightly.
+  Embedded LIMO provides substantially better vertical regulation and
+  smaller attitude excursion under the combined payload and wind condition.
+  This reproduces the expected mechanism trade: lowering task-tracking
+  authority is visible on an aggressive moving reference, while the
+  in-solver treatment avoids the posthoc arm's vertical switching.
+
+Posthoc mechanism
+-----------------
+
+Whole trajectory:
+
+  Projection attempts:         407
+  Infeasible projections:      261
+  Infeasibility rate:          64.1%
+  Feasible interventions:      146
+
+Within the decimated primary window:
+
+  Active samples:              178/211
+  Infeasible active samples:   111/178 = 62.4%
+  Feasible interventions:      67
+
+The corrected infeasible path returned the nominal command. Consequently,
+the posthoc arm's degradation in Z and tilt is produced by its feasible
+interventions, not by the infeasible fallback.
+
+Embedded mechanism
+------------------
+
+Within the primary window:
+
+  Learned-row active samples:  211/211
+  Mean active rows:            3.0
+  Applied authority:           1.000 throughout
+  Requested authority range:   0.994 to 0.999
+  Applied vertical scale:      1.400 throughout
+
+At 0.70 m this stress test exercises the embedded learned constraints at
+effectively full authority.
+
+On-target timing
+----------------
+
+Metric                         Embedded LIMO    Posthoc LIMO    Embedded effect
+Median sampled step, ms        33.931           34.521           1.7% lower
+Sampled p99 step, ms           38.615           40.882           5.5% lower
+Exact cumulative maximum, ms   42.470           44.315           4.2% lower
+Worst 50 ms deadline use       84.94%           88.63%           3.69 pp lower
+Deadline overruns              0                0
+
+This pair provides no evidence that in-solver placement costs more on target:
+embedded LIMO was slightly faster at both the median and measured maximum.
+
+Reporting status
+----------------
+
+This is one matched pair. It is a strong mechanism-level result but requires
+repeat pairs before reporting an average or statistical claim.
+
+Raw logs
+--------
+
+  figure8_070_payload3g_front_right_wind_embedded_run1.txt
+  figure8_070_payload3g_front_right_wind_posthoc_run1.txt

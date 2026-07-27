@@ -1,0 +1,49 @@
+Figure-8 0.70 m, forced 3 s start — paired aggregate
+
+Dataset
+- Two matched embedded-LIMO versus posthoc-LIMO pairs
+- Downward wind
+- Figure-8 forced 3000 ms after OOT takeoff start
+- Two full laps per flight
+- Analysis window: trajectory start through trajectory end
+- Flights: 2 per arm
+- Logged samples: 482 per arm
+
+Pooled metric                    Embedded       Posthoc        Embedded result
+Lateral tracking RMSE            0.5921 m       0.5331 m       11.1% higher
+Worst peak lateral error         0.9867 m       1.4669 m       32.7% lower
+Z tracking RMSE                  0.0446 m       0.0698 m       36.1% lower
+Worst maximum absolute Z error   0.3110 m       0.2650 m       17.4% higher
+Tilt RMSE                        9.4942 deg     12.9681 deg    26.8% lower
+Worst peak tilt                  26.7651 deg    28.9414 deg    7.5% lower
+Median complete control step     33.881 ms      33.697 ms      0.5% higher
+Exact worst control step         44.035 ms      41.638 ms      5.8% higher
+Deadline overruns                0              0
+
+Posthoc mechanism across both pairs
+- Projection attempts: 579
+- Infeasible projections: 319/579 = 55.1%
+- Successful interventions: 260/579 = 44.9%
+
+Per-pair direction
+- Embedded reduced Z RMSE, tilt RMSE, and peak tilt in both pairs.
+- Posthoc reduced lateral RMSE in both pairs.
+- Peak lateral error was lower for embedded in pair 1 and lower for posthoc
+  in pair 2; embedded has the lower worst observed peak across the dataset.
+- Maximum Z error was lower for posthoc in pair 1 and lower for embedded in
+  pair 2.
+
+Outcome
+- All four flights completed both laps and controlled landing.
+- No deadline overruns occurred.
+- At n=2 pairs, this is an interim aggregate rather than a final statistical
+  result.
+
+Raw logs
+- figure8_070_forced3s_embedded_run1.txt
+- figure8_070_forced3s_posthoc_run1.txt
+- figure8_070_forced3s_embedded_run2.txt
+- figure8_070_forced3s_posthoc_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

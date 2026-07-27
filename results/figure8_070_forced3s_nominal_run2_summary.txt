@@ -1,0 +1,30 @@
+Figure-8 0.70 m, forced 3 s start — nominal run 2
+
+Classification
+- Mode 0: nominal TinyMPC
+- Disturbance: downward wind
+- Firmware boot print: forced_trajectory_start=3000ms
+
+Trajectory
+- Start deadline: 3000 ms after OOT takeoff start
+- Start state: z=0.42 m, vz=+0.23 m/s
+- Samples: 241
+- Full two-lap trajectory completed
+- Controlled landing completed
+
+Metrics, trajectory start through trajectory end
+- Lateral tracking RMSE: 0.5041 m
+- Peak lateral tracking error: 0.8991 m
+- Z tracking RMSE: 0.0472 m
+- Maximum absolute Z error: 0.2580 m
+- Tilt RMSE: 11.8238 deg
+- Peak tilt: 23.2092 deg
+- Median complete control step: 22.440 ms
+- Exact maximum control step: 30.308 ms
+- Deadline overruns: 0
+
+Raw log
+- figure8_070_forced3s_nominal_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachment.

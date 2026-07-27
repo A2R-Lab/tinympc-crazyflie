@@ -1,0 +1,110 @@
+HOVER AT 0.70 M WITH 5 G FRONT-LEFT PAYLOAD: EMBEDDED LIMO RUN 1
+================================================================
+
+Classification
+--------------
+
+FAILED TAKEOFF / CRASH.
+
+This attempt never reached the hover phase and must not be included in a
+hover-performance table or any successful-flight average.
+
+Experimental condition
+----------------------
+
+Controller:                embedded LIMO, mode 3
+Maneuver:                  hover, maneuver 0
+Payload:                   5 g of paper
+Payload location:          front-left propeller guard
+Reference altitude:        0.70 m
+OOT takeoff ramp:          0.15 m/s
+ADMM iterations:           5
+MPC/model rate:            20 Hz
+MPC-to-PID bridge:         x10 (500 ms)
+Shared Z guard:            [reference Z, reference Z + 0.20 m]
+Wind:                      none reported; diagnostic payload-only attempt
+
+This is not a clean 3 g-to-5 g mass comparison because the earlier 3 g
+payload was attached to the front-right guard, while this payload was
+attached to the front-left guard.
+
+Observed event sequence
+-----------------------
+
+  Benchmark mode 3, maneuver 0
+  OOT activated at z = 0.01 m
+  TAKEOFF START:
+    start z = 0.01 m
+    target z = 0.70 m
+    XY hold = approximately (0.00, 0.18) m
+    ramp = 0.15 m/s
+
+  First embedded controller step:
+    barrier evaluation = 14.164 ms
+    MPC solve = 22.625 ms
+    ADMM iterations = 5
+    free MPC-task stack = 916 words
+    commanded preview = approximately (0.00, 0.18, 0.07) m
+
+  Supervisor event:
+    SUP: Locked, reboot required
+
+  Subsequent events:
+    repeated estimator-out-of-bounds resets
+    no TAKEOFF SETTLING completion
+    no TAKEOFF COMPLETE
+    no TRAJ START
+    no valid EXP hover records
+
+  The software takeoff timeout later printed:
+    timeout = 12.0 s
+    z = 1.44 m
+    vz = -7.12 m/s
+    landing hold = (-1.66, -0.43) m
+
+The timeout state is invalid post-crash estimator output. The supervisor had
+already locked/disarmed the vehicle, so the following LANDING message does
+not represent a controlled physical landing.
+
+Diagnosis
+---------
+
+This log does not indicate a memory or compute-budget failure:
+
+  - the first learned evaluation and MPC solve completed normally;
+  - task stack headroom remained available;
+  - no deadline or watchdog failure preceded the supervisor lock.
+
+The observed sequence is consistent with a physical/closed-loop takeoff
+instability under a large, far-off-center payload. Likely contributing
+factors include:
+
+  - static roll/pitch moment from 5 g at the propeller guard;
+  - paper disturbing local propeller airflow;
+  - propeller, motor, or guard damage from the preceding crash;
+  - Flow-deck/Kalman loss after the vehicle tilted or impacted.
+
+The estimator resets are consequences of the failed flight and cannot be
+used as valid performance measurements.
+
+Additional hover-reference issue
+--------------------------------
+
+At takeoff, the controller held y near +0.18 m. In this firmware revision,
+the hover trajectory reference remained estimator (0,0), rather than the
+post-takeoff settled XY location. If takeoff had completed, TRAJ START would
+therefore have requested an unnecessary lateral correction. This did not
+cause the recorded failure because the supervisor locked before TRAJ START,
+but the hover origin should be anchored to the settled takeoff position
+before another payload-hover attempt.
+
+Disposition
+-----------
+
+  - Exclude from all successful-hover metrics and averages.
+  - Retain as a documented 5 g front-left failure-boundary observation.
+  - Reboot and inspect the airframe, propellers, motors, guard, and Flow deck.
+  - Verify a no-payload hover before another payload flight.
+  - Use the same payload corner for any intended mass-scaling comparison.
+  - Prefer incremental 3 g -> 4 g -> 5 g testing or move 5 g closer to the
+    vehicle center.

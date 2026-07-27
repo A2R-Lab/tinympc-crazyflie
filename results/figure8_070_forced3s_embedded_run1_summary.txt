@@ -1,0 +1,37 @@
+Figure-8 0.70 m, forced 3 s start — embedded LIMO run 1
+
+Execution
+- Forced start occurred exactly at 3000 ms.
+- Start state: z=0.37 m, vz=+0.21 m/s.
+- Full 24.07 s trajectory completed.
+- Controlled landing completed at t=32.204 s.
+- No supervisor lock, estimator reset during flight, or deadline overrun.
+
+Trajectory-start to trajectory-end metrics (241 console samples)
+- Lateral tracking RMSE: 0.5853 m
+- Peak lateral tracking error: 0.8827 m
+- Z tracking RMSE: 0.0487 m
+- Maximum absolute Z error: 0.3110 m
+- Tilt RMSE: 9.9636 deg
+- Peak tilt: 26.7651 deg
+- Median complete control step: 33.477 ms
+- Exact maximum control step: 41.694 ms
+- Deadline overruns: 0
+
+Relative to the forced-5-second embedded run
+- Lateral RMSE: 3.3% higher
+- Peak lateral error: 2.9% lower
+- Z RMSE: 74.6% higher
+- Maximum absolute Z error: 303.9% higher
+- Tilt RMSE: 28.8% higher
+- Peak tilt: 92.4% higher
+
+Interpretation
+- The 3 s start is a successful stress test, but it is not a settled-start
+  experiment: the vehicle begins 0.33 m below the 0.70 m reference while
+  climbing at 0.21 m/s.
+
+Raw log
+- figure8_070_forced3s_embedded_run1.txt
+
+Disturbance and payload metadata were not supplied with this attachment.

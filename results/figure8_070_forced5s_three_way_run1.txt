@@ -1,0 +1,59 @@
+Figure-8 0.70 m, forced 5 s start — three-way run 1
+
+Protocol
+- Nominal mode 0, posthoc LIMO mode 2, embedded LIMO mode 3
+- Takeoff ramp: 0.15 m/s
+- Settle gate bypassed; trajectory forced at 5000 ms
+- Disturbance: downward wind for all three arms
+- Two-lap Figure-8 duration: 24.07 s
+- Analysis window: trajectory start through trajectory end
+- Samples per arm: 241
+
+Metric                         Nominal        Posthoc        Embedded
+Lateral tracking RMSE          0.5089 m       0.4986 m       0.5668 m
+Peak lateral tracking error    0.8974 m       0.9273 m       0.9089 m
+Z tracking RMSE                0.0369 m       0.0489 m       0.0279 m
+Maximum absolute Z error       0.1170 m       0.1190 m       0.0770 m
+Tilt RMSE                      11.5269 deg    11.1566 deg    7.7356 deg
+Peak tilt                      22.1162 deg    23.9432 deg    13.9093 deg
+Median complete control step   25.396 ms      33.917 ms      33.906 ms
+Exact maximum control step     34.040 ms      41.757 ms      44.282 ms
+Deadline overruns              0              0              0
+
+Embedded versus nominal
+- Lateral RMSE: 11.4% higher
+- Peak lateral error: 1.3% higher
+- Z RMSE: 24.5% lower
+- Maximum Z error: 34.2% lower
+- Tilt RMSE: 32.9% lower
+- Peak tilt: 37.1% lower
+- Median computation: 33.5% higher
+
+Posthoc versus nominal
+- Lateral RMSE: 2.0% lower
+- Peak lateral error: 3.3% higher
+- Z RMSE: 32.4% higher
+- Maximum Z error: 1.7% higher
+- Tilt RMSE: 3.2% lower
+- Peak tilt: 8.3% higher
+- Median computation: 33.6% higher
+
+Posthoc mechanism
+- Projection attempts: 318
+- Infeasible projections: 194/318 = 61.0%
+
+Outcome
+- All three arms started at 5000 ms and completed the full trajectory.
+- The nominal attachment ends after the landing request and timing summary; it
+  does not contain the final LANDING COMPLETE record.
+- Embedded provides the strongest vertical and attitude performance, but has
+  the highest lateral RMSE in this three-way set.
+
+Raw logs
+- figure8_070_forced5s_nominal_run1.txt
+- figure8_070_forced5s_posthoc_run1.txt
+- figure8_070_forced5s_embedded_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments and must be added before using this set in a paper
+comparison.

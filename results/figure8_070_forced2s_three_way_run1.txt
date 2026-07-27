@@ -1,0 +1,68 @@
+Figure-8 0.70 m, forced 2 s start — three-way run 1
+
+Dataset
+- Nominal mode 0, posthoc LIMO mode 2, embedded LIMO mode 3
+- Downward wind
+- Figure-8 forced 2000 ms after OOT takeoff start
+- Two full laps per flight
+- Analysis window: trajectory start through trajectory end
+- One flight per method
+- Each RMSE is the average error over 241 logged trajectory samples.
+- Lower is better for every listed metric.
+
+Start states
+- Nominal: z=0.18 m, vz=+0.25 m/s
+- Posthoc: z=0.14 m, vz=+0.21 m/s
+- Embedded: z=0.14 m, vz=+0.19 m/s
+
+Metric                    Nominal       Posthoc       Embedded      Winner and margin over runner-up
+Lateral RMSE              0.4957 m      0.5171 m      0.6247 m      Nominal by 4.1%
+Peak lateral error        0.8510 m      1.0286 m      0.9472 m      Nominal by 10.2%
+Z RMSE                    0.0691 m      0.0843 m      0.0742 m      Nominal by 6.8%
+Maximum Z error           0.5020 m      0.5390 m      0.5410 m      Nominal by 6.9%
+Tilt RMSE                 12.3857 deg   11.0207 deg   8.8276 deg    Embedded by 19.9%
+Peak tilt                 24.3785 deg   21.5141 deg   16.5029 deg   Embedded by 23.3%
+Median control step       22.675 ms     34.204 ms     34.973 ms     Nominal by 33.7%
+Maximum control step      28.553 ms     41.262 ms     42.330 ms     Nominal by 30.8%
+Deadline overruns         0             0             0             Tie
+
+Embedded versus posthoc
+- Lateral RMSE: 20.8% higher
+- Peak lateral error: 7.9% lower
+- Z RMSE: 12.0% lower
+- Maximum Z error: 0.4% higher (effectively tied)
+- Tilt RMSE: 19.9% lower
+- Peak tilt: 23.3% lower
+- Median computation: 2.2% higher
+- Maximum computation: 2.6% higher
+
+Mechanism
+- Posthoc projection attempts: 295
+- Posthoc infeasible: 181/295 = 61.4%
+- Embedded learned row active at stage 0: 193/241 = 80.1%
+- Embedded learned constraint binding: 241/241 = 100%
+- Embedded mean applied authority: 1.000
+
+Artificial Z-step limitation
+- The 2 s transition changes the Z reference immediately to 0.70 m.
+- Nominal first logged Z error is 0.502 m, exactly its maximum Z error.
+- Posthoc first logged Z error is 0.539 m, exactly its maximum Z error.
+- Embedded first logged Z error is 0.541 m, exactly its maximum Z error.
+- Maximum Z error therefore measures the artificial reference jump, not wind
+  rejection. Z RMSE is also inflated by this transition.
+
+Outcome
+- All three flights completed both laps and controlled landing.
+- All three flights recorded zero deadline overruns.
+- Nominal gives the best lateral tracking and step-dominated Z metrics.
+- Embedded gives the lowest sustained and peak attitude excursion.
+- This one-triplet diagnostic must not be pooled with the forced-3-second
+  campaign or a future smoothed-Z 2-second protocol.
+
+Raw logs
+- figure8_070_forced2s_nominal_run1.txt
+- figure8_070_forced2s_posthoc_run1.txt
+- figure8_070_forced2s_embedded_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

@@ -1,0 +1,46 @@
+Figure-8 0.70 m, forced 2 s start — nominal run 1
+
+Classification
+- Mode 0: nominal TinyMPC
+- Disturbance: downward wind
+- Firmware boot print: forced_trajectory_start=2000ms
+
+Trajectory
+- Start deadline: 2000 ms after OOT takeoff start
+- Start state: z=0.18 m, vz=+0.25 m/s
+- Samples: 241
+- Full two-lap trajectory completed
+- Controlled landing completed
+
+Metrics, trajectory start through trajectory end
+- Lateral tracking RMSE: 0.4957 m
+- Peak lateral tracking error: 0.8510 m
+- Z tracking RMSE: 0.0691 m
+- Maximum absolute Z error: 0.5020 m
+- Tilt RMSE: 12.3857 deg
+- Peak tilt: 24.3785 deg
+- Median complete control step: 22.675 ms
+- Exact maximum control step: 28.553 ms
+- Deadline overruns: 0
+
+Relative to the two-run forced-3-second nominal average
+- Lateral RMSE: 2.0% higher
+- Peak lateral error: 6.1% lower
+- Z RMSE: 44.6% higher
+- Maximum Z error: 87.3% higher
+- Tilt RMSE: 7.0% higher
+- Peak tilt: 13.5% higher
+- Median computation: 1.3% higher
+- Maximum computation: 6.3% lower
+
+Interpretation
+- The 2 s deadline primarily increases the initial vertical transient: the
+  trajectory begins 0.52 m below its 0.70 m reference.
+- Nominal still completed the full mission, so this stress level is feasible
+  for the baseline in this first trial.
+
+Raw log
+- figure8_070_forced2s_nominal_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachment.

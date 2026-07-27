@@ -1,0 +1,46 @@
+Figure-8 0.70 m, forced 5 s start — paired run 1
+
+Protocol
+- Embedded LIMO mode 3 versus posthoc LIMO mode 2
+- Takeoff ramp: 0.15 m/s
+- Settle gate bypassed; trajectory forced at 5000 ms
+- Disturbance: downward wind for both arms
+- Two-lap Figure-8 duration: 24.07 s
+- Analysis window: trajectory start through trajectory end
+- Samples per arm: 241
+
+Start-state parity
+- Embedded: z=0.75 m, vz=0.03 m/s
+- Posthoc: z=0.76 m, vz=0.05 m/s
+
+Metric                         Embedded       Posthoc        Result
+Lateral tracking RMSE          0.5668 m       0.4986 m       Posthoc 12.0% lower
+Peak lateral tracking error    0.9089 m       0.9273 m       Embedded 2.0% lower
+Z tracking RMSE                0.0279 m       0.0489 m       Embedded 43.0% lower
+Maximum absolute Z error       0.0770 m       0.1190 m       Embedded 35.3% lower
+Tilt RMSE                      7.7356 deg     11.1566 deg    Embedded 30.7% lower
+Peak tilt                      13.9093 deg    23.9432 deg    Embedded 41.9% lower
+Median complete control step   33.906 ms      33.917 ms      Effectively equal
+Exact maximum control step     44.282 ms      41.757 ms      Posthoc 5.7% lower
+Deadline overruns              0              0
+
+Posthoc mechanism
+- Projection attempts: 318
+- Infeasible projections: 194/318 = 61.0%
+- Feasible interventions: 124
+
+Outcome
+- Both arms started at exactly 5000 ms, completed the full trajectory, and
+  completed controlled landing without a supervisor lock or deadline overrun.
+- Embedded substantially improved vertical tracking and attitude, and slightly
+  reduced peak lateral error.
+- Posthoc had 12.0% lower lateral tracking RMSE in this pair, so embedded was
+  not the winner on every metric.
+
+Raw logs
+- figure8_070_forced5s_embedded_run1.txt
+- figure8_070_forced5s_posthoc_run1.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments and must be added before using this pair in a paper
+comparison.

@@ -49,6 +49,30 @@
 #error "TINYMPC_FIRMWARE_MODE must be 0 (nominal), 1 (MPC-CBF), 2 (LIMO posthoc), or 3 (LIMO embedded)"
 #endif
 
+#ifndef TINYMPC_BENCH_PROFILE
+#define TINYMPC_BENCH_PROFILE 0
+#endif
+#if TINYMPC_BENCH_PROFILE != 0 && TINYMPC_BENCH_PROFILE != 1
+#error "TINYMPC_BENCH_PROFILE must be 0 (flight) or 1 (motors-off canned-state profiling)"
+#endif
+#ifndef TINYMPC_PROFILE_TANH
+#define TINYMPC_PROFILE_TANH 0
+#endif
+#if TINYMPC_PROFILE_TANH && !TINYMPC_BENCH_PROFILE
+#error "TINYMPC_PROFILE_TANH is permitted only in a motors-off bench build"
+#endif
+
+// Shared MPC-to-PID altitude guard:
+//   0 = pass the raw MPC preview Z to the inner PID
+//   1 = clamp the preview to [reference Z, reference Z + 0.20 m]
+// The strong 0.70 m downward-wind pair used the shared reference clamp.
+#ifndef TINYMPC_COMMON_Z_GUARD
+#define TINYMPC_COMMON_Z_GUARD 1
+#endif
+#if TINYMPC_COMMON_Z_GUARD != 0 && TINYMPC_COMMON_Z_GUARD != 1
+#error "TINYMPC_COMMON_Z_GUARD must be 0 (raw preview Z) or 1 (reference clamp)"
+#endif
+
 // Select exactly one trajectory for this firmware image:
 //   0 = hover
 //   1 = X-axis line
@@ -64,12 +88,25 @@
 
 
 #ifndef TINYMPC_TRAJECTORY
-#define TINYMPC_TRAJECTORY 0
+#define TINYMPC_TRAJECTORY 4
 #endif
 #if TINYMPC_TRAJECTORY < TINYMPC_TRAJECTORY_HOVER || \
     TINYMPC_TRAJECTORY > TINYMPC_TRAJECTORY_FIGURE8
 #error "TINYMPC_TRAJECTORY must be 0 (hover), 1 (X-line), 2 (Y-line), 3 (circle), or 4 (figure eight)"
 #endif
+
+// Gated controller-6 takeoff for payload experiments:
+//   0 = preserve the historical workflow (switch to OOT after PID takeoff)
+//   1 = select OOT on the ground, then use the cfclient takeoff command to
+//       start a vertical MPC ramp. The trajectory starts immediately when the
+//       measured altitude first reaches the configured trajectory height.
+#define TINYMPC_OOT_TAKEOFF 1
+#if TINYMPC_OOT_TAKEOFF != 0 && TINYMPC_OOT_TAKEOFF != 1
+#error "TINYMPC_OOT_TAKEOFF must be 0 or 1"
+#endif
+#define TINYMPC_TAKEOFF_TRIGGER_Z_M       0.15f
+#define TINYMPC_TAKEOFF_ASCENT_MPS        0.15f
+#define TINYMPC_TAKEOFF_TIMEOUT_MS        12000u
 
 // Every maneuver finishes with the same PID-controlled descent. The landing
 // target is intentionally below the estimated floor so the vehicle settles
@@ -109,6 +146,7 @@ extern "C"
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "stm32f4xx.h"
 
 #include "app.h"
 #include "config.h"
@@ -140,6 +178,11 @@ extern "C"
 // #include "quadrotor_50hz_line_5s.hpp"
 // #include "quadrotor_50hz_line_8s.hpp"
 #include "quadrotor_50hz_line_9s_xyz.hpp"
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+// Canonical full-state Figure-8 reference. Keep this conditional so hover,
+// line, and circle firmware images do not carry the trajectory table.
+#include "traj_fig8_12.h"
+#endif
 
 // Edit the debug name to get nice debug prints
 #define DEBUG_MODULE "MPCTASK"
@@ -148,6 +191,23 @@ extern "C"
 // Every benchmark arm uses the exact 20 Hz model/cache timing from LIMO.
 #define MPC_RATE 20
 #define LOWLEVEL_RATE RATE_500_HZ
+constexpr uint32_t kMpcDeadlineCycles = 8400000u;  // 168 MHz / 20 Hz
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+constexpr int kFigure8SourceRateHz = 100;
+constexpr int kFigure8LapCount = 2;
+constexpr int kFigure8StateCount =
+    static_cast<int>(sizeof(X_ref_data) / sizeof(X_ref_data[0]));
+constexpr int kFigure8SourceIntervalsPerLap = kFigure8StateCount - 1;
+constexpr int kFigure8TotalSourceIntervals =
+    kFigure8LapCount * kFigure8SourceIntervalsPerLap;
+constexpr int kFigure8MaxMpcIndex =
+    (kFigure8TotalSourceIntervals * MPC_RATE + kFigure8SourceRateHz - 1) /
+    kFigure8SourceRateHz;
+static_assert(kFigure8StateCount > NHORIZON,
+              "Figure-8 reference must cover the MPC horizon");
+static_assert(kFigure8LapCount > 0,
+              "Figure-8 must execute at least one lap");
+#endif
 
 // Every benchmark arm uses the same 500 ms MPC preview as the position-PID
 // bridge. A single compile-time index keeps controller comparisons matched.
@@ -225,30 +285,42 @@ static tiny_VectorNx current_state;
 
 // Helper variables
 enum FlightPhase : uint8_t {
-  FLIGHT_PHASE_TRACKING = 0,
-  FLIGHT_PHASE_LANDING = 1,
-  FLIGHT_PHASE_COMPLETE = 2,
+  FLIGHT_PHASE_WAITING_FOR_TAKEOFF = 0,
+  FLIGHT_PHASE_TAKEOFF = 1,
+  FLIGHT_PHASE_TRACKING = 2,
+  FLIGHT_PHASE_LANDING = 3,
+  FLIGHT_PHASE_COMPLETE = 4,
 };
 
-static bool enable_traj = true;
+static bool enable_traj = TINYMPC_OOT_TAKEOFF == 0;
 static bool mpc_has_run = false; // Flag to track if MPC has computed at least once
 static int traj_index = 0;
 static int max_traj_index = 0;
 static float traj_speed = 0.2f; // m/s
 static float traj_dist = 1.0f;  // m
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER || \
+    TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+// Near-boundary hover and Figure-8 stress campaigns hold below the 0.75 m
+// high-altitude skip so the learned barrier remains exercised. Other moving
+// trajectories use the canonical 1.00 m altitude.
+static float traj_height = 0.70f;
+#else
 static float traj_height = 1.0f;
+#endif
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
-// At the default radius this keeps approximately the previous 0.45 rad/s
-// speed while allowing the normalized generator to close exactly one cycle.
-static float traj_duration = 14.0f;
+// Informational/parameter value only for the table-driven Figure-8. The
+// actual endpoint is derived from the header length and source rate.
+static float traj_duration =
+    static_cast<float>(kFigure8TotalSourceIntervals) /
+    kFigure8SourceRateHz;
 #else
 static float traj_duration = 12.0f;
 #endif
 static float traj_radius = 0.75f;
 static float traj_omega = 0.45f;
 // Moving maneuvers are expressed relative to the position at which controller
-// 6 is activated. Hover intentionally remains at the estimator origin so its
-// wind-response metrics retain the known (0,0) reference.
+// 6 is activated. Hover intentionally remains at the estimator origin to
+// reproduce the strong downward-wind pair and its fixed (0,0,0.70) reference.
 static float trajectory_origin_x = 0.0f;
 static float trajectory_origin_y = 0.0f;
 static uint32_t last_controller_tick = 0;
@@ -257,7 +329,20 @@ static uint32_t controller_activate_tick = 0;
 // runs on the FreeRTOS tick clock. Keep both activation timestamps; subtracting
 // one clock from the other adds the sensor-calibration startup offset.
 static uint32_t controller_activate_rtos_tick = 0;
-static uint8_t flight_phase = FLIGHT_PHASE_TRACKING;
+// EXP time is reset at the actual trajectory start. This keeps the vertical
+// takeoff ramp outside the OOT+3-s analysis window.
+static uint32_t experiment_start_rtos_tick = 0;
+static uint8_t flight_phase =
+    TINYMPC_OOT_TAKEOFF ? FLIGHT_PHASE_WAITING_FOR_TAKEOFF
+                        : FLIGHT_PHASE_TRACKING;
+static uint32_t takeoff_start_tick = 0;
+static uint32_t takeoff_start_rtos_tick = 0;
+static bool tracking_start_pending = false;
+static bool takeoff_trigger_armed = false;
+static float takeoff_start_z = 0.0f;
+static float takeoff_hold_x = 0.0f;
+static float takeoff_hold_y = 0.0f;
+static float takeoff_hold_yaw = 0.0f;
 static uint32_t landing_start_tick = 0;
 static float landing_hold_x = 0.0f;
 static float landing_hold_y = 0.0f;
@@ -312,6 +397,19 @@ static float limo_grad_norm = 0.0f;
 static float limo_margin_eff = 0.0f;
 static float limo_threshold = 0.0f;
 static uint32_t limo_eval_us = 0;
+// DWT cycle timing keeps the two learned LIMO stages separate:
+//   barrier = learned MLP forward + input gradient
+//   RL      = frozen authority scheduler update
+// Cache installation is measured independently so it is not attributed to
+// the learned authority policy.
+static uint32_t limo_barrier_cycles = 0;
+static uint32_t limo_activation_cycles = 0;
+static uint32_t limo_rl_cycles = 0;
+static uint32_t limo_cache_cycles = 0;
+static uint32_t mpc_solve_cycles = 0;
+static uint32_t controller_total_cycles = 0;
+static uint32_t max_step_cycles = 0;
+static uint32_t deadline_overrun_count = 0;
 static uint8_t limo_active = 0;
 static uint8_t limo_active_count = 0;
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
@@ -320,6 +418,7 @@ static limo_embedded::Runtime limo_embedded_runtime = {};
 static float limo_authority_w = 0.0f;
 static float limo_authority_w_requested = 0.0f;
 static float limo_qz = 1.0f;
+static float limo_qz_requested = 1.0f;
 static uint8_t limo_w_index = 0;
 static uint8_t limo_qz_index = 0;
 static uint8_t limo_cache_ok = 0;
@@ -329,11 +428,35 @@ static uint8_t limo_no_oracle_active = 0;
 static uint8_t posthoc_active = 0;
 static uint8_t posthoc_failed = 0;
 static float posthoc_du_norm = 0.0f;
+static uint32_t posthoc_active_total = 0;
+static uint32_t posthoc_infeasible_total = 0;
 static uint32_t benchmark_step = 0;
+static uint8_t bench_state_index = 0;
 
-// Raw state logging for offline wind-response analysis. Hover references are
-// known (x=0, y=0, z=traj_height), so RMSE/peaks/recovery are reconstructed
-// from the timestamped samples instead of spending firmware work on metrics.
+#if TINYMPC_BENCH_PROFILE
+// Deterministic one-second plateaus span calm hover, descent, low-altitude
+// recovery, and attitude/rate excursions. They exercise the exact embedded
+// barrier/scheduler/ADMM path without depending on estimator noise.
+static constexpr tinytype kBenchStates[][NSTATES] = {
+    {0.00f,  0.00f, 1.00f,  0.00f,  0.00f, 0.00f,
+     0.00f,  0.00f, 0.00f,  0.00f,  0.00f, 0.00f},
+    {0.08f, -0.05f, 0.92f,  0.00f,  0.00f, 0.00f,
+     0.30f, -0.20f, -0.35f, 0.00f,  0.00f, 0.00f},
+    {0.12f, -0.08f, 0.82f,  0.10f, -0.08f, 0.00f,
+     0.40f, -0.30f, -0.70f, 0.80f, -0.60f, 0.20f},
+    {-0.10f, 0.06f, 0.75f,  0.22f, -0.18f, 0.03f,
+     -0.20f, 0.25f, -1.00f, 2.00f, -1.50f, 0.60f},
+    {0.00f,  0.00f, 0.90f, -0.08f,  0.06f, 0.00f,
+     -0.10f, 0.10f, 0.30f, -0.50f, 0.40f, -0.20f},
+};
+static constexpr uint8_t kBenchStateCount =
+    sizeof(kBenchStates) / sizeof(kBenchStates[0]);
+static constexpr uint32_t kBenchStateHoldSteps = MPC_RATE;
+#endif
+
+// Raw state logging for offline wind-response analysis. The active X/Y/Z
+// reference is logged with every sample, so RMSE/peaks/recovery are
+// reconstructed without spending firmware work on aggregate metrics.
 static float tracking_pos_x = 0.0f;
 static float tracking_pos_y = 0.0f;
 static float tracking_pos_z = 0.0f;
@@ -346,6 +469,7 @@ static float tracking_yaw_deg = 0.0f;
 static float tracking_cmd_x = 0.0f;
 static float tracking_cmd_y = 0.0f;
 static float tracking_cmd_z = 0.0f;
+static float mpc_yaw_setpoint_deg = 0.0f;
 static float tracking_preview_z = 0.0f;
 static uint32_t controller_total_us = 0;
 
@@ -353,6 +477,17 @@ static inline long console_scaled(float value, float scale)
 {
   return static_cast<long>(value * scale);
 }
+
+#if TINYMPC_BENCH_PROFILE
+static void load_bench_state(tiny_MatrixNxNh *states, uint32_t step)
+{
+  bench_state_index = static_cast<uint8_t>(
+      (step / kBenchStateHoldSteps) % kBenchStateCount);
+  for (int i = 0; i < NSTATES; ++i) {
+    (*states)(i, 0) = kBenchStates[bench_state_index][i];
+  }
+}
+#endif
 
 // Dynamic obstacle (disk) parameters for LTV linear constraints
 static Eigen::Matrix<tinytype, 3, 1> obs_center;
@@ -544,13 +679,27 @@ static void reset_benchmark_run()
 {
   traj_index = 0;
   benchmark_step = 0;
-  enable_traj = true;
+  enable_traj = TINYMPC_OOT_TAKEOFF == 0;
   mpc_has_run = false;
-  flight_phase = FLIGHT_PHASE_TRACKING;
+  flight_phase =
+      TINYMPC_OOT_TAKEOFF ? FLIGHT_PHASE_WAITING_FOR_TAKEOFF
+                          : FLIGHT_PHASE_TRACKING;
+  takeoff_start_tick = 0;
+  takeoff_start_rtos_tick = 0;
+  tracking_start_pending = false;
+  takeoff_trigger_armed = false;
+  takeoff_start_z = 0.0f;
+  takeoff_hold_x = 0.0f;
+  takeoff_hold_y = 0.0f;
+  takeoff_hold_yaw = 0.0f;
   landing_start_tick = 0;
   landing_reference_z = traj_height;
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+  max_traj_index = kFigure8MaxMpcIndex;
+#else
   max_traj_index =
       static_cast<int>(positive_part(traj_duration) * MPC_RATE);
+#endif
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
   limo_embedded_runtime = {};
 #endif
@@ -561,7 +710,24 @@ static void reset_benchmark_run()
   posthoc_active = 0;
   posthoc_failed = 0;
   posthoc_du_norm = 0.0f;
+  posthoc_active_total = 0;
+  posthoc_infeasible_total = 0;
+  bench_state_index = 0;
+  max_step_cycles = 0;
+  deadline_overrun_count = 0;
   reset_solver_warm_start();
+}
+
+static void reset_tracking_measurements()
+{
+  benchmark_step = 0;
+  max_step_cycles = 0;
+  deadline_overrun_count = 0;
+  posthoc_active = 0;
+  posthoc_failed = 0;
+  posthoc_du_norm = 0.0f;
+  posthoc_active_total = 0;
+  posthoc_infeasible_total = 0;
 }
 
 static inline float quat_dot(quaternion_t a, quaternion_t b)
@@ -594,6 +760,25 @@ static inline struct vec quat_2_rp(quaternion_t q)
   return v;
 }
 
+// The MPC attitude states are Rodrigues parameters q_xyz / q_w. The stock
+// Crazyflie PID consumes an Euler yaw setpoint in degrees, so convert exactly
+// at the bridge instead of passing the dimensionless r_z state as degrees.
+static inline float rp_yaw_degrees(const tiny_VectorNx &x)
+{
+  const float rx = x(3);
+  const float ry = x(4);
+  const float rz = x(5);
+  const float inv_norm =
+      1.0f / sqrtf(1.0f + rx * rx + ry * ry + rz * rz);
+  const float qx = rx * inv_norm;
+  const float qy = ry * inv_norm;
+  const float qz = rz * inv_norm;
+  const float qw = inv_norm;
+  const float sin_yaw = 2.0f * (qw * qz + qx * qy);
+  const float cos_yaw = 1.0f - 2.0f * (qy * qy + qz * qz);
+  return atan2f(sin_yaw, cos_yaw) * 57.2957795f;
+}
+
 static inline void fill_hold_setpoint(setpoint_t *sp, const state_t *state)
 {
   memset(sp, 0, sizeof(setpoint_t));
@@ -605,6 +790,17 @@ static inline void fill_hold_setpoint(setpoint_t *sp, const state_t *state)
   sp->position.y = state->position.y;
   sp->position.z = state->position.z;
   sp->attitude.yaw = state->attitude.yaw;
+}
+
+static inline bool oot_takeoff_requested(const setpoint_t *setpoint)
+{
+  const bool absolute_request =
+      setpoint->mode.z == modeAbs &&
+      setpoint->position.z >= TINYMPC_TAKEOFF_TRIGGER_Z_M;
+  const bool upward_velocity_request =
+      setpoint->mode.z == modeVelocity &&
+      setpoint->velocity.z > 0.05f;
+  return absolute_request || upward_velocity_request;
 }
 
 static inline void stop_motors(control_t *control)
@@ -646,6 +842,12 @@ void controllerOutOfTreeInit(void)
 
   controllerPidInit();
 
+  // The STM32F405 DWT counter runs at the 168 MHz CPU clock. Keep raw cycle
+  // counts on target and convert to time offline.
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
   restore_shared_baseline();
   params.u_min = tiny_VectorNu(-u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3]).replicate<1, NHORIZON - 1>();
   params.u_max = tiny_VectorNu(1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3]).replicate<1, NHORIZON - 1>();
@@ -680,13 +882,20 @@ void controllerOutOfTreeInit(void)
   // Initialize mpc_setpoint to the origin reference to avoid garbage values on first call
   mpc_setpoint = Xref_origin;
 
-  enable_traj = true;
+  enable_traj = TINYMPC_OOT_TAKEOFF == 0;
   mpc_has_run = false;
   traj_index = 0;
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+  max_traj_index = kFigure8MaxMpcIndex;
+#else
   max_traj_index = static_cast<int>(traj_duration * MPC_RATE);
-  flight_phase = FLIGHT_PHASE_TRACKING;
+#endif
+  flight_phase =
+      TINYMPC_OOT_TAKEOFF ? FLIGHT_PHASE_WAITING_FOR_TAKEOFF
+                          : FLIGHT_PHASE_TRACKING;
   landing_start_tick = 0;
   landing_reference_z = traj_height;
+  experiment_start_rtos_tick = xTaskGetTickCount();
 
   // Dynamic obstacle - arm sweeps from left (y+) to right (y-)
   // Arm starts at y=+0.3, sweeps down to y=-0.3 at 0.1 m/s
@@ -705,11 +914,40 @@ void controllerOutOfTreeInit(void)
               (unsigned int)benchmark_maneuver,
               (unsigned int)benchmark_max_iter,
               (unsigned int)TINYMPC_TASK_PRI);
+  DEBUG_PRINT("Reference altitude: %.2f m; barrier skip when z>%.2f and vz>%.2f\n",
+              (double)traj_height, (double)limo_skip_z,
+              (double)limo_skip_vz);
+#if TINYMPC_OOT_TAKEOFF
+  DEBUG_PRINT("OOT takeoff: cfclient trigger>=%.2fm ramp=%.2fm/s trajectory_start=z>=%.2fm timeout=%lums\n",
+              (double)TINYMPC_TAKEOFF_TRIGGER_Z_M,
+              (double)TINYMPC_TAKEOFF_ASCENT_MPS,
+              (double)traj_height,
+              (unsigned long)TINYMPC_TAKEOFF_TIMEOUT_MS);
+#else
+  DEBUG_PRINT("OOT takeoff: disabled; switch to controller 6 after external takeoff\n");
+#endif
 
+#if TINYMPC_COMMON_Z_GUARD
   DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x%u guards=z[ref,ref+0.20] xy=free cap=0.05\n",
               (unsigned int)kPidBridgeIndex);
+#else
+  DEBUG_PRINT("Common baseline: mpc_hz=20 model_hz=20 rho=5 base_w=0 base_qz=1 Qz=100 R=4 bridge=x%u z_guard=off(raw_preview) xy=free cap=0.05\n",
+              (unsigned int)kPidBridgeIndex);
+#endif
+  DEBUG_PRINT("MPC->PID: xyz=x%u, z_guard=[ref,ref+0.20], yaw=raw_rz, output_hold=200ms, safety_hold=500ms\n",
+              (unsigned int)kPidBridgeIndex);
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER
+  DEBUG_PRINT("Reference origin: xy=estimator_zero z=%.2f m\n",
+              (double)traj_height);
+#elif TINYMPC_OOT_TAKEOFF
+  DEBUG_PRINT("Reference origin: xy=forced_3s_start z=%.2f m\n",
+              (double)traj_height);
+#else
+  DEBUG_PRINT("Reference origin: xy=OOT_activation z=%.2f m\n",
+              (double)traj_height);
+#endif
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_EMBEDDED
-  DEBUG_PRINT("LIMO adaptive: cache=16x4 evals=1\n");
+  DEBUG_PRINT("LIMO adaptive: cache=16x4 evals=1 timing=bar/rl/cache_cycles\n");
 #else
   DEBUG_PRINT("Fixed baseline: w=0 qz=1 adaptive_cache=off\n");
 #endif
@@ -720,14 +958,34 @@ void controllerOutOfTreeInit(void)
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
   DEBUG_PRINT("LIMO posthoc: infeasible=nominal_fallback\n");
 #endif
+#if TINYMPC_BENCH_PROFILE
+  DEBUG_PRINT("BENCH PROFILE: MOTORS FORCED OFF, canned_states=%u hold_steps=%lu tanhf_subcounter=%u\n",
+              (unsigned int)kBenchStateCount,
+              (unsigned long)kBenchStateHoldSteps,
+              (unsigned int)TINYMPC_PROFILE_TANH);
+#endif
 #if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
-  DEBUG_PRINT("EXP every=%u: m,s,tms,p3[mm],v3[mmps],att3[cdeg],ref3[mm],cmd3[mm],h/raw/grad/mar/thr[milli],act/ac/bind,wi/qi/cache/noa,pa/pf/du[milli],it,mpc/eval/total[us]\n",
+  DEBUG_PRINT("EXP every=%u: m,s,tms,p3[mm],v3[mmps],att3[cdeg],ref3[mm],cmd3[mm],h/raw/grad/mar/thr[milli],act/ac/bind,wi/qi/cache/noa,pa/pf/du[milli],it,mpc/eval/total[us],bar/tanh/rl/cache/solve/step[cycles],overruns,post_active/post_infeasible_totals,wreq/w/qzreq/qz[milli],max_step_cycles\n",
               (unsigned int)TINYMPC_XYZ_CONSOLE_DECIMATION);
 #endif
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
-  DEBUG_PRINT("Figure8: front_back=1 closed_cycle=1 duration=%.1f s radius=%.2f m origin=OOT_activation\n",
-              (double)traj_duration, (double)traj_radius);
+#if TINYMPC_OOT_TAKEOFF
+  DEBUG_PRINT("Figure8: source=traj_fig8_12.h source_hz=%u samples=%u laps=%u duration=%.2f s origin=forced_3s_start z_offset=%.2f m\n",
+#else
+  DEBUG_PRINT("Figure8: source=traj_fig8_12.h source_hz=%u samples=%u laps=%u duration=%.2f s origin=OOT_activation z_offset=%.2f m\n",
 #endif
+              (unsigned int)kFigure8SourceRateHz,
+              (unsigned int)kFigure8StateCount,
+              (unsigned int)kFigure8LapCount,
+              (double)traj_duration,
+              (double)(traj_height - X_ref_data[0][2]));
+#endif
+  // Initialize the frozen build configuration before controller 6 can receive
+  // a takeoff request. Otherwise the task's first wakeup would interpret the
+  // compile-time selection as a runtime mode change and cancel takeoff.
+  reset_benchmark_run();
+  previous_benchmark_mode = benchmark_mode;
+  previous_benchmark_maneuver = benchmark_maneuver;
   /* Begin task initialization */
   runTaskSemaphore = xSemaphoreCreateBinary();
   // ASSERT(runTaskSemaphore);
@@ -743,8 +1001,62 @@ void controllerOutOfTreeInit(void)
 static void UpdateHorizonReference(const setpoint_t *setpoint)
 {
   (void)setpoint;
+  if (flight_phase == FLIGHT_PHASE_TAKEOFF)
+  {
+    const float elapsed_s =
+        0.001f * static_cast<float>(
+            T2M(xTaskGetTickCount() - takeoff_start_rtos_tick));
+    const float current_reference_z =
+        fminf(traj_height,
+              takeoff_start_z + TINYMPC_TAKEOFF_ASCENT_MPS * elapsed_s);
+    const float yaw_radians = radians(takeoff_hold_yaw);
+    const float yaw_rodrigues = tanf(0.5f * yaw_radians);
+    for (int i = 0; i < NHORIZON; ++i) {
+      const float horizon_reference_z =
+          fminf(traj_height,
+                current_reference_z +
+                    TINYMPC_TAKEOFF_ASCENT_MPS *
+                        (static_cast<float>(i) / MPC_RATE));
+      params.Xref.col(i).setZero();
+      params.Xref(0, i) = takeoff_hold_x;
+      params.Xref(1, i) = takeoff_hold_y;
+      params.Xref(2, i) = horizon_reference_z;
+      params.Xref(5, i) = yaw_rodrigues;
+      params.Xref(8, i) =
+          horizon_reference_z < traj_height
+              ? TINYMPC_TAKEOFF_ASCENT_MPS
+              : 0.0f;
+    }
+    Xref_end = params.Xref.col(NHORIZON - 1);
+    return;
+  }
+
   if (enable_traj)
   {
+#if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
+    // Resample the stored 100 Hz, 12-state reference onto the 20 Hz MPC
+    // horizon. Each horizon column advances independently; translating only
+    // position preserves the header's velocities, attitude, and rates.
+    const float z_offset = traj_height - X_ref_data[0][2];
+    for (int i = 0; i < NHORIZON; ++i) {
+      const int unwrapped_source_index =
+          ((traj_index + i) * kFigure8SourceRateHz) / MPC_RATE;
+      int source_index;
+      if (unwrapped_source_index >= kFigure8TotalSourceIntervals) {
+        source_index = kFigure8StateCount - 1;
+      } else {
+        source_index =
+            unwrapped_source_index % kFigure8SourceIntervalsPerLap;
+      }
+      for (int state_index = 0; state_index < NSTATES; ++state_index) {
+        params.Xref(state_index, i) =
+            X_ref_data[source_index][state_index];
+      }
+      params.Xref(0, i) += trajectory_origin_x;
+      params.Xref(1, i) += trajectory_origin_y;
+      params.Xref(2, i) += z_offset;
+    }
+#else
     const float dt = 1.0f / MPC_RATE;
     const float base_t = traj_index * dt;
     for (int i = 0; i < NHORIZON; ++i) {
@@ -768,22 +1080,6 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       y = traj_radius * (1.0f - cosf(traj_omega * t));
       vx = traj_radius * traj_omega * cosf(traj_omega * t);
       vy = traj_radius * traj_omega * sinf(traj_omega * t);
-#elif TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
-      // Normalize phase by the requested duration so the reference always
-      // executes one complete, closed Figure-8 before landing. Clamp horizon
-      // samples at the endpoint instead of leaking into a second cycle.
-      const float duration = fmaxf(traj_duration, dt);
-      const float path_t = fminf(t, duration);
-      const float phase_rate = 2.0f * static_cast<float>(M_PI) / duration;
-      const float phase = phase_rate * path_t;
-      // Front/back orientation: X is the long fore/aft axis and Y is the
-      // smaller lateral crossover axis.
-      x = traj_radius * sinf(phase);
-      y = 0.5f * traj_radius * sinf(2.0f * phase);
-      if (t < duration) {
-        vx = traj_radius * phase_rate * cosf(phase);
-        vy = traj_radius * phase_rate * cosf(2.0f * phase);
-      }
 #endif
       params.Xref.col(i).setZero();
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_HOVER
@@ -797,6 +1093,7 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
       params.Xref(6, i) = vx;
       params.Xref(7, i) = vy;
     }
+#endif
     Xref_end = params.Xref.col(NHORIZON - 1);
 
     if (traj_index < max_traj_index) {
@@ -867,11 +1164,35 @@ static void tinympcControllerTask(void *parameters)
       }
       problem.max_iter = benchmark_max_iter > 0 ? benchmark_max_iter : 1;
 
-      // Landing uses the stock position PID. Stop TinyMPC/LIMO so the
-      // benchmark's floor-safety constraint cannot fight the descent.
-      if (flight_phase != FLIGHT_PHASE_TRACKING) {
+      // Waiting keeps the motors off. Landing uses the stock position PID, so
+      // TinyMPC/LIMO runs only during the gated takeoff and tracking phases.
+      if (flight_phase != FLIGHT_PHASE_TAKEOFF &&
+          flight_phase != FLIGHT_PHASE_TRACKING) {
         continue;
       }
+      if (flight_phase == FLIGHT_PHASE_TAKEOFF &&
+          tracking_start_pending) {
+        // The stabilizer loop only queues this transition. Commit it here,
+        // between complete MPC solves, so no takeoff sample can be counted as
+        // part of the trajectory experiment.
+        enable_traj = true;
+        flight_phase = FLIGHT_PHASE_TRACKING;
+        traj_index = 0;
+        experiment_start_rtos_tick = xTaskGetTickCount();
+        reset_tracking_measurements();
+        tracking_start_pending = false;
+        DEBUG_PRINT(
+            "TRAJ START: z=%.2f origin=(%.2f,%.2f) EXP clock reset\n",
+            (double)state_task.position.z,
+            (double)trajectory_origin_x,
+            (double)trajectory_origin_y);
+      }
+
+      // Raw-cycle control-step timing begins before state packing and
+      // reference generation. It excludes task wakeup/data copying and the
+      // console print below, none of which is part of the control algorithm.
+      const uint32_t controller_cycle_start_cycles = DWT->CYCCNT;
+      const uint32_t controller_cycle_start_us = usecTimestamp();
 
       // TODO: predict into the future and set initial x to wherever we think we'll be
       //    by the time we're done computing the input for that state. If we just set
@@ -884,36 +1205,52 @@ static void tinympcControllerTask(void *parameters)
           phi.x, phi.y, phi.z,
           state_task.velocity.x, state_task.velocity.y, state_task.velocity.z,
           radians(sensors_task.gyro.x), radians(sensors_task.gyro.y), radians(sensors_task.gyro.z);
+#if TINYMPC_BENCH_PROFILE
+      load_bench_state(&problem.x, benchmark_step);
+#endif
 
       if (task_loop_count <= 3) {
         DEBUG_PRINT("x0: pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)\n",
-                    (double)state_task.position.x, (double)state_task.position.y, (double)state_task.position.z,
-                    (double)state_task.velocity.x, (double)state_task.velocity.y, (double)state_task.velocity.z);
+                    (double)problem.x(0, 0), (double)problem.x(1, 0), (double)problem.x(2, 0),
+                    (double)problem.x(6, 0), (double)problem.x(7, 0), (double)problem.x(8, 0));
       }
 
       // Get command reference
       UpdateHorizonReference(&setpoint_task);
 
-      tracking_pos_x = state_task.position.x;
-      tracking_pos_y = state_task.position.y;
-      tracking_pos_z = state_task.position.z;
-      tracking_vel_x = state_task.velocity.x;
-      tracking_vel_y = state_task.velocity.y;
-      tracking_vel_z = state_task.velocity.z;
+      tracking_pos_x = problem.x(0, 0);
+      tracking_pos_y = problem.x(1, 0);
+      tracking_pos_z = problem.x(2, 0);
+      tracking_vel_x = problem.x(6, 0);
+      tracking_vel_y = problem.x(7, 0);
+      tracking_vel_z = problem.x(8, 0);
+#if TINYMPC_BENCH_PROFILE
+      // Rodrigues parameters are close to radians for these small canned
+      // angles; the values are diagnostic only and never enter the solver.
+      tracking_roll_deg = problem.x(3, 0) * 57.2957795f;
+      tracking_pitch_deg = problem.x(4, 0) * 57.2957795f;
+      tracking_yaw_deg = problem.x(5, 0) * 57.2957795f;
+#else
       tracking_roll_deg = state_task.attitude.roll;
       tracking_pitch_deg = state_task.attitude.pitch;
       tracking_yaw_deg = state_task.attitude.yaw;
+#endif
       
       if (task_loop_count <= 3) {
         DEBUG_PRINT("ref: (%.2f,%.2f,%.2f)\n",
                     (double)params.Xref(0,0), (double)params.Xref(1,0), (double)params.Xref(2,0));
       }
-      const uint32_t controller_cycle_start_us = usecTimestamp();
-
+      limo_barrier_cycles = 0;
+      limo_activation_cycles = 0;
+      limo_rl_cycles = 0;
+      limo_cache_cycles = 0;
+      mpc_solve_cycles = 0;
+      controller_total_cycles = 0;
       limo_cache_ok = 0;
       limo_authority_w = 0.0f;
       limo_authority_w_requested = 0.0f;
       limo_qz = 1.0f;
+      limo_qz_requested = 1.0f;
       limo_w_index = 0;
       limo_qz_index = 0;
       limo_no_oracle_score = 0.0f;
@@ -926,10 +1263,14 @@ static void tinympcControllerTask(void *parameters)
       uint32_t embedded_eval_us = 0;
       {
         const uint32_t embedded_eval_start_us = usecTimestamp();
+        const uint32_t embedded_barrier_start_cycles = DWT->CYCCNT;
         limo_eval_barrier(
             problem.x.col(0), limo_az_coeff, limo_gravity_comp,
             radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
             &embedded_eval_x0);
+        limo_barrier_cycles =
+            DWT->CYCCNT - embedded_barrier_start_cycles;
+        limo_activation_cycles = embedded_eval_x0.activation_cycles;
         embedded_eval_us = usecTimestamp() - embedded_eval_start_us;
         const tinytype embedded_h =
             guarded_limo_h(problem.x.col(0), embedded_eval_x0.h);
@@ -939,15 +1280,21 @@ static void tinympcControllerTask(void *parameters)
             &limo_embedded_runtime, problem.x.col(0), embedded_h,
             embedded_margin, radians(limo_fail_roll_deg),
             radians(limo_fail_pitch_deg));
+        const uint32_t embedded_rl_start_cycles = DWT->CYCCNT;
         limo_embedded::update(
             &limo_embedded_runtime, problem.x.col(0), params.Xref.col(0),
             embedded_h, embedded_margin, radians(limo_fail_roll_deg),
             radians(limo_fail_pitch_deg));
+        limo_rl_cycles = DWT->CYCCNT - embedded_rl_start_cycles;
+        const uint32_t embedded_cache_start_cycles = DWT->CYCCNT;
         limo_cache_ok =
             limo_embedded::install_cache(limo_embedded_runtime, &params) ? 1 : 0;
+        limo_cache_cycles =
+            DWT->CYCCNT - embedded_cache_start_cycles;
         limo_authority_w = limo_embedded_runtime.applied_w;
         limo_authority_w_requested = limo_embedded_runtime.requested_w;
         limo_qz = limo_embedded_runtime.applied_qz;
+        limo_qz_requested = limo_embedded_runtime.requested_qz;
         limo_w_index =
             static_cast<uint8_t>(limo_embedded_runtime.w_index);
         limo_qz_index =
@@ -1175,16 +1522,21 @@ static void tinympcControllerTask(void *parameters)
         DEBUG_PRINT("MPC solve start\n");
       }
       mpc_start_timestamp = usecTimestamp();
+      const uint32_t mpc_solve_start_cycles = DWT->CYCCNT;
       solve_admm(&problem, &params);
+      mpc_solve_cycles = DWT->CYCCNT - mpc_solve_start_cycles;
       mpc_time_us = usecTimestamp() - mpc_start_timestamp;
 #if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
       {
         LimoBarrierEval posthoc_eval;
         const uint32_t eval_start_us = usecTimestamp();
+        const uint32_t eval_start_cycles = DWT->CYCCNT;
         limo_eval_barrier(
             problem.x.col(0), limo_az_coeff, limo_gravity_comp,
             radians(limo_fail_roll_deg), radians(limo_fail_pitch_deg),
             &posthoc_eval);
+        limo_barrier_cycles += DWT->CYCCNT - eval_start_cycles;
+        limo_activation_cycles += posthoc_eval.activation_cycles;
         limo_eval_us += usecTimestamp() - eval_start_us;
 
         const tinytype posthoc_h =
@@ -1209,6 +1561,12 @@ static void tinympcControllerTask(void *parameters)
         posthoc_du_norm = projection_du_norm;
         posthoc_active = projection_active ? 1 : 0;
         posthoc_failed = projection_failed ? 1 : 0;
+        if (projection_active) {
+          ++posthoc_active_total;
+        }
+        if (projection_failed) {
+          ++posthoc_infeasible_total;
+        }
 
         // This task-controller drives the stock Crazyflie PID with the MPC
         // preview state. Apply a feasible posthoc delta-u to the primal
@@ -1305,13 +1663,29 @@ static void tinympcControllerTask(void *parameters)
       // Keep the stock 500 Hz PID as the hardware inner loop. All controller
       // arms and axes use the same 500 ms MPC preview.
       const tinytype preview_z = problem.x(2, kPidBridgeIndex);
-      const tinytype reference_z = params.Xref(2, 0);
       mpc_setpoint_task = problem.x.col(kPidBridgeIndex);
+      // Preserve the bridge used by the strong paired result. Hover yaw
+      // remains near zero, so the historical raw Rodrigues value is retained.
+      float command_yaw_deg = mpc_setpoint_task(5);
+      if (flight_phase == FLIGHT_PHASE_TAKEOFF) {
+        // Payload takeoff is deliberately vertical. Do not expose preview
+        // lateral/yaw transients to the inner PID before the experiment.
+        mpc_setpoint_task(0) = takeoff_hold_x;
+        mpc_setpoint_task(1) = takeoff_hold_y;
+        command_yaw_deg = takeoff_hold_yaw;
+      }
       tracking_preview_z = preview_z;
+#if TINYMPC_COMMON_Z_GUARD
+      const tinytype reference_z = params.Xref(2, 0);
       // Tracking/LIMO may request extra altitude for safety, but the partial
       // solve is never allowed to pull the vehicle below the nominal path.
       mpc_setpoint_task(2) =
           clamp_tiny(preview_z, reference_z, reference_z + tinytype(0.20f));
+#else
+      // No shared altitude rescue: each benchmark arm must expose its own
+      // predicted Z through the common MPC-to-PID bridge.
+      mpc_setpoint_task(2) = preview_z;
+#endif
       tracking_cmd_z = mpc_setpoint_task(2);
       // x/y are intentionally unclamped: each arm's own lateral authority is
       // part of what the wind benchmark measures, and a reference-anchored
@@ -1319,17 +1693,28 @@ static void tinympcControllerTask(void *parameters)
       tracking_cmd_x = mpc_setpoint_task(0);
       tracking_cmd_y = mpc_setpoint_task(1);
       controller_total_us = usecTimestamp() - controller_cycle_start_us;
+      controller_total_cycles =
+          DWT->CYCCNT - controller_cycle_start_cycles;
+      if (controller_total_cycles > max_step_cycles) {
+        max_step_cycles = controller_total_cycles;
+      }
+      if (controller_total_cycles > kMpcDeadlineCycles) {
+        ++deadline_overrun_count;
+      }
 
 #if TINYMPC_XYZ_CONSOLE_DECIMATION > 0
       if ((benchmark_step % TINYMPC_XYZ_CONSOLE_DECIMATION) == 0) {
-        const uint32_t experiment_elapsed_ms =
-            T2M(xTaskGetTickCount() - controller_activate_rtos_tick);
-        DEBUG_PRINT(
+        if (flight_phase == FLIGHT_PHASE_TRACKING) {
+          const uint32_t experiment_elapsed_ms =
+              T2M(xTaskGetTickCount() - experiment_start_rtos_tick);
+          DEBUG_PRINT(
             "EXP,%u,%lu,%lu,"
             "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,"
             "%ld,%ld,%ld,%ld,%ld,%ld,"
             "%ld,%ld,%ld,%ld,%ld,"
-            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%ld,%d,%lu,%lu,%lu\n",
+            "%u,%u,%u,%u,%u,%u,%u,%u,%u,%ld,%d,"
+            "%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,"
+            "%ld,%ld,%ld,%ld,%lu\n",
             (unsigned int)benchmark_mode,
             (unsigned long)benchmark_step,
             (unsigned long)experiment_elapsed_ms,
@@ -1366,7 +1751,40 @@ static void tinympcControllerTask(void *parameters)
             problem.iter,
             (unsigned long)mpc_time_us,
             (unsigned long)limo_eval_us,
-            (unsigned long)controller_total_us);
+            (unsigned long)controller_total_us,
+            (unsigned long)limo_barrier_cycles,
+            (unsigned long)limo_activation_cycles,
+            (unsigned long)limo_rl_cycles,
+            (unsigned long)limo_cache_cycles,
+            (unsigned long)mpc_solve_cycles,
+            (unsigned long)controller_total_cycles,
+            (unsigned long)deadline_overrun_count,
+            (unsigned long)posthoc_active_total,
+            (unsigned long)posthoc_infeasible_total,
+            console_scaled(limo_authority_w_requested, 1000.0f),
+            console_scaled(limo_authority_w, 1000.0f),
+              console_scaled(limo_qz_requested, 1000.0f),
+              console_scaled(limo_qz, 1000.0f),
+              (unsigned long)max_step_cycles);
+        }
+      }
+#endif
+
+      if (flight_phase == FLIGHT_PHASE_LANDING ||
+          flight_phase == FLIGHT_PHASE_COMPLETE) {
+        DEBUG_PRINT(
+            "TIMING SUMMARY: max_step_cycles=%lu deadline_cycles=%lu overruns=%lu\n",
+            (unsigned long)max_step_cycles,
+            (unsigned long)kMpcDeadlineCycles,
+            (unsigned long)deadline_overrun_count);
+      }
+
+#if TINYMPC_FIRMWARE_MODE == TINYMPC_MODE_LIMO_POSTHOC
+      if (flight_phase == FLIGHT_PHASE_LANDING ||
+          flight_phase == FLIGHT_PHASE_COMPLETE) {
+        DEBUG_PRINT("POSTHOC SUMMARY: active=%lu infeasible=%lu\n",
+                    (unsigned long)posthoc_active_total,
+                    (unsigned long)posthoc_infeasible_total);
       }
 #endif
       
@@ -1383,6 +1801,7 @@ static void tinympcControllerTask(void *parameters)
       // Copy the setpoint calculated by the task loop to the global mpc_setpoint
       xSemaphoreTake(dataMutex, portMAX_DELAY);
       mpc_setpoint = mpc_setpoint_task;
+      mpc_yaw_setpoint_deg = command_yaw_deg;
       init_vel_z = problem.x(8, 0);
       mpc_has_run = true; // Mark that MPC has computed at least once
       xSemaphoreGive(dataMutex);
@@ -1418,7 +1837,9 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   if (controller_reactivated) {
     controller_activate_tick = tick;
     controller_activate_rtos_tick = xTaskGetTickCount();
+    experiment_start_rtos_tick = controller_activate_rtos_tick;
     mpc_has_run = false;
+    takeoff_trigger_armed = false;
 #if TINYMPC_TRAJECTORY != TINYMPC_TRAJECTORY_HOVER
     trajectory_origin_x = state->position.x;
     trajectory_origin_y = state->position.y;
@@ -1431,12 +1852,99 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     mpc_setpoint(0) = state->position.x;
     mpc_setpoint(1) = state->position.y;
     mpc_setpoint(2) = state->position.z;
+    mpc_yaw_setpoint_deg = state->attitude.yaw;
     DEBUG_PRINT("OOT activated at z=%.2f\n", (double)state->position.z);
   }
   last_controller_tick = tick;
 
+#if TINYMPC_BENCH_PROFILE
+  // A profiling image must never energize the motors. Controller 6 only
+  // supplies the task wake-up; all solver inputs come from kBenchStates.
+  xSemaphoreGive(dataMutex);
+  xSemaphoreGive(runTaskSemaphore);
+  stop_motors(control);
+  return;
+#endif
+
+#if TINYMPC_OOT_TAKEOFF
+  if (flight_phase == FLIGHT_PHASE_WAITING_FOR_TAKEOFF) {
+    const bool takeoff_requested = oot_takeoff_requested(setpoint);
+    if (!takeoff_requested) {
+      // Require one observed low command after controller 6 is selected. This
+      // prevents a stale cfclient altitude setpoint from launching the vehicle
+      // merely because the controller was changed.
+      takeoff_trigger_armed = true;
+    }
+    if (!takeoff_requested || !takeoff_trigger_armed) {
+      xSemaphoreGive(dataMutex);
+      stop_motors(control);
+      return;
+    }
+
+    takeoff_trigger_armed = false;
+    takeoff_start_tick = tick;
+    takeoff_start_rtos_tick = xTaskGetTickCount();
+    takeoff_start_z = fmaxf(0.0f, state->position.z);
+    takeoff_hold_x = state->position.x;
+    takeoff_hold_y = state->position.y;
+    takeoff_hold_yaw = state->attitude.yaw;
+    trajectory_origin_x = takeoff_hold_x;
+    trajectory_origin_y = takeoff_hold_y;
+    enable_traj = false;
+    mpc_has_run = false;
+    tracking_start_pending = false;
+    controller_activate_tick = tick;
+    controller_activate_rtos_tick = takeoff_start_rtos_tick;
+    experiment_start_rtos_tick = takeoff_start_rtos_tick;
+    reset_solver_warm_start();
+    DEBUG_PRINT(
+        "TAKEOFF START: trigger_z=%.2f start_z=%.2f target=%.2f hold=(%.2f,%.2f) ramp=%.2fm/s\n",
+        (double)setpoint->position.z,
+        (double)takeoff_start_z,
+        (double)traj_height,
+        (double)takeoff_hold_x,
+        (double)takeoff_hold_y,
+        (double)TINYMPC_TAKEOFF_ASCENT_MPS);
+    flight_phase = FLIGHT_PHASE_TAKEOFF;
+  }
+#endif
+
   if (RATE_DO_EXECUTE(LOWLEVEL_RATE, tick))
   {
+    if (flight_phase == FLIGHT_PHASE_TAKEOFF) {
+      const uint32_t takeoff_elapsed_ms =
+          T2M(tick - takeoff_start_tick);
+
+      if (!tracking_start_pending &&
+          flight_phase == FLIGHT_PHASE_TAKEOFF &&
+          state->position.z >= traj_height) {
+        trajectory_origin_x = state->position.x;
+        trajectory_origin_y = state->position.y;
+        tracking_start_pending = true;
+        obs_start_time = 0;
+        DEBUG_PRINT(
+            "TAKEOFF COMPLETE: t=%lums z=%.2f vz=%.2f; trajectory queued origin=(%.2f,%.2f)\n",
+            (unsigned long)takeoff_elapsed_ms,
+            (double)state->position.z,
+            (double)state->velocity.z,
+            (double)trajectory_origin_x,
+            (double)trajectory_origin_y);
+      }
+
+      if (!tracking_start_pending &&
+          flight_phase == FLIGHT_PHASE_TAKEOFF &&
+          takeoff_elapsed_ms >= TINYMPC_TAKEOFF_TIMEOUT_MS) {
+        enable_traj = false;
+        landing_start_tick = 0;
+        flight_phase = FLIGHT_PHASE_LANDING;
+        DEBUG_PRINT(
+            "TAKEOFF ABORT: timeout=%lums z=%.2f vz=%.2f; requesting landing\n",
+            (unsigned long)takeoff_elapsed_ms,
+            (double)state->position.z,
+            (double)state->velocity.z);
+      }
+    }
+
     if (flight_phase == FLIGHT_PHASE_LANDING) {
       if (landing_start_tick == 0) {
         landing_start_tick = tick;
@@ -1494,14 +2002,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       mpc_setpoint_pid.mode.y = modeAbs;
       mpc_setpoint_pid.mode.z = modeAbs;
 
-      // Use current position as fallback if MPC hasn't computed yet to avoid diving
+      // Reproduce the paired campaign's 200 ms startup hold.
       const bool hold_output =
           (!mpc_has_run) || ((tick - controller_activate_tick) < M2T(200));
       if (!hold_output) {
         mpc_setpoint_pid.position.x = mpc_setpoint(0);
         mpc_setpoint_pid.position.y = mpc_setpoint(1);
         mpc_setpoint_pid.position.z = mpc_setpoint(2);
-        mpc_setpoint_pid.attitude.yaw = mpc_setpoint(5);
+        mpc_setpoint_pid.attitude.yaw = mpc_yaw_setpoint_deg;
       } else {
         // Hold current position until MPC is ready
         mpc_setpoint_pid.position.x = state->position.x;
@@ -1571,11 +2079,21 @@ LOG_ADD(LOG_FLOAT, limo_grad, &limo_grad_norm)
 LOG_ADD(LOG_FLOAT, limo_margin, &limo_margin_eff)
 LOG_ADD(LOG_FLOAT, limo_thresh, &limo_threshold)
 LOG_ADD(LOG_UINT32, limo_eval_us, &limo_eval_us)
+LOG_ADD(LOG_UINT32, bar_cyc, &limo_barrier_cycles)
+LOG_ADD(LOG_UINT32, tanh_cyc, &limo_activation_cycles)
+LOG_ADD(LOG_UINT32, rl_cyc, &limo_rl_cycles)
+LOG_ADD(LOG_UINT32, cache_cyc, &limo_cache_cycles)
+LOG_ADD(LOG_UINT32, solve_cyc, &mpc_solve_cycles)
+LOG_ADD(LOG_UINT32, total_cyc, &controller_total_cycles)
+LOG_ADD(LOG_UINT32, max_step_cyc, &max_step_cycles)
+LOG_ADD(LOG_UINT32, overruns, &deadline_overrun_count)
+LOG_ADD(LOG_UINT8, bench_state, &bench_state_index)
 LOG_ADD(LOG_UINT8, limo_active, &limo_active)
 LOG_ADD(LOG_UINT8, limo_active_count, &limo_active_count)
 LOG_ADD(LOG_FLOAT, limo_w, &limo_authority_w)
 LOG_ADD(LOG_FLOAT, limo_w_req, &limo_authority_w_requested)
 LOG_ADD(LOG_FLOAT, limo_qz, &limo_qz)
+LOG_ADD(LOG_FLOAT, limo_qz_req, &limo_qz_requested)
 LOG_ADD(LOG_UINT8, limo_w_idx, &limo_w_index)
 LOG_ADD(LOG_UINT8, limo_qz_idx, &limo_qz_index)
 LOG_ADD(LOG_UINT8, limo_cache, &limo_cache_ok)
@@ -1585,6 +2103,8 @@ LOG_ADD(LOG_UINT8, no_or_act, &limo_no_oracle_active)
 LOG_ADD(LOG_UINT8, post_active, &posthoc_active)
 LOG_ADD(LOG_UINT8, post_failed, &posthoc_failed)
 LOG_ADD(LOG_FLOAT, post_du, &posthoc_du_norm)
+LOG_ADD(LOG_UINT32, post_act_n, &posthoc_active_total)
+LOG_ADD(LOG_UINT32, post_fail_n, &posthoc_infeasible_total)
 
 LOG_ADD(LOG_FLOAT, posX, &tracking_pos_x)
 LOG_ADD(LOG_FLOAT, posY, &tracking_pos_y)
@@ -1592,7 +2112,10 @@ LOG_ADD(LOG_FLOAT, posZ, &tracking_pos_z)
 LOG_ADD(LOG_FLOAT, velX, &tracking_vel_x)
 LOG_ADD(LOG_FLOAT, velY, &tracking_vel_y)
 LOG_ADD(LOG_FLOAT, velZ, &tracking_vel_z)
+LOG_ADD(LOG_FLOAT, cmdX, &tracking_cmd_x)
+LOG_ADD(LOG_FLOAT, cmdY, &tracking_cmd_y)
 LOG_ADD(LOG_FLOAT, cmdZ, &tracking_cmd_z)
+LOG_ADD(LOG_FLOAT, cmdYaw, &mpc_yaw_setpoint_deg)
 LOG_ADD(LOG_FLOAT, previewZ, &tracking_preview_z)
 LOG_ADD(LOG_UINT32, mpc_us, &mpc_time_us)
 LOG_ADD(LOG_UINT32, total_us, &controller_total_us)

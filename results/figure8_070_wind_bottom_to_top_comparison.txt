@@ -1,0 +1,198 @@
+FIGURE-EIGHT AT 0.70 M UNDER BOTTOM-TO-TOP WIND
+================================================
+
+Status
+------
+
+Opposite-direction airflow campaign comparing embedded LIMO with posthoc
+LIMO. Matched pairs 1 and 2 are complete.
+
+This condition is kept separate from figure8_070_wind_comparison.txt, whose
+three matched pairs used top-to-bottom/downward airflow.
+
+Configuration
+-------------
+
+Trajectory: table-driven traj_fig8_12.h
+Laps: 2
+Nominal trajectory duration: 24.07 s
+Reference altitude: 0.70 m
+Wind: bottom-to-top/upward airflow
+Fan timing: fan on before OOT activation and throughout the maneuver
+Embedded mode: 3
+Posthoc mode: 2, corrected nominal fallback on infeasibility
+MPC/model rate: 20 Hz
+ADMM iterations: 5
+PID bridge: x10 (500 ms)
+Shared Z guard: [reference, reference + 0.20 m]
+Barrier high-altitude skip: z > 0.75 m and vz > -0.20 m/s
+
+Analysis protocol
+-----------------
+
+Primary window: first EXP sample at or after OOT + 3 s through TRAJ DONE.
+PID landing is excluded.
+
+The user-confirmed primary protocol resets every performance channel at the
+first primary-window sample:
+
+  delta_e_xy(t)  = e_xy(t) - e_xy(boundary)
+  delta_e_z(t)   = e_z(t) - e_z(boundary)
+  delta_roll(t)  = roll(t) - roll(boundary)
+  delta_pitch(t) = pitch(t) - pitch(boundary)
+
+The windows begin at 3.099 s for embedded and 3.096 s for posthoc, after the
+initial altitude-acquisition transient.
+
+Because the fan was already on, this is steady-wind tracking rather than a
+measured fan-onset transient.
+
+Cross-task mechanism statement
+------------------------------
+
+With a constant hover reference, there is almost no lateral tracking
+performance to give up, so backing off the lateral weight costs almost
+nothing and the reallocated authority appears as improved disturbance
+rejection. On an aggressive trajectory there is real tracking to sacrifice,
+so the same backoff has a visible lateral-tracking price. The trade costs
+performance only when there is a task to sacrifice.
+
+This Figure-8 table is therefore a safety--tracking Pareto result. At w=1.0,
+the deployed cache reduces XY position weight from 100 to 10, raises Z
+position weight from 100 to 140, and raises attitude weights from 4 to 6.
+Report the lateral tracking cost beside the Z and tilt benefits.
+
+Raw logs
+--------
+
+Embedded run 1:
+  figure8_070_wind_bottom_to_top_embedded_run1.txt
+
+Posthoc run 1:
+  figure8_070_wind_bottom_to_top_posthoc_run1.txt
+
+Embedded run 2:
+  figure8_070_wind_bottom_to_top_embedded_run2.txt
+
+Posthoc run 2:
+  figure8_070_wind_bottom_to_top_posthoc_run2.txt
+
+Matched pair 1: fully refreshed at OOT + 3 s
+---------------------------------------------
+
+Primary windows:
+
+  Embedded: 3.099--24.125 s, 211 decimated records
+  Posthoc:  3.096--24.129 s, 211 decimated records
+
+Metric                                  Embedded LIMO   Posthoc      Best
+XY error-change RMSE, m                 0.9869          0.7083       Posthoc 28.2%
+Peak XY error change, m                 1.7021          1.2928       Posthoc 24.0%
+Z error-change RMSE, m                  0.0295          0.0319       Embedded 7.6%
+Peak absolute Z-error change, m         0.0660          0.0730       Embedded 9.6%
+Tilt-change RMSE, deg                   9.424           15.273       Embedded 38.3%
+Peak tilt-vector change, deg            14.848          28.694       Embedded 48.3%
+
+Mechanism
+---------
+
+Learned row active:                     210/211
+Three horizon rows active:              210/211
+Constraint binding:                     211/211
+Authority w:                            1.0 throughout
+Quantized Qz multiplier:                1.4 throughout
+Guarded h range:                        -0.018 to +0.050
+
+The final sample had two rather than three learned horizon rows active, but
+the first row remained binding. This does not indicate a failed solve.
+
+Posthoc mechanism
+-----------------
+
+Exact whole-flight firmware summary:
+
+  Projection attempts:                  379
+  Infeasible projections:               254
+  Infeasibility rate:                   67.0%
+
+Decimated primary-window records:
+
+  Projection-active samples:            161
+  Infeasible/fallback samples:           104
+  Feasible projection samples:            57
+  Projection-inactive samples:            50
+  Sampled active-window infeasibility:   64.6%
+  Median / peak feasible correction:     0.519 / 0.995
+
+On-target timing
+----------------
+
+Metric                                  Embedded LIMO   Posthoc      Best
+Median control step, ms                 38.622          38.322       Posthoc 0.8%
+P99 control step, ms                    45.238          45.012       Posthoc 0.5%
+Exact cumulative maximum, ms            47.310          47.206       Posthoc 0.2%
+Worst-case 50 ms deadline use           94.62%          94.41%       Posthoc
+Deadline overruns                       0               0            Tie
+
+Under upward airflow, posthoc follows the refreshed XY trajectory 28.2%
+better, while embedded LIMO limits tilt-vector change 38.3% better and peak
+tilt-vector change 48.3% better. Embedded's refreshed Z advantage is smaller
+than in the top-to-bottom campaign but remains 7.6%. Both arms completed both
+laps and met every deadline.
+
+Matched pair 2: fully refreshed at OOT + 3 s
+---------------------------------------------
+
+Primary windows:
+
+  Embedded: 3.098--24.132 s, 211 decimated records
+  Posthoc:  3.094--24.121 s, 211 decimated records
+
+Metric                                  Embedded LIMO   Posthoc      Best
+XY error-change RMSE, m                 0.8793          0.6569       Posthoc 25.3%
+Peak XY error change, m                 1.5188          1.2193       Posthoc 19.7%
+Z error-change RMSE, m                  0.0158          0.0417       Embedded 62.0%
+Peak absolute Z-error change, m         0.0450          0.0820       Embedded 45.1%
+Tilt-change RMSE, deg                   9.339           13.836       Embedded 32.5%
+Peak tilt-vector change, deg            18.558          26.756       Embedded 30.6%
+
+Run-2 posthoc mechanism:
+
+  Projection attempts:                  347
+  Infeasible projections:               232
+  Whole-flight infeasibility rate:      66.9%
+  Primary-window active samples:        141
+  Primary-window infeasible samples:     87
+  Sampled active-window infeasibility:  61.7%
+  Median / peak feasible correction:     0.584 / 1.060
+
+Run-2 timing:
+
+Metric                                  Embedded LIMO   Posthoc      Best
+Median control step, ms                 38.088          38.260       Embedded 0.4%
+P99 control step, ms                    42.993          44.066       Embedded 2.4%
+Exact cumulative maximum, ms            46.559          46.370       Posthoc 0.4%
+Worst-case 50 ms deadline use           93.12%          92.74%       Posthoc
+Deadline overruns                       0               0            Tie
+
+Two-pair upward-flow aggregate
+-------------------------------
+
+Each value is the mean of the two matched-run metrics.
+
+Metric                                  Embedded LIMO   Posthoc      Best
+XY error-change RMSE, m                 0.9331          0.6826       Posthoc 26.8%
+Peak XY error change, m                 1.6104          1.2560       Posthoc 22.0%
+Z error-change RMSE, m                  0.0227          0.0368       Embedded 38.4%
+Peak absolute Z-error change, m         0.0555          0.0775       Embedded 28.4%
+Tilt-change RMSE, deg                   9.382           14.555       Embedded 35.5%
+Peak tilt-vector change, deg            16.703          27.725       Embedded 39.8%
+Median control step, ms                 38.355          38.291       Posthoc 0.2%
+P99 control step, ms                    44.115          44.539       Embedded 1.0%
+Exact cumulative maximum, ms            46.934          46.788       Posthoc 0.3%
+Deadline overruns                       0               0            Tie
+
+Pooled whole-flight posthoc infeasibility is 486/726 attempts (66.9%).
+Across the first two upward-flow pairs, posthoc reduces refreshed XY RMSE by
+26.8%, whereas embedded reduces refreshed Z-error RMSE by 38.4% and
+tilt-change RMSE by 35.5%. Median computation differs by only 0.06 ms.

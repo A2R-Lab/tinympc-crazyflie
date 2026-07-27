@@ -1,0 +1,105 @@
+FIGURE-EIGHT PAYLOAD + WIND: 10 S MISSION-READINESS DEADLINE
+================================================================
+
+Status
+------
+
+Exploratory protocol discontinued after the first embedded attempt failed
+before the 10 s decision. The firmware deadline selector was restored to zero,
+which starts the maneuver immediately after the original continuous-settle
+rule passes. Retain this file and the failed log as development history; do
+not use this protocol for subsequent primary comparisons.
+
+Purpose
+-------
+
+Test whether each controller can complete the common controller-6 takeoff,
+stabilize, and become ready to begin the aggressive two-lap Figure-8 within a
+fixed mission deadline under the same 3 g asymmetric paper payload and wind.
+
+This is an end-to-end mission-readiness experiment, distinct from the
+settled-initial-condition trajectory-tracking comparison.
+
+Fixed protocol
+--------------
+
+  Controller mode:             0 nominal, 2 posthoc, or 3 embedded
+  Trajectory:                  4, traj_fig8_12.h, two laps
+  Reference altitude:          0.70 m
+  Payload:                     same 3 g paper, front-right propeller guard
+  Wind:                        identical level/direction/distance/onset
+  Gated takeoff ramp:          0.15 m/s
+  Mission deadline:            10.000 s after TAKEOFF START
+  Readiness altitude rule:     |z - 0.70| <= 0.05 m
+  Readiness velocity rule:     |vz| <= 0.10 m/s
+  Required continuous hold:    1.000 s through the deadline
+
+Outcome at 10.000 s
+-------------------
+
+PASS:
+  If both readiness conditions have remained true continuously for at least
+  one second at the deadline, capture the post-takeoff XY origin and start the
+  Figure-8.
+
+FAIL:
+  If the continuous readiness rule is not passing at the deadline, do not
+  force an unsettled vehicle into the Figure-8. Print MISSION FAIL, request a
+  controlled landing, and count the run as an end-to-end mission failure.
+
+The failure outcome is the missed mission deadline, not a hardware crash.
+
+Console evidence
+----------------
+
+Every valid firmware image must print:
+
+  Mission gate: fixed_start=10000ms pass=settled_at_deadline fail=controlled_land
+
+Successful run:
+
+  TAKEOFF COMPLETE: t=<approximately 10000>ms ...
+  TRAJ START: ...
+  TRAJ DONE: ...
+  LANDING COMPLETE: ...
+
+Failed run:
+
+  MISSION FAIL: readiness_deadline=10000ms ...
+  LANDING COMPLETE: ...
+
+The takeoff-only OOTZ stream records elapsed time, actual/reference/commanded
+Z, and vertical velocity. The normal EXP stream starts at TRAJ START.
+
+Primary outcomes
+----------------
+
+  1. Mission success rate by controller.
+  2. Time-to-settle distribution.
+  3. OOT/takeoff + 3 s through mission end Z RMSE.
+  4. For successful missions only, TRAJ START through TRAJ DONE:
+       lateral RMSE, Z RMSE, tilt RMSE, and computation.
+  5. Posthoc projection infeasibility.
+
+Reporting safeguards
+--------------------
+
+The 10 s threshold was selected after inspecting the initial exploratory
+triplet. Label that triplet as development data. Use subsequent randomized,
+unchanged trials as the confirmatory deadline campaign, and report every
+attempt including controlled deadline failures.
+
+Campaign ledger
+---------------
+
+Run 1, embedded LIMO:
+  FAILED before TRAJ START. A large vertical excursion began around 7.6 s and
+  the supervisor locked around 8.3 s, before the 10 s readiness decision.
+  The later deadline print reported settle_hold=0 ms. Retain this attempt as
+  an end-to-end mission failure and exclude it from trajectory averages.
+
+  Raw:
+    figure8_070_payload3g_front_right_wind_10s_deadline_embedded_run1_FAILED.txt
+
+  Summary:
+    figure8_070_payload3g_front_right_wind_10s_deadline_embedded_run1_FAILED_summary.txt

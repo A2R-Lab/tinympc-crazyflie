@@ -1,0 +1,61 @@
+ACTIVATION-ANCHORED HOVER UNDER TOP-DOWN WIND: NO COMMON Z GUARD
+================================================================
+
+Protocol
+--------
+- Maneuver: hover, z_ref = 0.70 m, 12 s OOT phase.
+- Fan: directly above the vehicle, blowing down; enabled at/near OOT activation.
+- Each flight captures its estimated (x, y) at controller-6 activation and
+  commands that point throughout hover.
+- TINYMPC_COMMON_Z_GUARD = 0. The 500 Hz inner PID receives the raw x10 MPC
+  preview Z; there is no shared [z_ref, z_ref + 0.20 m] command clamp.
+- Analysis window: all EXP samples in the OOT phase (about 0.09-12.00 s).
+  Landing is excluded.
+- Lateral error: sqrt((x - x_ref)^2 + (y - y_ref)^2).
+- Z error: abs(z - 0.70 m). Its maximum includes the intentional initial climb.
+- Tilt magnitude: sqrt(roll^2 + pitch^2).
+- Times use DWT cycles at 168 MHz. The exact maximum is the cumulative
+  max_step_cycles value; deadline = 8,400,000 cycles (50 ms).
+
+Pair 1
+------
+Embedded raw:
+  hover_topdown_wind_070_anchored_no_z_guard_embedded_run1.txt
+  Captured reference: (0.007, 0.057, 0.700) m
+
+Posthoc raw:
+  hover_topdown_wind_070_anchored_no_z_guard_posthoc_run1.txt
+  Captured reference: (0.000, 0.004, 0.700) m
+
+Metric                              Embedded LIMO    Posthoc LIMO
+Lateral RMSE (m)                         0.11259          0.08011
+Peak lateral error (m)                   0.19454          0.20270
+Final lateral error (m)                  0.12057          0.05280
+Z RMSE (m)                               0.06400          0.06964
+Maximum Z error (m)                      0.20100          0.21300
+Post-climb Z RMSE, t >= 2.5 s (m)        0.01589          0.01295
+Tilt RMSE (deg)                          2.35320          2.07653
+Peak tilt (deg)                          7.74530          6.32339
+Median control step (ms)                37.43955         32.37264
+Exact maximum control step (ms)         43.95305         46.70923
+Deadline overruns                              0                0
+Posthoc active / infeasible                    -        241 / 241
+Posthoc infeasibility rate                     -          100.00%
+
+Pair-1 interpretation
+---------------------
+- The posthoc projection is infeasible on every active step, returns du=0, and
+  therefore executes nominal MPC for the entire measured phase. This flight is
+  operationally a nominal-fallback result, not evidence of a successful
+  posthoc correction.
+- Nominal fallback has 28.85% lower lateral RMSE, 56.21% lower final lateral
+  error, 11.76% lower tilt RMSE, and 18.36% lower peak tilt in this pair.
+- Embedded has 4.03% lower peak lateral error, 8.09% lower full-flight Z RMSE,
+  and 5.63% lower maximum Z error.
+- Posthoc is 5.07 ms faster at the median. Embedded has a 2.76 ms lower exact
+  maximum. Both meet the 50 ms deadline with zero overruns.
+- Both arms command raw preview Z below 0.70 m throughout most/all of the run.
+  Removing the shared clamp exposes this bias but does not by itself make
+  embedded LIMO the tracking winner in this single pair.
+
+This is one matched pair, not a campaign average.

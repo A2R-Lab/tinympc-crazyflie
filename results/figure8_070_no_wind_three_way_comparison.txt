@@ -1,0 +1,219 @@
+FIGURE-EIGHT AT 0.70 M, NO WIND: THREE-WAY COMPARISON
+======================================================
+
+Status
+------
+
+Calm-air diagnostic triplet (run 1): nominal MPC, embedded LIMO, and posthoc
+LIMO. These flights deliberately operate below the 0.75 m high-altitude skip
+to exercise the learned safety path. They must not be pooled with the earlier
+1.00 m figure-eight wind pair.
+
+Configuration
+-------------
+
+Trajectory: table-driven traj_fig8_12.h
+Laps: 2
+Nominal trajectory duration: 24.07 s
+Reference altitude: 0.70 m
+Wind: none
+Nominal mode: 0
+Embedded mode: 3
+Posthoc mode: 2, corrected nominal fallback on infeasibility
+MPC/model rate: 20 Hz
+ADMM iterations: 5
+PID bridge: x10 (500 ms)
+Shared Z guard: [reference, reference + 0.20 m]
+Barrier high-altitude skip: z > 0.75 m and vz > -0.20 m/s
+
+All three flights switched to OOT below the reference altitude:
+
+  Nominal:  OOT activated at z = 0.55 m
+  Embedded: OOT activated at z = 0.55 m
+  Posthoc:  OOT activated at z = 0.54 m
+
+The primary analysis window begins 3 s after OOT activation, excluding the
+initial climb, and ends at TRAJ DONE. PID landing is excluded.
+
+Raw logs
+--------
+
+Nominal:
+  figure8_070_no_wind_nominal_run1.txt
+  NOTE: metrics are recorded below, but the environment blocked copying the
+  raw attachment into results; repository copy is pending.
+
+Embedded:
+  figure8_070_no_wind_embedded_run1.txt
+
+Posthoc:
+  figure8_070_no_wind_posthoc_run1.txt
+
+Aggressive trajectory characterization
+---------------------------------------
+
+The table-driven reference was generated at 100 Hz and is resampled onto the
+20 Hz embedded MPC grid. Resampling is correct, but it does not reduce the
+physical speed of the trajectory.
+
+Reference properties:
+
+  Samples per lap:                  1205
+  Duration per lap:                 12.04 s
+  Two-lap duration:                 approximately 24.1 s
+  X span:                           1.005 m
+  Y span:                           2.384 m
+  Median commanded speed:           1.516 m/s
+  95th-percentile commanded speed:  2.427 m/s
+  Peak commanded speed:             2.457 m/s
+  Peak reference tilt:              17.609 deg
+  Maximum motion per 20 Hz update:  0.123 m
+  Maximum x10-preview displacement: 1.160 m
+
+Measured peak vehicle speed in the primary window:
+
+  Nominal:       1.365 m/s
+  Posthoc LIMO:  1.327 m/s
+  Embedded LIMO: 1.003 m/s
+
+None of the three arms reproduced the reference's 2.457 m/s peak speed.
+Nominal reached only 55.6% of the commanded peak; embedded reached 40.8%.
+The large lateral errors therefore reflect an intentionally aggressive
+closed-loop stress condition, not only the choice of safety method.
+
+Primary-window metrics: OOT + 3 s through OOT end
+--------------------------------------------------
+
+Metric                                  Nominal    Embedded LIMO   Posthoc      Best
+Boundary-relative RMSE, m               0.6979     0.8501          0.7513       Nominal
+Peak boundary-relative error, m         1.2235     1.4601          1.3034       Nominal
+Lateral tracking RMSE, m                0.4666     0.5729          0.4721       Nominal
+Peak lateral tracking error, m          0.7568     0.8447          0.7372       Posthoc
+Z tracking RMSE, m                      0.0198     0.0152          0.0430       Embedded
+Maximum absolute Z error, m             0.0550     0.0400          0.0940       Embedded
+Tilt RMSE, deg                          10.919     7.466           10.507       Embedded
+Peak tilt, deg                          17.479     11.689          17.013       Embedded
+
+Relative to nominal, embedded LIMO:
+
+  Improves Z RMSE by:          23.4%
+  Improves peak Z error by:    27.3%
+  Improves tilt RMSE by:       31.6%
+  Improves peak tilt by:       33.1%
+  Worsens lateral RMSE by:     22.8%
+  Worsens boundary RMSE by:    21.8%
+
+Relative to nominal, posthoc LIMO:
+
+  Changes lateral RMSE by:     +1.2% (worse)
+  Improves peak lateral error: 2.6%
+  Changes Z RMSE by:           +117.0% (worse)
+  Changes peak Z error by:     +70.9% (worse)
+  Improves tilt RMSE by:       3.8%
+  Improves peak tilt by:       2.7%
+
+Vertical behavior
+-----------------
+
+Nominal:
+
+  Actual Z range:       0.672 to 0.755 m
+  Commanded Z range:    0.699 to 0.700 m
+  Vertical-speed range: -0.107 to +0.110 m/s
+
+Embedded:
+
+  Actual Z range:       0.682 to 0.740 m
+  Commanded Z range:    0.699 to 0.700 m
+  Vertical-speed range: -0.057 to +0.056 m/s
+
+Posthoc:
+
+  Actual Z range:       0.700 to 0.794 m
+  Commanded Z range:    0.699 to 0.896 m
+  Vertical-speed range: -0.177 to +0.245 m/s
+
+Posthoc mechanism
+-----------------
+
+Whole-flight firmware summary:
+
+  Projection attempts: 366
+  Infeasible:           239
+  Infeasibility rate:   65.3%
+
+In the decimated primary-window records:
+
+  Feasible projection samples:   60
+  Infeasible/fallback samples:    96
+  Projection-inactive samples:    55
+  Samples with actual z > 0.75 m: 54
+  Inactive among z > 0.75 m:      54/54
+
+The observed vertical switching is consistent with the posthoc mechanism:
+a feasible projection can raise commanded Z as high as 0.896 m; crossing
+0.75 m triggers the high-altitude skip and returns the command toward 0.70 m.
+Infeasible projections independently switch to the corrected nominal
+fallback. Embedded LIMO instead held an essentially constant Z command.
+
+Embedded calm-air activation
+----------------------------
+
+Across all 211 primary-window records:
+
+  Learned row active:       211/211
+  Three horizon rows active: 211/211
+  Constraint binding:       211/211
+  Authority w:              1.0 throughout
+  Quantized qz:             1.4 throughout
+  Guarded h range:          -0.021 to +0.040
+  Guarded h median:         +0.006
+
+This confirms that 0.70 m is an always-active, saturated LIMO stress
+condition even without wind. It is not the calibrated adaptive regime used
+by the 1.00 m experiment.
+
+On-target timing
+----------------
+
+Metric                                  Nominal    Embedded LIMO   Posthoc
+Median control step, ms                 26.236     38.562          38.575
+P99 control step, ms                    30.424     44.208          45.559
+Exact cumulative maximum, ms            36.883     47.882          49.889
+Worst-case 50 ms deadline use           73.77%     95.76%          99.78%
+Deadline overruns                       0          0               0
+
+Interpretation
+--------------
+
+This single calm-air triplet supports a placement trade-off, not a universal
+tracking win. Nominal MPC provides the best lateral tracking and lowest
+compute cost. Embedded LIMO substantially improves vertical regulation and
+attitude, at the cost of lateral tracking and approximately 12.3 ms of median
+compute. Posthoc retains near-nominal lateral RMSE but its vertical
+instability coincides with frequent infeasibility, feasible upward
+projections, nominal fallback, and high-altitude skip transitions.
+
+The 0.70 m embedded arm is saturated in calm air, so this is an always-active
+barrier stress condition rather than the calibrated adaptive regime. Repeat
+matched triplets are required before reporting aggregate paper results.
+
+Paper framing
+-------------
+
+Defensible description:
+
+  "To probe the limits of the 20 Hz embedded closed-loop stack, we retain the
+  unscaled simulator-generated figure-eight reference as an aggressive
+  tracking stress test. The trajectory completes each lap in 12.04 s, with
+  median and peak commanded speeds of 1.52 and 2.46 m/s, respectively. All
+  controller variants receive the identical reference and hardware
+  configuration."
+
+This result should be labeled a secondary high-speed robustness stress test,
+not the primary nominal tracking benchmark. A slower or spatially scaled
+figure-eight should be used separately for the primary accuracy-under-wind
+comparison. Because the stress-test classification was made after
+characterizing the commanded speed, the paper should say the trajectory was
+"retained and classified as a stress test" rather than imply that the metric
+was pre-specified before observing the flights.

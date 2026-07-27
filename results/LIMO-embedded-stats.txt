@@ -26,6 +26,44 @@ The new "Current calibrated result" section reports the completed 1.00 m,
 five-pair hover-under-wind campaign with DWT timing. It supersedes the earlier
 statements that no calibrated flights or cycle-instrumented flights existed.
 
+Paper-facing cross-task interpretation
+---------------------------------------
+
+Place this mechanism statement before the hover and Figure-8 result tables:
+
+  With a constant hover reference, there is almost no lateral tracking
+  performance to give up, so backing off the lateral weight costs almost
+  nothing and the reallocated authority appears as improved disturbance
+  rejection. On an aggressive trajectory there is real tracking to
+  sacrifice, so the same backoff has a visible lateral-tracking price. The
+  trade costs performance only when there is a task to sacrifice.
+
+This is a safety--tracking trade-off, not a claim that embedded LIMO improves
+every tracking metric. In calibrated 1.00 m hover, authority stays in the
+low 0.1333--0.2667 range and the fixed reference supplies little lateral task
+performance to surrender. In the 0.70 m Figure-8 stress flights, authority is
+pinned at w=1.0 and the safety rows bind throughout. At w=1.0 the deployed
+cache changes XY position weight from 100 to 10, Z position weight from 100
+to 140, and attitude weights from 4 to 6. The measured outcome is therefore
+mechanistically consistent: posthoc tracks the aggressive XY reference more
+closely, while embedded LIMO produces substantially smaller Z-error and
+tilt changes.
+
+Paper language:
+
+  - Hover: embedded LIMO improves sustained lateral disturbance rejection.
+  - Figure-8: embedded LIMO moves the controller to a different Pareto point,
+    trading lateral path tracking for vertical and attitude regulation.
+  - Do not write "LIMO wins every task" or compare the hover and Figure-8
+    percentages as though altitude, airflow direction, and reference dynamics
+    were identical.
+
+Current result sources:
+
+  results/hover_wind_L3_paired_runs.txt
+  results/figure8_070_wind_comparison.txt
+  results/figure8_070_wind_bottom_to_top_comparison.txt
+
 Timing logger added after commit 09504d9:
 
   tinympc.bar_cyc    raw DWT cycles for the learned barrier MLP + gradient
@@ -60,24 +98,24 @@ Final pooled controller comparison:
 
 Metric                                  Embedded LIMO        Posthoc
 --------------------------------------  -------------------  -------------------
-Boundary-relative RMSE, m               0.0855               0.1352
-Peak boundary-relative error, m         0.2162               0.3100
-Tilt RMSE, deg                          1.854                1.933
-Peak tilt, deg                          4.741                5.444
-Lateral tracking RMSE, m                0.1153               0.1290
-Z tracking RMSE, m                      0.0278               0.0285
-Maximum absolute Z error, m             0.0480               0.0550
+Mean XY boundary error, m               0.0721               0.1163
+XY error-change RMSE, m                 0.0855               0.1352
+Peak XY error change, m                 0.2162               0.3100
+Z error-change RMSE, m                  0.0181               0.0186
+Peak absolute Z-error change, m         0.0420               0.0430
+Tilt-change RMSE, deg                   2.001                2.347
+Peak tilt-vector change, deg            4.225                5.872
 Median total computation, ms           33.026               33.461
-P99 total computation, ms              41.353               41.145
+P99 total computation, ms              41.378               41.334
 Maximum total computation, ms          42.899               44.202
 Deadline overruns                       0                    0
 Whole-flight posthoc active/infeasible  N/A                  65 / 58 (89.23%)
 Primary-window posthoc active/infeasible N/A                 0 / 0
 
-Embedded LIMO reduced pooled boundary RMSE by 36.7%, peak boundary error
-by 30.3%, lateral tracking RMSE by 10.6%, Z RMSE by 2.3%, and maximum
-absolute Z error by 12.7%. All five paper pairs favored embedded LIMO on
-boundary RMSE.
+Embedded LIMO reduced pooled mean XY boundary error by 38.0%, XY
+error-change RMSE by 36.7%, peak XY error change by 30.3%, Z error-change
+RMSE by 2.5%, tilt-change RMSE by 14.7%, and peak tilt-vector change by
+28.0%. All five paper pairs favored embedded LIMO on XY error-change RMSE.
 
 Primary-window DWT timing across the five embedded-LIMO flights:
 
@@ -87,7 +125,7 @@ Barrier forward + gradient     11.317 ms    14.428 ms    16.663 ms
 Authority-RL stage              0.011 ms     0.621 ms     1.153 ms
 16x4 cache installation         0.418 ms     1.655 ms     1.962 ms
 ADMM solve                     20.527 ms    28.682 ms    29.705 ms
-Complete control algorithm     33.026 ms    41.353 ms    42.899 ms
+Complete control algorithm     33.026 ms    41.378 ms    42.899 ms
 
 The worst sampled complete step used 7,207,060 cycles, or 85.80% of the
 8,400,000-cycle deadline. The cumulative every-step overrun counter ended at
@@ -99,7 +137,7 @@ Stage                         Median       p99          Maximum
 ----------------------------  -----------  -----------  -----------
 Barrier forward + gradient     11.846 ms    15.532 ms    17.287 ms
 ADMM solve                     21.231 ms    29.171 ms    30.576 ms
-Complete control algorithm     33.461 ms    41.145 ms    44.202 ms
+Complete control algorithm     33.461 ms    41.334 ms    44.202 ms
 
 Posthoc attempted 65 projections over the five whole flights; 58 were
 infeasible. Every attempt occurred during the initial climb, and there were
@@ -137,6 +175,33 @@ Whole-flight embedded-LIMO quantization across 600 printed records:
 Inside the primary wind window, authority occupied indices 2, 3, and 4;
 Qz remained at index 3. Unlike the legacy 0.50 m flights, the calibrated
 campaign did not pin authority at 15 throughout.
+
+Learned-authority sim-to-real result:
+
+  Canonical 1.00 m hardware-emulation simulation:
+    no-wind mean authority:              0.1333
+    light-wind mean authority:           0.2224
+    source:
+      prereg_audit/quad_hover_hardware_eval/results.md
+
+  Paper-set hardware primary window:
+    applied authority mean:              0.1531
+    requested authority mean:            0.1606
+    applied index 2, w=0.1333:       317 / 450 (70.44%)
+    applied index 3, w=0.2000:       131 / 450 (29.11%)
+    applied index 4, w=0.2667:         2 / 450 ( 0.44%)
+
+The simulation no-wind mean coincides with the dominant hardware cache level
+to the grid precision, and the simulated light-wind mean lies between the two
+next hardware levels. This supports sim-to-real consistency of the learned
+component's output scale and discrete operating regime after float32 porting,
+16-level quantization, and static-bank installation.
+
+The pooled hardware mean is not 0.2224, and the physical fan level is not
+calibrated to the simulation light-wind band. Accordingly, do not describe
+this as three-digit agreement of the light-wind means. Plot the hardware
+trace or occupancy histogram beside horizontal simulation references at
+0.1333 and 0.2224.
 
 Paper run 5 is old numeric run 6 relabeled. Old numeric run 5 is excluded
 because it reversed the controller order, and run 7 is excluded because both
@@ -622,15 +687,22 @@ Also implemented in the calibrated campaign:
      packing, safety logic, solver, and bridge construction. Console
      transmission remains outside the timed interval.
 
+  6. max_step_cyc
+     Cumulative maximum total_cyc over every 20 Hz MPC update in the current
+     episode. It resets at benchmark activation, is appended to every EXP
+     record, and is printed in the final TIMING SUMMARY with the deadline and
+     cumulative overrun count.
+
 Additional cumulative episode counters still worth adding:
 
   barrier_evaluation_count
   cache_lookup_count
   riccati_recomputation_count
-  maximum_step_cycles
 
 deadline_overrun_count is already implemented and ended at zero in every
-flight of the calibrated campaign.
+flight of the calibrated campaign. max_step_cyc was added after that campaign;
+the next normal flight will provide the first exact all-step maximum without
+requiring a timing-only experiment.
 
 Required offline summaries for every stage and every arm:
 

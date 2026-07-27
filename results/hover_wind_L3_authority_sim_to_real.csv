@@ -1,0 +1,8 @@
+source,condition_or_level,authority,count,fraction,notes
+simulation,no_wind_mean,0.1333,,,quad_hover_hardware_eval at z=1.00 m
+simulation,light_wind_mean,0.2224,,,quad_hover_hardware_eval at z=1.00 m
+hardware,primary_requested_mean,0.160556,450,1.000000,OOT+3 s through TRAJ DONE across five paper runs
+hardware,primary_applied_mean,0.153096,450,1.000000,OOT+3 s through TRAJ DONE across five paper runs
+hardware,applied_index_2,0.133333,317,0.704444,16-level static cache bank
+hardware,applied_index_3,0.200000,131,0.291111,16-level static cache bank
+hardware,applied_index_4,0.266667,2,0.004444,16-level static cache bank

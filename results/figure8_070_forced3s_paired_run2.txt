@@ -1,0 +1,43 @@
+Figure-8 0.70 m, forced 3 s start — paired run 2
+
+Protocol
+- Embedded LIMO mode 3 versus posthoc LIMO mode 2
+- Takeoff ramp: 0.15 m/s
+- Settle gate bypassed; trajectory forced at 3000 ms
+- Disturbance: downward wind for both arms
+- Analysis window: trajectory start through trajectory end
+- Samples per arm: 241
+
+Start-state parity
+- Embedded: z=0.43 m, vz=+0.22 m/s
+- Posthoc: z=0.43 m, vz=+0.23 m/s
+
+Metric                         Embedded       Posthoc        Embedded result
+Lateral tracking RMSE          0.5987 m       0.5093 m       17.5% higher
+Peak lateral tracking error    0.9867 m       0.9200 m       7.3% higher
+Z tracking RMSE                0.0401 m       0.0591 m       32.3% lower
+Maximum absolute Z error       0.2490 m       0.2530 m       1.6% lower
+Tilt RMSE                      9.0004 deg     12.9744 deg    30.6% lower
+Peak tilt                      18.6854 deg    24.2487 deg    22.9% lower
+Median complete control step   34.084 ms      33.295 ms      2.4% higher
+Exact maximum control step     44.035 ms      41.638 ms      5.8% higher
+Deadline overruns              0              0
+
+Posthoc mechanism
+- Projection attempts: 309
+- Infeasible projections: 161/309 = 52.1%
+- Successful interventions: 148/309 = 47.9%
+
+Outcome
+- Both arms started at 3000 ms from almost identical altitude and vertical
+  velocity, completed both laps, and completed controlled landing.
+- Embedded substantially reduced Z RMSE, tilt RMSE, and peak tilt.
+- Posthoc produced lower lateral RMSE and peak lateral error in this pair.
+- Both arms recorded zero deadline overruns.
+
+Raw logs
+- figure8_070_forced3s_embedded_run2.txt
+- figure8_070_forced3s_posthoc_run2.txt
+
+Exact fan magnitude, onset, geometry, and payload metadata were not recorded
+in the attachments.

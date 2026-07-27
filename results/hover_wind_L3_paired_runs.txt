@@ -23,9 +23,89 @@ At the first sample, boundary-relative error is defined as zero:
 
   delta_e_xy(t) = e_xy(t) - e_xy(OOT+3-s boundary)
 
+The user-confirmed primary protocol refreshes every performance channel at
+this same boundary:
+
+  delta_e_z(t)    = e_z(t) - e_z(OOT+3-s boundary)
+  delta_roll(t)   = roll(t) - roll(OOT+3-s boundary)
+  delta_pitch(t)  = pitch(t) - pitch(OOT+3-s boundary)
+
 Boundary RMSE therefore measures additional lateral error accumulated after
-the fixed wind boundary. Lateral tracking RMSE measures absolute error from
-the hover reference over the same samples.
+the fixed wind boundary. The primary Z and tilt metrics measure error and
+attitude change from that same boundary. Conventional absolute lateral/Z
+tracking and absolute tilt are retained in the original pair tables below
+as secondary audit metrics.
+
+Cross-task mechanism statement
+------------------------------
+
+With a constant hover reference, there is almost no lateral tracking
+performance to give up, so backing off the lateral weight costs almost
+nothing and the reallocated authority appears as improved disturbance
+rejection. On an aggressive trajectory there is real tracking to sacrifice,
+so the same backoff has a visible lateral-tracking price. The trade costs
+performance only when there is a task to sacrifice.
+
+The hover table therefore measures the benign stationary-reference regime.
+It should be read together with the Figure-8 Pareto result, not as a claim
+that embedded LIMO improves every metric in every maneuver.
+
+
+Fully boundary-refreshed five-pair result
+------------------------------------------
+
+RMSE values are pooled over 450 primary-window samples per controller. Peaks
+are the maximum observed across all five trials.
+
+Metric                                  Embedded LIMO        Posthoc       Best
+Mean XY boundary error, m               0.0721               0.1163        Embedded 38.0%
+XY error-change RMSE, m                 0.0855               0.1352        Embedded 36.7%
+Peak XY error change, m                 0.2162               0.3100        Embedded 30.3%
+Z error-change RMSE, m                  0.0181               0.0186        Embedded 2.5%
+Peak absolute Z-error change, m         0.0420               0.0430        Embedded 2.3%
+Tilt-change RMSE, deg                   2.001                2.347         Embedded 14.7%
+Peak tilt-vector change, deg            4.225                5.872         Embedded 28.0%
+Median total computation, ms           33.026               33.461        Embedded 1.3%
+P99 total computation, ms              41.378               41.334        Posthoc 0.1%
+Maximum sampled computation, ms         42.899               44.202        Embedded 2.9%
+Deadline overruns                       0                    0             Tie
+
+All five pairs favor embedded LIMO on XY error-change RMSE. Embedded also
+wins the pooled refreshed Z and tilt metrics, although the Z advantage is
+small. Posthoc attempted 65 projections over the five whole flights, of
+which 58 were infeasible (89.2%), and made zero projection attempts inside
+all five primary windows.
+
+
+Secondary sensitivity: OOT start through trajectory end
+---------------------------------------------------------
+
+This window uses all 600 recorded OOT samples per controller and refreshes
+XY error, Z error, roll, and pitch at the first recorded OOT sample.
+
+Metric                                  Embedded LIMO        Posthoc       Best
+Mean XY start-relative error, m         0.1177               0.1366        Embedded 13.8%
+XY error-change RMSE, m                 0.1382               0.1556        Embedded 11.2%
+Peak XY error change, m                 0.3607               0.3966        Embedded 9.0%
+Z error-change RMSE, m                  0.4573               0.4590        Embedded 0.4%
+Peak absolute Z-error change, m         0.5040               0.5120        Embedded 1.6%
+Tilt-change RMSE, deg                   2.353                2.395         Embedded 1.8%
+Peak tilt-vector change, deg            5.505                6.887         Embedded 20.1%
+Median total computation, ms           32.861               33.256        Embedded 1.2%
+P99 total computation, ms              41.327               41.334        Tie
+Maximum sampled computation, ms         43.112               44.349        Embedded 2.8%
+Deadline overruns                       0                    0             Tie
+
+The approximately 0.46 m refreshed Z RMSE is not a tracking-failure metric:
+each arm begins OOT near z=0.55 m with a 1.00 m reference, then removes that
+initial approximately -0.45 m Z error by climbing. Subtracting the initial Z
+error therefore turns successful altitude acquisition into an approximately
++0.45 m error change for most of the flight. This is why OOT-start-relative
+Z and tilt dilute the disturbance comparison and remain secondary.
+
+Posthoc made its whole-flight projection attempts during this initial climb:
+58/65 were infeasible (89.2%). The fixed OOT+3 primary window excludes the
+shared altitude-acquisition transient and remains the paper comparison.
 
 Conditions
 ----------
@@ -239,12 +319,15 @@ Embedded versus posthoc:
 This paper pair is old numeric run 6 relabeled as run 5.
 
 
-Five-pair aggregate
--------------------
+Secondary mixed/absolute-reference aggregate
+---------------------------------------------
 
 RMSE values are pooled over 450 primary-window samples per controller.
 Peaks are the maximum observed across all five trials. Computation
-percentiles are calculated from all 450 per-step cycle counts.
+percentiles are calculated from all 450 per-step cycle counts. This original
+table mixes boundary-relative XY with absolute lateral/Z tracking and
+absolute attitude; it is retained for auditability and is not the
+user-selected headline table.
 
 Metric                                  Embedded LIMO        Posthoc
 Boundary-relative RMSE, m               0.0855               0.1352
@@ -280,6 +363,37 @@ favor it on peak boundary error. There were no deadline overruns. Posthoc
 attempted its projection only during the initial climb: 58 of 65 whole-flight
 attempts were infeasible, and it made zero projection attempts inside every
 primary wind window.
+
+Learned-authority sim-to-real check
+-----------------------------------
+
+The canonical 1.00 m hardware-emulation simulation reports mean embedded-LIMO
+authority of 0.1333 with no wind and 0.2224 in its light-wind band:
+
+  prereg_audit/quad_hover_hardware_eval/results.md
+
+Across the 450 embedded-LIMO primary-window hardware samples, the applied
+authority occupied exactly three adjacent entries of the deployed 16-level
+cache bank:
+
+Applied authority   Index   Samples   Fraction
+------------------  ------  --------  --------
+0.1333              2       317       70.44%
+0.2000              3       131       29.11%
+0.2667              4         2        0.44%
+
+The pooled hardware mean was 0.1531 applied and 0.1606 requested. Therefore
+the no-wind simulation mean coincides exactly with the dominant hardware
+cache level, while the simulated light-wind mean is bracketed by the next two
+hardware levels. This is evidence that the frozen learned scheduler operates
+on hardware in the authority regime predicted by simulation after float32
+porting, 16-level quantization, and static-bank installation.
+
+Do not claim that the hardware light-wind mean matches 0.2224 to three digits:
+the physical fan level is not calibrated to the simulation wind band, and the
+measured hardware mean is lower. A paper figure should overlay the hardware
+authority trace or occupancy histogram with horizontal simulation references
+at 0.1333 and 0.2224.
 
 
 Excluded fun run: old numeric run 5, controller order reversed

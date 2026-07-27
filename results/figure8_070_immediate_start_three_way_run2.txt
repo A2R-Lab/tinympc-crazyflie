@@ -1,0 +1,185 @@
+FIGURE-EIGHT AT 0.70 M, IMMEDIATE ALTITUDE-TRIGGERED START: THREE-WAY RUN 2
+============================================================================
+
+Protocol
+--------
+
+Controller arms:
+
+  - Embedded LIMO: mode 3
+  - Posthoc LIMO: mode 2
+  - Nominal TinyMPC: mode 0
+
+Common firmware configuration:
+
+  - Trajectory: traj_fig8_12.h
+  - Reference altitude: 0.70 m
+  - The 12.04 s source header already contains three complete physical
+    Figure-8 circuits
+  - Firmware header repetitions: 2
+  - Actual executed trajectory: six physical Figure-8 circuits, approximately
+    24.1 s
+  - MPC/model rate: 20 Hz
+  - ADMM iterations: 5
+  - MPC-to-PID bridge: x10 (500 ms preview)
+  - Shared Z guard: [reference Z, reference Z + 0.20 m]
+  - OOT takeoff ramp: 0.15 m/s
+  - Trajectory trigger: first measured sample with z >= 0.70 m
+  - No elapsed-time start, velocity gate, or settling hold
+
+The console strings "forced_3s_start" are stale cosmetic labels. The boot and
+transition lines confirm that all three images used the altitude trigger.
+
+The console field "laps=2" means two repetitions of the complete source
+header, not two physical Figure-8 circuits. The source passes through a full
+two-lobe Figure-8 approximately every 4 s, so this run executed six circuits.
+
+The exact fan/wind/payload condition was not written in the attachments. Do
+not pool this run with a named disturbance condition until that metadata is
+confirmed.
+
+Outcome
+-------
+
+Method          Valid start   Full trajectory   Landing record
+Embedded LIMO   yes           yes               initiated; final line absent
+Posthoc LIMO    yes           yes               complete
+Nominal         yes           yes               complete
+
+Takeoff-to-trajectory transitions:
+
+  Embedded: t=4272 ms, z=0.70 m, vz=+0.14 m/s
+  Posthoc:  t=4268 ms, z=0.70 m, vz=+0.17 m/s
+  Nominal:  t=4288 ms, z=0.70 m, vz=+0.15 m/s
+
+All arms therefore began the time-varying Figure-8 reference from comparable
+altitude and ascent-rate states.
+
+Physical workspace containment:
+
+  The user observed that nominal left the physical testing space. Record this
+  as a nominal workspace-containment violation even though the firmware
+  completed the trajectory and landed. Exact boundary penetration cannot be
+  calculated because the testing-zone bounds were not supplied.
+
+  No workspace violation was reported for embedded or posthoc in the attached
+  run descriptions. "Not reported" is not equivalent to a measured pass.
+
+Reference-relative tracking metrics
+-----------------------------------
+
+Analysis window:
+
+  TRAJ START through TRAJ DONE
+
+Every value below uses the time-varying traj_fig8_12.h reference:
+
+  lateral error(t) =
+      sqrt((x(t) - x_ref(t))^2 + (y(t) - y_ref(t))^2)
+
+It is not distance from the estimator origin. Each arm contributes 241
+decimated samples spanning approximately 0.08 through 24.11 s. Landing is
+excluded.
+
+Metric                         Nominal       Embedded LIMO   Posthoc LIMO
+Lateral tracking RMSE          0.4765 m      0.5675 m        0.5327 m
+Peak lateral tracking error    0.7779 m      0.8886 m        1.0788 m
+Z tracking RMSE                0.03315 m     0.02938 m       0.04674 m
+Maximum absolute Z error       0.0940 m      0.0860 m        0.0990 m
+Tilt RMSE                      11.809 deg    7.914 deg       11.308 deg
+Peak tilt                      23.219 deg    14.813 deg      19.984 deg
+
+Relative winners:
+
+  - Nominal lateral RMSE is 10.6% lower than posthoc, the runner-up, and
+    16.0% lower than embedded.
+  - Nominal peak lateral error is 12.5% lower than embedded, the runner-up.
+  - Embedded Z RMSE is 11.4% lower than nominal and 37.1% lower than posthoc.
+  - Embedded maximum Z error is 8.5% lower than nominal and 13.1% lower than
+    posthoc.
+  - Embedded tilt RMSE is 33.0% lower than nominal and 30.0% lower than
+    posthoc.
+  - Embedded peak tilt is 36.2% lower than nominal and 25.9% lower than
+    posthoc.
+
+Trajectory and physical footprints
+----------------------------------
+
+Nominal:
+
+  Reference X range: -0.607 to +0.396 m
+  Reference Y range: -1.177 to +1.205 m
+  Actual X range:    -0.584 to +0.318 m
+  Actual Y range:    -0.628 to +0.680 m
+
+Embedded:
+
+  Reference X range: -0.548 to +0.454 m
+  Reference Y range: -1.293 to +1.089 m
+  Actual X range:    -0.334 to +0.192 m
+  Actual Y range:    -0.650 to +0.478 m
+
+Posthoc:
+
+  Reference X range: -0.484 to +0.519 m
+  Reference Y range: -1.182 to +1.200 m
+  Actual X range:    -0.354 to +0.310 m
+  Actual Y range:    -0.716 to +0.701 m
+
+The stored reference itself spans approximately 1.00 m in X and 2.38 m in Y.
+Reference tracking and physical workspace containment are therefore distinct
+metrics: a method can reduce tracking error while leaving a smaller test zone.
+
+Mechanism
+---------
+
+Embedded LIMO:
+
+  - Authority w=1.000 for all 241 trajectory samples
+  - Learned stage-0 row active: 208/241 = 86.3%
+  - At least one learned row binding: 235/241 = 97.5%
+
+Posthoc LIMO:
+
+  - Projection attempts: 324
+  - Infeasible projections: 195/324 = 60.2%
+  - Feasible interventions: 129
+
+The observed ordering matches the mechanism: embedded full authority reduces
+lateral tracking weight while increasing vertical/attitude authority. Posthoc
+preserves the stronger nominal lateral objective, but its vertical projection
+interventions degrade Z and attitude regulation relative to embedded.
+
+On-target timing
+----------------
+
+Metric                         Nominal       Embedded LIMO   Posthoc LIMO
+Median complete step           22.474 ms     35.146 ms       33.613 ms
+P99 complete step              27.037 ms     42.540 ms       38.380 ms
+Exact cumulative maximum       30.666 ms     45.595 ms       41.098 ms
+Worst deadline utilization     61.3%         91.2%           82.2%
+Deadline overruns              0             0               0
+
+Interpretation
+--------------
+
+Run 2 does not show a universal tracking winner:
+
+  - Nominal gives the lowest reference-relative lateral error, but the user
+    observed it leave the physical testing space.
+  - Embedded LIMO gives the best Z and attitude regulation by substantial
+    margins while completing the trajectory.
+  - Posthoc lies between the two laterally, has the worst Z RMSE, and its
+    projection is infeasible on 60.2% of attempts.
+
+Workspace containment must be reported separately from tracking RMSE. For
+future quantitative containment analysis, record a predeclared physical
+testing box in the estimator/reference frame and report binary violations,
+maximum penetration, and time outside.
+
+Raw logs
+--------
+
+  - figure8_070_immediate_start_embedded_run2.txt
+  - figure8_070_immediate_start_posthoc_run2.txt
+  - figure8_070_immediate_start_nominal_run2.txt

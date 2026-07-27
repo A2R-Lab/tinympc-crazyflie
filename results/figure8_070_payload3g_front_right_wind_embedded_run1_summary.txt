@@ -1,0 +1,106 @@
+FIGURE-EIGHT AT 0.70 M: 3 G FRONT-RIGHT PAPER + WIND, EMBEDDED LIMO RUN 1
+================================================================================
+
+Status
+------
+
+Valid completed embedded-LIMO flight:
+
+  - gated controller-6 takeoff completed
+  - both Figure-8 laps completed
+  - controlled landing and motors-off completed
+  - no estimator reset, supervisor lock, watchdog, or hard fault
+  - deadline overruns: 0
+
+Experimental condition
+----------------------
+
+Controller:
+  Embedded LIMO, mode 3.
+
+Trajectory:
+  Two-lap Figure-8 from traj_fig8_12.h at a 0.70 m reference altitude.
+
+Attached aerodynamic payload:
+  3 g of paper attached to the front-right propeller guard. The attachment
+  introduces added mass, an off-center center of mass, changed inertia,
+  asymmetric motor loading, local propeller-flow interference, and
+  orientation-dependent aerodynamic force/torque.
+
+External wind:
+  Wind was reported for this flight. Fan level, direction, distance, and
+  exact onset are not encoded in the firmware log and must be recorded from
+  the experimenter's setup before paper reporting.
+
+No payload- or wind-specific correction was applied to the nominal plant
+model, reference generator, learned barrier, or frozen authority policy.
+This is therefore a combined plant-mismatch and external-disturbance test.
+
+Primary analysis window
+-----------------------
+
+Use:
+  TRAJ START + 3 s through TRAJ DONE; landing excluded.
+
+The firmware resets the EXP timestamp at TRAJ START, so retain tms >= 3000.
+This window contains 211 decimated samples from 3.091 s through 24.122 s.
+
+Metric                         Embedded LIMO
+Lateral trajectory RMSE        0.5752 m
+Peak lateral trajectory error  0.8771 m
+Z RMSE                         0.00979 m
+Peak absolute Z error          0.0270 m
+Tilt RMSE                      7.842 deg
+Peak tilt                      14.738 deg
+
+The lateral metrics use the complete time-varying reference from
+traj_fig8_12.h, not a fixed hover origin.
+
+Learned mechanism
+-----------------
+
+The learned rows were active for all 211 retained samples:
+
+  Active samples:              211/211
+  Mean active constraint rows: 3.0
+  Applied authority:           1.000 throughout
+  Requested authority range:   0.994 to 0.999
+  Applied vertical scale:      1.400 throughout
+  Guarded h range:             -0.030 to +0.024
+
+At the 0.70 m stress altitude, embedded LIMO is effectively operating at
+full learned authority throughout the scored window. This run exercises the
+in-solver learned constraints but does not demonstrate a varying authority
+schedule.
+
+On-target timing
+----------------
+
+  Median sampled control step: 33.931 ms
+  Sampled p99 control step:     38.615 ms
+  Exact cumulative maximum:    42.470 ms
+  Worst 50 ms deadline use:    84.94%
+  Deadline overruns:           0
+
+Flight events
+-------------
+
+  Takeoff + settle:             9.788 s
+  Figure-8 duration:            24.122 s
+  Landing completed:            39.008 s after takeoff start
+  Trajectory-start origin:      (0.03, 0.00) m
+  Landing endpoint:             (0.134, -0.151, -0.004) m
+
+Interpretation
+--------------
+
+This is a valid first embedded-LIMO run for the combined attached-paper and
+wind condition. It establishes completion, mechanism activity, tracking, and
+deadline compliance. It does not establish a controller advantage by itself;
+use only matched nominal and posthoc flights with identical paper placement
+and fan geometry for the comparison.
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_wind_embedded_run1.txt
