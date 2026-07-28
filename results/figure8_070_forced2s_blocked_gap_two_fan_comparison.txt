@@ -13,7 +13,7 @@ Mission outcome
 ---------------
 
 Method             Trials     Successes     Result
-Embedded LIMO      2          2             Both runs completed; run 1 log-supported
+Embedded LIMO      2          2             Both runs completed and are log-supported
 Posthoc LIMO       1          0             Supervisor lock/crash at trajectory 1.088 s
 Nominal TinyMPC    4          0             Latest run locked during takeoff, before trajectory
 MPC-CBF            1          0             Estimator reset/crash at trajectory 6.981 s
@@ -21,9 +21,8 @@ MPC-CBF            1          0             Estimator reset/crash at trajectory 
 Evidence status
 ---------------
 
-- Embedded LIMO run 1, posthoc, and MPC-CBF outcomes are supported by saved
-  raw logs. Embedded LIMO run 2 is user-reported because its log has not been
-  supplied.
+- Both embedded LIMO runs, posthoc, and MPC-CBF outcomes are supported by
+  saved raw logs.
 - The latest two nominal failures are supported by saved raw logs. The first
   two nominal failures were reported by the user, but their raw logs have not
   been supplied.
@@ -36,18 +35,22 @@ Evidence status
 Embedded completed-run primary metrics
 --------------------------------------
 
-Metric                              Embedded LIMO
-Boundary-relative XY RMSE           0.7383 m
-Peak boundary-relative XY error     1.3082 m
-Lateral tracking RMSE               0.5712 m
-Peak lateral tracking error         0.8861 m
-Z tracking RMSE                     0.0202 m
-Maximum absolute Z error            0.0680 m
-Tilt RMSE                           9.563 deg
-Peak tilt                           25.249 deg
-Median complete control step        35.091 ms
-Exact cumulative maximum            42.889 ms
-Deadline overruns                   0
+Metric                              Run 1       Run 2       n=2 flight mean
+Boundary-relative XY RMSE, m        0.7383      1.1587      0.9485
+Peak boundary-relative XY, m        1.3082      1.8834      1.5958
+Lateral tracking RMSE, m            0.5712      0.6218      0.5965
+Peak lateral tracking error, m      0.8861      1.0077      0.9469
+Z tracking RMSE, m                  0.0202      0.0169      0.0186
+Maximum absolute Z error, m         0.0680      0.0480      0.0580
+Tilt RMSE, deg                      9.563       7.855       8.709
+Peak tilt, deg                      25.249      13.375      19.312
+Median complete step, ms            35.091      33.919      34.505
+Exact cumulative maximum, ms        42.889      42.738      42.814
+Deadline overruns                   0           0           0 total
+
+The n=2 column is the mean of the two flight-level statistics. The worst exact
+maximum observed across the two flights was 42.889 ms, or 85.78% of the 50 ms
+deadline.
 
 Posthoc failure mechanism
 -------------------------
@@ -107,14 +110,16 @@ Current interpretation
 Under this configuration, embedded LIMO is the only method with a completed
 mission: 2/2 versus posthoc 0/1, MPC-CBF 0/1, and nominal 0/4. Therefore
 embedded LIMO is the clear mission-success winner for this specific blocked-gap
-two-fan configuration. This remains a small-sample result: embedded run 2 and
-nominal runs 1-2 should be upgraded from user-reported to log-supported if
-their raw logs become available.
+two-fan configuration. Both embedded successes are now independently
+log-supported. This remains a small-sample result; nominal runs 1-2 should be
+upgraded from user-reported to log-supported if their raw logs become
+available.
 
 Source files
 ------------
 
 - figure8_070_forced2s_blocked_gap_two_fan_embedded_run1.txt
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run2.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt

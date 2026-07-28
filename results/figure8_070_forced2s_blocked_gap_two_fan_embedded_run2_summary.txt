@@ -1,0 +1,62 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: embedded run 2
+============================================================================
+
+Configuration
+-------------
+
+- Method: embedded LIMO, mode 3
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.19 m, vz=+0.23 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+- Primary analysis window: trajectory t >= 3 s through TRAJ DONE
+
+Outcome
+-------
+
+- SUCCESS: completed all 482 trajectory samples (24.103 s).
+- Completed controlled landing and motors-off sequence.
+- No supervisor lock, in-flight estimator reset, or deadline overrun.
+- Embedded LIMO is now 2/2 with both successful runs supported by raw logs.
+
+Primary-window performance
+--------------------------
+
+Metric                              Embedded LIMO
+Boundary-relative XY RMSE           1.1587 m
+Peak boundary-relative XY error     1.8834 m
+Lateral tracking RMSE               0.6218 m
+Peak lateral tracking error         1.0077 m
+Z tracking RMSE                     0.0169 m
+Maximum absolute Z error            0.0480 m
+Tilt RMSE                           7.855 deg
+Peak tilt                           13.375 deg
+
+Timing
+------
+
+Metric                              Embedded LIMO
+Median MPC solve                    22.946 ms
+Median learned evaluation           10.100 ms
+Median complete control step        33.919 ms
+Sampled p99 control step            39.730 ms
+Sampled maximum control step        42.235 ms
+Exact cumulative maximum            42.738 ms
+Worst 50 ms deadline use            85.48%
+Deadline overruns                   0
+
+Mechanism
+---------
+
+- Learned row active: 211/211 retained samples
+- Learned row binding: 211/211 retained samples
+- Mean applied authority: 1.000
+- Mean applied Qz scale: 1.400
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run2.txt
