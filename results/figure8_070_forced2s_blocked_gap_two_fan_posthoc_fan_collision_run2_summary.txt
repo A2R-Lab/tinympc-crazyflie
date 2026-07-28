@@ -1,0 +1,62 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 2
+============================================================================
+
+Configuration
+-------------
+
+- Method: posthoc LIMO, mode 2
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.15 m, vz=+0.18 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: the vehicle physically collided with the side fan.
+- The last sample before `SUP: Locked, reboot required` was trajectory
+  t=2.188 s, index 44/482 (9.1%).
+- No TRAJ DONE or controlled landing was reached.
+- All EXP samples after supervisor lock are invalid and excluded.
+- The failure occurred before the standard t >= 3 s primary window, so this
+  run has no valid primary-window metrics.
+
+Pre-lock diagnostics
+--------------------
+
+Metric                              Posthoc
+Lateral tracking RMSE               0.5083 m
+Peak lateral tracking error         0.8587 m
+Z tracking RMSE                     0.0574 m
+Maximum absolute Z error            0.1350 m
+Tilt RMSE                           17.844 deg
+Peak tilt                           40.591 deg
+Median MPC solve                    23.406 ms
+Median learned evaluation           10.008 ms
+Median complete control step        33.795 ms
+Sampled maximum control step        38.581 ms
+Exact cumulative maximum            39.440 ms
+Deadline overruns                   0
+
+Posthoc mechanism before lock
+-----------------------------
+
+- Projection attempts: 44
+- Infeasible projections: 39/44 = 88.6%
+- Feasible action-changing projections: 5/44 = 11.4%
+- The corrected infeasible path returned the nominal command.
+
+Interpretation
+--------------
+
+The physical fan collision makes this a mission-level failure, not a clean
+aerodynamic-only mechanism trial. It nevertheless counts against completion
+for this fixed obstacle-and-wind configuration.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2.txt
