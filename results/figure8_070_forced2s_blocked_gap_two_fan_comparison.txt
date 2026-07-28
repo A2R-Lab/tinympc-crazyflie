@@ -13,7 +13,7 @@ Mission outcome
 ---------------
 
 Method             Trials     Successes     Result
-Embedded LIMO      3          3             All three runs completed and are log-supported
+Embedded LIMO      4          4             All four runs completed and are log-supported
 Posthoc LIMO       2          0             Latest side-fan collision at trajectory 2.188 s
 Nominal TinyMPC    5          0             Latest run collided with fan at trajectory 1.375 s
 MPC-CBF            1          0             Estimator reset/crash at trajectory 6.981 s
@@ -21,7 +21,7 @@ MPC-CBF            1          0             Estimator reset/crash at trajectory 
 Evidence status
 ---------------
 
-- All three embedded LIMO runs, both posthoc runs, and MPC-CBF are supported
+- All four embedded LIMO runs, both posthoc runs, and MPC-CBF are supported
   by saved raw logs.
 - Nominal runs 3-5 are supported by saved raw logs. The first two nominal
   failures were reported by the user, but their raw logs have not been
@@ -35,21 +35,21 @@ Evidence status
 Embedded completed-run primary metrics
 --------------------------------------
 
-Metric                         Run 1     Run 2     Run 3     n=3 flight mean
-Boundary XY RMSE, m            0.7383    1.1587    1.0007    0.9659
-Peak boundary XY, m            1.3082    1.8834    1.6661    1.6193
-Lateral tracking RMSE, m       0.5712    0.6218    0.5758    0.5896
-Peak lateral error, m          0.8861    1.0077    0.9070    0.9336
-Z tracking RMSE, m             0.0202    0.0169    0.0181    0.0184
-Maximum absolute Z error, m    0.0680    0.0480    0.0510    0.0557
-Tilt RMSE, deg                 9.563     7.855     10.030    9.150
-Peak tilt, deg                 25.249    13.375    25.846    21.490
-Median complete step, ms       35.091    33.919    35.302    34.771
-Exact cumulative max, ms       42.889    42.738    44.323    43.317
-Deadline overruns              0         0         0         0 total
+Metric                    Run 1   Run 2   Run 3   Run 4   n=4 flight mean
+Boundary XY RMSE, m       0.7383  1.1587  1.0007  0.9358  0.9584
+Peak boundary XY, m       1.3082  1.8834  1.6661  1.5926  1.6126
+Lateral tracking RMSE, m  0.5712  0.6218  0.5758  0.5907  0.5899
+Peak lateral error, m     0.8861  1.0077  0.9070  0.8540  0.9137
+Z tracking RMSE, m        0.0202  0.0169  0.0181  0.0179  0.0183
+Maximum Z error, m        0.0680  0.0480  0.0510  0.0460  0.0533
+Tilt RMSE, deg            9.563   7.855   10.030  8.332   8.945
+Peak tilt, deg            25.249  13.375  25.846  15.053  19.881
+Median step, ms           35.091  33.919  35.302  35.486  34.950
+Exact cumulative max, ms  42.889  42.738  44.323  43.329  43.320
+Deadline overruns         0       0       0       0       0 total
 
-The n=3 column is the mean of the three flight-level statistics. The worst
-exact maximum observed across the three flights was 44.323 ms, or 88.65% of
+The n=4 column is the mean of the four flight-level statistics. The worst
+exact maximum observed across the four flights was 44.323 ms, or 88.65% of
 the 50 ms deadline.
 
 Posthoc failure diagnostics and mechanism
@@ -124,9 +124,9 @@ Current interpretation
 ----------------------
 
 Under this configuration, embedded LIMO is the only method with a completed
-mission: 3/3 versus posthoc 0/2, MPC-CBF 0/1, and nominal 0/5. Therefore
+mission: 4/4 versus posthoc 0/2, MPC-CBF 0/1, and nominal 0/5. Therefore
 embedded LIMO is the clear mission-success winner for this specific blocked-gap
-two-fan configuration. All three embedded successes are independently
+two-fan configuration. All four embedded successes are independently
 log-supported. This remains a small-sample result; nominal runs 1-2 should be
 upgraded from user-reported to log-supported if their raw logs become
 available.
@@ -137,6 +137,7 @@ Source files
 - figure8_070_forced2s_blocked_gap_two_fan_embedded_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_embedded_run2.txt
 - figure8_070_forced2s_blocked_gap_two_fan_embedded_run3.txt
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run4.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt

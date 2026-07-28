@@ -20,7 +20,7 @@ Outcome
 - SUCCESS: completed all 482 trajectory samples (24.103 s).
 - Completed controlled landing and motors-off sequence.
 - No supervisor lock, in-flight estimator reset, or deadline overrun.
-- Embedded LIMO is now 3/3 with every success supported by a raw log.
+- Embedded LIMO is now 4/4 with every success supported by a raw log.
 
 Primary-window performance
 --------------------------

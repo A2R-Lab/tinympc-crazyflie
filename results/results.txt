@@ -428,14 +428,14 @@ Condition
 Mission outcome
 ---------------
 
-  Embedded LIMO:   3/3 completed missions
+  Embedded LIMO:   4/4 completed missions
   Nominal TinyMPC: 0/5 completed missions
   Posthoc LIMO:    0/2 completed missions
   MPC-CBF:         0/1 completed missions
 
 Embedded LIMO is the mission-success winner in this specific configuration:
 it is the only arm that completed the trajectory and controlled landing.
-All three embedded runs, nominal runs 3-5, both posthoc runs, and MPC-CBF run
+All four embedded runs, nominal runs 3-5, both posthoc runs, and MPC-CBF run
 1 are supported by saved raw logs. Nominal runs 1-2 are currently
 user-reported and should not be described as independently log-verified.
 
@@ -450,10 +450,10 @@ Failure points in the saved logs:
                  (28/482 steps, 5.8%)
   MPC-CBF: first estimator reset at t=6.981 s (140/482 steps, 29.0%)
 
-All three completed embedded runs recorded zero 50 ms deadline overruns. Their
-n=3 flight-mean boundary RMSE was 0.9659 m, lateral tracking RMSE was 0.5896 m,
-Z RMSE was 0.0184 m, and tilt RMSE was 9.150 deg. The worst exact complete-step
-time across all three flights was 44.323 ms. Detailed metrics and provenance
+All four completed embedded runs recorded zero 50 ms deadline overruns. Their
+n=4 flight-mean boundary RMSE was 0.9584 m, lateral tracking RMSE was 0.5899 m,
+Z RMSE was 0.0183 m, and tilt RMSE was 8.945 deg. The worst exact complete-step
+time across all four flights was 44.323 ms. Detailed metrics and provenance
 are in:
 
   results/figure8_070_forced2s_blocked_gap_two_fan_comparison.txt

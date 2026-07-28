@@ -1,4 +1,4 @@
-Figure-8 forced-2-second blocked-gap two-fan configuration: embedded run 3
+Figure-8 forced-2-second blocked-gap two-fan configuration: embedded run 4
 ============================================================================
 
 Configuration
@@ -7,7 +7,7 @@ Configuration
 - Method: embedded LIMO, mode 3
 - Maneuver: two-pass Figure-8 from traj_fig8_12.h
 - Maneuver start: forced 2000 ms after OOT takeoff began
-- Start state and measured Z baseline: z=0.18 m, vz=+0.15 m/s
+- Start state and measured Z baseline: z=0.12 m, vz=+0.19 m/s
 - Upward-blowing fan: perpendicular orientation
 - Downward-blowing fan: directly in front of the vehicle
 - The gap between the upward fan and the downward fan (resting on a box)
@@ -17,7 +17,7 @@ Configuration
 Outcome
 -------
 
-- SUCCESS: completed all 482 trajectory samples (24.106 s).
+- SUCCESS: completed all 482 trajectory samples (24.096 s).
 - Completed controlled landing and motors-off sequence.
 - No supervisor lock, estimator reset, or deadline overrun.
 - Embedded LIMO is now 4/4 with every success supported by a raw log.
@@ -26,26 +26,26 @@ Primary-window performance
 --------------------------
 
 Metric                              Embedded LIMO
-Boundary-relative XY RMSE           1.0007 m
-Peak boundary-relative XY error     1.6661 m
-Lateral tracking RMSE               0.5758 m
-Peak lateral tracking error         0.9070 m
-Z tracking RMSE                     0.0181 m
-Maximum absolute Z error            0.0510 m
-Tilt RMSE                           10.030 deg
-Peak tilt                           25.846 deg
+Boundary-relative XY RMSE           0.9358 m
+Peak boundary-relative XY error     1.5926 m
+Lateral tracking RMSE               0.5907 m
+Peak lateral tracking error         0.8540 m
+Z tracking RMSE                     0.0179 m
+Maximum absolute Z error            0.0460 m
+Tilt RMSE                           8.332 deg
+Peak tilt                           15.053 deg
 
 Timing
 ------
 
 Metric                              Embedded LIMO
-Median MPC solve                    23.845 ms
-Median learned evaluation           10.078 ms
-Median complete control step        35.302 ms
-Sampled p99 control step            39.987 ms
-Sampled maximum control step        41.518 ms
-Exact cumulative maximum            44.323 ms
-Worst 50 ms deadline use            88.65%
+Median MPC solve                    24.256 ms
+Median learned evaluation           10.211 ms
+Median complete control step        35.486 ms
+Sampled p99 control step            40.644 ms
+Sampled maximum control step        42.819 ms
+Exact cumulative maximum            43.329 ms
+Worst 50 ms deadline use            86.66%
 Deadline overruns                   0
 
 Mechanism
@@ -59,4 +59,4 @@ Mechanism
 Raw log
 -------
 
-- figure8_070_forced2s_blocked_gap_two_fan_embedded_run3.txt
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run4.txt
