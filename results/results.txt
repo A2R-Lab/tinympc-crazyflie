@@ -280,6 +280,35 @@ Aligned MPC-CBF pooled mechanism:
   Installed logged rows:           12,660
   Projection intersections:        12,579 / 12,660 = 99.4%
 
+Learned-component attribution
+-----------------------------
+
+Aligned MPC-CBF is near-nominal on every reported axis: lateral RMSE differs
+by 0.6%, Z RMSE by 4.2%, and tilt RMSE by 0.03%, while the corresponding peak
+metrics differ by at most 1.2%. This is not because the analytic arm was
+inert: all 20 horizon rows were installed every solve and 99.4% of installed
+row projections intersected. The aligned analytic altitude half-space was
+therefore continuously present but provided essentially no attitude benefit.
+Relative to this steel-manned in-solver analytic baseline, embedded LIMO
+reduced Z RMSE by 42.6% and tilt RMSE by 32.1%. The later forced two-fan
+mission result supplies the complementary outcome: embedded completes the
+balanced three-run set while MPC-CBF completes 0/3.
+
+Reproducibility and timing audit
+--------------------------------
+
+The original single-triplet pilot reproduced the final qualitative ordering.
+Embedded Z RMSE changed only 1.1%, from 0.00889 m to 0.00879 m; all listed
+three-method final means are within approximately 7% of the corresponding
+single-flight values. This supports ordering reproducibility, not a claim of
+approximately 1% agreement on every metric.
+
+The shared displayed worst step of 47.701 ms is a rounding coincidence:
+embedded run 2 recorded 8,013,755 cycles (47.700923 ms), while posthoc run 3
+recorded 8,013,731 cycles (47.700780 ms). They differ by 24 raw DWT cycles,
+occurred in different flights and at different trajectory steps, and the
+firmware uses an unclamped cumulative maximum.
+
 Original first-run three-method comparison
 ------------------------------------------
 

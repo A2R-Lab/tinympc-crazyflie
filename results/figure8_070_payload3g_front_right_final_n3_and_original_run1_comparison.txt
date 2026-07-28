@@ -74,6 +74,50 @@ Mechanism audit, pooled across three flights:
   MPC-CBF projection intersections:
                                       12,579/12,660 = 99.4%
 
+Learned-component attribution
+-----------------------------
+
+Aligned analytic MPC-CBF is near-nominal on every reported tracking and
+attitude axis: lateral RMSE differs by 0.6%, Z RMSE by 4.2%, and tilt RMSE by
+0.03%; the corresponding peak metrics differ by at most 1.2%. This is not an
+inert-baseline result. The analytic constraint was installed on all 20 horizon
+stages every solve, and 12,579/12,660 = 99.4% of installed row projections
+intersected. Aligning its boundary to the 0.70 m reference therefore
+steel-mans the analytic arm: its altitude half-space is continuously present,
+yet it does not produce the attitude protection or authority trade observed
+with embedded LIMO.
+
+Relative to this active in-solver analytic baseline, embedded LIMO reduces Z
+RMSE by 42.6% and tilt RMSE by 32.1%. Together with the forced two-fan mission
+result, where embedded completes the balanced three-run set and MPC-CBF fails
+all three attempts, this gives learned-component attribution on hardware by
+two different outcome types: continuous regulation and mission completion.
+
+Reproducibility note
+--------------------
+
+The original single-triplet pilot predicted the final qualitative ordering.
+Embedded Z RMSE changed only 1.1%, from 0.00889 m to 0.00879 m. Across all
+listed nominal, embedded, and posthoc metrics, the final n=3 values remain
+within approximately 7% of their original single-flight values. The supported
+claim is reproducible ordering with especially close vertical agreement, not
+approximately 1% agreement on every individual metric.
+
+Timing-maximum audit
+--------------------
+
+The identical displayed 47.701 ms maxima for embedded and posthoc are a
+three-decimal rounding coincidence, not identical raw data or a parser clamp:
+
+  Embedded run 2: 8,013,755 cycles = 47.700923 ms, trajectory step 294
+  Posthoc run 3:  8,013,731 cycles = 47.700780 ms, cumulative maximum first
+                  visible at logged step 274
+
+The values differ by 24 DWT cycles (0.143 microseconds), come from different
+flights and trajectory steps, and are stored by a direct cumulative maximum
+with no timing clamp. The posthoc peak occurred between decimated console
+samples; the cumulative counter preserved it.
+
 TABLE 2: ORIGINAL THREE-METHOD RUN-1 COMPARISON
 =======================================================================
 
