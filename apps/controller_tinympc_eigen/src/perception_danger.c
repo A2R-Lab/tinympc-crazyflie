@@ -10,6 +10,7 @@ static float clamp01(float value) {
   return value;
 }
 
+#ifndef PERCEPTION_MODEL_DANGER_ONLY
 static float sigmoidfStable(float value) {
   if (value >= 0.0f) {
     const float inverse = expf(-value);
@@ -18,10 +19,13 @@ static float sigmoidfStable(float value) {
   const float exponential = expf(value);
   return exponential / (1.0f + exponential);
 }
+#endif
 
+#ifndef PERCEPTION_MODEL_DANGER_ONLY
 static float channelProbability(uint8_t q, int channel) {
   return clamp01(sigmoidfStable(perceptionModelOutputLogit(q, channel)));
 }
+#endif
 
 void perceptionDangerCompute(
     const uint8_t nominal_collision_q[PERCEPTION_MAP_CELLS],
@@ -30,6 +34,41 @@ void perceptionDangerCompute(
     uint32_t map_age_ms,
     const perception_danger_state_t *state,
     perception_danger_map_t *output) {
+#ifdef PERCEPTION_MODEL_DANGER_ONLY
+  const float vx = state->body_velocity_mps[0];
+  const float vy = state->body_velocity_mps[1];
+  const float vz = state->body_velocity_mps[2];
+  const float speed = sqrtf(vx * vx + vy * vy + vz * vz);
+  const float maximum_range =
+      state->maximum_range_m > 0.0f ? state->maximum_range_m : 6.0f;
+  const float nominal_speed =
+      state->nominal_target_speed_mps > 1.0e-3f
+          ? state->nominal_target_speed_mps
+          : 1.0f;
+  const float latency =
+      fmaxf(0.0f, state->perception_control_latency_s)
+      + 0.001f * (float)map_age_ms;
+  const float extra_reach =
+      fmaxf(0.0f, speed - nominal_speed)
+          * fmaxf(0.0f, state->horizon_s)
+      + speed * latency;
+  const float speed_margin = clamp01(extra_reach / maximum_range);
+  (void)inverse_range_q;
+  (void)uncertainty_q;
+  for (int cell = 0; cell < PERCEPTION_MAP_CELLS; ++cell) {
+    const float nominal_danger =
+        nominal_collision_q[cell] * (1.0f / 255.0f);
+    const float danger = clamp01(
+        nominal_danger + (1.0f - nominal_danger) * speed_margin);
+    const float range = maximum_range * (1.0f - danger);
+    output->probability[cell] = danger;
+    output->range_m[cell] = range;
+    output->uncertainty[cell] = 0.0f;
+    output->time_to_contact_s[cell] =
+        speed > 1.0e-3f ? fmaxf(0.0f, range - speed * latency) / speed
+                        : INFINITY;
+  }
+#else
   const float vx = state->body_velocity_mps[0];
   const float vy = state->body_velocity_mps[1];
   const float vz = state->body_velocity_mps[2];
@@ -73,6 +112,7 @@ void perceptionDangerCompute(
     output->time_to_contact_s[cell] =
         speed > 1.0e-3f ? effective_range / speed : INFINITY;
   }
+#endif
 }
 
 static float cross2(float ax, float ay, float bx, float by,
@@ -145,8 +185,12 @@ int perceptionDangerApplyGateOpening(
       }
       if (!inside) continue;
       const int cell = y * PERCEPTION_MAP_W + x;
+#ifdef PERCEPTION_MODEL_DANGER_ONLY
+      const float gate_probability = gate_opening_q[cell] * (1.0f / 255.0f);
+#else
       const float gate_probability = channelProbability(
           gate_opening_q[cell], PERCEPTION_MODEL_GATE_CHANNEL);
+#endif
       if (gate_probability < gate_probability_threshold ||
           map->range_m[cell] < minimum_range ||
           map->uncertainty[cell] > maximum_uncertainty) {
