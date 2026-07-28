@@ -1,0 +1,61 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: nominal run 5
+=============================================================================
+
+Configuration
+-------------
+
+- Method: nominal TinyMPC, mode 0
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.14 m, vz=+0.17 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: the vehicle physically collided with the fan.
+- The last sample before `SUP: Locked, reboot required` was trajectory
+  t=1.375 s, index 28/482 (5.8%).
+- No TRAJ DONE or controlled landing was reached.
+- All EXP samples after supervisor lock are invalid and excluded.
+- The failure occurred before the standard t >= 3 s primary window, so this
+  run has no valid primary-window metrics.
+
+Collision evidence
+------------------
+
+- Tilt rose from 14.74 deg at t=1.077 s to 54.51 deg at t=1.178 s.
+- Peak pre-lock tilt was 62.98 deg at t=1.278 s.
+- The last pre-lock tilt was 47.04 deg at t=1.375 s.
+- This abrupt excursion agrees with the user-observed fan collision.
+
+Pre-lock diagnostics
+--------------------
+
+Metric                              Nominal
+Lateral tracking RMSE               0.6078 m
+Peak lateral tracking error         0.9326 m
+Z tracking RMSE                     0.0301 m
+Maximum absolute Z error            0.0550 m
+Tilt RMSE                           28.046 deg
+Peak tilt                           62.983 deg
+Median complete control step        22.934 ms
+Sampled maximum control step        26.202 ms
+Exact cumulative maximum            30.399 ms
+Deadline overruns                   0
+
+Evidence count
+--------------
+
+- Nominal attempts in this exact configuration: 5
+- Nominal successes: 0
+- Saved nominal raw logs: 3 (runs 3, 4, and 5)
+- User-reported nominal outcomes without raw logs: 2 (runs 1 and 2)
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_nominal_fan_collision_run5.txt
