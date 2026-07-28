@@ -1,0 +1,69 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+ALWAYS-ON MPC-CBF TWO-RUN AVERAGE
+=======================================================================
+
+Configuration status
+--------------------
+
+These two flights used the first always-on implementation, whose analytic
+barrier was referenced to the physical zero-altitude floor (`floor_z=0`).
+After these flights, the MPC-CBF boundary was aligned to the LIMO campaign
+altitude (`floor_z=0.70`, zero extra margin). Keep these data as a historical
+implementation check; do not pool them with the new 0.70 m-boundary runs.
+
+Condition and analysis
+----------------------
+
+Method:                 Standalone analytic MPC-CBF (mode 1)
+Constraint definition:  Always installed, all 20 prediction stages
+Activation gate:        Disabled
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Samples:                211 decimated EXP rows per flight
+
+Both flights completed both Figure-8 laps with zero deadline overruns. Their
+supplied captures end after landing is requested and before LANDING COMPLETE.
+
+Two-run metrics
+---------------
+
+Metric                       Run 1       Run 2       Two-run mean
+Lateral RMSE, m              0.4802      0.4682      0.4742
+Peak lateral error, m        0.7752      0.7924      0.7838
+Z RMSE, m                    0.01489     0.01552     0.01521
+Peak absolute Z error, m     0.0370      0.0380      0.0375
+Tilt RMSE, deg               11.348      11.045      11.196
+Peak tilt, deg               19.530      19.067      19.299
+
+Constraint audit
+----------------
+
+Metric                       Run 1       Run 2       Pooled
+First-stage installed        211/211     211/211     422/422
+Rows installed per solve     20          20          20
+Installed decimated rows     4,220       4,220       8,440
+Binding-row samples          0           0           0
+Logged h range               0.666-0.732 0.645-0.732 0.645-0.732
+
+The implementation was always present and solved in both flights. Its
+inequalities remained non-binding because the vehicle stayed comfortably
+inside the analytic floor-safe set.
+
+Timing
+------
+
+Metric                       Run 1       Run 2       Two-run mean
+Median logged total, ms      26.281      26.899      26.590
+P99 sampled full step, ms    32.440      33.070      32.755
+Exact run maximum, ms        35.917      33.584      34.750
+Deadline overruns            0           0           0
+
+Worst observed step across both flights: 35.917 ms, or 71.83% of the 50 ms
+deadline.
+
+Raw logs
+--------
+
+  figure8_070_payload3g_front_right_mpccbf_always_on_run1.txt
+  figure8_070_payload3g_front_right_mpccbf_always_on_run2.txt

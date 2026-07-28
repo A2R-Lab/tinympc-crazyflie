@@ -1,0 +1,62 @@
+Figure-8 0.70 m forced-2-second opposing-wind MPC-CBF run 1
+===================================================================
+
+Protocol
+--------
+
+- Method: MPC-CBF, mode 1
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.35 m, vz=+0.32 m/s
+- Wind: one upward fan and one downward fan
+- Upward-blowing fan: approximately 30 degrees to the drone's left
+- Primary window: trajectory t >= 3 s through TRAJ DONE
+
+Outcome
+-------
+
+- SUCCESS: completed all 482 trajectory samples (24.104 s).
+- Completed controlled landing and disarmed.
+- No supervisor lock and no deadline overruns.
+
+Primary-window performance
+--------------------------
+
+Metric                              MPC-CBF
+Boundary-relative XY RMSE           0.6903 m
+Peak boundary-relative XY error     1.2484 m
+Lateral tracking RMSE               0.4791 m
+Peak lateral tracking error         0.9025 m
+Z tracking RMSE                     0.2160 m
+Maximum absolute Z error            0.3190 m
+Tilt RMSE                           10.880 deg
+Peak tilt                           25.190 deg
+
+Timing
+------
+
+Metric                              MPC-CBF
+Median MPC solve                    25.036 ms
+Median learned evaluation            0.000 ms
+Median complete control step        25.437 ms
+Sampled p99 control step            29.906 ms
+Sampled maximum control step        30.027 ms
+Exact cumulative maximum            32.701 ms
+Worst 50 ms deadline use            65.40%
+Deadline overruns                   0
+
+Mechanism
+---------
+
+- Linear constraint active: 211/211 retained samples
+- Linear constraint binding: 211/211 retained samples
+- Mean active constraints: 20.0 per retained solve
+- The trajectory's measured Z baseline was 0.351 m, while the always-on
+  vertical MPC-CBF constraint drove the vehicle approximately 0.2 m above
+  that reference for much of the flight. The reported Z error is therefore
+  a real method/reference mismatch, not a logging or analysis artifact.
+
+Raw log
+-------
+
+- figure8_070_forced2s_opposing_vertical_wind_mpccbf_run1.txt

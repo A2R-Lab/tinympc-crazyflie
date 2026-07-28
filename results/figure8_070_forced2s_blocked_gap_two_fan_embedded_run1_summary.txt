@@ -1,0 +1,70 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: embedded run 1
+============================================================================
+
+Configuration
+-------------
+
+- Method: embedded LIMO, mode 3
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.17 m, vz=+0.16 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+- Primary analysis window: trajectory t >= 3 s through TRAJ DONE
+
+Outcome
+-------
+
+- SUCCESS: completed all 482 trajectory samples (24.108 s).
+- Completed controlled landing and motors-off sequence.
+- No supervisor lock, estimator reset, or deadline overrun.
+- Current mission outcome for this configuration:
+  - Embedded LIMO: 2/2 successes
+  - Nominal TinyMPC: 0/4 successes
+  - Posthoc LIMO: 0/1 successes
+  - MPC-CBF: 0/1 successes
+- This file contains the parsed first embedded run. The second embedded
+  success is user-reported because its raw log has not been supplied.
+- Nominal runs 3 and 4, the posthoc run, and the MPC-CBF run are supported by
+  saved raw logs. Nominal runs 1 and 2 remain user-reported.
+
+Primary-window performance
+--------------------------
+
+Metric                              Embedded LIMO
+Boundary-relative XY RMSE           0.7383 m
+Peak boundary-relative XY error     1.3082 m
+Lateral tracking RMSE               0.5712 m
+Peak lateral tracking error         0.8861 m
+Z tracking RMSE                     0.0202 m
+Maximum absolute Z error            0.0680 m
+Tilt RMSE                           9.563 deg
+Peak tilt                           25.249 deg
+
+Timing
+------
+
+Metric                              Embedded LIMO
+Median MPC solve                    23.913 ms
+Median learned evaluation           10.140 ms
+Median complete control step        35.091 ms
+Sampled p99 control step            40.586 ms
+Sampled maximum control step        42.384 ms
+Exact cumulative maximum            42.889 ms
+Worst 50 ms deadline use            85.78%
+Deadline overruns                   0
+
+Mechanism
+---------
+
+- Learned row active: 211/211 retained samples
+- Learned row binding: 211/211 retained samples
+- Mean applied authority: 1.000
+- Mean applied Qz scale: 1.400
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run1.txt

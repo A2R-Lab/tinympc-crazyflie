@@ -1,0 +1,121 @@
+Forced-2-second Figure-8, blocked-gap two-fan configuration: current comparison
+================================================================================
+
+Configuration
+-------------
+
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the fans was blocked by another box.
+- Figure-8 starts 2.0 s after OOT takeoff begins.
+
+Mission outcome
+---------------
+
+Method             Trials     Successes     Result
+Embedded LIMO      2          2             Both runs completed; run 1 log-supported
+Posthoc LIMO       1          0             Supervisor lock/crash at trajectory 1.088 s
+Nominal TinyMPC    4          0             Latest run locked during takeoff, before trajectory
+MPC-CBF            1          0             Estimator reset/crash at trajectory 6.981 s
+
+Evidence status
+---------------
+
+- Embedded LIMO run 1, posthoc, and MPC-CBF outcomes are supported by saved
+  raw logs. Embedded LIMO run 2 is user-reported because its log has not been
+  supplied.
+- The latest two nominal failures are supported by saved raw logs. The first
+  two nominal failures were reported by the user, but their raw logs have not
+  been supplied.
+- Posthoc failed before the standard t >= 3 s analysis window, so its primary
+  metrics are N/A rather than zero.
+- MPC-CBF firmware continued its trajectory clock after the physical failure.
+  Its later TRAJ DONE and LANDING COMPLETE prints are invalid; the first
+  estimator reset at trajectory t=6.981 s is the analysis cutoff.
+
+Embedded completed-run primary metrics
+--------------------------------------
+
+Metric                              Embedded LIMO
+Boundary-relative XY RMSE           0.7383 m
+Peak boundary-relative XY error     1.3082 m
+Lateral tracking RMSE               0.5712 m
+Peak lateral tracking error         0.8861 m
+Z tracking RMSE                     0.0202 m
+Maximum absolute Z error            0.0680 m
+Tilt RMSE                           9.563 deg
+Peak tilt                           25.249 deg
+Median complete control step        35.091 ms
+Exact cumulative maximum            42.889 ms
+Deadline overruns                   0
+
+Posthoc failure mechanism
+-------------------------
+
+- Completed 22/482 trajectory steps (4.6%).
+- Last clean lateral error: 1.1976 m.
+- Last clean tilt: 37.169 deg.
+- Projection attempts before lock: 22.
+- Infeasible: 12/22 = 54.5%.
+- Feasible action-changing projections: 10/22 = 45.5%.
+
+MPC-CBF pre-failure primary metrics
+-----------------------------------
+
+Metric                              MPC-CBF
+Boundary-relative XY RMSE           0.8894 m
+Peak boundary-relative XY error     2.4284 m
+Lateral tracking RMSE               0.5382 m
+Peak lateral tracking error         1.8545 m
+Z tracking RMSE                     0.2592 m
+Maximum absolute Z error            0.4160 m
+Tilt RMSE                           31.156 deg
+Peak tilt                           94.536 deg
+Median complete control step        24.509 ms
+Exact cumulative maximum            30.893 ms
+Deadline overruns                   0
+
+MPC-CBF failure mechanism
+-------------------------
+
+- First estimator out-of-bounds reset after trajectory t=6.981 s.
+- Completed 140/482 steps before reset (29.0%).
+- Last clean lateral tracking error: 1.8545 m.
+- Last clean Z tracking error: -0.388 m.
+- Last clean tilt: 94.536 deg.
+- Linear constraints were active and binding on all 40 retained pre-failure
+  primary-window samples.
+
+Nominal failure diagnostics
+---------------------------
+
+- Run 3 failed at trajectory t=3.077 s.
+- Run 3 completed 62/482 steps before lock (12.9%).
+- Run 3 last clean lateral tracking error: 1.0407 m.
+- Run 3 last clean Z tracking error: -0.434 m.
+- Run 3 last clean tilt: 98.797 deg; peak pre-lock tilt: 152.336 deg.
+- Run 4 failed during takeoff: supervisor lock occurred before the forced
+  `TAKEOFF COMPLETE` and `TRAJ START` messages.
+- Run 4 therefore completed 0/482 physically valid trajectory steps (0.0%);
+  every EXP row printed afterward is post-lock contamination.
+- The first two nominal failures remain user-reported; runs 3 and 4 are
+  independently visible in their saved raw logs.
+
+Current interpretation
+----------------------
+
+Under this configuration, embedded LIMO is the only method with a completed
+mission: 2/2 versus posthoc 0/1, MPC-CBF 0/1, and nominal 0/4. Therefore
+embedded LIMO is the clear mission-success winner for this specific blocked-gap
+two-fan configuration. This remains a small-sample result: embedded run 2 and
+nominal runs 1-2 should be upgraded from user-reported to log-supported if
+their raw logs become available.
+
+Source files
+------------
+
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run1.txt
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt
+- figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt
+- figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt
+- figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt

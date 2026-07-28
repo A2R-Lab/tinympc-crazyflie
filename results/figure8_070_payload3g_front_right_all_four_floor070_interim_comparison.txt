@@ -1,0 +1,136 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+FOUR-METHOD INTERIM COMPARISON WITH THE ALIGNED 0.70 M MPC-CBF
+============================================================================
+
+SUPERSEDED: a second aligned MPC-CBF flight has now been collected. Use
+figure8_070_payload3g_front_right_all_four_floor070_two_run_comparison.txt
+for the balanced n=2 four-method result.
+
+Scope
+-----
+
+Condition:             3 g paper attached to front-right propeller guard
+External fan:          none
+Trajectory:            traj_fig8_12.h, two laps, approximately 24.1 s
+Primary window:        TRAJ START + 3 s through TRAJ DONE
+
+Sample counts:
+
+  Nominal TinyMPC:               n=2 flight mean
+  Embedded LIMO:                 n=2 flight mean
+  Posthoc LIMO:                  n=2 flight mean
+  Analytic MPC-CBF, floor 0.70:  n=1 flight
+
+This is an interim, unbalanced comparison. Do not label it a balanced
+four-method average until a second floor_z=0.70 MPC-CBF flight is collected.
+The earlier floor_z=0 MPC-CBF flights are not pooled because their rows
+produced zero projection intersections, whereas the aligned 0.70 m run
+produced intersections for 4,192/4,220 logged rows (99.3%).
+
+Primary results
+---------------
+
+Metric                    Nominal n=2  Embedded n=2  Posthoc n=2  MPC-CBF n=1
+Lateral RMSE, m           0.4804       0.5888        0.4977       0.4823
+Peak lateral error, m     0.8036       0.8885        0.8021       0.7831
+Z RMSE, m                 0.01626      0.00897       0.03932      0.01434
+Peak absolute Z error, m  0.0390       0.0260        0.0950       0.0380
+Tilt RMSE, deg            11.171       7.631         10.389       11.054
+Peak tilt, deg            19.166       14.080        17.376       18.670
+
+Metric winners
+--------------
+
+Lateral RMSE:
+  Nominal wins at 0.4804 m, only 0.4% below MPC-CBF.
+
+Peak lateral error:
+  MPC-CBF wins at 0.7831 m, 2.4% below posthoc, the next-best arm.
+
+Z RMSE:
+  Embedded LIMO wins at 0.00897 m, 37.4% below MPC-CBF, the next-best arm.
+
+Peak absolute Z error:
+  Embedded LIMO wins at 0.0260 m, 31.6% below MPC-CBF, the next-best arm.
+
+Tilt RMSE:
+  Embedded LIMO wins at 7.631 deg, 26.5% below posthoc, the next-best arm.
+
+Peak tilt:
+  Embedded LIMO wins at 14.080 deg, 19.0% below posthoc, the next-best arm.
+
+Embedded LIMO relative to each baseline
+---------------------------------------
+
+Relative to nominal:
+
+  Z RMSE improvement:          44.9%
+  Peak Z error improvement:    33.3%
+  Tilt RMSE improvement:       31.7%
+  Peak tilt improvement:       26.5%
+  Lateral RMSE degradation:    22.6%
+  Peak lateral degradation:    10.6%
+
+Relative to posthoc:
+
+  Z RMSE improvement:          77.2%
+  Peak Z error improvement:    72.6%
+  Tilt RMSE improvement:       26.5%
+  Peak tilt improvement:       19.0%
+  Lateral RMSE degradation:    18.3%
+  Peak lateral degradation:    10.8%
+
+Relative to the aligned 0.70 m MPC-CBF run:
+
+  Z RMSE improvement:          37.4%
+  Peak Z error improvement:    31.6%
+  Tilt RMSE improvement:       31.0%
+  Peak tilt improvement:       24.6%
+  Lateral RMSE degradation:    22.1%
+  Peak lateral degradation:    13.5%
+
+On-target timing
+----------------
+
+Metric                    Nominal n=2  Embedded n=2  Posthoc n=2  MPC-CBF n=1
+Median logged total, ms   24.084       36.264        34.352       27.050
+P99 sampled full step, ms 29.128       44.749        39.979       32.473
+Worst observed step, ms   33.279       47.701        41.739       34.579
+Deadline overruns         0            0             0            0
+
+Nominal is the compute winner. Its median is 11.0% below MPC-CBF, the
+next-fastest method. Embedded LIMO costs 34.1% more median compute than the
+aligned MPC-CBF run. All four methods remained inside the 50 ms deadline.
+
+Mechanism audit
+---------------
+
+Posthoc, pooled across its two flights:
+
+  Projection attempts:          751
+  Infeasible projections:       456/751 = 60.7%
+  Feasible interventions:       295
+
+Aligned analytic MPC-CBF, one flight:
+
+  Rows installed per solve:     20/20
+  First-stage installed:        211/211 logged samples
+  Final-iteration half-space
+  projection intersections:     4,192/4,220 = 99.3%
+  Intersections per solve:      19 or 20
+
+Interpretation
+--------------
+
+Embedded LIMO is the clear vertical and attitude-regulation winner under the
+asymmetric aerodynamic payload, but it trades away lateral tracking on the
+aggressive Figure-8. Nominal and aligned MPC-CBF are essentially tied on
+lateral RMSE; MPC-CBF has the smallest peak lateral error. The aligned
+MPC-CBF constraint is demonstrably active, unlike the superseded floor_z=0
+configuration.
+
+Sources
+-------
+
+  figure8_070_payload3g_front_right_two_run_average.txt
+  figure8_070_payload3g_front_right_mpccbf_floor070_run1_summary.txt

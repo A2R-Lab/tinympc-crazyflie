@@ -1,0 +1,133 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD: RUN 2 (COMPLETE)
+========================================================================
+
+Collection status
+-----------------
+
+Recorded:
+
+  - Nominal TinyMPC (mode 0)
+  - Embedded LIMO (mode 3)
+  - Posthoc LIMO with corrected nominal fallback (mode 2)
+  - Standalone MPC-CBF (mode 1)
+
+The matched four-method run-2 collection is complete.
+
+Condition
+---------
+
+Payload:              3 g paper on the front-right propeller guard
+External fan:         none
+Trajectory:           traj_fig8_12.h, two laps, approximately 24.1 s
+Reference altitude:   0.70 m
+Primary window:       TRAJ START + 3 s through TRAJ DONE
+Samples per arm:      211 decimated EXP rows
+
+All four recorded arms completed all 482 trajectory control steps with zero
+deadline overruns. All supplied captures stop after landing is requested and
+therefore do not contain a LANDING COMPLETE record.
+
+Primary results
+---------------
+
+Metric                    Nominal    Embedded LIMO   Posthoc LIMO   MPC-CBF
+Lateral RMSE, m           0.4762     0.5665          0.4770          0.4660
+Peak lateral error, m     0.8011     0.8635          0.7794          0.7721
+Z RMSE, m                 0.01607    0.00904         0.04014         0.01488
+Peak absolute Z error, m  0.0360     0.0270          0.0940          0.0370
+Tilt RMSE, deg            11.224     7.798           10.325          11.172
+Peak tilt, deg            19.658     13.704          17.804          19.071
+
+Relative effects
+----------------
+
+Embedded LIMO relative to nominal:
+
+  Z RMSE improvement:          43.8%
+  Peak Z error improvement:    25.0%
+  Tilt RMSE improvement:       30.5%
+  Peak tilt improvement:       30.3%
+  Lateral RMSE degradation:    19.0%
+  Peak lateral degradation:    7.8%
+
+Embedded LIMO relative to posthoc:
+
+  Z RMSE improvement:          77.5%
+  Peak Z error improvement:    71.3%
+  Tilt RMSE improvement:       24.5%
+  Peak tilt improvement:       23.0%
+  Lateral RMSE degradation:    18.8%
+  Peak lateral degradation:    10.8%
+
+Embedded LIMO relative to MPC-CBF:
+
+  Z RMSE improvement:          39.3%
+  Peak Z error improvement:    27.0%
+  Tilt RMSE improvement:       30.2%
+  Peak tilt improvement:       28.1%
+  Lateral RMSE degradation:    21.6%
+  Peak lateral degradation:    11.8%
+
+The flight could reasonably look awful despite completing the trajectory:
+posthoc's vertical error was 4.44 times embedded LIMO's, and its actual Z
+ranged from 0.688 to 0.794 m around a 0.700 m reference. Its successful
+one-step corrections raised the commanded Z as high as 0.899 m. Conversely,
+posthoc followed the aggressive lateral reference more closely than embedded
+LIMO, so this is a vertical/attitude failure mode rather than an across-the-
+board tracking loss.
+
+MPC-CBF activation audit
+------------------------
+
+The mode-1 boot record explicitly identifies "MPC-CBF LTV rows:
+activation-gated, active_horizon=3." In this run, however:
+
+  Whole trajectory active samples:   0/241
+  Primary-window active samples:     0/211
+  Active-row count:                  0
+  Logged h range, primary window:    0.663 to 0.735
+
+Thus the MPC-CBF arm produced the best lateral tracking so far, but this
+particular flight did not exercise its constraint rows. It behaved as the
+fixed nominal planner under this disturbance condition. Do not attribute its
+tracking result to an active CBF intervention.
+
+Posthoc mechanism
+-----------------
+
+Whole trajectory:
+
+  Projection attempts:         368
+  Infeasible projections:      216/368 = 58.7%
+  Feasible interventions:      152
+
+Primary decimated window:
+
+  Active samples:              167/211
+  Infeasible active samples:   99/167 = 59.3%
+  Feasible intervention rows:  68
+
+The corrected fallback is active: an infeasible projection returns the
+nominal command. The visible vertical excursions therefore come from the
+feasible interventions, not from corrupt infeasible outputs.
+
+On-target timing
+----------------
+
+Metric                    Nominal    Embedded LIMO   Posthoc LIMO   MPC-CBF
+Median logged total, ms   25.130     37.389          34.078          24.763
+P99 sampled full step, ms 30.501     45.594          39.730          30.633
+Exact maximum, ms         33.279     47.701          41.739          31.922
+Worst deadline use        66.56%     95.40%          83.48%          63.84%
+Deadline overruns         0           0               0               0
+
+Posthoc was 8.9% faster at the median, while embedded LIMO substantially
+reduced vertical and attitude error.
+
+Raw logs
+--------
+
+  figure8_070_payload3g_front_right_nominal_run2.txt
+  figure8_070_payload3g_front_right_embedded_run2.txt
+  figure8_070_payload3g_front_right_posthoc_run2.txt
+  figure8_070_payload3g_front_right_mpccbf_run2.txt

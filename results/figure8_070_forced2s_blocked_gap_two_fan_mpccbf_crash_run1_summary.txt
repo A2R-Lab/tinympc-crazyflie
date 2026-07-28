@@ -1,0 +1,67 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: MPC-CBF run 1
+============================================================================
+
+Configuration
+-------------
+
+- Method: MPC-CBF, mode 1
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.33 m, vz=+0.23 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: user reported a crash.
+- The first estimator out-of-bounds reset occurred immediately after the
+  trajectory-t=6.981 s sample.
+- Last pre-reset index: 140/482, or 29.0% of the planned trajectory.
+- The supervisor subsequently locked near trajectory t=9.1 s.
+- Firmware continued incrementing the trajectory after the crash/reset and
+  eventually printed TRAJ DONE and LANDING COMPLETE. Those messages are not
+  evidence of mission completion: their positions were physically impossible
+  (the final landing print reported approximately x=12 m, y=-15 m).
+- All samples after the first estimator reset are crash-contaminated and are
+  excluded.
+
+Pre-failure primary-window performance: t >= 3 s through first estimator reset
+-------------------------------------------------------------------------------
+
+Metric                              MPC-CBF
+Boundary-relative XY RMSE           0.8894 m
+Peak boundary-relative XY error     2.4284 m
+Lateral tracking RMSE               0.5382 m
+Peak lateral tracking error         1.8545 m
+Z tracking RMSE                     0.2592 m
+Maximum absolute Z error            0.4160 m
+Tilt RMSE                           31.156 deg
+Peak tilt                           94.536 deg
+Median complete control step        24.509 ms
+Sampled maximum control step        29.230 ms
+Exact cumulative maximum            30.893 ms
+Deadline overruns                   0
+
+Last uncontaminated sample
+--------------------------
+
+- Trajectory time: 6.981 s
+- Lateral tracking error: 1.8545 m
+- Z tracking error: -0.388 m
+- Tilt: 94.536 deg
+
+Mechanism
+---------
+
+- Linear MPC-CBF constraints active: 40/40 retained pre-failure samples
+- Linear MPC-CBF constraints binding: 40/40 retained pre-failure samples
+- The crash was not caused by a compute deadline miss; the constraints were
+  continuously active and the controller remained within its 50 ms budget.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt

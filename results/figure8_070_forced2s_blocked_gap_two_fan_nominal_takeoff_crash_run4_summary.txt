@@ -1,0 +1,49 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: nominal run 4
+=============================================================================
+
+Configuration
+-------------
+
+- Method: nominal TinyMPC, mode 0
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start policy: force the Figure-8 2000 ms after OOT takeoff begins
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE DURING TAKEOFF: `SUP: Locked, reboot required` occurred before
+  `TAKEOFF COMPLETE` and before `TRAJ START`.
+- Valid trajectory completion is therefore 0/482 steps (0.0%).
+- The firmware subsequently printed `TAKEOFF COMPLETE`, `TRAJ START`, and EXP
+  rows, but all of those events occurred after supervisor lock and are
+  physically invalid.
+- No trajectory RMSE, Z, tilt, or timing comparison is reported for this run.
+- No valid controlled landing was reached in the supplied log.
+
+Failure ordering from the raw log
+---------------------------------
+
+1. OOT activated at z=0.01 m.
+2. OOT takeoff began.
+3. Supervisor locked.
+4. Only after lock, firmware printed forced takeoff completion at 2000 ms
+   (z=0.16 m, vz=-0.06 m/s) and queued the trajectory.
+5. All later EXP rows are post-lock contamination.
+
+Interpretation
+--------------
+
+This is a stricter failure than nominal run 3: run 3 reached 12.9% of the
+trajectory before locking, whereas run 4 never reached a physically valid
+trajectory start. The forced-start state machine should ideally stop queuing
+the maneuver after supervisor lock, but that bookkeeping issue does not change
+the physical outcome.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt

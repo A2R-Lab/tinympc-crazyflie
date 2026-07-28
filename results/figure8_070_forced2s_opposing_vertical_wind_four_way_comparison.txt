@@ -1,0 +1,95 @@
+Forced-2-second Figure-8 under opposing vertical wind: four-way comparison
+============================================================================
+
+Protocol
+--------
+
+- Figure-8: two passes, approximately 24.1 s
+- Forced trajectory start: 2.0 s after OOT takeoff begins
+- Wind: one fan upward and one fan downward
+- Upward fan: approximately 30 degrees to the drone's left
+- Performance window: trajectory t >= 3 s through TRAJ DONE
+- Each method uses its measured position at trajectory start as the reference
+  origin. Consequently, the start altitude varied across arms.
+
+Mission outcome
+---------------
+
+Method             Start Z     Outcome
+Embedded LIMO      0.16 m      SUCCESS: full trajectory and controlled landing
+MPC-CBF            0.35 m      SUCCESS: full trajectory and controlled landing
+Nominal TinyMPC    0.14 m      SUCCESS: full trajectory and controlled landing
+Posthoc LIMO       0.15 m      PHYSICAL FAN COLLISION near trajectory t=1.4 s
+
+The posthoc collision occurred before the t=3 s analysis boundary. Its
+primary-window cells are therefore unavailable, rather than zero. Because
+the event was a physical fan collision, it is a mission outcome but not a
+clean aerodynamic-only controller failure.
+
+Primary-window performance
+--------------------------
+
+Metric                         Embedded       MPC-CBF        Nominal        Posthoc
+Boundary-relative XY RMSE      0.9413 m       0.6903 m       0.8187 m       N/A
+Peak boundary XY error         1.6304 m       1.2484 m       1.4239 m       N/A
+Lateral tracking RMSE          0.5917 m       0.4791 m       0.5038 m       N/A
+Peak lateral tracking error    0.8816 m       0.9025 m       0.7667 m       N/A
+Z tracking RMSE                0.0167 m       0.2160 m       0.0239 m       N/A
+Maximum absolute Z error       0.0410 m       0.3190 m       0.0670 m       N/A
+Tilt RMSE                      7.728 deg      10.880 deg     11.302 deg     N/A
+Peak tilt                      14.521 deg     25.190 deg     22.016 deg     N/A
+
+Metric winners among completed arms
+-----------------------------------
+
+- MPC-CBF has the lowest boundary RMSE: 15.7% below nominal.
+- MPC-CBF has the lowest lateral RMSE: 4.9% below nominal.
+- Nominal has the lowest peak lateral error: 13.0% below embedded.
+- Embedded LIMO has the lowest Z RMSE: 30.1% below nominal and 92.3% below
+  MPC-CBF.
+- Embedded LIMO has the lowest maximum Z error: 38.8% below nominal and
+  87.1% below MPC-CBF.
+- Embedded LIMO has the lowest tilt RMSE: 29.0% below MPC-CBF.
+- Embedded LIMO has the lowest peak tilt: 34.0% below nominal.
+
+Timing
+------
+
+Metric                         Embedded       MPC-CBF        Nominal        Posthoc*
+Median control step            34.924 ms      25.437 ms      22.584 ms      34.065 ms
+Exact maximum                  42.977 ms      32.701 ms      30.705 ms      41.207 ms
+Worst 50 ms deadline use       85.95%         65.40%         61.41%         82.41%
+Deadline overruns              0              0              0              0
+
+* Posthoc timing is only from the uncontaminated pre-collision segment.
+
+Posthoc pre-collision mechanism
+-------------------------------
+
+- Projection attempts before collision: 28
+- Infeasible projections: 26/28 = 92.9%
+- Feasible projections: 2/28 = 7.1%
+- The standard primary window was never reached.
+
+Interpretation and comparability warning
+---------------------------------------
+
+Embedded LIMO is the vertical/attitude winner in the completed arms, with
+substantially lower Z error and tilt. MPC-CBF gives the lowest RMS planar
+tracking errors but the worst Z tracking by a large margin.
+
+The MPC-CBF Z result needs explicit context: its measured trajectory reference
+began at z=0.351 m, but its always-on vertical constraint drove the vehicle
+roughly 0.2 m above that reference. That is the method's actual behavior in
+this run, but the varying start altitudes mean this forced-start campaign is
+not a perfectly altitude-matched comparison. Mission completion and the
+reported measured-reference metrics are valid; claims about method superiority
+should be limited to this exact forced-start protocol.
+
+Source files
+------------
+
+- figure8_070_forced2s_opposing_vertical_wind_embedded_run1.txt
+- figure8_070_forced2s_opposing_vertical_wind_mpccbf_run1.txt
+- figure8_070_forced2s_opposing_vertical_wind_nominal_run1.txt
+- figure8_070_forced2s_opposing_vertical_wind_posthoc_fan_collision_run1.txt

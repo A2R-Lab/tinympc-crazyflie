@@ -1,0 +1,54 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: nominal run 3
+=============================================================================
+
+Configuration
+-------------
+
+- Method: nominal TinyMPC, mode 0
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.17 m, vz=+0.19 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: supervisor locked immediately after trajectory t=3.077 s.
+- Last uncontaminated index: 62/482, or 12.9% of the planned trajectory.
+- The vehicle was already inverted and below the floor reference before lock.
+- No TRAJ DONE or controlled landing was reached.
+- All samples printed after "SUP: Locked, reboot required" are crash/lock
+  contaminated and are excluded.
+- The standard primary window begins at t=3 s, effectively coincident with
+  this failure. This run therefore has no valid primary-window comparison.
+
+Pre-lock diagnostics: trajectory start through last sample before lock
+----------------------------------------------------------------------
+
+Metric                              Nominal
+Lateral tracking RMSE               0.6577 m
+Peak lateral tracking error         1.2819 m
+Z tracking RMSE                     0.1181 m
+Maximum absolute Z error            0.4340 m
+Tilt RMSE                           51.213 deg
+Peak tilt                           152.336 deg
+Median complete control step        23.930 ms
+Sampled maximum control step        27.962 ms
+Exact cumulative maximum            28.295 ms
+Deadline overruns                   0
+
+Last uncontaminated sample
+--------------------------
+
+- Trajectory time: 3.077 s
+- Lateral tracking error: 1.0407 m
+- Z tracking error: -0.434 m
+- Tilt: 98.797 deg
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt

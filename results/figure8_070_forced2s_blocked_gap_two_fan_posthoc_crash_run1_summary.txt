@@ -1,0 +1,65 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 1
+============================================================================
+
+Configuration
+-------------
+
+- Method: posthoc LIMO, mode 2
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.20 m, vz=+0.21 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: user reported a crash.
+- The supervisor locked immediately after the trajectory-t=1.088 s sample.
+- Last uncontaminated index: 22/482, or 4.6% of the planned trajectory.
+- No TRAJ DONE or controlled landing was reached.
+- All samples printed after "SUP: Locked, reboot required" are crash/lock
+  contaminated and are excluded.
+- The standard t >= 3 s analysis boundary was never reached. This run has no
+  valid primary-window RMSE table.
+
+Pre-lock diagnostics
+--------------------
+
+Metric                              Posthoc
+Lateral tracking RMSE               0.7923 m
+Peak lateral tracking error         1.1976 m
+Z tracking RMSE                     0.0651 m
+Maximum absolute Z error            0.1120 m
+Tilt RMSE                           23.511 deg
+Peak tilt                           38.025 deg
+Median complete control step        34.601 ms
+Sampled maximum control step        37.161 ms
+Exact cumulative maximum            38.160 ms
+Deadline overruns                   0
+
+Last uncontaminated sample
+--------------------------
+
+- Trajectory time: 1.088 s
+- Lateral tracking error: 1.1976 m
+- Z tracking error: +0.009 m
+- Tilt: 37.169 deg
+
+Posthoc mechanism before lock
+-----------------------------
+
+- Projection attempts: 22
+- Infeasible projections: 12/22 = 54.5%
+- Feasible projections: 10/22 = 45.5%
+- Unlike an infeasible projection, every feasible intervention changes the
+  nominal action. This run does not isolate which individual intervention
+  initiated the divergence, but the projection was actively modifying the
+  command on 10 of the 22 pre-lock control steps.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt

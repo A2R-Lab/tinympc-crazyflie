@@ -1,0 +1,64 @@
+Figure-8 0.70 m forced-2-second opposing-wind embedded LIMO run 1
+========================================================================
+
+Protocol
+--------
+
+- Method: embedded LIMO, mode 3
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state: z=0.16 m, vz=+0.26 m/s
+- Wind: one upward fan and one downward fan
+- Upward-blowing fan: approximately 30 degrees to the drone's left
+- Primary window: trajectory t >= 3 s through TRAJ DONE
+
+Outcome
+-------
+
+- SUCCESS: completed the full 24.106 s trajectory.
+- Completed controlled landing and disarmed.
+- No supervisor lock and no deadline overruns.
+- This is the successful embedded counterpart to the matched posthoc run
+  that physically collided with a fan near trajectory t=1.4 s.
+- Because the posthoc event was a physical fan collision, mission completion
+  is reportable but should not be interpreted as a clean aerodynamic-only
+  controller comparison.
+
+Primary-window performance
+--------------------------
+
+Metric                              Embedded LIMO
+Boundary-relative XY RMSE           0.9413 m
+Peak boundary-relative XY error     1.6304 m
+Lateral tracking RMSE               0.5917 m
+Peak lateral tracking error         0.8816 m
+Z tracking RMSE                     0.0167 m
+Maximum absolute Z error            0.0410 m
+Tilt RMSE                           7.728 deg
+Peak tilt                           14.521 deg
+
+Timing
+------
+
+Metric                              Embedded LIMO
+Median MPC solve                    23.763 ms
+Median learned evaluation           10.160 ms
+Median complete control step        34.924 ms
+Sampled p99 control step            40.523 ms
+Sampled maximum control step        42.054 ms
+Exact cumulative maximum            42.977 ms
+Worst 50 ms deadline use            85.95%
+Deadline overruns                   0
+
+Mechanism
+---------
+
+- Learned row active: 211/211 retained samples
+- Learned row binding: 211/211 retained samples
+- Mean applied authority: 1.000
+- Mean applied Qz scale: 1.400
+
+Raw log
+-------
+
+- figure8_070_forced2s_opposing_vertical_wind_embedded_run1.txt

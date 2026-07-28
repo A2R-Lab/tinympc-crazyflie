@@ -1,0 +1,80 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+ALWAYS-ON MPC-CBF RUN 1
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Standalone analytic MPC-CBF (mode 1)
+Constraint definition:  Always installed, all 20 prediction stages
+Activation gate:        Disabled
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Trajectory:             traj_fig8_12.h, two laps
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Deadline overruns:      0
+Landing evidence:       Landing requested; supplied capture ends before
+                        LANDING COMPLETE
+
+Boot signature:
+
+  MPC-CBF analytic LTV rows: always_on=1 horizon=20 gate=off
+
+Primary metrics
+---------------
+
+Samples:                   211, t = 3.071 to 24.101 s
+Lateral RMSE:              0.4802 m
+Peak lateral error:        0.7752 m
+Z RMSE:                    0.01489 m
+Peak absolute Z error:     0.0370 m
+Tilt RMSE:                 11.348 deg
+Peak tilt:                 19.530 deg
+
+Constraint audit
+----------------
+
+First-stage row installed: 211/211 primary samples
+Rows installed per solve:  20/20 at every primary sample
+Logged installed rows:     4,220 across decimated primary samples
+Binding-row samples:       0
+Primary logged h range:    0.666 to 0.732
+Logged threshold:          0.300
+
+The implementation is now genuinely always present inside the MPC. The rows
+did not bind because the structural floor barrier stayed far inside its safe
+set. That is expected behavior for a safety constraint: "always on" means the
+inequality is always installed and solved, not that it must perturb every
+nominal solution.
+
+On-target timing
+----------------
+
+Median logged total:       26.281 ms
+P99 sampled full step:     32.440 ms
+Exact cumulative maximum:  35.917 ms
+Worst 50 ms deadline use:  71.83%
+Deadline overruns:         0
+
+Old gated implementation comparison
+-----------------------------------
+
+Metric                       Old gated     Always-on run 1
+Rows installed per solve     0             20
+Binding rows                 0             0
+Lateral RMSE, m              0.4660        0.4802
+Z RMSE, m                    0.01488       0.01489
+Tilt RMSE, deg               11.172        11.348
+Median logged total, ms      24.763        26.281
+Exact maximum, ms            31.922        35.917
+
+The nearly unchanged control metrics confirm that the new rows were
+non-binding in this trial. Installing and solving all 20 rows added about
+1.52 ms (6.1%) to the median logged control time. The old gated flight is a
+different controller configuration and must not be pooled with this run.
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_mpccbf_always_on_run1.txt

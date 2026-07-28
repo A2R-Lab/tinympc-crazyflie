@@ -1,0 +1,136 @@
+Figure-8 0.70 m forced-3-second opposing-vertical-wind four-way run 1
+========================================================================
+
+Protocol
+--------
+
+- Methods: nominal mode 0, MPC-CBF mode 1, posthoc LIMO mode 2, and
+  embedded LIMO mode 3
+- Maneuver: two passes through traj_fig8_12.h, 24.07 s total
+- Start: forced 3000 ms after OOT takeoff begins
+- Figure-8 XYZ origin: estimator state measured at the forced start
+- Wind: one upward and one downward fan
+- Upward-blowing fan location: approximately 30 degrees to the drone's left
+- Primary analysis window: trajectory t >= 3.0 s through TRAJ DONE
+- Retained samples: 211 per method
+- Fan power, distance, and the downward-fan position were not supplied
+
+Trajectory-start state
+----------------------
+
+Method          Start Z    Start VZ
+Nominal         0.44 m     +0.25 m/s
+MPC-CBF         0.65 m     +0.17 m/s
+Posthoc LIMO    0.42 m     +0.28 m/s
+Embedded LIMO   0.40 m     +0.27 m/s
+
+MPC-CBF's always-on z >= 0.70 m horizon rows were active during takeoff, so
+it began the trajectory 0.21-0.25 m higher than the other three arms. The
+tracking metrics use each flight's measured-start reference, but the physical
+initial altitudes are not matched.
+
+Primary-window performance
+--------------------------
+
+Metric                          Nominal      MPC-CBF      Posthoc      Embedded
+Boundary-relative XY RMSE       0.8359 m     1.1959 m     0.7483 m     0.9873 m
+Peak boundary-relative XY error 1.3680 m     2.2059 m     1.3945 m     1.6576 m
+Lateral tracking RMSE           0.4613 m     0.5311 m     0.5660 m     0.6222 m
+Peak lateral tracking error     0.7149 m     1.1651 m     0.9900 m     0.9943 m
+Z tracking RMSE                 0.0306 m     0.0702 m     0.0370 m     0.0199 m
+Maximum absolute Z error        0.0970 m     0.1900 m     0.1170 m     0.0690 m
+Tilt RMSE                       10.598 deg   13.146 deg   13.309 deg   7.865 deg
+Peak tilt                       19.732 deg   25.647 deg   48.339 deg   15.718 deg
+
+Metric definitions
+------------------
+
+Boundary-relative XY subtracts the XY tracking-error vector at the first
+retained sample:
+
+  e_xy(t)       = position_xy(t) - reference_xy(t)
+  delta_e_xy(t) = e_xy(t) - e_xy(first sample at/after trajectory t=3 s)
+
+Lateral, Z, and tilt rows are absolute reference/attitude metrics evaluated
+over the same retained window.
+
+Embedded LIMO relative results
+------------------------------
+
+Versus nominal:
+
+- Boundary RMSE: 18.1% higher
+- Peak boundary error: 21.2% higher
+- Lateral RMSE: 34.9% higher
+- Peak lateral error: 39.1% higher
+- Z RMSE: 34.9% lower
+- Maximum Z error: 28.9% lower
+- Tilt RMSE: 25.8% lower
+- Peak tilt: 20.3% lower
+
+Versus MPC-CBF:
+
+- Boundary RMSE: 17.4% lower
+- Peak boundary error: 24.9% lower
+- Lateral RMSE: 17.2% higher
+- Peak lateral error: 14.7% lower
+- Z RMSE: 71.7% lower
+- Maximum Z error: 63.7% lower
+- Tilt RMSE: 40.2% lower
+- Peak tilt: 38.7% lower
+
+Versus posthoc LIMO:
+
+- Boundary RMSE: 31.9% higher
+- Peak boundary error: 18.9% higher
+- Lateral RMSE: 9.9% higher
+- Peak lateral error: 0.4% higher, effectively tied
+- Z RMSE: 46.2% lower
+- Maximum Z error: 41.0% lower
+- Tilt RMSE: 40.9% lower
+- Peak tilt: 67.5% lower
+
+Timing
+------
+
+Metric                          Nominal      MPC-CBF      Posthoc      Embedded
+Median MPC solve                24.286 ms    24.750 ms    23.686 ms    23.340 ms
+Median learned evaluation       0.000 ms     0.000 ms     10.613 ms    10.032 ms
+Median complete control step    24.422 ms    25.101 ms    34.816 ms    34.184 ms
+Sampled p99 control step        28.227 ms    29.995 ms    40.216 ms    38.877 ms
+Sampled maximum control step    30.215 ms    31.273 ms    43.166 ms    40.235 ms
+Exact cumulative maximum        30.575 ms    31.646 ms    43.681 ms    42.215 ms
+Worst 50 ms deadline use        61.15%       63.29%       87.36%       84.43%
+Deadline overruns               0            0            0            0
+
+Posthoc mechanism
+-----------------
+
+- Whole OOT episode: 430/483 infeasible = 89.0%
+- Whole OOT episode: 53/483 feasible = 11.0%
+- Primary t >= 3 s window: 394/422 infeasible = 93.4%
+- Primary t >= 3 s window: 28/422 feasible = 6.6%
+- Corrected infeasible fallback returned the nominal command and the vehicle
+  remained stable, completed the trajectory, and landed.
+
+Outcome and interpretation
+--------------------------
+
+- All four methods completed the full trajectory and controlled landing.
+- Embedded LIMO has the best Z RMSE, peak Z error, tilt RMSE, and peak tilt.
+- Nominal has the best absolute lateral RMSE, peak lateral error, and peak
+  boundary-relative error.
+- Posthoc has the best boundary-relative RMSE, but its peak tilt is 48.34
+  degrees and 93.4% of its primary-window projections are infeasible.
+- MPC-CBF begins at a substantially different altitude and gives the worst
+  boundary-relative RMSE, peak boundary error, Z RMSE, and peak Z error.
+- Embedded has 0 deadline overruns and a lower median, p99, and exact maximum
+  control-step time than posthoc.
+
+Raw logs
+--------
+
+- figure8_070_forced3s_fan_placement_trial1_nominal_run1.txt
+- figure8_070_forced3s_fan_placement_trial1_mpccbf_run1.txt
+- figure8_070_forced3s_fan_placement_trial1_posthoc_run1.txt
+- figure8_070_forced3s_fan_placement_trial1_embedded_run1.txt

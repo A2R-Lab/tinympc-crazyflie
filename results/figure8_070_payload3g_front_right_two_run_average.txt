@@ -1,0 +1,113 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD: TWO-RUN AVERAGE
+=========================================================================
+
+Scope
+-----
+
+Condition:             3 g paper attached to front-right propeller guard
+External fan:          none
+Trajectory:            traj_fig8_12.h, two laps, approximately 24.1 s
+Primary window:        TRAJ START + 3 s through TRAJ DONE
+Samples:               211 decimated EXP rows per arm per run
+
+The numbers below are means of the separately computed run-1 and run-2
+metrics. The matched n=2 set contains nominal TinyMPC, embedded LIMO, and
+posthoc LIMO. Standalone MPC-CBF was added only in run 2 and is reported
+separately; it must not be presented as an n=2 average.
+
+Matched two-run averages
+------------------------
+
+Metric                         Nominal       Embedded LIMO    Posthoc LIMO
+Lateral RMSE, m                0.4804        0.5888           0.4977
+Peak lateral error, m          0.8036        0.8885           0.8021
+Z RMSE, m                      0.01626       0.00897          0.03932
+Peak absolute Z error, m       0.0390        0.0260           0.0950
+Tilt RMSE, deg                 11.171        7.631            10.389
+Peak tilt, deg                 19.166        14.080           17.376
+
+Embedded-LIMO effects
+---------------------
+
+Relative to nominal:
+
+  Z RMSE improvement:          44.9%
+  Peak Z error improvement:    33.3%
+  Tilt RMSE improvement:       31.7%
+  Peak tilt improvement:       26.5%
+  Lateral RMSE degradation:    22.6%
+  Peak lateral degradation:    10.6%
+
+Relative to posthoc:
+
+  Z RMSE improvement:          77.2%
+  Peak Z error improvement:    72.6%
+  Tilt RMSE improvement:       26.5%
+  Peak tilt improvement:       19.0%
+  Lateral RMSE degradation:    18.3%
+  Peak lateral degradation:    10.8%
+
+Interpretation:
+
+  Across both matched repetitions, embedded LIMO consistently trades lateral
+  tracking of the aggressive Figure-8 for substantially tighter vertical and
+  attitude regulation under the asymmetric aerodynamic payload. Nominal has
+  the best mean lateral RMSE; posthoc nearly matches nominal laterally but
+  has by far the worst vertical regulation.
+
+Timing: mean of per-run statistics
+----------------------------------
+
+Metric                         Nominal       Embedded LIMO    Posthoc LIMO
+Median logged total, ms        24.084        36.264           34.352
+P99 sampled full step, ms      29.128        44.749           39.979
+Mean exact run maximum, ms     31.421        46.016           41.484
+Worst observed across runs, ms 33.279        47.701           41.739
+Deadline overruns, two flights 0             0                0
+
+Embedded LIMO costs 50.6% more median compute than nominal and 5.6% more than
+posthoc. Its worst observed step consumed 95.40% of the 50 ms deadline; no
+arm recorded an overrun in either matched flight.
+
+Posthoc mechanism pooled across both runs
+-----------------------------------------
+
+Projection attempts:          751
+Infeasible projections:       456/751 = 60.7%
+Feasible interventions:       295
+
+The infeasible path returns the nominal command. The large posthoc Z error is
+therefore associated with its feasible vertical interventions, not a corrupt
+infeasible fallback.
+
+Standalone MPC-CBF: run 2 only
+------------------------------
+
+Metric                         MPC-CBF (n=1)
+Lateral RMSE, m                0.4660
+Peak lateral error, m          0.7721
+Z RMSE, m                      0.01488
+Peak absolute Z error, m       0.0370
+Tilt RMSE, deg                 11.172
+Peak tilt, deg                 19.071
+Median logged total, ms        24.763
+Exact cumulative maximum, ms   31.922
+Deadline overruns              0
+
+The MPC-CBF constraint rows activated 0 times in this flight. It is therefore
+a useful fixed-planner data point, but not evidence of active CBF correction.
+A second matched MPC-CBF flight is required before it can join the n=2 table.
+
+Raw logs
+--------
+
+Run 1:
+  figure8_070_payload3g_front_right_nominal_run1.txt
+  figure8_070_payload3g_front_right_embedded_run1.txt
+  figure8_070_payload3g_front_right_posthoc_run1.txt
+
+Run 2:
+  figure8_070_payload3g_front_right_nominal_run2.txt
+  figure8_070_payload3g_front_right_embedded_run2.txt
+  figure8_070_payload3g_front_right_posthoc_run2.txt
+  figure8_070_payload3g_front_right_mpccbf_run2.txt

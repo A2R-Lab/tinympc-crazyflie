@@ -1,0 +1,150 @@
+Hardware experiment ledger
+==========================
+
+Note: despite this requested filename, the campaign below is a Figure-8
+experiment, not a stationary-hover experiment.
+
+
+OPPOSING VERTICAL-FLOW + 3 G AERODYNAMIC DISTURBANCE FIGURE-8
+==============================================================
+
+Protocol
+--------
+
+- Methods: nominal TinyMPC (mode 0), fail-closed LIMO posthoc (mode 2), and
+  embedded/in-solver LIMO (mode 3).
+- Maneuver: maneuver 4, two-lap Figure-8 from traj_fig8_12.h.
+- Start rule: Figure-8 begins 3000 ms after OOT takeoff starts. There is no
+  altitude, settling, or vertical-velocity requirement.
+- Reference origin: measured X, Y, and Z at the forced three-second start.
+- Disturbance: two fans with fixed orientation, one blowing downward and one
+  blowing upward.
+- Aerodynamic/plant disturbance: the same 3 g paper attachment was mounted
+  asymmetrically on the front-right propeller guard for every flight. It adds
+  off-center mass, center-of-mass and inertia mismatch, drag/torque, local
+  rotor/guard inflow interference, and possible flexible flutter.
+- No payload-specific model, controller compensation, or retuning was used.
+- Trial variation: the upward fan moved by only centimeters between trials;
+  per the experimenter, position/angle were effectively unchanged, so all
+  three trials are pooled.
+- Analysis window: lateral and tilt metrics use TRAJ START through TRAJ DONE;
+  Z metrics use TRAJ START + 3 s through TRAJ DONE.
+- Every scored arm completed the full trajectory and controlled landing.
+- No arm recorded a 50 ms deadline overrun.
+
+Run 1
+-----
+
+Metric                         Nominal       Embedded      Posthoc
+Lateral RMSE, m                0.5002        0.6258        0.5627
+Peak lateral error, m          0.8020        1.1066        1.2048
+Z RMSE, m                      0.0235        0.0185        0.0495
+Maximum absolute Z error, m    0.0680        0.0600        0.1650
+Tilt RMSE, deg                 11.5777       8.8015        12.2257
+Peak tilt, deg                 30.3321       16.7106       40.5330
+Median control step, ms        21.826        33.934        33.887
+Exact maximum step, ms         29.352        40.594        40.843
+Completion                     1/1           1/1           1/1
+Posthoc infeasible             --            --            440/483
+
+Run 2
+-----
+
+Metric                         Nominal       Embedded      Posthoc
+Lateral RMSE, m                0.5331        0.6215        0.5512
+Peak lateral error, m          1.1225        1.1204        0.9523
+Z RMSE, m                      0.0310        0.0237        0.0617
+Maximum absolute Z error, m    0.0920        0.0760        0.2490
+Tilt RMSE, deg                 15.6916       11.3444       13.6406
+Peak tilt, deg                 46.1549       28.9458       36.7241
+Median control step, ms        22.105        33.267        33.871
+Exact maximum step, ms         27.612        42.909        41.416
+Completion                     1/1           1/1           1/1
+Posthoc infeasible             --            --            417/483
+
+Run 3
+-----
+
+Metric                         Nominal       Embedded      Posthoc
+Lateral RMSE, m                0.5082        0.6205        0.5408
+Peak lateral error, m          0.8663        0.9405        0.9602
+Z RMSE, m                      0.0282        0.0281        0.0337
+Maximum absolute Z error, m    0.0730        0.0890        0.1210
+Tilt RMSE, deg                 13.0609       9.6242        10.9652
+Peak tilt, deg                 27.2394       27.2280       31.1413
+Median control step, ms        22.603        34.589        32.771
+Exact maximum step, ms         30.039        41.346        42.049
+Completion                     1/1           1/1           1/1
+Posthoc infeasible             --            --            452/483
+
+Balanced aggregate: mean across three runs
+------------------------------------------
+
+Metric                         Nominal       Embedded      Posthoc       Best
+Lateral RMSE, m                0.5138        0.6226        0.5516        Nominal
+Peak lateral error, m          0.9303        1.0558        1.0391        Nominal
+Z RMSE, m                      0.0276        0.0234        0.0483        Embedded
+Maximum absolute Z error, m    0.0777        0.0750        0.1783        Embedded
+Tilt RMSE, deg                 13.4434       9.9234        12.2772       Embedded
+Peak tilt, deg                 34.5754       24.2948       36.1328       Embedded
+Mean run-median step, ms       22.178        33.930        33.510        Nominal
+Largest exact step, ms         30.039        42.909        42.049        Nominal
+Completion                     3/3           3/3           3/3           Tie
+Deadline overruns              0             0             0             Tie
+
+Embedded relative to nominal
+----------------------------
+
+- Z RMSE: 15.0% lower.
+- Maximum absolute Z error: 3.4% lower.
+- Tilt RMSE: 26.2% lower.
+- Peak tilt: 29.7% lower.
+- Lateral RMSE: 21.2% higher.
+- Peak lateral error: 13.5% higher.
+
+Embedded relative to posthoc
+----------------------------
+
+- Z RMSE: 51.5% lower.
+- Maximum absolute Z error: 57.9% lower.
+- Tilt RMSE: 19.2% lower.
+- Peak tilt: 32.8% lower.
+- Lateral RMSE: 11.4% higher.
+- Peak lateral error: 1.6% higher.
+
+Posthoc mechanism
+-----------------
+
+- Projection attempts: 1,449.
+- Infeasible projections: 1,309/1,449 = 90.3%.
+- Feasible projections: 140/1,449 = 9.7%.
+- Firmware mode 2 is the fail-closed hardware variant: an infeasible
+  projection returns the nominal command. It is not the simulator's canonical
+  saturation-maximizing infeasible fallback.
+
+Interpretation
+--------------
+
+Across the balanced n=3 combined wind-plus-3-g-aerodynamic-disturbance
+campaign, nominal gives the best average lateral tracking and lowest compute
+cost. Embedded LIMO gives the best vertical and attitude regulation, reducing
+posthoc Z RMSE by 51.5% and peak tilt by 32.8%. Fail-closed posthoc wins no
+aggregate metric.
+
+Raw logs
+--------
+
+Run 1:
+- figure8_070_opposing_vertical_fans_nominal_run1.txt
+- figure8_070_opposing_vertical_fans_embedded_run1.txt
+- figure8_070_opposing_vertical_fans_posthoc_run1.txt
+
+Run 2:
+- figure8_070_opposing_vertical_fans_nominal_run2.txt
+- figure8_070_opposing_vertical_fans_embedded_run2.txt
+- figure8_070_opposing_vertical_fans_posthoc_run2.txt
+
+Run 3:
+- figure8_070_opposing_vertical_fans_nominal_run3.txt
+- figure8_070_opposing_vertical_fans_embedded_run3.txt
+- figure8_070_opposing_vertical_fans_posthoc_run3.txt

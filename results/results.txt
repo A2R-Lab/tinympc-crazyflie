@@ -414,6 +414,45 @@ infeasible for 461/483 = 95.4% of attempts. See:
   results/figure8_070_forced3s_two_fan_collision_pilot_run1.txt
 
 
+BLOCKED-GAP TWO-FAN MISSION-SUCCESS TEST
+========================================
+
+Condition
+---------
+
+  Trajectory: forced Figure-8 start 2.0 s after OOT takeoff begins
+  Upward fan: perpendicular to the vehicle
+  Downward fan: directly in front of the vehicle
+  Geometry: the gap between the fans was blocked by another box
+
+Mission outcome
+---------------
+
+  Embedded LIMO:   2/2 completed missions
+  Nominal TinyMPC: 0/4 completed missions
+  Posthoc LIMO:    0/1 completed missions
+  MPC-CBF:         0/1 completed missions
+
+Embedded LIMO is the mission-success winner in this specific configuration:
+it is the only arm that completed the trajectory and controlled landing.
+Embedded run 1, nominal runs 3-4, posthoc run 1, and MPC-CBF run 1 are
+supported by saved raw logs. Embedded run 2 and nominal runs 1-2 are currently
+user-reported and should not be described as independently log-verified.
+
+Failure points in the saved logs:
+
+  Posthoc: supervisor lock at trajectory t=1.088 s (22/482 steps, 4.6%)
+  Nominal run 3: supervisor lock at t=3.077 s (62/482 steps, 12.9%)
+  Nominal run 4: supervisor lock during takeoff, before trajectory (0/482)
+  MPC-CBF: first estimator reset at t=6.981 s (140/482 steps, 29.0%)
+
+The completed embedded run recorded zero 50 ms deadline overruns and an exact
+maximum complete-step time of 42.889 ms. Detailed metrics and provenance are
+in:
+
+  results/figure8_070_forced2s_blocked_gap_two_fan_comparison.txt
+
+
 SOURCE FILES
 ============
 
@@ -422,6 +461,7 @@ SOURCE FILES
   results/figure8_070_wind_bottom_to_top_comparison.txt
   results/figure8_070_payload3g_front_right_final_n3_and_original_run1_comparison.txt
   results/figure8_070_payload3g_front_right_wind_three_way_comparison.txt
+  results/figure8_070_forced2s_blocked_gap_two_fan_comparison.txt
 
 Raw no-fan payload logs used for the final n=3 table:
 

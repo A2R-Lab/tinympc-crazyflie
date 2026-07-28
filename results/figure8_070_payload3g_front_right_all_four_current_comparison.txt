@@ -1,0 +1,116 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+CURRENT FOUR-METHOD COMPARISON
+========================================================================
+
+Configuration warning
+---------------------
+
+The MPC-CBF column below uses the earlier always-on `floor_z=0` barrier.
+Firmware was subsequently changed to `floor_z=0.70`, zero extra margin, to
+align its analytic boundary with the LIMO campaign altitude. This table is
+therefore frozen as the pre-alignment comparison and must be recomputed after
+new MPC-CBF 0.70 m-boundary flights; do not mix the two MPC-CBF definitions.
+
+Comparison status
+-----------------
+
+Condition:             3 g paper attached to front-right propeller guard
+External fan:          none
+Trajectory:            traj_fig8_12.h, two laps
+Primary window:        TRAJ START + 3 s through TRAJ DONE
+
+Sample counts:
+
+  Nominal TinyMPC:               n=2 flight mean
+  Embedded LIMO:                 n=2 flight mean
+  Posthoc LIMO:                  n=2 flight mean
+  Always-on analytic MPC-CBF:    n=2 flight mean
+
+The comparison is now balanced at two flights per method.
+
+Current four-way results
+------------------------
+
+Metric                    Nominal n=2  Embedded n=2  Posthoc n=2  MPC-CBF n=2
+Lateral RMSE, m           0.4804       0.5888        0.4977       0.4742
+Peak lateral error, m     0.8036       0.8885        0.8021       0.7838
+Z RMSE, m                 0.01626      0.00897       0.03932      0.01521
+Peak absolute Z error, m  0.0390       0.0260        0.0950       0.0375
+Tilt RMSE, deg            11.171       7.631         10.389       11.196
+Peak tilt, deg            19.166       14.080        17.376       19.299
+
+Embedded-LIMO effects
+---------------------
+
+Relative to nominal (both n=2):
+
+  Z RMSE improvement:          44.9%
+  Peak Z error improvement:    33.3%
+  Tilt RMSE improvement:       31.7%
+  Peak tilt improvement:       26.5%
+  Lateral RMSE degradation:    22.6%
+  Peak lateral degradation:    10.6%
+
+Relative to posthoc (both n=2):
+
+  Z RMSE improvement:          77.2%
+  Peak Z error improvement:    72.6%
+  Tilt RMSE improvement:       26.5%
+  Peak tilt improvement:       19.0%
+  Lateral RMSE degradation:    18.3%
+  Peak lateral degradation:    10.8%
+
+Relative to always-on MPC-CBF (both n=2):
+
+  Z RMSE improvement:          41.1%
+  Peak Z error improvement:    30.7%
+  Tilt RMSE improvement:       31.8%
+  Peak tilt improvement:       27.0%
+  Lateral RMSE degradation:    24.2%
+  Peak lateral degradation:    13.4%
+
+Interpretation
+--------------
+
+Embedded LIMO is the clear vertical/attitude winner in the current data.
+Always-on MPC-CBF gives the best mean lateral tracking, only 1.3% ahead of
+nominal. Embedded LIMO's benefit is not free: it trades approximately 18-24%
+lateral RMSE for 41-77% lower Z RMSE and 27-32% lower tilt RMSE relative to
+the three baselines.
+
+Mechanism audit
+---------------
+
+Always-on MPC-CBF, pooled across two runs:
+
+  Rows installed per solve:       20/20
+  First-stage installed samples:  422/422
+  Decimated installed rows:       8,440
+  Binding-row samples:            0
+  h range:                        0.645 to 0.732
+
+The MPC-CBF implementation is now always present, but the analytic floor
+constraint remained non-binding in this safe-altitude trial.
+
+Posthoc pooled over two runs:
+
+  Projection attempts:            751
+  Infeasible projections:         456/751 = 60.7%
+
+Timing
+------
+
+Metric                    Nominal n=2  Embedded n=2  Posthoc n=2  MPC-CBF n=2
+Median logged total, ms   24.084       36.264        34.352       26.590
+Worst observed step, ms   33.279       47.701        41.739       35.917
+Deadline overruns         0            0             0            0
+
+Always-on MPC-CBF costs about 2.51 ms more than the nominal two-run median.
+Embedded LIMO costs 36.4% more median compute than always-on MPC-CBF, while
+remaining within the 50 ms deadline in both recorded flights.
+
+Source summaries
+----------------
+
+  figure8_070_payload3g_front_right_two_run_average.txt
+  figure8_070_payload3g_front_right_mpccbf_always_on_two_run_average.txt

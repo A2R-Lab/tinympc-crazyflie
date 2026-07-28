@@ -1,0 +1,115 @@
+Figure-8 0.70 m, forced 3 s start, two-fan collision pilot — run 1
+
+Protocol
+--------
+
+- Arms: nominal mode 0, posthoc LIMO mode 2, and embedded LIMO mode 3
+- Maneuver: two-lap Figure-8 from traj_fig8_12.h
+- Trajectory start: forced 3000 ms after OOT takeoff start, at the measured
+  position and altitude
+- Disturbance: two fans; user reported one in front and one "in the line"
+- Physical layout: one fan was supported on a stool inside the reachable
+  flight area
+- Z-error window: trajectory start + 3 s onward
+
+Mission outcome
+---------------
+
+- Nominal: FAILURE. It completed roughly 20% of the planned trajectory and
+  then crashed into the stool supporting the fan.
+- The first supervisor lock appears after the EXP sample at trajectory
+  t=5.582 s.
+- Embedded LIMO completed the full 24.118 s/two-lap trajectory and requested
+  controlled landing.
+- The embedded attachment ends at the landing request/timing summary, so it
+  does not prove LANDING COMPLETE.
+- Posthoc LIMO completed the full 24.102 s/two-lap trajectory and completed
+  its controlled landing.
+- Nominal samples printed after SUP: Locked are impact/lock contaminated and
+  are excluded.
+
+Matched observable window: trajectory start to 5.582 s
+--------------------------------------------------------
+
+The embedded trace is truncated to the same elapsed interval as nominal.
+Nominal values include the onset of the physical collision and are diagnostic,
+not uncensored tracking statistics.
+
+Metric                              Nominal         Embedded LIMO
+Lateral tracking RMSE               0.5497 m        0.7044 m
+Peak lateral tracking error         0.8327 m        1.2540 m
+Z tracking RMSE, t >= 3 s           0.1087 m        0.0324 m
+Maximum absolute Z error, t >= 3 s  0.2870 m        0.0450 m
+Tilt RMSE                           30.294 deg      9.989 deg
+Peak tilt                           139.026 deg     17.912 deg
+Median complete control step        23.076 ms       34.310 ms
+Exact maximum control step          28.396 ms       40.338 ms
+Deadline overruns                   0               0
+
+Matched-window embedded difference relative to nominal
+-------------------------------------------------------
+
+- Lateral RMSE: 28.1% higher
+- Peak lateral error: 50.6% higher
+- Z RMSE: 70.2% lower
+- Maximum Z error: 84.3% lower
+- Tilt RMSE: 67.0% lower
+- Peak tilt: 87.1% lower
+- Median computation: 48.7% higher
+
+Full embedded trajectory
+------------------------
+
+- Lateral tracking RMSE: 0.6307 m
+- Peak lateral tracking error: 1.2540 m
+- Z tracking RMSE, t >= 3 s: 0.0160 m
+- Maximum absolute Z error, t >= 3 s: 0.0450 m
+- Tilt RMSE: 7.072 deg
+- Peak tilt: 17.912 deg
+- Median complete control step: 33.869 ms
+- Exact maximum control step: 40.875 ms
+- Deadline overruns: 0
+- Learned row active: 241/241 logged samples
+- Learned row binding: 241/241 logged samples
+- Mean applied authority: 1.000
+- Mean applied Qz scale: 1.400
+
+Completed-arm comparison
+------------------------
+
+Metric                              Embedded LIMO   Posthoc LIMO    Winner
+Lateral tracking RMSE               0.6307 m        0.4851 m        Posthoc 23.1%
+Peak lateral tracking error         1.2540 m        0.8242 m        Posthoc 34.3%
+Z tracking RMSE, t >= 3 s           0.0160 m        0.0287 m        Embedded 44.5%
+Maximum absolute Z error, t >= 3 s  0.0450 m        0.1070 m        Embedded 57.9%
+Tilt RMSE                           7.072 deg       9.146 deg       Embedded 22.7%
+Peak tilt                           17.912 deg      23.153 deg      Embedded 22.6%
+Median complete control step        33.869 ms       33.147 ms       Posthoc 2.1%
+Exact maximum control step          40.875 ms       43.388 ms       Embedded 5.8%
+Deadline overruns                   0               0               Tie
+
+Posthoc mechanism
+-----------------
+
+- Projection attempts: 483
+- Infeasible projections: 461/483 = 95.4%
+- Feasible projections: 22/483 = 4.6%
+- The corrected infeasible fallback allowed posthoc to remain stable and
+  complete the trajectory despite the very high infeasibility rate.
+
+Interpretation
+--------------
+
+Nominal failed after roughly 20% of the maneuver by crashing into the fan
+stool. Both learned arms completed the full maneuver. Posthoc gives lower XY
+tracking error; embedded gives substantially lower Z error and attitude
+excursion, as well as the lower exact worst-case computation time. This pilot
+does not support an embedded win on every metric: its clear advantages are
+mission completion versus nominal and Z/attitude regulation versus posthoc.
+
+Raw logs
+--------
+
+- figure8_070_forced3s_two_fan_nominal_stool_collision_run1.txt
+- figure8_070_forced3s_two_fan_embedded_run1.txt
+- figure8_070_forced3s_two_fan_posthoc_run1.txt

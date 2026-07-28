@@ -1,0 +1,58 @@
+Figure-8 0.70 m forced-2-second opposing-wind nominal run 1
+===================================================================
+
+Protocol
+--------
+
+- Method: nominal TinyMPC, mode 0
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state: z=0.14 m, vz=+0.13 m/s
+- Wind: one upward fan and one downward fan
+- Upward-blowing fan: approximately 30 degrees to the drone's left
+- Primary window: trajectory t >= 3 s through TRAJ DONE
+
+Outcome
+-------
+
+- SUCCESS: completed all 482 trajectory samples (24.106 s).
+- Completed controlled landing and disarmed.
+- No supervisor lock and no deadline overruns.
+
+Primary-window performance
+--------------------------
+
+Metric                              Nominal
+Boundary-relative XY RMSE           0.8187 m
+Peak boundary-relative XY error     1.4239 m
+Lateral tracking RMSE               0.5038 m
+Peak lateral tracking error         0.7667 m
+Z tracking RMSE                     0.0239 m
+Maximum absolute Z error            0.0670 m
+Tilt RMSE                           11.302 deg
+Peak tilt                           22.016 deg
+
+Timing
+------
+
+Metric                              Nominal
+Median MPC solve                    22.415 ms
+Median learned evaluation            0.000 ms
+Median complete control step        22.584 ms
+Sampled p99 control step            26.563 ms
+Sampled maximum control step        27.108 ms
+Exact cumulative maximum            30.705 ms
+Worst 50 ms deadline use            61.41%
+Deadline overruns                   0
+
+Mechanism
+---------
+
+- Learned-policy evaluations: 0
+- Learned-row activations: 0
+- Posthoc projection attempts: 0
+
+Raw log
+-------
+
+- figure8_070_forced2s_opposing_vertical_wind_nominal_run1.txt

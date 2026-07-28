@@ -95,23 +95,21 @@
 #error "TINYMPC_TRAJECTORY must be 0 (hover), 1 (X-line), 2 (Y-line), 3 (circle), or 4 (figure eight)"
 #endif
 
-// Gated controller-6 takeoff for payload experiments:
+// Controller-6 takeoff for payload/disturbance experiments:
 //   0 = preserve the historical workflow (switch to OOT after PID takeoff)
 //   1 = select OOT on the ground, then use the cfclient takeoff command to
-//       start a vertical MPC ramp. The trajectory starts only after the
-//       vehicle has settled at the configured altitude.
+//       start a vertical MPC ramp. The trajectory starts at a fixed time after
+//       that ramp begins, with no altitude or vertical-speed gate.
 #define TINYMPC_OOT_TAKEOFF 1
 #if TINYMPC_OOT_TAKEOFF != 0 && TINYMPC_OOT_TAKEOFF != 1
 #error "TINYMPC_OOT_TAKEOFF must be 0 or 1"
 #endif
 #define TINYMPC_TAKEOFF_TRIGGER_Z_M       0.15f
 #define TINYMPC_TAKEOFF_ASCENT_MPS        0.15f
-#define TINYMPC_TAKEOFF_SETTLE_Z_TOL_M    0.05f
-#define TINYMPC_TAKEOFF_SETTLE_VZ_MPS     0.10f
-#define TINYMPC_TAKEOFF_SETTLE_MS         1000u
+#define TINYMPC_TAKEOFF_TRAJECTORY_START_MS 2000u
 #define TINYMPC_TAKEOFF_TIMEOUT_MS        12000u
-#if TINYMPC_TAKEOFF_SETTLE_MS >= TINYMPC_TAKEOFF_TIMEOUT_MS
-#error "Takeoff settle duration must be shorter than the takeoff timeout"
+#if TINYMPC_TAKEOFF_TRAJECTORY_START_MS >= TINYMPC_TAKEOFF_TIMEOUT_MS
+#error "Trajectory start delay must be shorter than the takeoff timeout"
 #endif
 
 // Every maneuver finishes with the same PID-controlled descent. The landing
@@ -329,6 +327,7 @@ static float traj_omega = 0.45f;
 // reproduce the strong downward-wind pair and its fixed (0,0,0.70) reference.
 static float trajectory_origin_x = 0.0f;
 static float trajectory_origin_y = 0.0f;
+static float trajectory_origin_z = traj_height;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 // controllerOutOfTree() receives a stabilizer-step counter, while the MPC task
@@ -343,8 +342,6 @@ static uint8_t flight_phase =
                         : FLIGHT_PHASE_TRACKING;
 static uint32_t takeoff_start_tick = 0;
 static uint32_t takeoff_start_rtos_tick = 0;
-static uint32_t takeoff_settle_start_tick = 0;
-static bool takeoff_settle_active = false;
 static bool tracking_start_pending = false;
 static bool takeoff_trigger_armed = false;
 static float takeoff_start_z = 0.0f;
@@ -694,14 +691,13 @@ static void reset_benchmark_run()
                           : FLIGHT_PHASE_TRACKING;
   takeoff_start_tick = 0;
   takeoff_start_rtos_tick = 0;
-  takeoff_settle_start_tick = 0;
-  takeoff_settle_active = false;
   tracking_start_pending = false;
   takeoff_trigger_armed = false;
   takeoff_start_z = 0.0f;
   takeoff_hold_x = 0.0f;
   takeoff_hold_y = 0.0f;
   takeoff_hold_yaw = 0.0f;
+  trajectory_origin_z = traj_height;
   landing_start_tick = 0;
   landing_reference_z = traj_height;
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
@@ -903,8 +899,6 @@ void controllerOutOfTreeInit(void)
   flight_phase =
       TINYMPC_OOT_TAKEOFF ? FLIGHT_PHASE_WAITING_FOR_TAKEOFF
                           : FLIGHT_PHASE_TRACKING;
-  takeoff_settle_start_tick = 0;
-  takeoff_settle_active = false;
   landing_start_tick = 0;
   landing_reference_z = traj_height;
   experiment_start_rtos_tick = xTaskGetTickCount();
@@ -930,12 +924,11 @@ void controllerOutOfTreeInit(void)
               (double)traj_height, (double)limo_skip_z,
               (double)limo_skip_vz);
 #if TINYMPC_OOT_TAKEOFF
-  DEBUG_PRINT("OOT takeoff: GATED cfclient trigger>=%.2fm ramp=%.2fm/s settle=+/-%.2fm,vz<%.2fm/s,%lums timeout=%lums\n",
+  DEBUG_PRINT("OOT takeoff: cfclient trigger>=%.2fm ramp=%.2fm/s figure8_start=%lums_at_measured_z target=%.2fm timeout=%lums\n",
               (double)TINYMPC_TAKEOFF_TRIGGER_Z_M,
               (double)TINYMPC_TAKEOFF_ASCENT_MPS,
-              (double)TINYMPC_TAKEOFF_SETTLE_Z_TOL_M,
-              (double)TINYMPC_TAKEOFF_SETTLE_VZ_MPS,
-              (unsigned long)TINYMPC_TAKEOFF_SETTLE_MS,
+              (unsigned long)TINYMPC_TAKEOFF_TRAJECTORY_START_MS,
+              (double)traj_height,
               (unsigned long)TINYMPC_TAKEOFF_TIMEOUT_MS);
 #else
   DEBUG_PRINT("OOT takeoff: disabled; switch to controller 6 after external takeoff\n");
@@ -954,7 +947,7 @@ void controllerOutOfTreeInit(void)
   DEBUG_PRINT("Reference origin: xy=estimator_zero z=%.2f m\n",
               (double)traj_height);
 #elif TINYMPC_OOT_TAKEOFF
-  DEBUG_PRINT("Reference origin: xy=post_takeoff_settle z=%.2f m\n",
+  DEBUG_PRINT("Reference origin: xyz=measured_at_forced_timed_start target_z=%.2f m\n",
               (double)traj_height);
 #else
   DEBUG_PRINT("Reference origin: xy=OOT_activation z=%.2f m\n",
@@ -984,12 +977,12 @@ void controllerOutOfTreeInit(void)
 #endif
 #if TINYMPC_TRAJECTORY == TINYMPC_TRAJECTORY_FIGURE8
 #if TINYMPC_OOT_TAKEOFF
-  DEBUG_PRINT("Figure8: source=traj_fig8_12.h source_hz=%u samples=%u laps=%u duration=%.2f s origin=post_takeoff_settle z_offset=%.2f m\n",
+  DEBUG_PRINT("Figure8: source=traj_fig8_12.h source_hz=%u samples=%u laps=%u duration=%.2f s origin=forced_timed_start start_delay=%lums z_baseline=measured_at_start\n",
               (unsigned int)kFigure8SourceRateHz,
               (unsigned int)kFigure8StateCount,
               (unsigned int)kFigure8LapCount,
               (double)traj_duration,
-              (double)(traj_height - X_ref_data[0][2]));
+              (unsigned long)TINYMPC_TAKEOFF_TRAJECTORY_START_MS);
 #else
   DEBUG_PRINT("Figure8: source=traj_fig8_12.h source_hz=%u samples=%u laps=%u duration=%.2f s origin=OOT_activation z_offset=%.2f m\n",
               (unsigned int)kFigure8SourceRateHz,
@@ -1056,7 +1049,11 @@ static void UpdateHorizonReference(const setpoint_t *setpoint)
     // Resample the stored 100 Hz, 12-state reference onto the 20 Hz MPC
     // horizon. Each horizon column advances independently; translating only
     // position preserves the header's velocities, attitude, and rates.
+#if TINYMPC_OOT_TAKEOFF
+    const float z_offset = trajectory_origin_z - X_ref_data[0][2];
+#else
     const float z_offset = traj_height - X_ref_data[0][2];
+#endif
     for (int i = 0; i < NHORIZON; ++i) {
       const int unwrapped_source_index =
           ((traj_index + i) * kFigure8SourceRateHz) / MPC_RATE;
@@ -1201,10 +1198,11 @@ static void tinympcControllerTask(void *parameters)
         reset_tracking_measurements();
         tracking_start_pending = false;
         DEBUG_PRINT(
-            "TRAJ START: z=%.2f origin=(%.2f,%.2f) EXP clock reset; Z metric begins at t+3s\n",
+            "TRAJ START: z=%.2f origin=(%.2f,%.2f,%.2f) EXP clock reset; Z metric begins at t+3s\n",
             (double)state_task.position.z,
             (double)trajectory_origin_x,
-            (double)trajectory_origin_y);
+            (double)trajectory_origin_y,
+            (double)trajectory_origin_z);
       }
 
       // Raw-cycle control-step timing begins before state packing and
@@ -1881,9 +1879,11 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 #if TINYMPC_TRAJECTORY != TINYMPC_TRAJECTORY_HOVER
     trajectory_origin_x = state->position.x;
     trajectory_origin_y = state->position.y;
-    DEBUG_PRINT("Trajectory origin: x=%.2f y=%.2f\n",
+    trajectory_origin_z = state->position.z;
+    DEBUG_PRINT("Trajectory origin: x=%.2f y=%.2f z=%.2f\n",
                 (double)trajectory_origin_x,
-                (double)trajectory_origin_y);
+                (double)trajectory_origin_y,
+                (double)trajectory_origin_z);
 #endif
     // Initialize to current state to avoid a bad setpoint on first switch
     mpc_setpoint = tiny_VectorNx::Zero();
@@ -1928,11 +1928,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     takeoff_hold_yaw = state->attitude.yaw;
     trajectory_origin_x = takeoff_hold_x;
     trajectory_origin_y = takeoff_hold_y;
+    trajectory_origin_z = takeoff_start_z;
     enable_traj = false;
     mpc_has_run = false;
     tracking_start_pending = false;
-    takeoff_settle_start_tick = 0;
-    takeoff_settle_active = false;
     controller_activate_tick = tick;
     controller_activate_rtos_tick = takeoff_start_rtos_tick;
     experiment_start_rtos_tick = takeoff_start_rtos_tick;
@@ -1955,43 +1954,22 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       const uint32_t takeoff_elapsed_ms =
           T2M(tick - takeoff_start_tick);
 
-      const bool inside_altitude_band =
-          fabsf(state->position.z - traj_height) <=
-          TINYMPC_TAKEOFF_SETTLE_Z_TOL_M;
-      const bool vertical_speed_settled =
-          fabsf(state->velocity.z) < TINYMPC_TAKEOFF_SETTLE_VZ_MPS;
-
       if (!tracking_start_pending &&
           flight_phase == FLIGHT_PHASE_TAKEOFF &&
-          inside_altitude_band &&
-          vertical_speed_settled) {
-        if (!takeoff_settle_active) {
-          takeoff_settle_active = true;
-          takeoff_settle_start_tick = tick;
-          DEBUG_PRINT(
-              "TAKEOFF SETTLING: z=%.2f vz=%.2f; hold for %lums\n",
-              (double)state->position.z,
-              (double)state->velocity.z,
-              (unsigned long)TINYMPC_TAKEOFF_SETTLE_MS);
-        } else if (T2M(tick - takeoff_settle_start_tick) >=
-                   TINYMPC_TAKEOFF_SETTLE_MS) {
-          trajectory_origin_x = state->position.x;
-          trajectory_origin_y = state->position.y;
-          tracking_start_pending = true;
-          takeoff_settle_active = false;
-          obs_start_time = 0;
-          DEBUG_PRINT(
-              "TAKEOFF COMPLETE: t=%lums z=%.2f vz=%.2f; trajectory queued origin=(%.2f,%.2f)\n",
-              (unsigned long)takeoff_elapsed_ms,
-              (double)state->position.z,
-              (double)state->velocity.z,
-              (double)trajectory_origin_x,
-              (double)trajectory_origin_y);
-        }
-      } else if (!tracking_start_pending) {
-        // Both conditions must remain true continuously for the full hold.
-        takeoff_settle_active = false;
-        takeoff_settle_start_tick = 0;
+          takeoff_elapsed_ms >= TINYMPC_TAKEOFF_TRAJECTORY_START_MS) {
+        trajectory_origin_x = state->position.x;
+        trajectory_origin_y = state->position.y;
+        trajectory_origin_z = state->position.z;
+        tracking_start_pending = true;
+        obs_start_time = 0;
+        DEBUG_PRINT(
+            "TAKEOFF COMPLETE: t=%lums z=%.2f vz=%.2f; trajectory queued origin=(%.2f,%.2f,%.2f)\n",
+            (unsigned long)takeoff_elapsed_ms,
+            (double)state->position.z,
+            (double)state->velocity.z,
+            (double)trajectory_origin_x,
+            (double)trajectory_origin_y,
+            (double)trajectory_origin_z);
       }
 
       if (!tracking_start_pending &&

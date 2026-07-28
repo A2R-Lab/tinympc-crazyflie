@@ -1,0 +1,63 @@
+Forced-2-second Figure-8 under opposing vertical wind: current comparison
+==========================================================================
+
+Protocol
+--------
+
+- Reference altitude: 0.70 m
+- Figure-8: two passes, 24.106 s
+- Forced trajectory start: 2.0 s after OOT takeoff begins
+- Wind: one fan upward and one fan downward
+- Upward fan: approximately 30 degrees to the drone's left
+- Performance window: trajectory t >= 3 s through TRAJ DONE
+
+Mission outcome
+---------------
+
+Method             Outcome
+Embedded LIMO      SUCCESS: completed trajectory and controlled landing
+Nominal TinyMPC    SUCCESS: completed trajectory and controlled landing
+Posthoc LIMO       PHYSICAL FAN COLLISION at about trajectory t=1.4 s
+
+The posthoc collision occurred before the primary analysis window and is
+geometry-confounded. It is retained as a mission outcome, but it does not
+provide a valid aerodynamic-only primary-window RMSE comparison.
+
+Valid completed-run performance
+-------------------------------
+
+Metric                              Embedded LIMO    Nominal      Winner / reduction
+Boundary-relative XY RMSE           0.9413 m         0.8187 m     Nominal, 13.0%
+Peak boundary-relative XY error     1.6304 m         1.4239 m     Nominal, 12.7%
+Lateral tracking RMSE               0.5917 m         0.5038 m     Nominal, 14.9%
+Peak lateral tracking error         0.8816 m         0.7667 m     Nominal, 13.0%
+Z tracking RMSE                     0.0167 m         0.0239 m     Embedded, 30.1%
+Maximum absolute Z error            0.0410 m         0.0670 m     Embedded, 38.8%
+Tilt RMSE                           7.728 deg        11.302 deg   Embedded, 31.6%
+Peak tilt                           14.521 deg       22.016 deg   Embedded, 34.0%
+
+Timing
+------
+
+Metric                              Embedded LIMO    Nominal
+Median complete control step        34.924 ms        22.584 ms
+Exact cumulative maximum            42.977 ms        30.705 ms
+Worst 50 ms deadline use            85.95%           61.41%
+Deadline overruns                   0                0
+
+Interpretation
+--------------
+
+In this first completed pair, nominal tracks the aggressive lateral path more
+closely, while embedded LIMO substantially reduces vertical error and vehicle
+tilt. Embedded LIMO's lower tilt is the strongest effect in this run: 31.6%
+lower tilt RMSE and 34.0% lower peak tilt. The result is not yet a complete
+four-arm comparison; MPC-CBF has not been added, and the posthoc arm needs a
+collision-free matched run for primary-window metrics.
+
+Source files
+------------
+
+- figure8_070_forced2s_opposing_vertical_wind_embedded_run1.txt
+- figure8_070_forced2s_opposing_vertical_wind_nominal_run1.txt
+- figure8_070_forced2s_opposing_vertical_wind_posthoc_fan_collision_run1.txt

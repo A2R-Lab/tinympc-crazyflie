@@ -1,0 +1,58 @@
+Figure-8 0.70 m forced-2-second opposing-wind posthoc collision run 1
+============================================================================
+
+Protocol
+--------
+
+- Method: posthoc LIMO, mode 2
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state: z=0.15 m, vz=+0.13 m/s
+- Wind: one upward fan and one downward fan
+- Upward-blowing fan: approximately 30 degrees to the drone's left
+
+Outcome
+-------
+
+- FAILURE: user reported that the Crazyflie physically hit a fan.
+- The supervisor locked after the t=1.392 s EXP sample and before the
+  t=1.486 s sample.
+- The last uncontaminated printed index is 28/482, approximately 5.8% of the
+  planned trajectory.
+- All samples after "SUP: Locked, reboot required" are collision/lock
+  contaminated and must not be used for performance metrics.
+- The standard trajectory-t=3-s analysis boundary was never reached before
+  collision. This run therefore has no valid primary-window RMSE table.
+
+Pre-collision diagnostics: trajectory start through last sample before lock
+----------------------------------------------------------------------------
+
+Metric                         Value
+Lateral tracking RMSE          0.5589 m
+Peak lateral tracking error    0.7864 m
+Z tracking RMSE                0.0143 m
+Maximum absolute Z error       0.0240 m
+Tilt RMSE                      14.355 deg
+Peak tilt                      26.931 deg
+Median complete control step   34.065 ms
+Exact maximum control step     41.207 ms
+Deadline overruns              0
+
+Last uncontaminated printed state:
+
+- Trajectory time: 1.392 s
+- Position: (0.258, 0.719, 0.153) m
+- Lateral tracking error: 0.4732 m
+- Tilt: 26.931 deg
+
+Posthoc mechanism before collision
+----------------------------------
+
+- Projection attempts: 28
+- Infeasible projections: 26/28 = 92.9%
+- Feasible projections: 2/28 = 7.1%
+
+Raw log
+-------
+
+- figure8_070_forced2s_opposing_vertical_wind_posthoc_fan_collision_run1.txt
