@@ -1,0 +1,65 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+EMBEDDED LIMO RUN 3
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Embedded LIMO (mode 3)
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Landing outcome:        Controlled landing complete
+Deadline overruns:      0
+
+Primary metrics
+---------------
+
+Samples:                   211
+Lateral RMSE:              0.5786 m
+Peak lateral error:        0.8708 m
+Z RMSE:                    0.00843 m
+Peak absolute Z error:     0.0260 m
+Tilt RMSE:                 7.684 deg
+Peak tilt:                 12.288 deg
+
+Learned mechanism
+-----------------
+
+First-stage active:         211/211 samples
+Active horizon stages:      3/3
+Final ADMM intersections:   631/633 logged active rows
+Quantized authority index:  15/15 throughout
+Quantized Q index:          3/3 throughout
+Relative h range:           -0.020 to +0.026
+
+On-target timing
+----------------
+
+Median logged total:        34.470 ms
+P99 sampled full step:      40.530 ms
+Exact cumulative maximum:   42.099 ms
+Worst 50 ms deadline use:   84.20%
+Deadline overruns:          0
+
+Embedded LIMO three-run mean
+----------------------------
+
+Metric                       n=3 mean
+Lateral RMSE, m              0.5854
+Peak lateral error, m        0.8826
+Z RMSE, m                    0.00879
+Peak absolute Z error, m     0.0260
+Tilt RMSE, deg               7.649
+Peak tilt, deg               13.483
+Median logged total, ms      35.666
+P99 sampled full step, ms    43.343
+Mean exact run maximum, ms   44.710
+Worst observed step, ms      47.701
+Deadline overruns            0 across all three flights
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_embedded_run3.txt

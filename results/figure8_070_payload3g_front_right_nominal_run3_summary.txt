@@ -1,0 +1,55 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+NOMINAL TINYMPC RUN 3
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Nominal TinyMPC (mode 0)
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Landing outcome:        Controlled landing complete
+Deadline overruns:      0
+
+Primary metrics
+---------------
+
+Samples:                   211, t = 3.078 to 24.102 s
+Lateral RMSE:              0.4684 m
+Peak lateral error:        0.7500 m
+Z RMSE:                    0.01545 m
+Peak absolute Z error:     0.0410 m
+Tilt RMSE:                 11.437 deg
+Peak tilt:                 19.876 deg
+
+On-target timing
+----------------
+
+Median logged total:       26.036 ms
+P99 sampled full step:     30.950 ms
+Exact cumulative maximum:  33.661 ms
+Worst 50 ms deadline use:  67.32%
+Deadline overruns:         0
+
+Nominal three-run mean
+----------------------
+
+Metric                       n=3 mean
+Lateral RMSE, m              0.4764
+Peak lateral error, m        0.7857
+Z RMSE, m                    0.01599
+Peak absolute Z error, m     0.0397
+Tilt RMSE, deg               11.260
+Peak tilt, deg               19.403
+Median logged total, ms      24.735
+P99 sampled full step, ms    29.735
+Mean exact run maximum, ms   32.168
+Worst observed step, ms      33.661
+Deadline overruns            0 across all three flights
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_nominal_run3.txt

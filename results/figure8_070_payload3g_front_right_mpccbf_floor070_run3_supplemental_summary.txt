@@ -1,0 +1,65 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+ALWAYS-ON MPC-CBF, 0.70 M BOUNDARY, SUPPLEMENTAL RUN 3
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Standalone analytic MPC-CBF (mode 1)
+Barrier:                z - 0.20*max(-vz, 0) - 0.70
+Safe set:               h >= 0
+Extra margin:           0
+Constraint definition:  Always installed, all 20 prediction stages
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Deadline overruns:      0
+Landing evidence:       Landing requested; capture ends before
+                        LANDING COMPLETE
+
+Primary metrics
+---------------
+
+Samples:                   211, t = 3.077 to 24.099 s
+Lateral RMSE:              0.4815 m
+Peak lateral error:        0.8242 m
+Z RMSE:                    0.01584 m
+Peak absolute Z error:     0.0380 m
+Tilt RMSE:                 11.293 deg
+Peak tilt:                 19.947 deg
+
+Constraint audit
+----------------
+
+First-stage row installed: 211/211 samples
+Rows installed per solve:  20/20
+Installed logged rows:     4,220
+Projected rows in final
+ADMM slack update:         4,198/4,220 = 99.5%
+Projection intersections
+per logged solve:          18, 19, or 20
+Relative h range:          -0.032 to +0.037
+Actual Z range:            0.669 to 0.738 m
+Commanded Z range:         0.699 to 0.714 m
+
+On-target timing
+----------------
+
+Median logged total:       24.623 ms
+P99 sampled full step:     29.559 ms
+Exact cumulative maximum:  31.012 ms
+Worst 50 ms deadline use:  62.02%
+Deadline overruns:         0
+
+Reporting status
+----------------
+
+This is a valid supplemental replicate. The balanced four-method primary
+table remains the first two flights per method (n=2 each). Do not silently
+change only the MPC-CBF arm to n=3 in that primary table.
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_mpccbf_floor070_run3_supplemental.txt

@@ -1,0 +1,63 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+ALWAYS-ON MPC-CBF, 0.70 M BOUNDARY, RUN 2
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Standalone analytic MPC-CBF (mode 1)
+Barrier:                z - 0.20*max(-vz, 0) - 0.70
+Safe set:               h >= 0
+Extra margin:           0
+Constraint definition:  Always installed, all 20 prediction stages
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Landing outcome:        Controlled landing complete
+Deadline overruns:      0
+
+Boot signature:
+
+  MPC-CBF analytic LTV rows: always_on=1 horizon=20 gate=off
+  floor_z=0.70 margin=0
+
+Primary metrics
+---------------
+
+Samples:                   211, t = 3.081 to 24.091 s
+Lateral RMSE:              0.4739 m
+Peak lateral error:        0.7420 m
+Z RMSE:                    0.01579 m
+Peak absolute Z error:     0.0440 m
+Tilt RMSE:                 11.442 deg
+Peak tilt:                 18.912 deg
+
+Constraint audit
+----------------
+
+First-stage row installed: 211/211 samples
+Rows installed per solve:  20/20
+Installed logged rows:     4,220
+Projected rows in final
+ADMM slack update:         4,189/4,220 = 99.3%
+Projection intersections
+per logged solve:          19 or 20
+Relative h range:          -0.034 to +0.042
+Raw structural h range:    0.665 to 0.742
+Actual Z range:            0.673 to 0.744 m
+Commanded Z range:         0.699 to 0.715 m
+
+On-target timing
+----------------
+
+Median logged total:       26.208 ms
+P99 sampled full step:     32.349 ms
+Exact cumulative maximum:  34.772 ms
+Worst 50 ms deadline use:  69.54%
+Deadline overruns:         0
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_mpccbf_floor070_run2.txt

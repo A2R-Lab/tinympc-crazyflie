@@ -1,0 +1,75 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+POSTHOC LIMO RUN 3
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Posthoc LIMO (mode 2)
+Fallback:               Infeasible projection returns nominal command
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Landing outcome:        Controlled landing complete
+Deadline overruns:      0
+
+Primary metrics
+---------------
+
+Samples:                   211
+Lateral RMSE:              0.4918 m
+Peak lateral error:        0.7770 m
+Z RMSE:                    0.03897 m
+Peak absolute Z error:     0.0930 m
+Tilt RMSE:                 10.551 deg
+Peak tilt:                 17.379 deg
+
+Posthoc mechanism
+-----------------
+
+Whole-trajectory attempts: 371
+Infeasible projections:    235/371 = 63.3%
+Feasible interventions:    136
+
+Primary-window samples:
+
+  Active samples:          170/211
+  Infeasible samples:      110/170 = 64.7%
+  Feasible samples:        60
+
+On-target timing
+----------------
+
+Median logged total:       38.564 ms
+P99 sampled full step:     45.161 ms
+Exact cumulative maximum:  47.701 ms
+Worst 50 ms deadline use:  95.40%
+Deadline overruns:         0
+
+Posthoc LIMO three-run mean
+---------------------------
+
+Metric                       n=3 mean
+Lateral RMSE, m              0.4957
+Peak lateral error, m        0.7938
+Z RMSE, m                    0.03920
+Peak absolute Z error, m     0.0943
+Tilt RMSE, deg               10.443
+Peak tilt, deg               17.377
+Median logged total, ms      35.756
+P99 sampled full step, ms    41.706
+Mean exact run maximum, ms   43.556
+Worst observed step, ms      47.701
+Deadline overruns            0 across all three flights
+
+Pooled posthoc mechanism, three flights:
+
+  Projection attempts:       1,122
+  Infeasible projections:    691/1,122 = 61.6%
+  Feasible interventions:    431
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_posthoc_run3.txt

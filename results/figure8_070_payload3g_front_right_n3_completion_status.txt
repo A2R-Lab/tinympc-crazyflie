@@ -1,0 +1,15 @@
+FIGURE-EIGHT 0.70 M, 3 G FRONT-RIGHT PAYLOAD: N=3 COMPLETION STATUS
+==================================================================
+
+Completed:
+
+  MPC-CBF:        3/3
+  Embedded LIMO:  3/3
+  Posthoc LIMO:   3/3
+  Nominal:        3/3
+
+Dataset complete. Use:
+
+  figure8_070_payload3g_front_right_final_n3_and_original_run1_comparison.txt
+
+for the final balanced four-method table.

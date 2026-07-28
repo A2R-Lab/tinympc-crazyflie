@@ -1,0 +1,86 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+ALWAYS-ON MPC-CBF, 0.70 M BOUNDARY, RUN 1
+=======================================================================
+
+Status and condition
+--------------------
+
+Method:                 Standalone analytic MPC-CBF (mode 1)
+Barrier:                z - 0.20*max(-vz, 0) - 0.70
+Safe set:               h >= 0
+Extra margin:           0
+Constraint definition:  Always installed, all 20 prediction stages
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Trajectory outcome:     Completed, 482/482 controller steps
+Deadline overruns:      0
+Landing evidence:       Landing requested; capture ends before
+                        LANDING COMPLETE
+
+Boot signature:
+
+  MPC-CBF analytic LTV rows: always_on=1 horizon=20 gate=off
+  floor_z=0.70 margin=0
+
+Primary metrics
+---------------
+
+Samples:                   211, t = 3.075 to 24.093 s
+Lateral RMSE:              0.4823 m
+Peak lateral error:        0.7831 m
+Z RMSE:                    0.01434 m
+Peak absolute Z error:     0.0380 m
+Tilt RMSE:                 11.054 deg
+Peak tilt:                 18.670 deg
+
+Constraint audit
+----------------
+
+First-stage row installed: 211/211 samples
+Rows installed per solve:  20/20
+Installed logged rows:     4,220
+Projected rows in final
+ADMM slack update:         4,192/4,220 = 99.3%
+Projection intersections
+per logged solve:          19 or 20
+Relative h range:          -0.023 to +0.038
+Raw structural h range:    0.676 to 0.738
+Actual Z range:            0.678 to 0.738 m
+Commanded Z range:         0.699 to 0.710 m
+
+The 0.70 m boundary is actively shaping the optimization. This is
+mechanistically different from the earlier floor_z=0 pair, whose installed
+rows produced no half-space projection intersections.
+
+On-target timing
+----------------
+
+Median logged total:       27.050 ms
+P99 sampled full step:     32.473 ms
+Exact cumulative maximum:  34.579 ms
+Worst 50 ms deadline use:  69.16%
+Deadline overruns:         0
+
+Comparison with superseded floor_z=0 two-run mean
+--------------------------------------------------
+
+Metric                       floor_z=0 mean   floor_z=0.70 run 1
+Lateral RMSE, m              0.4742           0.4823
+Peak lateral error, m        0.7838           0.7831
+Z RMSE, m                    0.01521          0.01434
+Peak absolute Z error, m     0.0375           0.0380
+Tilt RMSE, deg               11.196           11.054
+Peak tilt, deg               19.299           18.670
+Median logged total, ms      26.590           27.050
+
+The aggregate metrics are similar, but that does not make the configurations
+poolable: final-iteration half-space projection intersections changed from 0%
+to 99.3%. The new run improves Z RMSE by 5.7% and peak tilt by 3.3% relative
+to the old two-run mean, while lateral RMSE is 1.7% higher. A second
+floor_z=0.70 run is required for the final balanced four-method table.
+
+Raw log
+-------
+
+  figure8_070_payload3g_front_right_mpccbf_floor070_run1.txt

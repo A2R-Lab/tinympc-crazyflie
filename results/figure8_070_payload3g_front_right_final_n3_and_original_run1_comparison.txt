@@ -1,0 +1,130 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD:
+FINAL N=3 COMPARISON AND ORIGINAL RUN-1 THREE-METHOD TABLE
+============================================================================
+
+Shared experimental condition
+-----------------------------
+
+Payload:                3 g paper on front-right propeller guard
+External fan:           None
+Trajectory:             traj_fig8_12.h, two laps, approximately 24.1 s
+Primary window:         TRAJ START + 3 s through TRAJ DONE
+Metric aggregation:     Compute each metric per flight, then average flights
+
+TABLE 1: FINAL BALANCED FOUR-METHOD AVERAGE, N=3 FLIGHTS EACH
+=======================================================================
+
+Metric                    Nominal n=3  Embedded n=3  Posthoc n=3  MPC-CBF n=3
+Lateral RMSE, m           0.4764       0.5854        0.4957       0.4792
+Peak lateral error, m     0.7857       0.8826        0.7938       0.7831
+Z RMSE, m                 0.01599      0.00879       0.03920      0.01532
+Peak absolute Z error, m  0.0397       0.0260        0.0943       0.0400
+Tilt RMSE, deg            11.260       7.649         10.443       11.263
+Peak tilt, deg            19.403       13.483        17.377       19.176
+
+Winner summary:
+
+  Lateral RMSE:
+    Nominal wins at 0.4764 m, 0.6% below MPC-CBF.
+
+  Peak lateral error:
+    MPC-CBF wins at 0.7831 m, 0.3% below nominal.
+
+  Z RMSE:
+    Embedded LIMO wins at 0.00879 m, 42.6% below MPC-CBF.
+
+  Peak absolute Z error:
+    Embedded LIMO wins at 0.0260 m, 34.5% below nominal.
+
+  Tilt RMSE:
+    Embedded LIMO wins at 7.649 deg, 26.8% below posthoc.
+
+  Peak tilt:
+    Embedded LIMO wins at 13.483 deg, 22.4% below posthoc.
+
+Embedded LIMO relative to each baseline:
+
+Metric                    vs Nominal    vs Posthoc    vs MPC-CBF
+Z RMSE improvement        45.0%         77.6%         42.6%
+Peak Z improvement        34.5%         72.4%         35.0%
+Tilt RMSE improvement     32.1%         26.8%         32.1%
+Peak tilt improvement     30.5%         22.4%         29.7%
+Lateral RMSE degradation  22.9%         18.1%         22.2%
+Peak lateral degradation  12.3%         11.2%         12.7%
+
+Timing, mean of per-flight statistics:
+
+Metric                    Nominal n=3  Embedded n=3  Posthoc n=3  MPC-CBF n=3
+Median logged total, ms   24.735       35.666        35.756       25.960
+P99 sampled full step, ms 29.735       43.343        41.706       31.460
+Mean exact run max, ms    32.168       44.710        43.556       33.454
+Worst observed step, ms   33.661       47.701        47.701       34.772
+Deadline overruns         0            0             0            0
+
+Nominal has the lowest median compute, 4.7% below MPC-CBF. All 12 flights
+met the 50 ms deadline.
+
+Mechanism audit, pooled across three flights:
+
+  Posthoc attempts:                 1,122
+  Posthoc infeasible:               691/1,122 = 61.6%
+  Posthoc feasible interventions:   431
+
+  MPC-CBF installed logged rows:    12,660
+  MPC-CBF projection intersections:
+                                      12,579/12,660 = 99.4%
+
+TABLE 2: ORIGINAL THREE-METHOD RUN-1 COMPARISON
+=======================================================================
+
+These are the first matched flights collected earlier, before MPC-CBF was
+added to this payload campaign. Each column is one flight, not a mean.
+
+Metric                    Nominal run 1  Embedded run 1  Posthoc run 1
+Lateral RMSE, m           0.4847         0.6111          0.5184
+Peak lateral error, m     0.8060         0.9135          0.8249
+Z RMSE, m                 0.01645        0.00889         0.03849
+Peak absolute Z error, m  0.0420         0.0250          0.0960
+Tilt RMSE, deg            11.119         7.465           10.452
+Peak tilt, deg            18.674         14.456          16.948
+
+Timing:
+
+Metric                    Nominal run 1  Embedded run 1  Posthoc run 1
+Median logged total, ms   23.038         35.138          34.626
+P99 sampled full step, ms 27.754         43.905          40.227
+Exact run maximum, ms     29.564         44.331          41.229
+Deadline overruns         0              0               0
+
+Original run-1 mechanism:
+
+  Posthoc projection attempts:      383
+  Posthoc infeasible projections:   240/383 = 62.7%
+
+The original first-flight result and the final three-flight averages have the
+same qualitative ordering: embedded LIMO sacrifices lateral tracking but
+provides the best vertical and attitude regulation; posthoc has substantially
+worse vertical regulation; nominal is cheapest and strongest laterally.
+
+Raw-run membership
+------------------
+
+Nominal:
+  figure8_070_payload3g_front_right_nominal_run1.txt
+  figure8_070_payload3g_front_right_nominal_run2.txt
+  figure8_070_payload3g_front_right_nominal_run3.txt
+
+Embedded LIMO:
+  figure8_070_payload3g_front_right_embedded_run1.txt
+  figure8_070_payload3g_front_right_embedded_run2.txt
+  figure8_070_payload3g_front_right_embedded_run3.txt
+
+Posthoc LIMO:
+  figure8_070_payload3g_front_right_posthoc_run1.txt
+  figure8_070_payload3g_front_right_posthoc_run2.txt
+  figure8_070_payload3g_front_right_posthoc_run3.txt
+
+MPC-CBF:
+  figure8_070_payload3g_front_right_mpccbf_floor070_run1.txt
+  figure8_070_payload3g_front_right_mpccbf_floor070_run2.txt
+  figure8_070_payload3g_front_right_mpccbf_floor070_run3_supplemental.txt

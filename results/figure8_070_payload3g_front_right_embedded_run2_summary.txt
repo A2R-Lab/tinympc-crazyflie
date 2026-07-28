@@ -1,0 +1,87 @@
+FIGURE-EIGHT AT 0.70 M WITH 3 G FRONT-RIGHT PAYLOAD: EMBEDDED LIMO RUN 2
+============================================================================
+
+Status
+------
+
+Method:                 Embedded LIMO (mode 3)
+Maneuver:               Two-lap Figure-8 (maneuver 4)
+Payload:                3 g paper, front-right propeller guard
+External fan:           None
+Trajectory outcome:     Completed (482/482 control steps)
+Landing evidence:       Landing requested; the supplied capture ends before
+                        LANDING COMPLETE
+Estimator/supervisor:   No state-out-of-bounds or supervisor-lock message
+Deadline overruns:      0
+
+This belongs to the existing calm-air aerodynamic-payload campaign. The paper
+is a coupled added-mass, center-of-mass, inertia, propeller-inflow, and
+aerodynamic-drag disturbance; it is not a no-payload fan trial.
+
+Configuration
+-------------
+
+Reference altitude:     0.70 m
+Trajectory source:      traj_fig8_12.h
+Laps / duration:        2 / 24.11 s measured
+MPC/model rate:         20 Hz
+ADMM iterations:        5
+MPC-to-PID bridge:      x10 (500 ms)
+Shared Z guard:         [reference Z, reference Z + 0.20 m]
+Authority:              1.000 at every retained primary-window sample
+
+Primary window and definitions
+------------------------------
+
+Window: TRAJ START + 3 s through TRAJ DONE (landing excluded)
+Samples: 211 decimated EXP rows, t = 3.089 to 24.111 s
+
+Lateral RMSE = sqrt(mean((x - x_ref)^2 + (y - y_ref)^2))
+Z RMSE       = sqrt(mean((z - z_ref)^2))
+Tilt         = sqrt(roll^2 + pitch^2)
+
+Run-2 results
+-------------
+
+Lateral RMSE:             0.5665 m
+Peak lateral error:       0.8635 m
+Z RMSE:                   0.00904 m
+Peak absolute Z error:    0.0270 m
+Tilt RMSE:                7.798 deg
+Peak tilt:                13.704 deg
+
+On-target timing
+----------------
+
+Median logged total:      37.389 ms
+P99 sampled full step:    45.594 ms
+Exact cumulative maximum: 47.701 ms
+Worst 50 ms deadline use: 95.40%
+Deadline overruns:        0
+
+Run-1 versus run-2 embedded repeatability
+-----------------------------------------
+
+Metric                     Run 1       Run 2       Two-run mean
+Lateral RMSE, m            0.6111      0.5665      0.5888
+Peak lateral error, m      0.9135      0.8635      0.8885
+Z RMSE, m                  0.00889     0.00904     0.00897
+Peak absolute Z error, m   0.0250      0.0270      0.0260
+Tilt RMSE, deg             7.465       7.798       7.631
+Peak tilt, deg             14.456      13.704      14.080
+
+Relative to embedded run 1, run 2 has 7.3% lower lateral RMSE, 5.5% lower
+peak lateral error, 1.6% higher Z RMSE, 8.0% higher peak Z error, 4.5% higher
+tilt RMSE, and 5.2% lower peak tilt. This is a repeat, not yet a matched
+run-2 comparison: do not recompute a three-method campaign average until the
+corresponding nominal, MPC-CBF, and posthoc run-2 flights are recorded under
+the same physical condition.
+
+Files
+-----
+
+Raw log:
+  figure8_070_payload3g_front_right_embedded_run2.txt
+
+Matched run-1 comparison:
+  figure8_070_payload3g_front_right_three_way_comparison.txt

@@ -1,7 +1,7 @@
 CONSOLIDATED HARDWARE RESULTS
 =============================
 
-Updated: 2026-07-27
+Updated: 2026-07-28
 Branch/configuration: LIMO hardware campaign
 
 This file consolidates the five hardware campaigns selected for reporting:
@@ -10,8 +10,8 @@ This file consolidates the five hardware campaigns selected for reporting:
   2. Figure-8 under downward airflow: three matched embedded/posthoc trials,
      with three exploratory nominal reference trials
   3. Figure-8 under upward airflow: two matched embedded/posthoc trials
-  4. Figure-8 with a 3 g asymmetric aerodynamic payload, no fan: one matched
-     nominal/embedded/posthoc triplet
+  4. Figure-8 with a 3 g asymmetric aerodynamic payload, no fan: three
+     matched nominal/embedded/posthoc/MPC-CBF trials
   5. Figure-8 with the same 3 g payload plus wind: one matched
      nominal/embedded/posthoc triplet
 
@@ -217,51 +217,92 @@ Condition
   Wind: no external fan reported
   Reference altitude: 0.70 m
   Trajectory: traj_fig8_12.h repeated twice, about 24.1 s / six circuits
-  Arms: one matched nominal/embedded/posthoc triplet
-  Completion: 1/1 for every arm
+  Arms: nominal, embedded LIMO, posthoc LIMO, aligned analytic MPC-CBF
+  Completion: 3/3 for every arm; 12/12 trajectories completed
+  MPC-CBF safe boundary: z - 0.20*max(-vz, 0) - 0.70 >= 0
 
 This is not a centered mass-only test. The paper introduces added mass,
 off-center center of mass, inertia mismatch, aerodynamic drag/torque, local
 rotor/guard inflow interference, and possible flexible flutter. No
 payload-specific model or controller compensation was used.
 
-Boundary-refreshed result: single triplet
------------------------------------------
+Absolute trajectory-tracking result: mean of three trials
+---------------------------------------------------------
 
-These values were recomputed directly from the raw EXP rows for this
-consolidation using the same TRAJ START + 3 s boundary rule; no new flight
-was required.
+Each metric is computed separately per flight over TRAJ START + 3 s through
+TRAJ DONE, then the three flight-level metrics are averaged.
 
-Metric                                  Nominal        Embedded       Posthoc        Best
-Boundary RMSE, m                        0.7902         0.9177         0.9152         Nominal 13.7%
-Peak boundary error, m                  1.3738         1.5711         1.5183         Nominal 9.5%
-Z error-change RMSE, m                  0.0171         0.0115         0.0240         Embedded 32.7%
-Peak Z-error change magnitude, m        0.0440         0.0350         0.0760         Embedded 20.5%
-Tilt-change RMSE, deg                   13.696         9.188          12.151         Embedded 24.4%
-Peak tilt-vector change, deg            24.374         19.116         22.655         Embedded 15.6%
+Metric                    Nominal      Embedded     Posthoc      MPC-CBF
+Lateral RMSE, m           0.4764       0.5854       0.4957       0.4792
+Peak lateral error, m     0.7857       0.8826       0.7938       0.7831
+Z RMSE, m                 0.01599      0.00879      0.03920      0.01532
+Peak absolute Z error, m  0.0397       0.0260       0.0943       0.0400
+Tilt RMSE, deg            11.260       7.649        10.443       11.263
+Peak tilt, deg            19.403       13.483       17.377       19.176
 
-The percentage in the Best column is relative to the second-best arm.
+Metric winners:
 
-Computation and posthoc mechanism
----------------------------------
+  Nominal has the lowest lateral RMSE, 0.6% below MPC-CBF.
+  MPC-CBF has the lowest peak lateral error, 0.3% below nominal.
+  Embedded has the lowest Z RMSE, 42.6% below second-best MPC-CBF.
+  Embedded has the lowest peak Z error, 34.5% below second-best nominal.
+  Embedded has the lowest tilt RMSE, 26.8% below second-best posthoc.
+  Embedded has the lowest peak tilt, 22.4% below second-best posthoc.
 
-Metric                                  Nominal        Embedded       Posthoc
-Median total step, ms                   23.038         35.138         34.626
-P99 sampled step, ms                    27.754         43.905         40.227
-Exact cumulative maximum, ms            29.564         44.331         41.229
-Worst 50 ms deadline use                59.13%         88.66%         82.46%
-Deadline overruns                       0              0              0
-Whole-flight posthoc attempts           --             --             383
-Whole-flight posthoc infeasible         --             --             240 / 383 = 62.7%
-Primary-window active/infeasible        --             --             176 active / 113 infeasible
+Embedded LIMO relative to each baseline:
 
-Interpretation
---------------
+Metric                    vs Nominal    vs Posthoc    vs MPC-CBF
+Z RMSE improvement        45.0%         77.6%         42.6%
+Peak Z improvement        34.5%         72.4%         35.0%
+Tilt RMSE improvement     32.1%         26.8%         32.1%
+Peak tilt improvement     30.5%         22.4%         29.7%
+Lateral RMSE degradation  22.9%         18.1%         22.2%
+Peak lateral degradation  12.3%         11.2%         12.7%
 
-Embedded LIMO gives up boundary-relative XY performance but produces the
-lowest boundary-relative vertical and attitude excursions under the
-asymmetric plant mismatch. This is one triplet, so it is a
-mechanism/feasibility result, not an estimate of population mean or variance.
+Computation and mechanism: mean of three trials
+------------------------------------------------
+
+Metric                    Nominal      Embedded     Posthoc      MPC-CBF
+Median logged total, ms   24.735       35.666       35.756       25.960
+P99 sampled full step, ms 29.735       43.343       41.706       31.460
+Mean exact run max, ms    32.168       44.710       43.556       33.454
+Worst observed step, ms   33.661       47.701       47.701       34.772
+Deadline overruns         0             0            0            0
+
+Posthoc pooled mechanism:
+
+  Projection attempts:             1,122
+  Infeasible projections:          691 / 1,122 = 61.6%
+  Feasible interventions:          431
+
+Aligned MPC-CBF pooled mechanism:
+
+  Installed logged rows:           12,660
+  Projection intersections:        12,579 / 12,660 = 99.4%
+
+Original first-run three-method comparison
+------------------------------------------
+
+The first matched nominal/embedded/posthoc flights collected earlier are
+retained below for provenance. These are individual flights, not averages;
+MPC-CBF had not yet been added to the payload campaign.
+
+Metric                    Nominal      Embedded     Posthoc
+Lateral RMSE, m           0.4847       0.6111       0.5184
+Peak lateral error, m     0.8060       0.9135       0.8249
+Z RMSE, m                 0.01645      0.00889      0.03849
+Peak absolute Z error, m  0.0420       0.0250       0.0960
+Tilt RMSE, deg            11.119       7.465        10.452
+Peak tilt, deg            18.674       14.456       16.948
+Median logged total, ms   23.038       35.138       34.626
+P99 sampled full step, ms 27.754       43.905       40.227
+Exact run maximum, ms     29.564       44.331       41.229
+Deadline overruns         0             0            0
+
+The original first-triplet result and final three-trial averages have the
+same qualitative ordering: embedded sacrifices lateral tracking but provides
+the best vertical and attitude regulation. Posthoc has substantially worse
+vertical regulation, while nominal is cheapest and strongest laterally.
 
 
 5. 3 G ASYMMETRIC AERODYNAMIC PAYLOAD PLUS WIND
@@ -335,7 +376,7 @@ CROSS-CAMPAIGN SUMMARY
 
   Posthoc mechanism:
     Whole-flight infeasibility is high in every campaign where the projection
-    is exercised: 70.8% downward, 66.9% upward, 62.7% payload, and 64.1%
+    is exercised: 70.8% downward, 66.9% upward, 61.6% payload, and 64.1%
     payload plus wind. The corrected infeasible path returns the nominal
     command, so observed posthoc degradation comes from feasible one-step
     interventions, not a broken fallback.
@@ -347,9 +388,30 @@ CROSS-CAMPAIGN SUMMARY
 
   Statistical status:
     Hover has n=5 matched pairs; downward Figure-8 has n=3 matched pairs;
-    upward Figure-8 has n=2 matched pairs. The payload and payload-plus-wind
-    campaigns each have only one matched triplet and are mechanism/feasibility
-    demonstrations until repeated.
+    upward Figure-8 has n=2 matched pairs. The no-fan payload campaign has
+    n=3 matched four-method trials. The payload-plus-wind campaign has only
+    one matched triplet and remains a mechanism/feasibility demonstration
+    until repeated.
+
+
+TWO-FAN MISSION-FAILURE PILOT
+=============================
+
+In a forced-3-second-start two-fan pilot, nominal FAILED: it completed roughly
+20% of the planned trajectory and then crashed into the stool supporting one
+fan. SUP: Locked appears after the EXP sample at trajectory t=5.582 s.
+Embedded LIMO completed the full 24.118 s/two-lap trajectory and requested
+landing. Posthoc LIMO completed the full 24.102 s/two-lap trajectory and
+completed controlled landing.
+
+Post-lock EXP samples are invalid. A matched diagnostic window shows embedded
+materially lower Z and attitude excursions but higher lateral tracking RMSE
+than nominal before its failure. Between the two completed arms, posthoc has
+23.1% lower lateral RMSE while embedded has 44.5% lower Z RMSE, 22.7% lower
+tilt RMSE, and a 5.8% lower exact maximum step time. Posthoc projection was
+infeasible for 461/483 = 95.4% of attempts. See:
+
+  results/figure8_070_forced3s_two_fan_collision_pilot_run1.txt
 
 
 SOURCE FILES
@@ -358,14 +420,26 @@ SOURCE FILES
   results/hover_wind_L3_paired_runs.txt
   results/figure8_070_wind_comparison.txt
   results/figure8_070_wind_bottom_to_top_comparison.txt
-  results/figure8_070_payload3g_front_right_three_way_comparison.txt
+  results/figure8_070_payload3g_front_right_final_n3_and_original_run1_comparison.txt
   results/figure8_070_payload3g_front_right_wind_three_way_comparison.txt
 
-Raw payload logs used to reconstruct the boundary-refreshed tables:
+Raw no-fan payload logs used for the final n=3 table:
 
   results/figure8_070_payload3g_front_right_nominal_run1.txt
+  results/figure8_070_payload3g_front_right_nominal_run2.txt
+  results/figure8_070_payload3g_front_right_nominal_run3.txt
   results/figure8_070_payload3g_front_right_embedded_run1.txt
+  results/figure8_070_payload3g_front_right_embedded_run2.txt
+  results/figure8_070_payload3g_front_right_embedded_run3.txt
   results/figure8_070_payload3g_front_right_posthoc_run1.txt
+  results/figure8_070_payload3g_front_right_posthoc_run2.txt
+  results/figure8_070_payload3g_front_right_posthoc_run3.txt
+  results/figure8_070_payload3g_front_right_mpccbf_floor070_run1.txt
+  results/figure8_070_payload3g_front_right_mpccbf_floor070_run2.txt
+  results/figure8_070_payload3g_front_right_mpccbf_floor070_run3_supplemental.txt
+
+Raw payload-plus-wind logs:
+
   results/figure8_070_payload3g_front_right_wind_nominal_run1.txt
   results/figure8_070_payload3g_front_right_wind_embedded_run1.txt
   results/figure8_070_payload3g_front_right_wind_posthoc_run1.txt
