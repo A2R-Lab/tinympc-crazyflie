@@ -16,12 +16,12 @@ Method             Trials     Successes     Result
 Embedded LIMO      4          4             All four runs completed and are log-supported
 Posthoc LIMO       3          0             Latest multi-contact failure at trajectory 21.694 s
 Nominal TinyMPC    5          0             Latest run collided with fan at trajectory 1.375 s
-MPC-CBF            2          0             Latest supervisor lock at trajectory 3.182 s
+MPC-CBF            3          0             Latest supervisor lock at trajectory 1.178 s
 
 Evidence status
 ---------------
 
-- All four embedded LIMO runs, all three posthoc runs, and both MPC-CBF runs are supported
+- All four embedded LIMO runs, all three posthoc runs, and all three MPC-CBF runs are supported
   by saved raw logs.
 - Nominal runs 3-5 are supported by saved raw logs. The first two nominal
   failures were reported by the user, but their raw logs have not been
@@ -34,6 +34,8 @@ Evidence status
 - MPC-CBF run 2 locked at trajectory t=3.182 s. All rows printed after the
   lock are invalid. Only two valid samples reach the standard t >= 3 s window,
   so run 2 is retained as failure evidence rather than pooled RMSE evidence.
+- MPC-CBF run 3 locked at trajectory t=1.178 s and therefore never reached
+  the standard t >= 3 s window. All rows printed after the lock are invalid.
 
 Embedded completed-run primary metrics
 --------------------------------------
@@ -122,9 +124,20 @@ Run 2:
 - Only two valid samples reached t >= 3 s, so primary-window RMSE is too sparse
   to pool. Full pre-lock diagnostics are in the run-2 summary.
 
-Across both MPC-CBF attempts, mission success is 0/2. Both failures occurred
-with the analytic linear constraints continuously active and binding, and
-neither involved a control-step deadline overrun.
+Run 3:
+
+- Supervisor lock at trajectory t=1.178 s.
+- Completed 24/482 steps before lock (5.0%).
+- Last clean lateral tracking error: 2.2077 m.
+- Last clean Z tracking error: -0.230 m.
+- Last clean tilt: 77.678 deg; peak pre-lock tilt: 175.766 deg.
+- Linear constraints were active and binding on all 12 valid pre-lock samples.
+- Exact maximum complete step: 31.548 ms; deadline overruns: 0.
+- The flight failed before t=3 s, so it has no valid primary-window metrics.
+
+Across all three MPC-CBF attempts, mission success is 0/3. Every failure
+occurred with the analytic linear constraints continuously active and binding,
+and none involved a control-step deadline overrun.
 
 Nominal failure diagnostics
 ---------------------------
@@ -148,7 +161,7 @@ Current interpretation
 ----------------------
 
 Under this configuration, embedded LIMO is the only method with a completed
-mission: 4/4 versus posthoc 0/3, MPC-CBF 0/2, and nominal 0/5. Therefore
+mission: 4/4 versus posthoc 0/3, MPC-CBF 0/3, and nominal 0/5. Therefore
 embedded LIMO is the clear mission-success winner for this specific blocked-gap
 two-fan configuration. All four embedded successes are independently
 log-supported. This remains a small-sample result; nominal runs 1-2 should be
@@ -167,6 +180,7 @@ Source files
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run2.txt
+- figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_fan_collision_run5.txt
