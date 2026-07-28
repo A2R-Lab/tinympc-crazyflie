@@ -9,6 +9,7 @@
  */
 #include "gate8_link.h"
 #include "flowdeck_obstacle_link.h"
+#include "perception_map_link.h"
 
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -28,6 +29,8 @@
 #define GATE8_PAYLOAD_N  ((int)(sizeof(gate8_payload_t) + sizeof(uint32_t)))  /* payload + crc */
 #define FLOW_OBS_PAYLOAD_N ((int)(sizeof(flow_obstacle_payload_t) + sizeof(uint32_t)))
 #define FLOW_TRACK_PAYLOAD_N ((int)(sizeof(flow_track_payload_t) + sizeof(uint32_t)))
+#define PERCEPTION_MAP_PAYLOAD_N \
+  ((int)(sizeof(perception_map_payload_t) + sizeof(uint32_t)))
 #define STATE_MSG_HEADER "!STA"
 
 typedef struct __attribute__((packed)) {
@@ -131,6 +134,7 @@ static void gate8RxTask(void *arg) {
   gate8_msg_t msg;
   flow_obstacle_msg_t flow_msg;
   flow_track_msg_t track_msg;
+  perception_map_msg_t map_msg;
   uint8_t sync[GATE8_HEADER_LEN] = {0};
 
   systemWaitStart();
@@ -146,7 +150,8 @@ static void gate8RxTask(void *arg) {
     bool is_gate = false;
     bool is_flow = false;
     bool is_track = false;
-    while (!is_gate && !is_flow && !is_track) {
+    bool is_map = false;
+    while (!is_gate && !is_flow && !is_track && !is_map) {
       uint8_t b;
       if (!uart1GetDataWithDefaultTimeout(&b)) {
         const TickType_t now = xTaskGetTickCount();
@@ -163,6 +168,28 @@ static void gate8RxTask(void *arg) {
       is_gate = headerMatches(sync, GATE8_MSG_HEADER);
       is_flow = headerMatches(sync, FLOW_OBS_MSG_HEADER);
       is_track = headerMatches(sync, FLOW_TRACK_MSG_HEADER);
+      is_map = headerMatches(sync, PERCEPTION_MAP_MSG_HEADER);
+    }
+
+    if (is_map) {
+      memcpy(map_msg.header, PERCEPTION_MAP_MSG_HEADER,
+             PERCEPTION_MAP_HEADER_LEN);
+      if (!readBytes((uint8_t *)&map_msg.p, PERCEPTION_MAP_PAYLOAD_N)) {
+        perceptionMapLinkNoteBadRx();
+        continue;
+      }
+      uint32_t crc = crc32CalculateBuffer(
+          &map_msg,
+          PERCEPTION_MAP_HEADER_LEN + sizeof(perception_map_payload_t));
+      if (crc != map_msg.checksum) {
+        perceptionMapLinkNoteCrcErr();
+        continue;
+      }
+      if (perceptionMapLinkPublishFromRx(&map_msg)) {
+        g_lastValidTick = xTaskGetTickCount();
+        g_everValid = true;
+      }
+      continue;
     }
 
     if (is_track) {
@@ -237,6 +264,7 @@ static void gate8StateTxTask(void *arg) {
 void gate8LinkInit(void) {
   uart1Init(GATE8_BAUD);   /* USART3, the GAP8 deck UART */
   flowObstacleLinkInit();
+  perceptionMapLinkInit();
   g_stateTxQueue = xQueueCreateStatic(
       1, sizeof(state_msg_wire_t), g_stateTxQueueStorage,
       &g_stateTxQueueStruct);
@@ -284,18 +312,20 @@ void gate8LinkSendState(uint32_t timestamp_ms,
   }
 }
 
-bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
-                           uint32_t *out_sample) {
+bool gate8LinkGetLatestSeqTimed(float corners[GATE8_N_CORNERS],
+                               uint32_t *out_age_ms, uint32_t *out_sample,
+                               uint32_t *out_stm32_capture_tick) {
   g_queueDrops = uart1QueueDrops();
   if (g_rxTaskHandle) {
     g_stackFreeWords = uxTaskGetStackHighWaterMark(g_rxTaskHandle);
   }
-  uint32_t s1, s2, rxTick;
+  uint32_t s1, s2, rxTick, captureTick;
   do {
     s1 = g_seq;
     COMPILER_BARRIER();
     memcpy(corners, g_corners, sizeof(float) * GATE8_N_CORNERS);
     rxTick = g_rxTick;
+    captureTick = g_ts;
     COMPILER_BARRIER();
     s2 = g_seq;
   } while ((s1 & 1u) || s1 != s2);   /* retry if mid-write or changed */
@@ -306,7 +336,13 @@ bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
    * so it identifies the sample just copied (unlike g_rxOk, which is bumped after
    * the lock is released). */
   if (out_sample) *out_sample = s1 >> 1;
+  if (out_stm32_capture_tick) *out_stm32_capture_tick = captureTick;
   return true;
+}
+
+bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
+                           uint32_t *out_sample) {
+  return gate8LinkGetLatestSeqTimed(corners, out_age_ms, out_sample, 0);
 }
 
 bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms) {

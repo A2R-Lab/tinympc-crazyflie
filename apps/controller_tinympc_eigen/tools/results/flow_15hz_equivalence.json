@@ -1,155 +1,386 @@
 {
   "rate_hz": 15,
-  "cases": 18,
-  "frames": 216,
-  "compiled_source": "apps/controller_tinympc_eigen/src/flowdeck_obstacle_link.c",
-  "python_mirror": "apps/controller_tinympc_eigen/tools/sim_flow_obstacle_sectors.py",
-  "max_abs_error": 3.1076514561689805e-07,
-  "all_passed": true,
-  "results": [
+  "frame_dt_us": 66667,
+  "frames_per_case": 12,
+  "frame_corpus_sha256": "157950a423f5c56af89b0e4a661a7cb17b48a02392a0163e27ede35b327128e8",
+  "state_corpus_sha256": "c5be2fe81e6bddeaae0847af431ed4ffe28bc03db0e8d2f7dcd18bec5f232201",
+  "cases": [
     {
-      "name": "range_0p5",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.721320814773719e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 0,
+      "distance_m": 0.75,
+      "obstacle_orientation_deg": -45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "range_0p75",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.4449428842322476e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 1,
+      "distance_m": 0.75,
+      "obstacle_orientation_deg": -20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "range_1p0",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.4449428842322476e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 2,
+      "distance_m": 0.75,
+      "obstacle_orientation_deg": 0.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "range_1p5",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.614337201694127e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 3,
+      "distance_m": 0.75,
+      "obstacle_orientation_deg": 20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "range_2p0",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 2.2602637717028529e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 4,
+      "distance_m": 0.75,
+      "obstacle_orientation_deg": 45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "range_2p5",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 2.6630047500475484e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 5,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": -45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "forward_looming",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 3.1076514561689805e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 6,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": -20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "combined_yaw",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 2.7911629452148645e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 7,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": 0.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "narrow_two_sector",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.009681753760816e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 8,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": 20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "noncontiguous_foreground",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.5020930599352056e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 9,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": 45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "single_edge_foreground_far_wall",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 2.45141447585695e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 10,
+      "distance_m": 2.5,
+      "obstacle_orientation_deg": -45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "intermittent_two_of_three",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.2501593826819146e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 11,
+      "distance_m": 2.5,
+      "obstacle_orientation_deg": -20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "spatial_gate_jump",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 2.2602637717028529e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 12,
+      "distance_m": 2.5,
+      "obstacle_orientation_deg": 0.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "duplicate_controller_reads",
-      "frames": 12,
-      "comparisons": 18,
-      "max_abs_error": 1.1134405819568371e-07,
-      "mismatches": [],
-      "passed": true
+      "case_id": 13,
+      "distance_m": 2.5,
+      "obstacle_orientation_deg": 20.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "parallax_looming_disagreement",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.2276576172309817e-08,
-      "mismatches": [],
-      "passed": true
+      "case_id": 14,
+      "distance_m": 2.5,
+      "obstacle_orientation_deg": 45.0,
+      "lateral_offset_m": 0.0
     },
     {
-      "name": "stationary",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 0.0,
-      "mismatches": [],
-      "passed": true
+      "case_id": 15,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": 0.0,
+      "lateral_offset_m": -0.3
     },
     {
-      "name": "pure_yaw",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 1.0848954024034185e-07,
-      "mismatches": [],
-      "passed": true
-    },
-    {
-      "name": "low_texture",
-      "frames": 12,
-      "comparisons": 108,
-      "max_abs_error": 0.0,
-      "mismatches": [],
-      "passed": true
+      "case_id": 16,
+      "distance_m": 1.5,
+      "obstacle_orientation_deg": 0.0,
+      "lateral_offset_m": 0.3
     }
-  ]
+  ],
+  "repositories": {
+    "tinympc_crazyflie": "c12edaf5d8edf459c4a4b9e81f7fb208d45493a8",
+    "tinympc_nanocockpit": "1e5cf0dc08e306f1849f20d15875c676d7e11e22"
+  },
+  "gap8": {
+    "rows": 204,
+    "sector_values": 7344,
+    "mismatches_over_2e-5": 0,
+    "max_abs_error": {
+      "azimuth": 8.551639307796677e-08,
+      "flow_x": 5.993911744717195e-08,
+      "flow_y": 4.7185607909838723e-07,
+      "confidence": 7.498531337524206e-09
+    },
+    "diagnostic_count_mismatches": 0,
+    "examples": [],
+    "trace_case0_sector4": [
+      {
+        "frame": 0,
+        "count4": 0,
+        "compiled_c4": 0.0,
+        "python_c4": 0.0
+      },
+      {
+        "frame": 1,
+        "count4": 3,
+        "compiled_c4": 0.09375,
+        "python_c4": 0.09375
+      },
+      {
+        "frame": 2,
+        "count4": 3,
+        "compiled_c4": 0.09375,
+        "python_c4": 0.09375
+      },
+      {
+        "frame": 3,
+        "count4": 3,
+        "compiled_c4": 0.09375,
+        "python_c4": 0.09375
+      },
+      {
+        "frame": 4,
+        "count4": 3,
+        "compiled_c4": 0.09375,
+        "python_c4": 0.09375
+      },
+      {
+        "frame": 5,
+        "count4": 3,
+        "compiled_c4": 0.09375,
+        "python_c4": 0.09375
+      },
+      {
+        "frame": 6,
+        "count4": 1,
+        "compiled_c4": 0.0562500022,
+        "python_c4": 0.05625000223517418
+      },
+      {
+        "frame": 7,
+        "count4": 0,
+        "compiled_c4": 0.0337500013,
+        "python_c4": 0.03375000134110451
+      }
+    ]
+  },
+  "stm32": {
+    "rows": 204,
+    "flag_mismatches": 0,
+    "value_mismatches_over_2e-5": 0,
+    "max_abs_error": {
+      "obs_world_x": 3.383500044584764e-07,
+      "obs_world_y": 1.9308521059802075e-07,
+      "cyl_world_x": 6.301928374696786e-07,
+      "cyl_world_y": 2.0340553918973825e-07,
+      "cyl_conf": 7.183194652427005e-07
+    }
+  },
+  "detection_coverage": {
+    "detected_cases": 16,
+    "total_cases": 17,
+    "missed_case_ids": [
+      11
+    ],
+    "per_case": [
+      {
+        "case_id": 0,
+        "distance_m": 0.75,
+        "obstacle_orientation_deg": -45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.692771494,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 5
+      },
+      {
+        "case_id": 1,
+        "distance_m": 0.75,
+        "obstacle_orientation_deg": -20.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.992915034,
+        "max_cluster_sectors": 4,
+        "max_cluster_hits": 7
+      },
+      {
+        "case_id": 2,
+        "distance_m": 0.75,
+        "obstacle_orientation_deg": 0.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.92775017,
+        "max_cluster_sectors": 5,
+        "max_cluster_hits": 6
+      },
+      {
+        "case_id": 3,
+        "distance_m": 0.75,
+        "obstacle_orientation_deg": 20.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 4,
+        "max_cluster_hits": 8
+      },
+      {
+        "case_id": 4,
+        "distance_m": 0.75,
+        "obstacle_orientation_deg": 45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 4,
+        "peak_confidence": 0.454258472,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 3
+      },
+      {
+        "case_id": 5,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": -45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 7
+      },
+      {
+        "case_id": 6,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": -20.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 11
+      },
+      {
+        "case_id": 7,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": 0.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 11
+      },
+      {
+        "case_id": 8,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": 20.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.738224328,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 11
+      },
+      {
+        "case_id": 9,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": 45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 11
+      },
+      {
+        "case_id": 10,
+        "distance_m": 2.5,
+        "obstacle_orientation_deg": -45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 4,
+        "peak_confidence": 0.426728666,
+        "max_cluster_sectors": 2,
+        "max_cluster_hits": 3
+      },
+      {
+        "case_id": 11,
+        "distance_m": 2.5,
+        "obstacle_orientation_deg": -20.0,
+        "lateral_offset_m": 0.0,
+        "detected": false,
+        "first_valid_frame": null,
+        "peak_confidence": 0.144000009,
+        "max_cluster_sectors": 2,
+        "max_cluster_hits": 1
+      },
+      {
+        "case_id": 12,
+        "distance_m": 2.5,
+        "obstacle_orientation_deg": 0.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 3,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 2,
+        "max_cluster_hits": 8
+      },
+      {
+        "case_id": 13,
+        "distance_m": 2.5,
+        "obstacle_orientation_deg": 20.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 3,
+        "peak_confidence": 0.514879763,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 3
+      },
+      {
+        "case_id": 14,
+        "distance_m": 2.5,
+        "obstacle_orientation_deg": 45.0,
+        "lateral_offset_m": 0.0,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.600079179,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 5
+      },
+      {
+        "case_id": 15,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": 0.0,
+        "lateral_offset_m": -0.3,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 1.0,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 10
+      },
+      {
+        "case_id": 16,
+        "distance_m": 1.5,
+        "obstacle_orientation_deg": 0.0,
+        "lateral_offset_m": 0.3,
+        "detected": true,
+        "first_valid_frame": 2,
+        "peak_confidence": 0.754158378,
+        "max_cluster_sectors": 3,
+        "max_cluster_hits": 9
+      }
+    ]
+  }
 }

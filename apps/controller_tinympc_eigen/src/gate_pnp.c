@@ -14,18 +14,15 @@
 #include <string.h>
 
 /* --- Tunable defaults (verify on hardware). Calibration: esp_color_object/camera_calibration.yaml --- */
-float g_gate_fx = 89.20f;
-float g_gate_fy = 89.50f;
-float g_gate_cx = 81.09f;
-float g_gate_cy = 73.37f;
+float g_gate_fx = 89.1558392549f;
+float g_gate_fy = 89.4608171623f;
+float g_gate_cx = 81.1038105230f;
+float g_gate_cy = 73.3473030288f;
 float g_gate_img_w = 160.0f;         /* camera-native frame width  (intrinsics frame) */
 float g_gate_img_h = 160.0f;         /* camera-native frame height (intrinsics frame) */
-/* The GAP8 gate8 detector emits PIXEL coords in its net-input frame: 160 wide x
- * 96 tall (the 160x160 camera crop after a vertical INTER_AREA resize 160->96).
- * Width is unchanged so x passes through; y is squished and must be scaled back
- * to the camera-native frame by img_h / corner_h before applying fy/cy. Set
- * corner_h = img_h (160) if the detector ever emits y in the camera-native frame. */
-float g_gate_corner_h = 96.0f;       /* net-input frame height the corners live in */
+/* The multi-task DORY model consumes and emits coordinates in the native
+ * 160x160 HM01B0 frame. Keep this tunable for explicit compatibility only. */
+float g_gate_corner_h = 160.0f;
 float g_gate_width_m = 0.4826f;      /* gate inner size the model was trained on  */
 float g_gate_height_m = 0.4826f;     /* (dataset metadata gate_inner_size_m). PARAM visMpc.gateW/H */
 float g_gate_mount_fwd_m = 0.0f;
@@ -88,25 +85,20 @@ bool gate_pnp_project(const float corners[8], uint32_t age_ms,
     return false;
   }
 
-  /* Corners are PIXEL coords from the GAP8 (gate8) net frame (160 x 96), NOT
-   * normalized. x already matches the camera-native frame; un-squish y back to
-   * it by img_h / corner_h so it lines up with fy/cy. (See header above.) */
+  /* Corners are pixel coordinates from the native 160x160 GAP8 network frame,
+   * not normalized. */
   const float v_scale = (g_gate_corner_h > 1.0f) ? (g_gate_img_h / g_gate_corner_h) : 1.0f;
   float u[4], vpx[4];
   for (int i = 0; i < 4; ++i) {
     u[i]   = corners[2 * i + 0];
     vpx[i] = corners[2 * i + 1] * v_scale;
   }
-  /* Corner order is IPPE_SQUARE (per the gate8 model README / training labels),
-   * NOT raster: idx 0,1,2,3 = visual TL, BL, BR, TR -- traverse down the left
-   * edge, across the bottom, up the right edge. So the TOP edge is idx0-idx3,
-   * BOTTOM idx1-idx2, LEFT idx0-idx1, RIGHT idx3-idx2. (Validated against the
-   * golden frame: the raster pairing gave width~3px -> range>cap -> range=0.) */
+  /* Multi-task ABI order: TL, TR, BR, BL. */
   const float uc = 0.25f * (u[0] + u[1] + u[2] + u[3]);
   const float vc = 0.25f * (vpx[0] + vpx[1] + vpx[2] + vpx[3]);
   /* apparent extents: width from top/bottom edges, height from left/right edges. */
-  const float width_px  = 0.5f * (fabsf(u[3] - u[0]) + fabsf(u[2] - u[1]));
-  const float height_px = 0.5f * (fabsf(vpx[1] - vpx[0]) + fabsf(vpx[2] - vpx[3]));
+  const float width_px  = 0.5f * (fabsf(u[1] - u[0]) + fabsf(u[2] - u[3]));
+  const float height_px = 0.5f * (fabsf(vpx[3] - vpx[0]) + fabsf(vpx[2] - vpx[1]));
   g_gate_dbg_width = width_px;
   g_gate_dbg_height = height_px;
   if (width_px < 1.0f || height_px < 1.0f) {

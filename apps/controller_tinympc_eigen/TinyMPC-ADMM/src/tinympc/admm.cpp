@@ -169,19 +169,34 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       }
       if (has_hs) {
         work->ZX_new[k] = work->soln->YX[k];
-        Eigen::Vector3f z_pos = work->ZX_new[k].head(3);
         for (int h = 0; h < MAX_HS; ++h) {
           if (!work->data->en_hs[k][h]) {
             continue;
           }
-          Eigen::Vector3f a = work->data->a_hs[k][h];
-          float b = work->data->b_hs[k][h];
-          float dist = a.dot(z_pos) - b;
-          if (dist > 0) {
-            z_pos = z_pos - dist * a;
+          const Eigen::Vector3f a_pos = work->data->a_pos_hs[k][h];
+          const Eigen::Vector3f a_vel = work->data->a_vel_hs[k][h];
+          const float b = work->data->b_hs[k][h];
+          const float violation =
+              a_pos.dot(work->ZX_new[k].head(3))
+              + a_vel.dot(work->ZX_new[k].segment(6, 3)) - b;
+          const float penalty = work->data->slack_penalty_hs[k][h];
+          const float positive_violation = T_MAX(violation, 0.0f);
+          /*
+           * Exact proximal projection after analytically eliminating a
+           * nonnegative quadratic-penalty slack:
+           *   min 0.5||z-y||² + 0.5*penalty*s²
+           *   s.t. a'z-b <= s, s>=0.
+           * penalty=0 retains the legacy hard projection.
+           */
+          const float slack = penalty > 0.0f
+              ? positive_violation / (1.0f + penalty) : 0.0f;
+          work->data->slack_used_hs[k][h] = slack;
+          const float correction = positive_violation - slack;
+          if (correction > 0) {
+            work->ZX_new[k].head(3) -= correction * a_pos;
+            work->ZX_new[k].segment(6, 3) -= correction * a_vel;
           }
         }
-        work->ZX_new[k].head(3) = z_pos;
       } else {
         // Box constraint fallback (original behavior)
         if (work->data->ucx && work->data->lcx) {
