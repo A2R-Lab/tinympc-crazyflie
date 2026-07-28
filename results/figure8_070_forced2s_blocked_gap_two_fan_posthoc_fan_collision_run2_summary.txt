@@ -56,6 +56,9 @@ The physical fan collision makes this a mission-level failure, not a clean
 aerodynamic-only mechanism trial. It nevertheless counts against completion
 for this fixed obstacle-and-wind configuration.
 
+Across the current campaign, posthoc is now 0/3; all three failures are
+supported by saved raw logs.
+
 Raw log
 -------
 

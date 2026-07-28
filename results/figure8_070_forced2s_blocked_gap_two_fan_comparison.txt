@@ -14,20 +14,20 @@ Mission outcome
 
 Method             Trials     Successes     Result
 Embedded LIMO      4          4             All four runs completed and are log-supported
-Posthoc LIMO       2          0             Latest side-fan collision at trajectory 2.188 s
+Posthoc LIMO       3          0             Latest multi-contact failure at trajectory 21.694 s
 Nominal TinyMPC    5          0             Latest run collided with fan at trajectory 1.375 s
 MPC-CBF            1          0             Estimator reset/crash at trajectory 6.981 s
 
 Evidence status
 ---------------
 
-- All four embedded LIMO runs, both posthoc runs, and MPC-CBF are supported
+- All four embedded LIMO runs, all three posthoc runs, and MPC-CBF are supported
   by saved raw logs.
 - Nominal runs 3-5 are supported by saved raw logs. The first two nominal
   failures were reported by the user, but their raw logs have not been
   supplied.
-- Posthoc failed before the standard t >= 3 s analysis window, so its primary
-  metrics are N/A rather than zero.
+- Posthoc runs 1-2 failed before the standard t >= 3 s analysis window.
+  Run 3 reached the window; its metrics are truncated at the pre-lock cutoff.
 - MPC-CBF firmware continued its trajectory clock after the physical failure.
   Its later TRAJ DONE and LANDING COMPLETE prints are invalid; the first
   estimator reset at trajectory t=6.981 s is the analysis cutoff.
@@ -55,25 +55,28 @@ the 50 ms deadline.
 Posthoc failure diagnostics and mechanism
 -----------------------------------------
 
-Metric                              Run 1       Run 2
-Completion before lock              22/482      44/482
-Completion percentage               4.6%        9.1%
-Failure time, s                     1.088       2.188
-Lateral tracking RMSE, m            0.7923      0.5083
-Peak lateral tracking error, m      1.1976      0.8587
-Z tracking RMSE, m                  0.0651      0.0574
-Maximum absolute Z error, m         0.1120      0.1350
-Tilt RMSE, deg                      23.511      17.844
-Peak tilt, deg                      38.025      40.591
-Median complete step, ms            34.601      33.795
-Exact cumulative maximum, ms        38.160      39.440
-Deadline overruns                   0           0
+Metric                              Run 1       Run 2       Run 3
+Completion before lock              22/482      44/482      434/482
+Completion percentage               4.6%        9.1%        90.0%
+Failure time, s                     1.088       2.188       21.694
+Lateral tracking RMSE, m            0.7923      0.5083      0.5498
+Peak lateral tracking error, m      1.1976      0.8587      1.0211
+Z tracking RMSE, m                  0.0651      0.0574      0.0375
+Maximum absolute Z error, m         0.1120      0.1350      0.1260
+Tilt RMSE, deg                      23.511      17.844      12.881
+Peak tilt, deg                      38.025      40.591      44.130
+Median complete step, ms            34.601      33.795      33.541
+Exact cumulative maximum, ms        38.160      39.440      42.953
+Deadline overruns                   0           0           0
 
 - Run 2 physically collided with the side fan.
-- Pooled projection attempts before lock: 66.
-- Pooled infeasible projections: 51/66 = 77.3%.
-- Pooled feasible action-changing projections: 15/66 = 22.7%.
-- Both failures occurred before the standard t >= 3 s primary window.
+- Run 3 made multiple user-observed contacts and then locked at 90% mission
+  completion. Its post-lock TRAJ DONE and landing prints are invalid.
+- Pooled projection attempts before lock: 500.
+- Pooled infeasible projections: 471/500 = 94.2%.
+- Pooled feasible action-changing projections: 29/500 = 5.8%.
+- Runs 1-2 failed before the standard t >= 3 s primary window. Run 3 metrics
+  cover t >= 3 s through its last pre-lock sample.
 
 MPC-CBF pre-failure primary metrics
 -----------------------------------
@@ -124,7 +127,7 @@ Current interpretation
 ----------------------
 
 Under this configuration, embedded LIMO is the only method with a completed
-mission: 4/4 versus posthoc 0/2, MPC-CBF 0/1, and nominal 0/5. Therefore
+mission: 4/4 versus posthoc 0/3, MPC-CBF 0/1, and nominal 0/5. Therefore
 embedded LIMO is the clear mission-success winner for this specific blocked-gap
 two-fan configuration. All four embedded successes are independently
 log-supported. This remains a small-sample result; nominal runs 1-2 should be
@@ -140,6 +143,7 @@ Source files
 - figure8_070_forced2s_blocked_gap_two_fan_embedded_run4.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2.txt
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt

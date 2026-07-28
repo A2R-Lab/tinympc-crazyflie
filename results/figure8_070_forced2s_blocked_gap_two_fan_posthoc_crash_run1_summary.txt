@@ -58,8 +58,8 @@ Posthoc mechanism before lock
   nominal action. This run does not isolate which individual intervention
   initiated the divergence, but the projection was actively modifying the
   command on 10 of the 22 pre-lock control steps.
-- Across the current campaign, posthoc is now 0/2; both failures are supported
-  by saved raw logs.
+- Across the current campaign, posthoc is now 0/3; all three failures are
+  supported by saved raw logs.
 
 Raw log
 -------

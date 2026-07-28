@@ -1,0 +1,74 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 3
+============================================================================
+
+Configuration
+-------------
+
+- Method: posthoc LIMO, mode 2
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.12 m, vz=+0.17 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+
+Outcome
+-------
+
+- FAILURE: the user observed multiple contacts with the fan, followed by
+  `SUP: Locked, reboot required`.
+- The last sample before lock was trajectory t=21.694 s, index 434/482
+  (90.0%).
+- The firmware later printed TRAJ DONE and landing messages, but those events
+  occurred after supervisor lock and are physically invalid.
+- This run reached the standard t >= 3 s primary window; the table below ends
+  at the last pre-lock sample.
+
+Pre-lock primary-window performance
+-----------------------------------
+
+Metric                              Posthoc
+Boundary-relative XY RMSE           0.8741 m
+Peak boundary-relative XY error     1.5037 m
+Lateral tracking RMSE               0.5498 m
+Peak lateral tracking error         1.0211 m
+Z tracking RMSE                     0.0375 m
+Maximum absolute Z error            0.1260 m
+Tilt RMSE                           12.881 deg
+Peak tilt                           44.130 deg
+
+Timing
+------
+
+Metric                              Posthoc
+Median MPC solve                    23.005 ms
+Median learned evaluation           10.168 ms
+Median complete control step        33.541 ms
+Sampled p99 control step            39.079 ms
+Sampled maximum control step        42.447 ms
+Exact cumulative maximum            42.953 ms
+Worst 50 ms deadline use            85.91%
+Deadline overruns                   0
+
+Posthoc mechanism before lock
+-----------------------------
+
+- Projection attempts: 434
+- Infeasible projections: 420/434 = 96.8%
+- Feasible action-changing projections: 14/434 = 3.2%
+- The corrected infeasible path returned the nominal command.
+- The on-target 96.8% infeasibility rate matches the previously predicted
+  posthoc failure mechanism to one decimal place.
+
+Interpretation
+--------------
+
+The physical contacts make this a mission-level failure rather than a clean
+aerodynamic-only trial. It is nevertheless the third saved posthoc attempt and
+completes the goal of three raw logs for this method.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
