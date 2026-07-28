@@ -21,14 +21,14 @@ Outcome
 - Completed controlled landing and motors-off sequence.
 - No supervisor lock, estimator reset, or deadline overrun.
 - Current mission outcome for this configuration:
-  - Embedded LIMO: 2/2 successes
+  - Embedded LIMO: 3/3 successes
   - Nominal TinyMPC: 0/4 successes
   - Posthoc LIMO: 0/1 successes
   - MPC-CBF: 0/1 successes
-- This file contains the parsed first embedded run. The second embedded
-  success is independently supported by its saved raw log and summary.
-- Both embedded runs, nominal runs 3 and 4, the posthoc run, and the MPC-CBF
-  run are supported by saved raw logs. Nominal runs 1 and 2 remain
+- This file contains the parsed first embedded run. Embedded runs 2 and 3 are
+  independently supported by their saved raw logs and summaries.
+- All three embedded runs, nominal runs 3 and 4, the posthoc run, and the
+  MPC-CBF run are supported by saved raw logs. Nominal runs 1 and 2 remain
   user-reported.
 
 Primary-window performance
