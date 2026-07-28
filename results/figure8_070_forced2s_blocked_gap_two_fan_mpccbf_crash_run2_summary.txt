@@ -1,0 +1,70 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: MPC-CBF run 2
+============================================================================
+
+Configuration
+-------------
+
+- Method: MPC-CBF, mode 1
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.34 m, vz=+0.28 m/s
+- Upward-blowing fan: perpendicular orientation
+- Downward-blowing fan: directly in front of the vehicle
+- The gap between the upward fan and the downward fan (resting on a box)
+  was blocked by another box.
+- Analytic LTV MPC-CBF rows: always on, 20-stage horizon, gate off,
+  floor_z=0.70 m, margin=0.
+
+Outcome
+-------
+
+- FAILURE: the supervisor locked at trajectory t=3.182 s.
+- Last valid pre-lock index: 64/482, or 13.3% of the planned trajectory.
+- No TRAJ DONE or controlled-landing completion preceded the lock.
+- Firmware continued printing EXP rows after the lock. Those samples, and the
+  later estimator reset, are post-failure contamination and are excluded.
+
+Full valid pre-lock diagnostics: trajectory start through supervisor lock
+---------------------------------------------------------------------------
+
+Metric                              MPC-CBF
+Boundary-relative XY RMSE           0.7653 m
+Peak boundary-relative XY error     2.4819 m
+Lateral tracking RMSE               0.7683 m
+Peak lateral tracking error         2.4839 m
+Z tracking RMSE                     0.2435 m
+Maximum absolute Z error            0.3930 m
+Tilt RMSE                           52.051 deg
+Peak tilt                           164.134 deg
+Median complete control step        25.239 ms
+Sampled maximum control step        31.196 ms
+Exact cumulative maximum            31.196 ms
+Deadline overruns                   0
+
+The standard primary analysis window starts at trajectory t=3 s. This flight
+contains only two valid samples in that window (t=3.080 and 3.182 s), so its
+primary-window RMSE is too sparse to treat as a stable performance estimate or
+pool with completed-flight metrics. The full pre-lock values above are failure
+diagnostics, not completed-mission metrics.
+
+Last valid sample
+-----------------
+
+- Trajectory time: 3.182 s
+- Lateral tracking error: 2.4839 m
+- Z tracking error: -0.175 m
+- Tilt: 164.134 deg
+
+Mechanism
+---------
+
+- Linear MPC-CBF constraints active: 32/32 valid pre-lock samples
+- Linear MPC-CBF constraints binding: 32/32 valid pre-lock samples
+- The failure was not caused by a compute deadline miss: the exact maximum
+  complete step was 31.196 ms against the 50 ms deadline, with zero overruns.
+- This is the second independent MPC-CBF failure in this configuration.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run2.txt

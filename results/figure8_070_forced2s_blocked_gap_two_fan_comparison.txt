@@ -16,12 +16,12 @@ Method             Trials     Successes     Result
 Embedded LIMO      4          4             All four runs completed and are log-supported
 Posthoc LIMO       3          0             Latest multi-contact failure at trajectory 21.694 s
 Nominal TinyMPC    5          0             Latest run collided with fan at trajectory 1.375 s
-MPC-CBF            1          0             Estimator reset/crash at trajectory 6.981 s
+MPC-CBF            2          0             Latest supervisor lock at trajectory 3.182 s
 
 Evidence status
 ---------------
 
-- All four embedded LIMO runs, all three posthoc runs, and MPC-CBF are supported
+- All four embedded LIMO runs, all three posthoc runs, and both MPC-CBF runs are supported
   by saved raw logs.
 - Nominal runs 3-5 are supported by saved raw logs. The first two nominal
   failures were reported by the user, but their raw logs have not been
@@ -31,6 +31,9 @@ Evidence status
 - MPC-CBF firmware continued its trajectory clock after the physical failure.
   Its later TRAJ DONE and LANDING COMPLETE prints are invalid; the first
   estimator reset at trajectory t=6.981 s is the analysis cutoff.
+- MPC-CBF run 2 locked at trajectory t=3.182 s. All rows printed after the
+  lock are invalid. Only two valid samples reach the standard t >= 3 s window,
+  so run 2 is retained as failure evidence rather than pooled RMSE evidence.
 
 Embedded completed-run primary metrics
 --------------------------------------
@@ -78,8 +81,8 @@ Deadline overruns                   0           0           0
 - Runs 1-2 failed before the standard t >= 3 s primary window. Run 3 metrics
   cover t >= 3 s through its last pre-lock sample.
 
-MPC-CBF pre-failure primary metrics
------------------------------------
+MPC-CBF run 1 pre-failure primary metrics
+-----------------------------------------
 
 Metric                              MPC-CBF
 Boundary-relative XY RMSE           0.8894 m
@@ -97,6 +100,8 @@ Deadline overruns                   0
 MPC-CBF failure mechanism
 -------------------------
 
+Run 1:
+
 - First estimator out-of-bounds reset after trajectory t=6.981 s.
 - Completed 140/482 steps before reset (29.0%).
 - Last clean lateral tracking error: 1.8545 m.
@@ -104,6 +109,22 @@ MPC-CBF failure mechanism
 - Last clean tilt: 94.536 deg.
 - Linear constraints were active and binding on all 40 retained pre-failure
   primary-window samples.
+
+Run 2:
+
+- Supervisor lock at trajectory t=3.182 s.
+- Completed 64/482 steps before lock (13.3%).
+- Last clean lateral tracking error: 2.4839 m.
+- Last clean Z tracking error: -0.175 m.
+- Last clean tilt: 164.134 deg.
+- Linear constraints were active and binding on all 32 valid pre-lock samples.
+- Exact maximum complete step: 31.196 ms; deadline overruns: 0.
+- Only two valid samples reached t >= 3 s, so primary-window RMSE is too sparse
+  to pool. Full pre-lock diagnostics are in the run-2 summary.
+
+Across both MPC-CBF attempts, mission success is 0/2. Both failures occurred
+with the analytic linear constraints continuously active and binding, and
+neither involved a control-step deadline overrun.
 
 Nominal failure diagnostics
 ---------------------------
@@ -127,7 +148,7 @@ Current interpretation
 ----------------------
 
 Under this configuration, embedded LIMO is the only method with a completed
-mission: 4/4 versus posthoc 0/3, MPC-CBF 0/1, and nominal 0/5. Therefore
+mission: 4/4 versus posthoc 0/3, MPC-CBF 0/2, and nominal 0/5. Therefore
 embedded LIMO is the clear mission-success winner for this specific blocked-gap
 two-fan configuration. All four embedded successes are independently
 log-supported. This remains a small-sample result; nominal runs 1-2 should be
@@ -145,6 +166,7 @@ Source files
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2.txt
 - figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1.txt
+- figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run2.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_crash_run3.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt
 - figure8_070_forced2s_blocked_gap_two_fan_nominal_fan_collision_run5.txt

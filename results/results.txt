@@ -431,12 +431,12 @@ Mission outcome
   Embedded LIMO:   4/4 completed missions
   Nominal TinyMPC: 0/5 completed missions
   Posthoc LIMO:    0/3 completed missions
-  MPC-CBF:         0/1 completed missions
+  MPC-CBF:         0/2 completed missions
 
 Embedded LIMO is the mission-success winner in this specific configuration:
 it is the only arm that completed the trajectory and controlled landing.
-All four embedded runs, nominal runs 3-5, all three posthoc runs, and MPC-CBF
-run 1 are supported by saved raw logs. Nominal runs 1-2 are currently
+All four embedded runs, nominal runs 3-5, all three posthoc runs, and both
+MPC-CBF runs are supported by saved raw logs. Nominal runs 1-2 are currently
 user-reported and should not be described as independently log-verified.
 
 Failure points in the saved logs:
@@ -450,7 +450,9 @@ Failure points in the saved logs:
   Nominal run 4: supervisor lock during takeoff, before trajectory (0/482)
   Nominal run 5: physical fan collision and lock at t=1.375 s
                  (28/482 steps, 5.8%)
-  MPC-CBF: first estimator reset at t=6.981 s (140/482 steps, 29.0%)
+  MPC-CBF run 1: first estimator reset at t=6.981 s
+                 (140/482 steps, 29.0%)
+  MPC-CBF run 2: supervisor lock at t=3.182 s (64/482 steps, 13.3%)
 
 All four completed embedded runs recorded zero 50 ms deadline overruns. Their
 n=4 flight-mean boundary RMSE was 0.9584 m, lateral tracking RMSE was 0.5899 m,
