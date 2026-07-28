@@ -51,21 +51,6 @@ The boundary RMSE and peak therefore measure error accumulated after the
 analysis boundary. They are not the same as absolute trajectory-tracking
 error.
 
-Absolute reference-tracking metrics
------------------------------------
-
-  Lateral RMSE:
-    sqrt(mean((x - x_ref)^2 + (y - y_ref)^2))
-
-  Z RMSE:
-    sqrt(mean((z - z_ref)^2))
-
-  Tilt:
-    sqrt(roll^2 + pitch^2), in degrees
-
-The absolute-reference tables are kept separate from the boundary-refreshed
-tables so that the two definitions are never mixed.
-
 Figure-8 trajectory note
 ------------------------
 
@@ -96,19 +81,9 @@ Mean XY boundary error, m               0.0721         0.1163         Embedded 3
 Boundary RMSE, m                        0.0855         0.1352         Embedded 36.7%
 Peak boundary error, m                  0.2162         0.3100         Embedded 30.3%
 Z error-change RMSE, m                  0.0181         0.0186         Embedded 2.5%
-Peak absolute Z-error change, m         0.0420         0.0430         Embedded 2.3%
+Peak Z-error change magnitude, m        0.0420         0.0430         Embedded 2.3%
 Tilt-change RMSE, deg                   2.001          2.347          Embedded 14.7%
 Peak tilt-vector change, deg            4.225          5.872          Embedded 28.0%
-
-Absolute reference-tracking result
-----------------------------------
-
-Metric                                  Embedded       Posthoc        Best
-Lateral RMSE, m                         0.1153         0.1290         Embedded 10.6%
-Z RMSE, m                               0.0278         0.0285         Embedded 2.3%
-Maximum absolute Z error, m             0.0480         0.0550         Embedded 12.7%
-Tilt RMSE, deg                          1.854          1.933          Embedded 4.1%
-Peak tilt, deg                          4.741          5.444          Embedded 12.9%
 
 Computation and posthoc mechanism
 ---------------------------------
@@ -126,9 +101,9 @@ Interpretation
 --------------
 
 All five pairs favor embedded LIMO on boundary RMSE. Embedded also has lower
-absolute lateral, Z, and tilt metrics. The posthoc filter was quiescent in the
-scored windows, so this campaign establishes the embedded hover result but
-does not demonstrate active posthoc correction during the primary window.
+boundary-refreshed Z and tilt metrics. The posthoc filter was quiescent in
+the scored windows, so this campaign establishes the embedded hover result
+but does not demonstrate active posthoc correction during the primary window.
 
 
 2. FIGURE-8 UNDER DOWNWARD AIRFLOW
@@ -152,7 +127,7 @@ Mean XY boundary error, m               0.5757         0.7803         0.6444    
 Boundary RMSE, m                        0.6795         0.9093         0.7484         Nominal
 Peak boundary error, m                  1.2701         1.5240         1.3249         Nominal
 Z error-change RMSE, m                  0.0191         0.0135         0.0492         Embedded
-Peak absolute Z-error change, m         0.0520         0.0370         0.0810         Embedded
+Peak Z-error change magnitude, m        0.0520         0.0370         0.0810         Embedded
 Tilt-change RMSE, deg                   14.749         9.592          12.420         Embedded
 Peak tilt-vector change, deg            25.625         16.148         22.119         Embedded
 
@@ -164,23 +139,6 @@ Key relative effects:
   posthoc.
   Embedded tilt-change RMSE is 22.8% lower than posthoc and 35.0% lower than
   nominal.
-
-Absolute reference-tracking result: mean of three trials
---------------------------------------------------------
-
-Metric                                  Nominal        Embedded       Posthoc        Best
-Lateral RMSE, m                         0.4682         0.5710         0.4876         Nominal
-Z RMSE, m                               0.0208         0.0163         0.0421         Embedded
-Maximum absolute Z error, m             0.0573         0.0463         0.1010         Embedded
-Tilt RMSE, deg                          11.609         7.698          10.106         Embedded
-Peak tilt, deg                          19.514         12.072         17.152         Embedded
-
-Key relative effects:
-
-  Nominal lateral RMSE is 4.0% lower than posthoc and 18.0% lower than
-  embedded.
-  Embedded Z RMSE is 21.5% lower than nominal and 61.3% lower than posthoc.
-  Embedded tilt RMSE is 23.8% lower than posthoc and 33.7% lower than nominal.
 
 Computation and posthoc mechanism
 ---------------------------------
@@ -197,11 +155,11 @@ Primary-window active/infeasible        --             --             485 active
 Interpretation
 --------------
 
-This is a Pareto result. Nominal/posthoc preserve more aggressive XY tracking,
-while embedded LIMO substantially reduces vertical and attitude excursions.
-At this 0.70 m stress altitude embedded authority is effectively saturated
-(w = 1.0), so this campaign tests always-active in-solver placement rather
-than authority scheduling.
+This is a Pareto result. Nominal/posthoc accumulate less boundary-relative XY
+error, while embedded LIMO substantially reduces boundary-relative vertical
+and attitude excursions. At this 0.70 m stress altitude embedded authority is
+effectively saturated (w = 1.0), so this campaign tests always-active
+in-solver placement rather than authority scheduling.
 
 
 3. FIGURE-8 UNDER UPWARD AIRFLOW
@@ -224,19 +182,9 @@ Metric                                  Embedded       Posthoc        Best
 Boundary RMSE, m                        0.9331         0.6826         Posthoc 26.8%
 Peak boundary error, m                  1.6104         1.2560         Posthoc 22.0%
 Z error-change RMSE, m                  0.0227         0.0368         Embedded 38.4%
-Peak absolute Z-error change, m         0.0555         0.0775         Embedded 28.4%
+Peak Z-error change magnitude, m        0.0555         0.0775         Embedded 28.4%
 Tilt-change RMSE, deg                   9.382          14.555         Embedded 35.5%
 Peak tilt-vector change, deg            16.703         27.725         Embedded 39.8%
-
-Absolute reference-tracking result: mean of two trials
-------------------------------------------------------
-
-Metric                                  Embedded       Posthoc        Best
-Lateral RMSE, m                         0.5859         0.4745         Posthoc 19.0%
-Z RMSE, m                               0.0177         0.0447         Embedded 60.5%
-Maximum absolute Z error, m             0.0490         0.0920         Embedded 46.7%
-Tilt RMSE, deg                          7.685          10.709         Embedded 28.2%
-Peak tilt, deg                          13.916         20.058         Embedded 30.6%
 
 Computation and posthoc mechanism
 ---------------------------------
@@ -254,8 +202,9 @@ Interpretation
 --------------
 
 The upward-flow campaign repeats the downward-flow trade: posthoc has lower
-XY tracking error, while embedded has materially lower Z and attitude error.
-Median computation differs by only 0.064 ms.
+boundary-relative XY error, while embedded has materially lower
+boundary-relative Z and attitude error. Median computation differs by only
+0.064 ms.
 
 
 4. 3 G ASYMMETRIC AERODYNAMIC PAYLOAD, NO FAN
@@ -287,21 +236,11 @@ Metric                                  Nominal        Embedded       Posthoc   
 Boundary RMSE, m                        0.7902         0.9177         0.9152         Nominal 13.7%
 Peak boundary error, m                  1.3738         1.5711         1.5183         Nominal 9.5%
 Z error-change RMSE, m                  0.0171         0.0115         0.0240         Embedded 32.7%
-Peak absolute Z-error change, m         0.0440         0.0350         0.0760         Embedded 20.5%
+Peak Z-error change magnitude, m        0.0440         0.0350         0.0760         Embedded 20.5%
 Tilt-change RMSE, deg                   13.696         9.188          12.151         Embedded 24.4%
 Peak tilt-vector change, deg            24.374         19.116         22.655         Embedded 15.6%
 
 The percentage in the Best column is relative to the second-best arm.
-
-Absolute reference-tracking result: single triplet
---------------------------------------------------
-
-Metric                                  Nominal        Embedded       Posthoc        Best
-Lateral RMSE, m                         0.4847         0.6111         0.5184         Nominal 6.5%
-Z RMSE, m                               0.01645        0.00889        0.03849        Embedded 45.9%
-Maximum absolute Z error, m             0.0420         0.0250         0.0960         Embedded 40.5%
-Tilt RMSE, deg                          11.119         7.465          10.452         Embedded 28.6%
-Peak tilt, deg                          18.674         14.456         16.948         Embedded 14.7%
 
 Computation and posthoc mechanism
 ---------------------------------
@@ -319,10 +258,10 @@ Primary-window active/infeasible        --             --             176 active
 Interpretation
 --------------
 
-Embedded LIMO gives up lateral tracking but produces the lowest vertical and
-attitude excursions under the asymmetric plant mismatch. This is one triplet,
-so it is a mechanism/feasibility result, not an estimate of population mean
-or variance.
+Embedded LIMO gives up boundary-relative XY performance but produces the
+lowest boundary-relative vertical and attitude excursions under the
+asymmetric plant mismatch. This is one triplet, so it is a
+mechanism/feasibility result, not an estimate of population mean or variance.
 
 
 5. 3 G ASYMMETRIC AERODYNAMIC PAYLOAD PLUS WIND
@@ -353,21 +292,11 @@ Metric                                  Nominal        Embedded       Posthoc   
 Boundary RMSE, m                        0.7657         0.9164         0.8378         Nominal 8.6%
 Peak boundary error, m                  1.3204         1.5771         1.4860         Nominal 11.1%
 Z error-change RMSE, m                  0.0236         0.0171         0.0240         Embedded 27.5%
-Peak absolute Z-error change, m         0.0670         0.0430         0.0580         Embedded 25.9%
+Peak Z-error change magnitude, m        0.0670         0.0430         0.0580         Embedded 25.9%
 Tilt-change RMSE, deg                   13.607         10.080         13.663         Embedded 25.9%
 Peak tilt-vector change, deg            27.146         20.087         25.163         Embedded 20.2%
 
 The percentage in the Best column is relative to the second-best arm.
-
-Absolute reference-tracking result: single triplet
---------------------------------------------------
-
-Metric                                  Nominal        Embedded       Posthoc        Best
-Lateral RMSE, m                         0.4719         0.5752         0.5258         Nominal 10.3%
-Z RMSE, m                               0.01643        0.00979        0.03827        Embedded 40.4%
-Maximum absolute Z error, m             0.0480         0.0270         0.0970         Embedded 43.8%
-Tilt RMSE, deg                          10.249         7.842          10.407         Embedded 23.5%
-Peak tilt, deg                          20.022         14.738         18.577         Embedded 20.7%
 
 Computation and posthoc mechanism
 ---------------------------------
@@ -385,23 +314,24 @@ Primary-window active/infeasible        --             --             178 active
 Interpretation
 --------------
 
-The payload-plus-wind triplet repeats the calm-payload ordering: nominal is
-best laterally, while embedded is best in Z and tilt and is slightly cheaper
-than posthoc. It is still only one triplet and must not be presented as a
-multi-trial average.
+The payload-plus-wind triplet repeats the calm-payload boundary-refreshed
+ordering: nominal is best in XY, while embedded is best in Z and tilt and is
+slightly cheaper than posthoc. It is still only one triplet and must not be
+presented as a multi-trial average.
 
 
 CROSS-CAMPAIGN SUMMARY
 ======================
 
   Hover:
-    Embedded wins the five-pair boundary, lateral, Z, and tilt comparison.
+    Embedded wins the five-pair boundary-refreshed XY, Z, and tilt
+    comparison.
 
   Aggressive Figure-8:
-    Embedded consistently trades lateral tracking for substantially tighter
-    vertical regulation and lower attitude excursion. This trade is present
-    under downward flow, upward flow, the asymmetric payload, and
-    payload-plus-wind.
+    Embedded consistently trades boundary-relative XY performance for
+    substantially tighter boundary-relative Z regulation and lower attitude
+    excursion. This trade is present under downward flow, upward flow, the
+    asymmetric payload, and payload-plus-wind.
 
   Posthoc mechanism:
     Whole-flight infeasibility is high in every campaign where the projection
