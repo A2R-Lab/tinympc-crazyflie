@@ -4,6 +4,12 @@ CONSOLIDATED HARDWARE RESULTS
 Updated: 2026-07-28
 Branch/configuration: LIMO hardware campaign
 
+The final paper-facing two-scenario ledger, including all 24 balanced raw-log
+members, per-run tables, mechanism audits, timing, resource context,
+limitations, and conclusions, is:
+
+  results/paper-results.txt
+
 This file consolidates the five hardware campaigns selected for reporting:
 
   1. Hover under lateral wind: five matched embedded/posthoc trials
