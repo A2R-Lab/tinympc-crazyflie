@@ -23,6 +23,7 @@ The four methods are:
 Supplementary evidence outside the balanced 24-flight table:
 
   - One additional embedded-LIMO success in Scenario 2.
+  - One additional posthoc-LIMO failure in Scenario 2.
   - Two additional nominal Scenario-2 failures reported by the experimenter
     without supplied raw logs.
 
@@ -368,14 +369,14 @@ Primary endpoint:
 Balanced paper subset:
 
   Embedded:  runs 1-3 of four saved runs
-  Posthoc:   all three saved runs
+  Posthoc:   runs 1-3 of four saved runs
   MPC-CBF:   all three saved runs
   Nominal:   the three supplied raw logs, named runs 3-5
 
 The subset contains 12 log-supported flights. It was balanced after collection,
 not preregistered. This does not change the observed ordering: the excluded
-embedded run also succeeds and both additional nominal attempts were reported
-as failures.
+embedded run also succeeds, the excluded posthoc run also fails, and both
+additional nominal attempts were reported as failures.
 
 Balanced mission outcome
 ------------------------
@@ -383,7 +384,7 @@ Balanced mission outcome
 Method             Trials   Successes   Mean completion   Deadline overruns
 -----------------  -------  ----------  ----------------  -----------------
 Embedded LIMO         3         3           100.0%                0
-Posthoc LIMO          3         0            34.6%                0
+Posthoc LIMO          3         0            27.0%                0
 MPC-CBF               3         0            15.8%                0
 Nominal TinyMPC       3         0             6.2%          0 in timed runs;
                                                              takeoff lock N/A
@@ -408,8 +409,8 @@ Embedded run 3      Embedded run 3     SUCCESS, 482/482, 24.106 s, landed
 Posthoc run 1       Posthoc run 1      FAILURE, lock at 22/482, 1.088 s
 Posthoc run 2       Posthoc run 2      FAILURE, side-fan collision and lock
                                        at 44/482, 2.188 s
-Posthoc run 3       Posthoc run 3      FAILURE, multiple fan contacts and lock
-                                       at 434/482, 21.694 s
+Posthoc run 3       Posthoc run 3      FAILURE, supervisor lock at 324/482,
+                                       16.202 s
 MPC-CBF run 1       MPC-CBF run 1      FAILURE, estimator reset/crash after
                                        140/482, 6.981 s
 MPC-CBF run 2       MPC-CBF run 2      FAILURE, lock at 64/482, 3.182 s
@@ -430,7 +431,7 @@ Embedded 2          0.19 m
 Embedded 3          0.18 m
 Posthoc 1           0.20 m
 Posthoc 2           0.15 m
-Posthoc 3           0.12 m
+Posthoc 3           0.15 m
 MPC-CBF 1           0.33 m
 MPC-CBF 2           0.34 m
 MPC-CBF 3           0.31 m
@@ -478,21 +479,21 @@ Posthoc failure diagnostics
 
 Run                                  1          2          3
 ----------------------------------  ---------  ---------  ---------
-Valid completion                    22/482     44/482     434/482
-Completion percentage                4.6%       9.1%       90.0%
-Failure time, s                      1.088      2.188      21.694
-Lateral RMSE, m                      0.7923     0.5083      0.5498
-Peak lateral error, m                1.1976     0.8587      1.0211
-Z RMSE, m                            0.0651     0.0574      0.0375
-Peak absolute Z error, m             0.1120     0.1350      0.1260
-Tilt RMSE, deg                      23.511     17.844      12.881
-Peak tilt, deg                      38.025     40.591      44.130
-Median complete step, ms            34.601     33.795      33.541
-Exact maximum step, ms              38.160     39.440      42.953
+Valid completion                    22/482     44/482     324/482
+Completion percentage                4.6%       9.1%       67.2%
+Failure time, s                      1.088      2.188      16.202
+Lateral RMSE, m                      0.7923     0.5083      0.8063
+Peak lateral error, m                1.1976     0.8587      4.0090
+Z RMSE, m                            0.0651     0.0574      0.0830
+Peak absolute Z error, m             0.1120     0.1350      0.3090
+Tilt RMSE, deg                      23.511     17.844      24.840
+Peak tilt, deg                      38.025     40.591     138.714
+Median complete step, ms            34.601     33.795      33.797
+Exact maximum step, ms              38.160     39.440      40.881
 Deadline overruns                    0          0           0
-Projection attempts                 22         44          434
-Infeasible projections              12         39          420
-Feasible interventions              10          5           14
+Projection attempts                 22         44          324
+Infeasible projections              12         39          297
+Feasible interventions              10          5           27
 
 Window warning:
 
@@ -502,13 +503,20 @@ Window warning:
 
 Pooled mechanism before lock:
 
-  Projection attempts:                    500
-  Infeasible projections:                 471/500 = 94.2%
-  Feasible action-changing projections:    29/500 = 5.8%
+  Projection attempts:                    390
+  Infeasible projections:                 348/390 = 89.2%
+  Feasible action-changing projections:    42/390 = 10.8%
 
-The corrected infeasible fallback returned the nominal command. Physical
-contacts make these mission failures, not clean isolated projection-mechanism
-experiments.
+The corrected infeasible fallback returned the nominal command. Supervisor
+locks and physical contacts make these mission failures, not clean isolated
+projection-mechanism experiments.
+
+Supplemental posthoc run 4:
+
+  The previously saved posthoc run 3 is retained as run 4 outside the balanced
+  subset. It failed after multiple fan contacts and a supervisor lock at
+  434/482 steps (90.0%, 21.694 s). It recorded 420/434 infeasible projections
+  (96.8%), a 42.953 ms exact maximum step, and zero deadline overruns.
 
 MPC-CBF failure diagnostics
 ---------------------------
@@ -590,7 +598,8 @@ The mission ordering is not explained by an observed compute overload:
   - every flight with valid timed trajectory samples recorded zero 50 ms
     deadline overruns; nominal takeoff-lock run 4 has no valid tracking timing;
   - embedded completed all three flights with a worst exact step of 44.323 ms;
-  - posthoc failed despite a worst exact step of 42.953 ms;
+  - balanced posthoc failed despite a worst exact step of 40.881 ms;
+    supplemental posthoc run 4 also failed with a 42.953 ms maximum;
   - MPC-CBF failed despite a worst exact step of 31.548 ms;
   - logged nominal failure runs remained below 30.399 ms.
 
@@ -599,7 +608,7 @@ completed-flight primary window. Applied authority was 1.0 and applied Qz
 scale was 1.4. This is a saturated stress-regime test, not an authority-sweep
 or benign-tax experiment.
 
-Posthoc infeasibility rises from 61.6% in Scenario 1 to 94.2% before failure in
+Posthoc infeasibility rises from 61.6% in Scenario 1 to 89.2% before failure in
 Scenario 2. The analytic MPC-CBF constraints are active and binding yet do not
 prevent failure. Embedded LIMO is the only method that completes the fixed
 mission.
@@ -609,11 +618,11 @@ Scenario-2 paper conclusion
 
 In the fixed forced-start blocked-gap two-fan mission, embedded LIMO completes
 3/3 balanced trials, while nominal, posthoc, and analytic MPC-CBF each complete
-0/3. A fourth embedded flight also completes, and two additional nominal
-failures were reported. The result is a mission-level success claim for this
-specific configuration. Because several baseline failures involve physical fan
-or obstacle contact, do not present it as a clean aerodynamic-force isolation
-study.
+0/3. A fourth embedded flight also completes, a fourth posthoc flight also
+fails, and two additional nominal failures were reported. The result is a
+mission-level success claim for this specific configuration. Because several
+baseline failures involve physical fan or obstacle contact, do not present it
+as a clean aerodynamic-force isolation study.
 
 
 CROSS-SCENARIO SYNTHESIS
@@ -643,7 +652,8 @@ The two scenarios support complementary claims.
 4. Posthoc mechanism
 
    Corrected posthoc fallback is a no-op when infeasible. Posthoc is infeasible
-   on 61.6% of Scenario-1 attempts and 94.2% of valid Scenario-2 attempts.
+   on 61.6% of Scenario-1 attempts and 89.2% of valid balanced Scenario-2
+   attempts.
    Scenario-1 vertical degradation is therefore caused by feasible
    action-changing interventions, while Scenario 2 additionally demonstrates
    the limited availability of the one-step projection under severe demand.
@@ -785,7 +795,7 @@ Posthoc LIMO:
 
   results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2.txt
-  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
+  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_lock_run3.txt
 
 Analytic MPC-CBF:
 
@@ -799,9 +809,10 @@ Nominal TinyMPC, log-supported balanced runs:
   results/figure8_070_forced2s_blocked_gap_two_fan_nominal_takeoff_crash_run4.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_nominal_fan_collision_run5.txt
 
-Scenario-2 supplemental raw log:
+Scenario-2 supplemental raw logs:
 
   results/figure8_070_forced2s_blocked_gap_two_fan_embedded_run4.txt
+  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run4.txt
 
 No raw logs were supplied for nominal attempts 1 and 2.
 
@@ -817,7 +828,8 @@ Scenario-2 individual summaries:
   results/figure8_070_forced2s_blocked_gap_two_fan_embedded_run4_summary.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run1_summary.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_fan_collision_run2_summary.txt
-  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3_summary.txt
+  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_lock_run3_summary.txt
+  results/figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run4_summary.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run1_summary.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run2_summary.txt
   results/figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run3_summary.txt

@@ -1,0 +1,69 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 3
+============================================================================
+
+Configuration
+-------------
+
+- Method: posthoc LIMO, mode 2
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.15 m, vz=+0.24 m/s
+- This flight replaces the previously numbered posthoc run 3 in the balanced
+  paper subset. The former run 3 is retained as supplemental run 4.
+
+Outcome
+-------
+
+- FAILURE: `SUP: Locked, reboot required`.
+- The last sample before lock was trajectory t=16.202 s, index 324/482
+  (67.2%).
+- The estimator reset at t=18.603 s occurred after supervisor lock and is
+  post-failure contamination.
+- This run reached the standard t >= 3 s primary window; the table below ends
+  at the last pre-lock sample.
+
+Pre-lock primary-window performance
+-----------------------------------
+
+Metric                              Posthoc
+Boundary-relative XY RMSE           0.9163 m
+Peak boundary-relative XY error     4.3892 m
+Lateral tracking RMSE               0.8063 m
+Peak lateral tracking error         4.0090 m
+Z tracking RMSE                     0.0830 m
+Maximum absolute Z error            0.3090 m
+Tilt RMSE                           24.840 deg
+Peak tilt                          138.714 deg
+
+Timing
+------
+
+Metric                              Posthoc
+Median MPC solve                    22.621 ms
+Median learned evaluation           10.618 ms
+Median complete control step        33.797 ms
+Sampled p99 control step            38.996 ms
+Sampled maximum control step        39.994 ms
+Exact cumulative maximum            40.881 ms
+Worst 50 ms deadline use            81.76%
+Deadline overruns                   0
+
+Posthoc mechanism before lock
+-----------------------------
+
+- Projection attempts: 324
+- Infeasible projections: 297/324 = 91.7%
+- Feasible action-changing projections: 27/324 = 8.3%
+- The corrected infeasible path returned the nominal command.
+
+Interpretation
+--------------
+
+This is a mission-level supervisor-lock failure, not a completed tracking
+trial. It is balanced posthoc run 3. The previously saved multi-contact run is
+preserved as supplemental posthoc run 4.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_lock_run3.txt

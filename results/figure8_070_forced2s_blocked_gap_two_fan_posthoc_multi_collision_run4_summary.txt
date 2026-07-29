@@ -1,4 +1,4 @@
-Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 3
+Figure-8 forced-2-second blocked-gap two-fan configuration: posthoc run 4
 ============================================================================
 
 Configuration
@@ -65,10 +65,10 @@ Interpretation
 --------------
 
 The physical contacts make this a mission-level failure rather than a clean
-aerodynamic-only trial. It is nevertheless the third saved posthoc attempt and
-completes the goal of three raw logs for this method.
+aerodynamic-only trial. It is retained as the fourth saved posthoc attempt,
+outside the balanced paper subset of runs 1-3.
 
 Raw log
 -------
 
-- figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run3.txt
+- figure8_070_forced2s_blocked_gap_two_fan_posthoc_multi_collision_run4.txt
