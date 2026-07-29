@@ -26,6 +26,10 @@ from cflib.utils import uri_helper
 
 DEFAULT_URI = "radio://0/80/2M/E7E7E7E7E8"
 LINK_STALE_S = 0.5
+RACE_FRAME_PERIOD_S = 0.065
+RACE_FRAME_COUNT = 28
+RACE_SPEED_M_S = 1.0
+RACE_DURATION_S = (RACE_FRAME_COUNT - 1) * RACE_FRAME_PERIOD_S
 
 LOG_BLOCKS = [
     ("state", 50, [
@@ -196,6 +200,11 @@ def parse_args():
     p.add_argument("--goal-x", type=float, default=1.0)
     p.add_argument("--goal-y", type=float, default=0.0)
     p.add_argument("--yaw-deg", type=float, default=0.0)
+    p.add_argument(
+        "--race-replay", action="store_true",
+        help=("Replay the nominal exact-image simulation trajectory: reset the "
+              "live obstacle map, then fly straight at 1.0 m/s for 1.755 s "
+              "without peering, freezing, or stopping on detection."))
     p.add_argument("--obs-safety", type=float, default=0.25)
     p.add_argument("--obs-radius", type=float, default=0.25)
     p.add_argument("--obs-height", type=float, default=1.0)
@@ -330,6 +339,40 @@ def stream_line(cf, rows, latest, seconds, x0, y0, z0, x1, y1, z1, yaw_deg,
         cf.commander.send_position_setpoint(x, y, z, yaw_deg)
         rows.append(make_row(phase, latest, x, y, z))
         time.sleep(0.02)
+
+
+def stream_exact_race_replay(cf, rows, latest, x0, y0, z, yaw_deg):
+    """Command the state sequence used by run_exact_track_race_sim.py."""
+    start = time.monotonic()
+    next_command = start
+    first_cylinder = None
+    first_frozen = None
+
+    while True:
+        ensure_link_fresh(latest)
+        now = time.monotonic()
+        elapsed = min(now - start, RACE_DURATION_S)
+        x = x0 + RACE_SPEED_M_S * elapsed
+        cf.commander.send_position_setpoint(x, y0, z, yaw_deg)
+        rows.append(make_row("race_replay", latest, x, y0, z))
+
+        if first_cylinder is None and int(
+                latest_get(latest, "flowObsRx.cylValid", 0) or 0):
+            first_cylinder = elapsed
+            print(f"live cylinder first observed at t={elapsed:.3f}s, "
+                  f"commanded x={x:.3f}m")
+        if first_frozen is None and int(
+                latest_get(latest, "obs.frzValid", 0) or 0):
+            first_frozen = elapsed
+            print(f"WARN: frozen obstacle appeared during unfrozen replay at "
+                  f"t={elapsed:.3f}s")
+
+        if elapsed >= RACE_DURATION_S:
+            break
+        next_command += 0.02
+        time.sleep(max(0.0, next_command - time.monotonic()))
+
+    return first_cylinder
 
 
 def stream_polyline(cf, rows, latest, seconds, points, z, yaw_deg, phase):
@@ -562,6 +605,12 @@ def main():
     LINK_STALE_S = args.link_stale_s
     if args.pid_detour and args.admm_after_freeze:
         raise SystemExit("ABORT: choose only one of --pid-detour or --admm-after-freeze")
+    if args.race_replay and (args.pid_detour or args.admm_after_freeze):
+        raise SystemExit(
+            "ABORT: --race-replay is a perception replay; do not combine it "
+            "with an avoidance run")
+    if args.race_replay:
+        args.yaw_deg = 0.0
     rows = []
     latest = {}
     configs = []
@@ -671,7 +720,7 @@ def main():
                 set_param(cf, "obs.enable", 1)
                 set_param(cf, "obs.logOnly", 1)
                 set_param(cf, "obs.useFlow", 1)
-                set_param(cf, "obs.freeze", 1)
+                set_param(cf, "obs.freeze", 0 if args.race_replay else 1)
                 print("waiting for AI-deck flow packets")
                 if not wait_for_flow(cf, rows, latest, args.flow_start_timeout_s,
                                      args.start_x, args.start_y, args.height,
@@ -679,6 +728,31 @@ def main():
                     print("ABORT: no AI-deck flow packets after switching to TinyMPC")
                     abort_after_cleanup = True
                     land_pid(cf, rows, latest, args.land_s, switch_controller=False)
+
+            if not abort_after_cleanup and args.race_replay:
+                print(
+                    "exact race replay: 28 frames at 65ms, straight 1.0m/s "
+                    "for 1.755s; place the centered 0.90m-wide textured box "
+                    "front face 3.0m ahead of the starting pose")
+                set_param(cf, "obs.freeze", 0)
+                set_param(cf, "obs.frzClear", 1)
+                # Allow the reset to be processed and reflected in telemetry
+                # while stationary. A second pulse immediately before motion
+                # makes the STM evidence-map initial state deterministic.
+                set_param(cf, "flowObsRx.reset", 1, delay=0.20)
+                set_param(cf, "flowObsRx.reset", 1, delay=0.01)
+                first_cylinder = stream_exact_race_replay(
+                    cf, rows, latest, args.start_x, args.start_y, args.height,
+                    0.0)
+                if first_cylinder is None:
+                    print("race replay completed without a live cylinder")
+                else:
+                    print(
+                        f"race replay completed; first live cylinder at "
+                        f"{first_cylinder:.3f}s")
+                land_pid(cf, rows, latest, args.land_s,
+                         switch_controller=False)
+                abort_after_cleanup = True
 
             if not abort_after_cleanup:
                 peer_ok = stream_peer(

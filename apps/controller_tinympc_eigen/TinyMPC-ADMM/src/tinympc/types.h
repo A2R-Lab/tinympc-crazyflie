@@ -144,9 +144,15 @@ typedef struct {
   Eigen::VectorMf* ucu;
   Eigen::VectorMf* lcu;
   
-  // Half-space constraints for obstacle avoidance: a^T x <= b (position only)
-  Eigen::Vector3f a_hs[NHORIZON][MAX_HS];  // Normal vectors per horizon step
+  // Kinematic half-spaces:
+  //   a_pos^T position + a_vel^T velocity <= b + s, s>=0.
+  // This directly represents camera angular look-ahead constraints while
+  // retaining the position-only modeled-obstacle special case.
+  Eigen::Vector3f a_pos_hs[NHORIZON][MAX_HS];
+  Eigen::Vector3f a_vel_hs[NHORIZON][MAX_HS];
   float b_hs[NHORIZON][MAX_HS];             // Offsets per horizon step
+  float slack_penalty_hs[NHORIZON][MAX_HS]; // Quadratic nonnegative slack cost
+  float slack_used_hs[NHORIZON][MAX_HS];    // Last projection diagnostic
   int en_hs[NHORIZON][MAX_HS];              // Enable flag per step/plane (0 = off, 1 = on)
   
   int data_size;

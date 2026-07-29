@@ -9,7 +9,8 @@
  * projection; it is NOT a full 6-DOF PnP (no gate-plane orientation).
  *
  * Frames:
- *   - corner coords: normalized [0,1], order TLx,TLy,TRx,TRy,BRx,BRy,BLx,BLy.
+ *   - corner coords: native 160x160 pixels, order
+ *     TLx,TLy,TRx,TRy,BRx,BRy,BLx,BLy.
  *   - camera: x right, y down, z forward (optical axis).
  *   - body: x forward, y left, z up (Crazyflie).
  *   - world: estimator global frame (matches state->x/y/z).
@@ -34,13 +35,10 @@ extern float g_gate_fx;
 extern float g_gate_fy;
 extern float g_gate_cx;
 extern float g_gate_cy;
-/* Reference image dimensions that the normalized [0,1] corners map onto.
- * Default 160x160: corners normalize per-axis over the 160-wide crop and the
- * vertical resize cancels, so u=x*160, v=y*160. Adjust if the CNN normalization
- * convention differs (verify on hardware). */
+/* Reference image dimensions for the pixel-valued corners. */
 extern float g_gate_img_w;
 extern float g_gate_img_h;
-extern float g_gate_corner_h;   /* net-input frame height the GAP8 corners live in (96) */
+extern float g_gate_corner_h;   /* net-input frame height (native HM01B0: 160) */
 
 /* Debug: last-projection diagnostics (see gate_pnp.c for reason codes). */
 extern float    g_gate_dbg_width;

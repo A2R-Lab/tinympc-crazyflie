@@ -22,7 +22,7 @@ extern "C" {
 
 typedef struct __attribute__((packed)) {
   uint32_t stm32_timestamp;            /* 0 in v1, no state round-trip */
-  float    corner[GATE8_N_CORNERS];    /* dequantized corners, order TL,TR,BR,BL */
+  float    corner[GATE8_N_CORNERS];    /* pixel corners, order TL,TR,BR,BL */
 } gate8_payload_t;
 
 typedef struct __attribute__((packed)) {
@@ -57,6 +57,9 @@ bool gate8LinkGetLatest(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms);
  * frame were fused repeatedly) can skip re-reads of a sample it already used. */
 bool gate8LinkGetLatestSeq(float corners[GATE8_N_CORNERS], uint32_t *out_age_ms,
                            uint32_t *out_sample);
+bool gate8LinkGetLatestSeqTimed(float corners[GATE8_N_CORNERS],
+                               uint32_t *out_age_ms, uint32_t *out_sample,
+                               uint32_t *out_stm32_capture_tick);
 
 #ifdef __cplusplus
 }

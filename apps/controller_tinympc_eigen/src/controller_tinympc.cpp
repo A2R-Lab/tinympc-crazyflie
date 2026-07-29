@@ -60,6 +60,10 @@ extern "C" {
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
 #include "flowdeck_obstacle_link.h"  // AI-deck obstacle-flow sector receiver
+#include "perception_map_link.h"
+#include "perception_danger.h"
+#include "perception_corridor.h"
+#include "perception_model_qparams.h"
 #include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
@@ -232,6 +236,7 @@ float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawU
 // Poll the AI-deck corner link, project to a world-frame gate center, and let the
 // visGate LOG group expose it. Params/logs live in gate_pnp_params.c.
 static GateVisionPacket g_gate_vision;
+static float g_gate_corners_pixels[8];
 
 // --- demo-2/eigen-task modeled obstacle -> TinyMPC half-space constraints ---
 // This bypasses the AI-deck ray pipeline for bring-up. The controller assumes a static
@@ -278,6 +283,50 @@ float    g_obs_freeze_radius = 0.0f;
 float    g_obs_freeze_conf = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
+
+// NanoCockpit multi-task CNN maps. The quantized model is accepted for
+// obstacle-avoidance use; packet validity, age checks, confidence margins,
+// and soft constraint slack remain the runtime safety mechanisms.
+uint8_t perceptEnable = 1;
+uint8_t perceptConstraintEnable = 1;
+uint8_t perceptLogOnly = 0;
+float perceptHorizonS = NHORIZON * DT;
+float perceptLatencyS = 0.08f;
+float perceptMaxRangeM = 6.0f;
+float perceptNominalSpeedMps = 1.0f;
+float perceptDangerThreshold = PERCEPTION_MODEL_DANGER_THRESHOLD;
+float perceptBaseMarginPx = 4.0f;
+float perceptDroneRadiusM = 0.10f;
+float perceptSafetyMarginM = 0.10f;
+float perceptLookaheadS = 0.20f;
+float perceptSlackPenalty = 1000.0f;
+uint8_t perceptKStart = 1;
+uint8_t perceptGateOpeningEnable = 1;
+float perceptGateOpeningThreshold = 0.80f;
+float perceptGateOpeningInsetPx = 8.0f;
+float perceptGateOpeningSafeCap = 0.20f;
+float perceptGateOpeningRangeGuardM = 0.15f;
+float perceptGateOpeningMaxUncertainty = 0.50f;
+uint8_t g_percept_valid = 0;
+uint32_t g_percept_age_ms = 0;
+uint32_t g_percept_sample = 0;
+float g_percept_max_danger = 0.0f;
+float g_percept_center_danger = 0.0f;
+float g_percept_min_ttc = 0.0f;
+uint8_t g_percept_corridor_valid = 0;
+uint8_t g_percept_constraints = 0;
+float g_percept_pixel_margin = 0.0f;
+float g_percept_max_slack = 0.0f;
+float g_percept_total_slack = 0.0f;
+float g_percept_slack_cost = 0.0f;
+uint32_t g_percept_failed_solves = 0;
+uint32_t g_percept_near_infeasible_solves = 0;
+float g_percept_left_n[3] = {0.0f, 0.0f, 0.0f};
+float g_percept_right_n[3] = {0.0f, 0.0f, 0.0f};
+uint8_t g_percept_gate_open_cells = 0;
+static perception_danger_map_t g_perception_danger_map;
+static uint32_t perception_sample_seen = 0;
+static uint32_t gate_capture_tick = 0;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -762,10 +811,14 @@ static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   float corners[GATE8_N_CORNERS];
   uint32_t age_ms = 0;
   uint32_t sample = 0;
-  if (!gate8LinkGetLatestSeq(corners, &age_ms, &sample)) {
+  uint32_t capture_tick = 0;
+  if (!gate8LinkGetLatestSeqTimed(
+          corners, &age_ms, &sample, &capture_tick)) {
     g_gate_valid = 0;   // no corner data received yet
     return;
   }
+  memcpy(g_gate_corners_pixels, corners, sizeof(g_gate_corners_pixels));
+  gate_capture_tick = capture_tick;
   // Flag a corner frame the camera has actually refreshed, so Stage 4 fuses each one at
   // most once (the poll runs at 50 Hz, well above the camera's frame rate).
   if (sample != gate_sample_seen) {
@@ -821,6 +874,210 @@ static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sens
 
   flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,
                               state->position.x, state->position.y, yaw);
+}
+
+static void pollPerceptionDanger(const state_t *state) {
+  uint8_t obstacle_presence[PERCEPTION_MAP_CELLS];
+  uint8_t inverse_range[PERCEPTION_MAP_CELLS];
+  uint8_t uncertainty[PERCEPTION_MAP_CELLS];
+  uint8_t gate_opening[PERCEPTION_MAP_CELLS];
+  uint32_t age_ms = 0;
+  uint32_t capture_tick = 0;
+  uint32_t sample = 0;
+  if (!perceptEnable ||
+      !perceptionMapLinkGetLatest(obstacle_presence, inverse_range, uncertainty,
+                                  gate_opening,
+                                  &age_ms, &capture_tick, &sample)) {
+    g_percept_valid = 0;
+    return;
+  }
+  g_percept_valid = 1;
+  g_percept_age_ms = age_ms;
+  g_percept_sample = sample;
+  if (sample == perception_sample_seen) {
+    return;
+  }
+  perception_sample_seen = sample;
+
+  perception_danger_state_t danger_state;
+  danger_state.body_velocity_mps[0] = state->velocity.x;
+  danger_state.body_velocity_mps[1] = state->velocity.y;
+  danger_state.body_velocity_mps[2] = state->velocity.z;
+  danger_state.horizon_s = perceptHorizonS;
+  danger_state.perception_control_latency_s = perceptLatencyS;
+  danger_state.maximum_range_m = perceptMaxRangeM;
+  danger_state.nominal_target_speed_mps = perceptNominalSpeedMps;
+  perceptionDangerCompute(obstacle_presence, inverse_range, uncertainty,
+                          age_ms, &danger_state, &g_perception_danger_map);
+  g_percept_gate_open_cells = 0;
+  /*
+   * Both UART products carry the STM32 capture tick echoed by GAP8. Never
+   * combine a gate polygon and dense map from different camera exposures.
+   */
+  if (perceptGateOpeningEnable && g_gate_valid &&
+      capture_tick != 0 && capture_tick == gate_capture_tick) {
+    const int changed = perceptionDangerApplyGateOpening(
+        gate_opening, g_gate_corners_pixels, g_gate_range_m,
+        perceptGateOpeningInsetPx, perceptGateOpeningThreshold,
+        perceptGateOpeningSafeCap, perceptGateOpeningRangeGuardM,
+        perceptGateOpeningMaxUncertainty, &g_perception_danger_map);
+    g_percept_gate_open_cells =
+        changed > 255 ? 255 : (uint8_t)changed;
+  }
+
+  float maximum_danger = 0.0f;
+  float minimum_ttc = INFINITY;
+  for (int cell = 0; cell < PERCEPTION_MAP_CELLS; ++cell) {
+    if (g_perception_danger_map.probability[cell] > maximum_danger) {
+      maximum_danger = g_perception_danger_map.probability[cell];
+    }
+    if (g_perception_danger_map.probability[cell] >= 0.5f &&
+        g_perception_danger_map.time_to_contact_s[cell] < minimum_ttc) {
+      minimum_ttc = g_perception_danger_map.time_to_contact_s[cell];
+    }
+  }
+  g_percept_max_danger = maximum_danger;
+  g_percept_center_danger =
+      g_perception_danger_map.probability[5 * PERCEPTION_MAP_W + 5];
+  g_percept_min_ttc = isfinite(minimum_ttc) ? minimum_ttc : 0.0f;
+}
+
+static void cameraNormalToWorld(const float camera[3],
+                                const state_t *state,
+                                Eigen::Vector3f *world) {
+  float bx = camera[2], by = -camera[0], bz = -camera[1];
+  const float cp = cosf(g_gate_mount_pitch_rad);
+  const float sp = sinf(g_gate_mount_pitch_rad);
+  const float pitched_x = cp * bx + sp * bz;
+  const float pitched_z = -sp * bx + cp * bz;
+  bx = pitched_x; bz = pitched_z;
+  const float cy = cosf(g_gate_mount_yaw_rad);
+  const float sy = sinf(g_gate_mount_yaw_rad);
+  const float yawed_x = cy * bx - sy * by;
+  const float yawed_y = sy * bx + cy * by;
+  bx = yawed_x; by = yawed_y;
+
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float tx = 2.0f * (q->y * bz - q->z * by);
+  const float ty = 2.0f * (q->z * bx - q->x * bz);
+  const float tz = 2.0f * (q->x * by - q->y * bx);
+  (*world)(0) = bx + q->w * tx + (q->y * tz - q->z * ty);
+  (*world)(1) = by + q->w * ty + (q->z * tx - q->x * tz);
+  (*world)(2) = bz + q->w * tz + (q->x * ty - q->y * tx);
+  world->normalize();
+}
+
+static Eigen::Vector3f cameraCenterWorld(const state_t *state) {
+  const float bx = g_gate_mount_fwd_m;
+  const float by = 0.0f;
+  const float bz = g_gate_mount_up_m;
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float tx = 2.0f * (q->y * bz - q->z * by);
+  const float ty = 2.0f * (q->z * bx - q->x * bz);
+  const float tz = 2.0f * (q->x * by - q->y * bx);
+  Eigen::Vector3f center;
+  center << state->position.x + bx + q->w * tx + (q->y * tz - q->z * ty),
+            state->position.y + by + q->w * ty + (q->z * tx - q->x * tz),
+            state->position.z + bz + q->w * tz + (q->x * ty - q->y * tx);
+  return center;
+}
+
+static void updatePerceptionAngularHalfspaces(const state_t *state) {
+  g_percept_corridor_valid = 0;
+  g_percept_constraints = 0;
+  if (!perceptEnable || !g_percept_valid || !g_gate_valid) return;
+
+  float gate_u = 0.0f, gate_v = 0.0f;
+  for (int corner = 0; corner < 4; ++corner) {
+    gate_u += 0.25f * g_gate_corners_pixels[2 * corner];
+    gate_v += 0.25f * g_gate_corners_pixels[2 * corner + 1];
+  }
+  int gate_x = (int)(gate_u / 16.0f);
+  int gate_y = (int)(gate_v / 16.0f);
+  if (gate_x < 0) gate_x = 0;
+  if (gate_x > 9) gate_x = 9;
+  if (gate_y < 0) gate_y = 0;
+  if (gate_y > 9) gate_y = 9;
+  const int gate_cell = gate_y * 10 + gate_x;
+  const float range =
+      fmaxf(0.30f, g_perception_danger_map.range_m[gate_cell]);
+  const float uncertainty = g_perception_danger_map.uncertainty[gate_cell];
+  const float speed = sqrtf(
+      state->velocity.x * state->velocity.x
+      + state->velocity.y * state->velocity.y
+      + state->velocity.z * state->velocity.z);
+  float pixel_margin =
+      perceptBaseMarginPx
+      + g_gate_fx * (perceptDroneRadiusM + perceptSafetyMarginM) / range
+      + 4.0f * uncertainty
+      + g_gate_fx * speed * perceptLatencyS / range;
+  if (pixel_margin > 24.0f) pixel_margin = 24.0f;
+  g_percept_pixel_margin = pixel_margin;
+
+  perception_corridor_config_t config = {
+    perceptDangerThreshold, pixel_margin,
+    g_gate_fx, g_gate_fy, g_gate_cx, g_gate_cy
+  };
+  perception_corridor_t corridor;
+  if (!perceptionCorridorFit(g_perception_danger_map.probability,
+                             g_gate_corners_pixels, &config, &corridor)) {
+    return;
+  }
+  g_percept_corridor_valid = 1;
+  Eigen::Vector3f normals_world[2];
+  cameraNormalToWorld(corridor.camera_normal[0], state, &normals_world[0]);
+  cameraNormalToWorld(corridor.camera_normal[1], state, &normals_world[1]);
+  for (int axis = 0; axis < 3; ++axis) {
+    g_percept_left_n[axis] = normals_world[0](axis);
+    g_percept_right_n[axis] = normals_world[1](axis);
+  }
+  if (!perceptConstraintEnable || perceptLogOnly) return;
+
+  const Eigen::Vector3f camera_center = cameraCenterWorld(state);
+  const int first_k =
+      perceptKStart < NHORIZON ? perceptKStart : NHORIZON - 1;
+  for (int k = first_k; k < NHORIZON; ++k) {
+    const float tau = fminf(perceptLookaheadS, (k + 1) * DT);
+    for (int side = 0; side < 2; ++side) {
+      float normal[3], center[3], a_position_data[3], a_velocity_data[3], b;
+      for (int axis = 0; axis < 3; ++axis) {
+        normal[axis] = normals_world[side](axis);
+        center[axis] = camera_center(axis);
+      }
+      perceptionAngularConstraintRow(
+          normal, center, tau, a_position_data, a_velocity_data, &b);
+      Eigen::Vector3f a_position(
+          a_position_data[0], a_position_data[1], a_position_data[2]);
+      Eigen::Vector3f a_velocity(
+          a_velocity_data[0], a_velocity_data[1], a_velocity_data[2]);
+      tiny_SetKinematicHalfspace(
+          &work, k, side + 1, &a_position, &a_velocity, b,
+          perceptSlackPenalty, 1);
+      g_percept_constraints++;
+    }
+  }
+  if (g_percept_constraints) stgs.en_cstr_states = 1;
+}
+
+static void updatePerceptionSlackDiagnostics(void) {
+  float maximum = 0.0f, total = 0.0f, square_sum = 0.0f;
+  for (int k = 0; k < NHORIZON; ++k) {
+    for (int side = 1; side <= 2; ++side) {
+      const float slack = data.slack_used_hs[k][side];
+      if (slack > maximum) maximum = slack;
+      total += slack;
+      square_sum += slack * slack;
+    }
+  }
+  g_percept_max_slack = maximum;
+  g_percept_total_slack = total;
+  g_percept_slack_cost = perceptSlackPenalty * square_sum;
+  if (g_percept_constraints) {
+    if (info.status_val != TINY_SOLVED) g_percept_failed_solves++;
+    if (maximum >= 0.02f) {
+      g_percept_near_infeasible_solves++;
+    }
+  }
 }
 
 static void updateObstacleHalfspace(const state_t *state) {
@@ -1098,6 +1355,7 @@ static void tinympcControllerTask(void *parameters) {
     // sampled at MPC_RATE, which is faster than the AI-deck camera/flow producer.
     pollGateVision(&state_task, &sensors_task);
     pollFlowObstacleDepth(&state_task, &sensors_task);
+    pollPerceptionDanger(&state_task);
     fuseGateIntoEkf(&state_task);
 
     updateHorizonReference(&setpoint_task);
@@ -1110,9 +1368,11 @@ static void tinympcControllerTask(void *parameters) {
     x0(5) = phi.z;
 
     updateObstacleHalfspace(&state_task);
+    updatePerceptionAngularHalfspaces(&state_task);
     tiny_UpdateLinearCost(&work);
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
+    updatePerceptionSlackDiagnostics();
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
     g_mpc_iter = (uint8_t)info.iter;
 
