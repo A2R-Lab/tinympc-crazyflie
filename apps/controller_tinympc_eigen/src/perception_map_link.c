@@ -65,19 +65,10 @@ bool perceptionMapLinkPublishFromRx(const perception_map_msg_t *msg) {
   g_mapSeqLock = lock;
   COMPILER_BARRIER();
   for (int cell = 0; cell < PERCEPTION_MAP_CELLS; ++cell) {
-    if (p->flags & PERCEPTION_MAP_FLAG_DANGER_RAW_U8) {
-      const uint8_t low = getNibble(p->packed_u4, 4 * cell);
-      const uint8_t high = getNibble(p->packed_u4, 4 * cell + 1);
-      g_obstaclePresence[cell] = low | (uint8_t)(high << 4);
-      g_inverseRange[cell] = 0;
-      g_uncertainty[cell] = 0;
-      g_gateOpening[cell] = 0;
-    } else {
-      g_obstaclePresence[cell] = getNibble(p->packed_u4, 4 * cell) * 17u;
-      g_inverseRange[cell] = getNibble(p->packed_u4, 4 * cell + 1) * 17u;
-      g_uncertainty[cell] = getNibble(p->packed_u4, 4 * cell + 2) * 17u;
-      g_gateOpening[cell] = getNibble(p->packed_u4, 4 * cell + 3) * 17u;
-    }
+    g_obstaclePresence[cell] = getNibble(p->packed_u4, 4 * cell) * 17u;
+    g_inverseRange[cell] = getNibble(p->packed_u4, 4 * cell + 1) * 17u;
+    g_uncertainty[cell] = getNibble(p->packed_u4, 4 * cell + 2) * 17u;
+    g_gateOpening[cell] = getNibble(p->packed_u4, 4 * cell + 3) * 17u;
   }
   g_captureTick = p->stm32_ts_echo;
   g_rxTick = xTaskGetTickCount();
@@ -102,9 +93,7 @@ bool perceptionMapLinkGetLatest(uint8_t obstacle_presence[PERCEPTION_MAP_CELLS],
     memcpy(obstacle_presence, g_obstaclePresence, PERCEPTION_MAP_CELLS);
     memcpy(inverse_range, g_inverseRange, PERCEPTION_MAP_CELLS);
     memcpy(uncertainty, g_uncertainty, PERCEPTION_MAP_CELLS);
-    if (gate_opening) {
-      memcpy(gate_opening, g_gateOpening, PERCEPTION_MAP_CELLS);
-    }
+    memcpy(gate_opening, g_gateOpening, PERCEPTION_MAP_CELLS);
     rxTick = g_rxTick;
     captureTick = g_captureTick;
     COMPILER_BARRIER();

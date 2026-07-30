@@ -56,10 +56,13 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 #include "estimator.h"         // estimatorEnqueuePosition (Stage 4: vision -> EKF)
+#include "quatcompress.h"
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
+#include "flowdeck_obstacle_link.h"  // AI-deck obstacle-flow sector receiver
 #include "perception_map_link.h"
 #include "perception_danger.h"
+#include "perception_corridor.h"
 #include "perception_model_qparams.h"
 #include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
 
@@ -68,11 +71,7 @@ extern "C" {
 #include "tinympc/tinympc.h"
 #define TINYMPC_TASK_STACKSIZE        (4 * configMINIMAL_STACK_SIZE)
 #define TINYMPC_TASK_NAME             "TINYMPC"
-// Match demo-2 commit 66004e6: a long ADMM solve at priority 2 can starve
-// the timer/radio service tasks and trigger a motor stop even when it fits
-// nominally inside the MPC period.
-#define TINYMPC_TASK_PRI              1
-#define TINYMPC_PLAN_TIMEOUT_MS       60
+#define TINYMPC_TASK_PRI              2
 
 // Rodriguez parameters conversion function (needed for old firmware compatibility)
 static inline struct vec quat2rp(struct quat q) {
@@ -203,18 +202,17 @@ static struct vec phi;
 static struct quat q_meas;   // measured attitude, stashed by updateInitialState
 static struct quat q_ref0;   // reference-attitude frame for the multiplicative error
 
-// Watchdog-safe MPC/PID cascade used by the known-good demo-2 integration history.
-// Direct demo-2 control consumes X[1]/U[0], but a position PID needs meaningful spatial
-// lookahead. At 50 Hz, knot 10 is 200 ms ahead: enough position/altitude error for the
-// cascade without exposing it to the unstable terminal knot. An infeasible raw state is
-// replaced by its projected Z state.
+// --- Cascade output (ishaan/debug-traj approach): TinyMPC plans position; the stock
+// Crazyflie PID does all low-level attitude/rate/motor control, INCLUDING yaw (which it
+// handles robustly at any angle). The MPC itself never tracks yaw. mpc_setpoint_pid is
+// the position + heading setpoint handed to controllerPid every tick; the heading is the
+// trajectory's velocity direction (face-forward). ---
 static setpoint_t mpc_setpoint_pid;
+static float mpc_heading_yaw_deg = 0.0f;   // heading commanded to the PID [deg]
 static bool  mpc_has_run = false;          // hold current pose until the first MPC solve
-static uint32_t mpc_last_finish_tick = 0;
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
-static constexpr int MPC_CASCADE_OUTPUT_K = 10;
-static constexpr float MPC_OUTPUT_MAX_VIOLATION_M = 0.01f;
+static const bool enable_pid_face_forward_yaw = true;
 
 // Demo-2 watchdog fix: run TinyMPC in its own lower-priority task. The stabilizer loop
 // only snapshots inputs, wakes this task at MPC_RATE, and feeds the latest MPC setpoint
@@ -227,11 +225,6 @@ static sensorData_t sensors_data;
 static state_t state_data;
 static setpoint_t mpc_setpoint_data;
 static bool mpc_reset_requested = false;
-uint32_t g_mpc_task_us = 0;
-uint32_t g_mpc_stack_free_words = 0;
-uint32_t g_mpc_stale_wakes = 0;
-uint32_t g_mpc_dropped_wakes = 0;
-uint32_t g_mpc_plan_age_ms = 0;
 static void tinympcControllerTask(void *parameters);
 STATIC_MEM_TASK_ALLOC(tinympcControllerTask, TINYMPC_TASK_STACKSIZE);
 // Let cfclient command yaw live (Parameters tab, group visYaw). useRef=1 overrides the
@@ -240,9 +233,10 @@ uint8_t yawUseRef = 0;      // PARAM: 1 = command heading from yawRefDeg below
 float   yawRefDeg = 0.0f;   // PARAM: commanded absolute heading [deg] when yawUseRef=1
 
 // --- Gate vision (Stage 1: perception only, does NOT affect control) ---
-// Poll the AI-deck corner link and publish gate telemetry independently of
-// neural obstacle avoidance. Params/logs live in gate_pnp_params.c.
+// Poll the AI-deck corner link, project to a world-frame gate center, and let the
+// visGate LOG group expose it. Params/logs live in gate_pnp_params.c.
 static GateVisionPacket g_gate_vision;
+static float g_gate_corners_pixels[8];
 
 // --- demo-2/eigen-task modeled obstacle -> TinyMPC half-space constraints ---
 // This bypasses the AI-deck ray pipeline for bring-up. The controller assumes a static
@@ -251,6 +245,10 @@ static GateVisionPacket g_gate_vision;
 uint8_t obsEnable = 0;       // PARAM: master enable for modeled cylinder constraints
 uint8_t obsLogOnly = 1;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
 uint8_t obsPidPassthrough = 0;// PARAM: run perception task but pass commander setpoints to PID
+uint8_t obsUseFlow = 0;      // PARAM: 1 = use AI-deck flow cylinder instead of cx/cy
+uint8_t obsFreezeFlow = 0;   // PARAM: 1 = latch one valid flow cylinder and hold it
+uint8_t obsFreezeClear = 0;  // PARAM: write 1 to clear the latched flow cylinder
+uint32_t obsFreezeAfterMs = 0;// PARAM: wait after OOT activation before latching flow
 float   obsCx = 0.5f;        // PARAM: obstacle center x [m]
 float   obsCy = 0.15f;       // PARAM: obstacle center y [m]
 float   obsCz = 0.5f;        // PARAM: cylinder center z [m]
@@ -273,33 +271,18 @@ float    g_obs_b = 0.0f;
 float    g_obs_margin = 0.0f;
 float    g_obs_violation = 0.0f;
 float    g_obs_clearance = 0.0f;
+uint8_t  g_obs_source = 0;
 float    g_obs_eff_cx = 0.0f;
 float    g_obs_eff_cy = 0.0f;
 float    g_obs_eff_radius = 0.0f;
+float    g_obs_flow_conf = 0.0f;
+uint8_t  g_obs_freeze_valid = 0;
+float    g_obs_freeze_cx = 0.0f;
+float    g_obs_freeze_cy = 0.0f;
+float    g_obs_freeze_radius = 0.0f;
+float    g_obs_freeze_conf = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
-float    g_mpc_primal_residual = 0.0f;
-float    g_mpc_dual_residual = 0.0f;
-float    g_mpc_rho = 0.0f;
-
-// Vision-independent fixed half-space test. The configured inequality is
-// testPlaneA' * position <= testPlaneB. It uses half-space slot 1, so the
-// hardware runner disables both perception and modeled-obstacle constraints.
-uint8_t testPlaneEnable = 0;
-uint8_t testPlaneLogOnly = 0;
-uint8_t testPlaneKStart = 1;
-uint8_t testPlaneMaxIter = 5;
-float testPlaneA[3] = {1.0f, -1.0f, 0.0f};
-float testPlaneB = 0.35f;
-uint8_t g_test_plane_valid = 0;
-uint8_t g_test_plane_applied = 0;
-uint8_t g_test_plane_constraints = 0;
-uint8_t g_test_plane_worst_k = 0;
-float g_test_plane_a[3] = {0.0f, 0.0f, 0.0f};
-float g_test_plane_b = 0.0f;
-float g_test_plane_plan_violation = 0.0f;
-float g_test_plane_output_violation = 0.0f;
-float g_test_plane_state_violation = 0.0f;
 
 // NanoCockpit multi-task CNN maps. The quantized model is accepted for
 // obstacle-avoidance use; packet validity, age checks, confidence margins,
@@ -311,17 +294,19 @@ float perceptHorizonS = NHORIZON * DT;
 float perceptLatencyS = 0.08f;
 float perceptMaxRangeM = 6.0f;
 float perceptNominalSpeedMps = 1.0f;
-uint8_t perceptDangerQ = 42;
+float perceptDangerThreshold = PERCEPTION_MODEL_DANGER_THRESHOLD;
+float perceptBaseMarginPx = 4.0f;
+float perceptDroneRadiusM = 0.10f;
+float perceptSafetyMarginM = 0.10f;
+float perceptLookaheadS = 0.20f;
+float perceptSlackPenalty = 1000.0f;
 uint8_t perceptKStart = 1;
-uint8_t perceptMassMinCells = 4;
-float perceptLineOffsetPx = 16.0f;
-uint8_t perceptHoldSteps = 6;
-uint8_t perceptPersistMaps = 2;
-uint8_t perceptSafeBandCells = 2;
-uint8_t perceptConstraintSteps = 8;
-uint8_t perceptClearMaps = 3;
-uint8_t perceptRejoinSteps = 25;
-float perceptMaxLateralSpeedMps = 0.60f;
+uint8_t perceptGateOpeningEnable = 1;
+float perceptGateOpeningThreshold = 0.80f;
+float perceptGateOpeningInsetPx = 8.0f;
+float perceptGateOpeningSafeCap = 0.20f;
+float perceptGateOpeningRangeGuardM = 0.15f;
+float perceptGateOpeningMaxUncertainty = 0.50f;
 uint8_t g_percept_valid = 0;
 uint32_t g_percept_age_ms = 0;
 uint32_t g_percept_sample = 0;
@@ -330,153 +315,18 @@ float g_percept_center_danger = 0.0f;
 float g_percept_min_ttc = 0.0f;
 uint8_t g_percept_corridor_valid = 0;
 uint8_t g_percept_constraints = 0;
-uint8_t g_percept_applied = 0;
-int8_t g_percept_avoid_side = 0;
-uint16_t g_percept_unsafe_rows[PERCEPTION_MAP_H] = {0};
-float g_percept_plane_a[3] = {0.0f, 0.0f, 0.0f};
-float g_percept_plane_b = 0.0f;
-float g_percept_safe_u = 0.0f;
-float g_percept_line_u = 0.0f;
+float g_percept_pixel_margin = 0.0f;
+float g_percept_max_slack = 0.0f;
+float g_percept_total_slack = 0.0f;
+float g_percept_slack_cost = 0.0f;
+uint32_t g_percept_failed_solves = 0;
+uint32_t g_percept_near_infeasible_solves = 0;
 float g_percept_left_n[3] = {0.0f, 0.0f, 0.0f};
 float g_percept_right_n[3] = {0.0f, 0.0f, 0.0f};
-float g_mpc_output_position[3] = {0.0f, 0.0f, 0.0f};
-float g_mpc_output_yaw_deg = 0.0f;
-uint8_t g_mpc_output_safe = 0;
-float g_mpc_output_violation = 0.0f;
-uint8_t g_percept_hold_active = 0;
-uint32_t g_percept_hold_age_ms = 0;
-uint8_t g_percept_obstacle_cells = 0;
-uint8_t g_percept_mass_cells = 0;
-uint8_t g_percept_mass_detected = 0;
-uint8_t g_percept_center_q = 0;
-uint8_t g_percept_max_q = 0;
-uint8_t g_percept_path_hit = 0;
-uint8_t g_percept_path_knot = 0;
-uint8_t g_percept_path_q = 0;
-uint8_t g_percept_safe_left_cells = 255;
-uint8_t g_percept_safe_right_cells = 255;
-float g_percept_path_u = 0.0f;
-float g_percept_path_v = 0.0f;
-float g_percept_plan_violation = 0.0f;
-float g_percept_state_violation = 0.0f;
-uint8_t g_percept_mode = 0;
-uint8_t g_percept_persist_count = 0;
-uint8_t g_percept_clear_count = 0;
-float g_percept_avoid_position[3] = {0.0f, 0.0f, 0.0f};
-float g_percept_reference_offset = 0.0f;
+uint8_t g_percept_gate_open_cells = 0;
 static perception_danger_map_t g_perception_danger_map;
-static uint8_t g_perception_danger_q[PERCEPTION_MAP_CELLS] = {0};
 static uint32_t perception_sample_seen = 0;
-static uint32_t perception_constraint_sample_seen = 0;
-enum {
-  PERCEPT_MODE_CLEAR = 0,
-  PERCEPT_MODE_AVOID = 1,
-  PERCEPT_MODE_REJOIN = 2,
-};
-static uint8_t percept_plane_latch_valid = 0;
-static uint32_t percept_plane_latched_tick = 0;
-static int8_t percept_latched_side = 0;
-static float percept_latched_a[3] = {0.0f, 0.0f, 0.0f};
-static float percept_latched_b = 0.0f;
-static float percept_latched_safe_u = 0.0f;
-static float percept_latched_line_u = 0.0f;
-static uint8_t percept_latched_first_k = 0;
-static uint8_t percept_latched_last_k = 0;
-static Eigen::Vector3f percept_avoid_position = Eigen::Vector3f::Zero();
-static uint8_t percept_collision_k = 0;
-static uint8_t percept_candidate_k = 0;
-static uint8_t percept_candidate_count = 0;
-static uint8_t percept_clear_count = 0;
-static uint32_t percept_avoid_start_tick = 0;
-static float percept_rejoin_gain = 0.0f;
-
-static bool isDangerCell(int cell) {
-  return cell >= 0 && cell < PERCEPTION_MAP_CELLS &&
-         g_perception_danger_q[cell] >= perceptDangerQ;
-}
-
-static void clearPerceptionPlaneLatch(void) {
-  percept_plane_latch_valid = 0;
-  percept_plane_latched_tick = 0;
-  percept_latched_side = 0;
-  memset(percept_latched_a, 0, sizeof(percept_latched_a));
-  percept_latched_b = 0.0f;
-  percept_latched_safe_u = 0.0f;
-  percept_latched_line_u = 0.0f;
-  percept_latched_first_k = 0;
-  percept_latched_last_k = 0;
-  percept_avoid_position.setZero();
-  percept_collision_k = 0;
-  percept_candidate_k = 0;
-  percept_candidate_count = 0;
-  percept_clear_count = 0;
-  percept_avoid_start_tick = 0;
-  percept_rejoin_gain = 0.0f;
-  g_percept_mode = PERCEPT_MODE_CLEAR;
-  g_percept_persist_count = 0;
-  g_percept_clear_count = 0;
-  memset(g_percept_avoid_position, 0, sizeof(g_percept_avoid_position));
-  g_percept_reference_offset = 0.0f;
-  g_percept_hold_active = 0;
-  g_percept_hold_age_ms = 0;
-  g_percept_path_hit = 0;
-  g_percept_path_knot = 0;
-  g_percept_path_q = 0;
-  g_percept_safe_left_cells = 255;
-  g_percept_safe_right_cells = 255;
-  g_percept_path_u = 0.0f;
-  g_percept_path_v = 0.0f;
-  g_percept_plan_violation = 0.0f;
-  g_percept_state_violation = 0.0f;
-}
-
-static uint8_t largestDangerMass(void) {
-  static uint8_t visited[PERCEPTION_MAP_CELLS];
-  static uint8_t queue[PERCEPTION_MAP_CELLS];
-  memset(visited, 0, sizeof(visited));
-  uint8_t largest = 0;
-
-  /* Rows 0 and 9 are persistently marked dangerous by the current model and
-   * are excluded from this diagnostic. Count 4-connected components in the
-   * remaining image instead of treating scattered pixels as one obstacle. */
-  for (int seed_y = 1; seed_y < PERCEPTION_MAP_H - 1; ++seed_y) {
-    for (int seed_x = 0; seed_x < PERCEPTION_MAP_W; ++seed_x) {
-      const int seed = seed_y * PERCEPTION_MAP_W + seed_x;
-      if (visited[seed] || !isDangerCell(seed)) {
-        continue;
-      }
-
-      uint8_t head = 0;
-      uint8_t tail = 0;
-      uint8_t count = 0;
-      queue[tail++] = (uint8_t)seed;
-      visited[seed] = 1;
-      while (head < tail) {
-        const int cell = queue[head++];
-        const int x = cell % PERCEPTION_MAP_W;
-        const int y = cell / PERCEPTION_MAP_W;
-        count++;
-        const int nx[4] = {x - 1, x + 1, x, x};
-        const int ny[4] = {y, y, y - 1, y + 1};
-        for (int neighbor = 0; neighbor < 4; ++neighbor) {
-          if (nx[neighbor] < 0 || nx[neighbor] >= PERCEPTION_MAP_W ||
-              ny[neighbor] < 1 ||
-              ny[neighbor] >= PERCEPTION_MAP_H - 1) {
-            continue;
-          }
-          const int next =
-              ny[neighbor] * PERCEPTION_MAP_W + nx[neighbor];
-          if (!visited[next] && isDangerCell(next)) {
-            visited[next] = 1;
-            queue[tail++] = (uint8_t)next;
-          }
-        }
-      }
-      if (count > largest) largest = count;
-    }
-  }
-  return largest;
-}
+static uint32_t gate_capture_tick = 0;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -839,6 +689,12 @@ void updateHorizonReference(const setpoint_t *setpoint) {
           }
         }
       }
+      // Face-forward heading: yaw along the reference velocity direction. Handled by the
+      // stock PID (not the MPC); held at the previous value when nearly stationary.
+      float vx = X_ref_data[traj_idx][6], vy = X_ref_data[traj_idx][7];
+      if (vx * vx + vy * vy > 1e-6f) {
+        mpc_heading_yaw_deg = wrap_deg(atan2f(vy, vx) * (180.0f / M_PI_F));
+      }
     }
   }
   else {
@@ -918,18 +774,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       xg(9)  = radians(setpoint->attitudeRate.roll);
       xg(10) = radians(setpoint->attitudeRate.pitch);
       xg(11) = radians(setpoint->attitudeRate.yaw);
-      /* Keep the camera pointed at the position being tracked. This preserves
-       * the centered-target assumption when avoidance displaces the vehicle
-       * laterally from the nominal path. Inside 5 cm, bearing is undefined, so
-       * retain the commander's yaw instead of amplifying position noise. */
-      const float target_dx = xg(0) - x0(0);
-      const float target_dy = xg(1) - x0(1);
-      if (target_dx * target_dx + target_dy * target_dy > 0.05f * 0.05f) {
-        ref_yaw_deg = wrap_deg(
-            atan2f(target_dy, target_dx) * (180.0f / M_PI_F));
-      } else {
-        ref_yaw_deg = setpoint->attitude.yaw;
-      }
+      ref_yaw_deg   = setpoint->attitude.yaw;
       ref_roll_deg  = setpoint->attitude.roll;
       ref_pitch_deg = setpoint->attitude.pitch;
     }
@@ -937,6 +782,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     desired_rpy = mkvec(radians(ref_roll_deg), radians(ref_pitch_deg), radians(ref_yaw_deg));
     attitude = rpy2quat(desired_rpy);
     q_ref0 = qnormalize(attitude);  // desired attitude = reference frame for the error
+    mpc_heading_yaw_deg = ref_yaw_deg;             // heading fed to the stock PID [deg]
     xg(3) = 0.0f;                   // identity attitude in the q_ref0 frame
     xg(4) = 0.0f;
     xg(5) = 0.0f;
@@ -957,17 +803,22 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   }
 }
 
+// Half-space constraint function removed for basic functionality test
+
 // Stage 1: poll the AI-deck corner link and project to a world-frame gate center.
 // Updates the g_gate_* globals (logged via visGate); does not touch control.
 static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   float corners[GATE8_N_CORNERS];
   uint32_t age_ms = 0;
   uint32_t sample = 0;
+  uint32_t capture_tick = 0;
   if (!gate8LinkGetLatestSeqTimed(
-          corners, &age_ms, &sample, NULL)) {
+          corners, &age_ms, &sample, &capture_tick)) {
     g_gate_valid = 0;   // no corner data received yet
     return;
   }
+  memcpy(g_gate_corners_pixels, corners, sizeof(g_gate_corners_pixels));
+  gate_capture_tick = capture_tick;
   // Flag a corner frame the camera has actually refreshed, so Stage 4 fuses each one at
   // most once (the poll runs at 50 Hz, well above the camera's frame rate).
   if (sample != gate_sample_seen) {
@@ -984,15 +835,59 @@ static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   gate_pnp_project(corners, age_ms, &ds, &g_gate_vision);
 }
 
+static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sensors) {
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float yaw = atan2f(2.0f * (q->w * q->z + q->x * q->y),
+                          1.0f - 2.0f * (q->y * q->y + q->z * q->z));
+  /* Rotate world velocity with R(q)^T. A yaw-only rotation biases monocular
+   * inverse depth during the pitch/roll angles used in racing flight. */
+  const float body_vx =
+      (1.0f - 2.0f * (q->y*q->y + q->z*q->z)) * state->velocity.x +
+      2.0f * (q->x*q->y + q->w*q->z) * state->velocity.y +
+      2.0f * (q->x*q->z - q->w*q->y) * state->velocity.z;
+  const float body_vy =
+      2.0f * (q->x*q->y - q->w*q->z) * state->velocity.x +
+      (1.0f - 2.0f * (q->x*q->x + q->z*q->z)) * state->velocity.y +
+      2.0f * (q->y*q->z + q->w*q->x) * state->velocity.z;
+  const float yaw_rate = radians(sensors->gyro.z);
+  const float roll_rate = radians(sensors->gyro.x);
+  const float pitch_rate = radians(sensors->gyro.y);
+  const uint32_t now_ms = (uint32_t)xTaskGetTickCount();
+
+  flowObstacleLinkRecordState(now_ms, body_vx, body_vy, yaw_rate,
+                              state->position.x, state->position.y, yaw);
+
+  /* Forward state at 100 Hz. GAP8 maps each camera exposure into this STM32
+   * tick domain and echoes the capture tick in its flow packet. */
+  static uint32_t last_state_tx_ms = 0;
+  if ((uint32_t)(now_ms - last_state_tx_ms) >= 10u) {
+    const float quat_xyzw[4] = {
+      q->x, q->y, q->z, q->w
+    };
+    gate8LinkSendState(now_ms,
+                       state->position.x, state->position.y, state->position.z,
+                       state->velocity.x, state->velocity.y, state->velocity.z,
+                       quatcompress(quat_xyzw),
+                       roll_rate, pitch_rate, yaw_rate);
+    last_state_tx_ms = now_ms;
+  }
+
+  flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,
+                              state->position.x, state->position.y, yaw);
+}
+
 static void pollPerceptionDanger(const state_t *state) {
   uint8_t obstacle_presence[PERCEPTION_MAP_CELLS];
   uint8_t inverse_range[PERCEPTION_MAP_CELLS];
   uint8_t uncertainty[PERCEPTION_MAP_CELLS];
+  uint8_t gate_opening[PERCEPTION_MAP_CELLS];
   uint32_t age_ms = 0;
+  uint32_t capture_tick = 0;
   uint32_t sample = 0;
   if (!perceptEnable ||
       !perceptionMapLinkGetLatest(obstacle_presence, inverse_range, uncertainty,
-                                  NULL, &age_ms, NULL, &sample)) {
+                                  gate_opening,
+                                  &age_ms, &capture_tick, &sample)) {
     g_percept_valid = 0;
     return;
   }
@@ -1014,28 +909,27 @@ static void pollPerceptionDanger(const state_t *state) {
   danger_state.nominal_target_speed_mps = perceptNominalSpeedMps;
   perceptionDangerCompute(obstacle_presence, inverse_range, uncertainty,
                           age_ms, &danger_state, &g_perception_danger_map);
-  memcpy(g_perception_danger_q, obstacle_presence,
-         sizeof(g_perception_danger_q));
+  g_percept_gate_open_cells = 0;
+  /*
+   * Both UART products carry the STM32 capture tick echoed by GAP8. Never
+   * combine a gate polygon and dense map from different camera exposures.
+   */
+  if (perceptGateOpeningEnable && g_gate_valid &&
+      capture_tick != 0 && capture_tick == gate_capture_tick) {
+    const int changed = perceptionDangerApplyGateOpening(
+        gate_opening, g_gate_corners_pixels, g_gate_range_m,
+        perceptGateOpeningInsetPx, perceptGateOpeningThreshold,
+        perceptGateOpeningSafeCap, perceptGateOpeningRangeGuardM,
+        perceptGateOpeningMaxUncertainty, &g_perception_danger_map);
+    g_percept_gate_open_cells =
+        changed > 255 ? 255 : (uint8_t)changed;
+  }
+
   float maximum_danger = 0.0f;
   float minimum_ttc = INFINITY;
-  g_percept_obstacle_cells = 0;
-  g_percept_max_q = 0;
-  memset(g_percept_unsafe_rows, 0, sizeof(g_percept_unsafe_rows));
   for (int cell = 0; cell < PERCEPTION_MAP_CELLS; ++cell) {
-    const int row = cell / PERCEPTION_MAP_W;
     if (g_perception_danger_map.probability[cell] > maximum_danger) {
       maximum_danger = g_perception_danger_map.probability[cell];
-    }
-    if (row > 0 && row < PERCEPTION_MAP_H - 1 &&
-        g_perception_danger_q[cell] > g_percept_max_q) {
-      g_percept_max_q = g_perception_danger_q[cell];
-    }
-    if (isDangerCell(cell)) {
-      const int column = cell % PERCEPTION_MAP_W;
-      g_percept_unsafe_rows[row] |= (uint16_t)(1u << column);
-      if (row > 0 && row < PERCEPTION_MAP_H - 1) {
-        g_percept_obstacle_cells++;
-      }
     }
     if (g_perception_danger_map.probability[cell] >= 0.5f &&
         g_perception_danger_map.time_to_contact_s[cell] < minimum_ttc) {
@@ -1043,20 +937,9 @@ static void pollPerceptionDanger(const state_t *state) {
     }
   }
   g_percept_max_danger = maximum_danger;
-  const int center_x = std::max(0, std::min(PERCEPTION_MAP_W - 1,
-      (int)(g_gate_cx / 16.0f)));
-  const int center_y = std::max(0, std::min(PERCEPTION_MAP_H - 1,
-      (int)(g_gate_cy / 16.0f)));
   g_percept_center_danger =
-      g_perception_danger_map.probability[center_y * PERCEPTION_MAP_W + center_x];
-  g_percept_center_q =
-      g_perception_danger_q[center_y * PERCEPTION_MAP_W + center_x];
+      g_perception_danger_map.probability[5 * PERCEPTION_MAP_W + 5];
   g_percept_min_ttc = isfinite(minimum_ttc) ? minimum_ttc : 0.0f;
-
-  g_percept_mass_cells = largestDangerMass();
-  g_percept_mass_detected =
-      perceptMassMinCells > 0 &&
-      g_percept_mass_cells >= perceptMassMinCells;
 }
 
 static void cameraNormalToWorld(const float camera[3],
@@ -1099,581 +982,102 @@ static Eigen::Vector3f cameraCenterWorld(const state_t *state) {
   return center;
 }
 
-static bool worldPointToCameraPixel(const Eigen::Vector3f &point_world,
-                                    const state_t *state,
-                                    float *u, float *v) {
-  const Eigen::Vector3f camera_center = cameraCenterWorld(state);
-  const Eigen::Vector3f world = point_world - camera_center;
-  const quaternion_t *q = &state->attitudeQuaternion;
-
-  /* Rotate world -> body with the conjugate attitude quaternion. */
-  const float qx = -q->x, qy = -q->y, qz = -q->z, qw = q->w;
-  const float tx = 2.0f * (qy * world(2) - qz * world(1));
-  const float ty = 2.0f * (qz * world(0) - qx * world(2));
-  const float tz = 2.0f * (qx * world(1) - qy * world(0));
-  const float body_x =
-      world(0) + qw * tx + (qy * tz - qz * ty);
-  const float body_y =
-      world(1) + qw * ty + (qz * tx - qx * tz);
-  const float body_z =
-      world(2) + qw * tz + (qx * ty - qy * tx);
-
-  /* Undo camera mount yaw, then mount pitch. */
-  const float cy = cosf(g_gate_mount_yaw_rad);
-  const float sy = sinf(g_gate_mount_yaw_rad);
-  const float pitched_x = cy * body_x + sy * body_y;
-  const float base_by = -sy * body_x + cy * body_y;
-  const float pitched_z = body_z;
-  const float cp = cosf(g_gate_mount_pitch_rad);
-  const float sp = sinf(g_gate_mount_pitch_rad);
-  const float base_bx = cp * pitched_x - sp * pitched_z;
-  const float base_bz = sp * pitched_x + cp * pitched_z;
-
-  const float camera_x = -base_by;
-  const float camera_y = -base_bz;
-  const float camera_z = base_bx;
-  if (!isfinite(camera_z) || camera_z <= 0.02f) return false;
-  *u = g_gate_cx + g_gate_fx * camera_x / camera_z;
-  *v = g_gate_cy + g_gate_fy * camera_y / camera_z;
-  return isfinite(*u) && isfinite(*v);
-}
-
-struct PerceptionPathHit {
-  bool valid;
-  uint8_t knot;
-  uint8_t row;
-  uint8_t column;
-  uint8_t danger_q;
-  float u;
-  float v;
-  Eigen::Vector3f nominal_world;
-};
-
-struct PerceptionSafeBand {
-  bool valid;
-  uint8_t distance_cells;
-  float safe_u;
-  float boundary_u;
-};
-
-static Eigen::Vector3f nominalPerceptionKnot(
-    int knot, const state_t *state) {
-  const Eigen::Vector3f camera_center = cameraCenterWorld(state);
-  const Eigen::Vector3f planned(
-      Xhrz[knot](0), Xhrz[knot](1), Xhrz[knot](2));
-  const Eigen::Vector3f goal(xg(0), xg(1), xg(2));
-  Eigen::Vector3f goal_ray = goal - camera_center;
-  const float goal_range = goal_ray.norm();
-  const float planned_range = (planned - camera_center).norm();
-  if (!camera_center.allFinite() || !planned.allFinite() ||
-      !goal_ray.allFinite() || goal_range < 0.05f ||
-      !isfinite(planned_range)) {
-    return planned;
-  }
-  goal_ray /= goal_range;
-  // Keep the range of the previously planned MPC knot. The commander may
-  // stream a slowly moving setpoint only a few centimetres ahead, but that
-  // must not collapse the whole perception horizon to the current command.
-  const float range = std::max(
-      0.05f, std::min(perceptMaxRangeM, planned_range));
-  return camera_center + range * goal_ray;
-}
-
-static PerceptionPathHit findEarliestDangerousNominalKnot(
-    const state_t *state) {
-  PerceptionPathHit hit = {};
-  hit.valid = false;
-  const int first_k =
-      std::max(1, std::min((int)perceptKStart, NHORIZON - 1));
-  for (int k = first_k; k < NHORIZON; ++k) {
-    const Eigen::Vector3f nominal = nominalPerceptionKnot(k, state);
-    float u = 0.0f;
-    float v = 0.0f;
-    if (!worldPointToCameraPixel(nominal, state, &u, &v) ||
-        u < 0.0f || u >= 160.0f || v < 16.0f || v >= 144.0f) {
-      continue;
-    }
-    const int column = std::max(
-        0, std::min(PERCEPTION_MAP_W - 1, (int)(u / 16.0f)));
-    const int row = std::max(
-        1, std::min(PERCEPTION_MAP_H - 2, (int)(v / 16.0f)));
-    const int cell = row * PERCEPTION_MAP_W + column;
-    if (!isDangerCell(cell)) continue;
-    hit.valid = true;
-    hit.knot = (uint8_t)k;
-    hit.row = (uint8_t)row;
-    hit.column = (uint8_t)column;
-    hit.danger_q = g_perception_danger_q[cell];
-    hit.u = u;
-    hit.v = v;
-    hit.nominal_world = nominal;
-    break;
-  }
-  return hit;
-}
-
-static PerceptionSafeBand safeBandOnSide(
-    int row, int column, int side) {
-  PerceptionSafeBand result = {};
-  result.valid = false;
-  result.distance_cells = 255;
-  const int width = std::max(
-      1, std::min((int)perceptSafeBandCells, PERCEPTION_MAP_W));
-  if (side < 0) {
-    for (int near = column - 1; near - width + 1 >= 0; --near) {
-      bool safe = true;
-      for (int x = near - width + 1; x <= near; ++x) {
-        safe = safe && !isDangerCell(row * PERCEPTION_MAP_W + x);
-      }
-      if (!safe) continue;
-      const int far = near - width + 1;
-      result.valid = true;
-      result.distance_cells = (uint8_t)(column - near);
-      result.safe_u = 8.0f * (float)(far + near + 1);
-      result.boundary_u = 16.0f * (float)(near + 1);
-      return result;
-    }
-  } else {
-    for (int near = column + 1; near + width - 1 < PERCEPTION_MAP_W; ++near) {
-      bool safe = true;
-      for (int x = near; x < near + width; ++x) {
-        safe = safe && !isDangerCell(row * PERCEPTION_MAP_W + x);
-      }
-      if (!safe) continue;
-      const int far = near + width - 1;
-      result.valid = true;
-      result.distance_cells = (uint8_t)(near - column);
-      result.safe_u = 8.0f * (float)(near + far + 1);
-      result.boundary_u = 16.0f * (float)near;
-      return result;
-    }
-  }
-  return result;
-}
-
-static bool installPerceptionAvoidance(
-    const PerceptionPathHit &hit,
-    const PerceptionSafeBand &band,
-    int side,
-    const state_t *state,
-    uint32_t now_tick) {
-  if (!hit.valid || !band.valid || (side != -1 && side != 1)) return false;
-  const float maximum_margin =
-      std::max(1.0f, 16.0f * (float)perceptSafeBandCells - 8.0f);
-  const float margin = std::max(
-      1.0f, std::min(maximum_margin, perceptLineOffsetPx));
-  const float line_u = std::max(
-      1.0f, std::min(159.0f, band.boundary_u + side * margin));
-  float safe_u = band.safe_u;
-  if ((side < 0 && safe_u >= line_u) ||
-      (side > 0 && safe_u <= line_u)) {
-    safe_u = line_u + side * 4.0f;
-  }
-  safe_u = std::max(1.0f, std::min(159.0f, safe_u));
-
-  Eigen::Vector3f ray_camera(
-      (safe_u - g_gate_cx) / g_gate_fx,
-      (hit.v - g_gate_cy) / g_gate_fy,
-      1.0f);
-  ray_camera.normalize();
-  Eigen::Vector3f ray_world;
-  cameraNormalToWorld(ray_camera.data(), state, &ray_world);
-  const Eigen::Vector3f camera_center = cameraCenterWorld(state);
-  const float lookahead_range =
-      (hit.nominal_world - camera_center).norm();
-  if (!ray_world.allFinite() || !camera_center.allFinite() ||
-      !isfinite(lookahead_range) || lookahead_range < 0.05f) {
-    return false;
-  }
-  percept_avoid_position =
-      camera_center + std::min(lookahead_range, perceptMaxRangeM) * ray_world;
-  // This first implementation searches horizontally and should not trade
-  // altitude for lateral clearance.
-  percept_avoid_position(2) = hit.nominal_world(2);
-
-  const float line_a = side < 0 ? -1.0f : 1.0f;
-  const float line_c = -line_a * line_u;
-  Eigen::Vector3f normal_camera(
-      g_gate_fx * line_a, 0.0f, g_gate_cx * line_a + line_c);
-  normal_camera.normalize();
-  Eigen::Vector3f normal_world;
-  cameraNormalToWorld(normal_camera.data(), state, &normal_world);
-  if (!normal_world.allFinite()) return false;
-
-  const Eigen::Vector3f a_position = -normal_world;
-  for (int axis = 0; axis < 3; ++axis) {
-    percept_latched_a[axis] = a_position(axis);
-    g_percept_avoid_position[axis] = percept_avoid_position(axis);
-  }
-  percept_latched_b = -normal_world.dot(camera_center);
-  percept_latched_side = (int8_t)side;
-  percept_latched_safe_u = safe_u;
-  percept_latched_line_u = line_u;
-  percept_collision_k = hit.knot;
-  const int first_k = std::max(
-      (int)perceptKStart, std::max(1, (int)hit.knot - 1));
-  percept_latched_first_k = (uint8_t)first_k;
-  percept_latched_last_k = (uint8_t)std::min(
-      NHORIZON - 1,
-      first_k + std::max(1, (int)perceptConstraintSteps) - 1);
-  percept_plane_latch_valid = 1;
-  percept_plane_latched_tick = now_tick;
-  if (g_percept_mode != PERCEPT_MODE_AVOID) {
-    percept_avoid_start_tick = now_tick;
-  }
-  g_percept_mode = PERCEPT_MODE_AVOID;
-  percept_rejoin_gain = 1.0f;
-  percept_clear_count = 0;
-  return true;
-}
-
-static float smoothStep01(float value) {
-  const float x = std::max(0.0f, std::min(1.0f, value));
-  return x * x * (3.0f - 2.0f * x);
-}
-
-static void deformPerceptionReference(const state_t *state) {
-  if (g_percept_mode == PERCEPT_MODE_CLEAR ||
-      !percept_avoid_position.allFinite()) {
-    g_percept_reference_offset = 0.0f;
-    return;
-  }
-  if (g_percept_mode == PERCEPT_MODE_REJOIN) {
-    const float step =
-        1.0f / (float)std::max(1, (int)perceptRejoinSteps);
-    percept_rejoin_gain = std::max(0.0f, percept_rejoin_gain - step);
-    if (percept_rejoin_gain <= 0.0f) {
-      clearPerceptionPlaneLatch();
-      return;
-    }
-  }
-
-  const int collision_k = std::max(
-      1, std::min((int)percept_collision_k, NHORIZON - 2));
-  Eigen::Vector3f nominal_collision =
-      nominalPerceptionKnot(collision_k, state);
-  Eigen::Vector3f offset =
-      percept_rejoin_gain * (percept_avoid_position - nominal_collision);
-  g_percept_reference_offset = offset.norm();
-  const int end_k = std::min(
-      NHORIZON - 1,
-      collision_k + std::max(2, (int)perceptConstraintSteps));
-
-  for (int k = 0; k < NHORIZON; ++k) {
-    const Eigen::Vector3f nominal = nominalPerceptionKnot(k, state);
-    float weight = 0.0f;
-    if (k <= collision_k) {
-      weight = smoothStep01((float)k / (float)collision_k);
-    } else if (k < end_k) {
-      weight = 1.0f - smoothStep01(
-          (float)(k - collision_k) / (float)(end_k - collision_k));
-    }
-    const Eigen::Vector3f deformed = nominal + weight * offset;
-    Xref[k](0) = deformed(0);
-    Xref[k](1) = deformed(1);
-    Xref[k](2) = deformed(2);
-  }
-
-  const float maximum_speed =
-      std::max(0.05f, perceptMaxLateralSpeedMps);
-  Eigen::Vector2f forward(
-      xg(0) - state->position.x,
-      xg(1) - state->position.y);
-  if (!forward.allFinite() || forward.norm() < 0.05f) {
-    const struct vec reference_rpy = quat2rpy(q_ref0);
-    forward << cosf(reference_rpy.z), sinf(reference_rpy.z);
-  } else {
-    forward.normalize();
-  }
-  for (int k = 0; k < NHORIZON - 1; ++k) {
-    Eigen::Vector3f velocity(
-        (Xref[k + 1](0) - Xref[k](0)) / DT,
-        (Xref[k + 1](1) - Xref[k](1)) / DT,
-        (Xref[k + 1](2) - Xref[k](2)) / DT);
-    Eigen::Vector2f velocity_xy(velocity(0), velocity(1));
-    const float forward_speed = velocity_xy.dot(forward);
-    Eigen::Vector2f lateral =
-        velocity_xy - forward_speed * forward;
-    const float lateral_speed = lateral.norm();
-    if (isfinite(lateral_speed) && lateral_speed > maximum_speed) {
-      lateral *= maximum_speed / lateral_speed;
-      velocity_xy = forward_speed * forward + lateral;
-      velocity(0) = velocity_xy(0);
-      velocity(1) = velocity_xy(1);
-    }
-    Xref[k](6) = velocity(0);
-    Xref[k](7) = velocity(1);
-    Xref[k](8) = velocity(2);
-  }
-  Xref[NHORIZON - 1](6) = Xref[NHORIZON - 2](6);
-  Xref[NHORIZON - 1](7) = Xref[NHORIZON - 2](7);
-  Xref[NHORIZON - 1](8) = Xref[NHORIZON - 2](8);
-
-  const int face_k = std::max(
-      1, std::min(MPC_CASCADE_OUTPUT_K, NHORIZON - 1));
-  const float face_dx = Xref[face_k](0) - state->position.x;
-  const float face_dy = Xref[face_k](1) - state->position.y;
-  if (face_dx * face_dx + face_dy * face_dy > 0.05f * 0.05f) {
-    struct vec reference_rpy = quat2rpy(q_ref0);
-    reference_rpy.z = atan2f(face_dy, face_dx);
-    q_ref0 = qnormalize(rpy2quat(reference_rpy));
-  }
-}
-
-static void updatePerceptionPositionHalfspace(const state_t *state) {
-  const uint32_t now_tick = (uint32_t)xTaskGetTickCount();
+static void updatePerceptionAngularHalfspaces(const state_t *state) {
   g_percept_corridor_valid = 0;
   g_percept_constraints = 0;
-  g_percept_applied = 0;
-  g_percept_avoid_side = percept_latched_side;
-  memset(g_percept_plane_a, 0, sizeof(g_percept_plane_a));
-  g_percept_plane_b = 0.0f;
-  g_percept_safe_u = 0.0f;
-  g_percept_line_u = 0.0f;
-  g_percept_hold_active = 0;
-  g_percept_hold_age_ms = 0;
-  if (!perceptEnable) {
-    clearPerceptionPlaneLatch();
+  if (!perceptEnable || !g_percept_valid || !g_gate_valid) return;
+
+  float gate_u = 0.0f, gate_v = 0.0f;
+  for (int corner = 0; corner < 4; ++corner) {
+    gate_u += 0.25f * g_gate_corners_pixels[2 * corner];
+    gate_v += 0.25f * g_gate_corners_pixels[2 * corner + 1];
+  }
+  int gate_x = (int)(gate_u / 16.0f);
+  int gate_y = (int)(gate_v / 16.0f);
+  if (gate_x < 0) gate_x = 0;
+  if (gate_x > 9) gate_x = 9;
+  if (gate_y < 0) gate_y = 0;
+  if (gate_y > 9) gate_y = 9;
+  const int gate_cell = gate_y * 10 + gate_x;
+  const float range =
+      fmaxf(0.30f, g_perception_danger_map.range_m[gate_cell]);
+  const float uncertainty = g_perception_danger_map.uncertainty[gate_cell];
+  const float speed = sqrtf(
+      state->velocity.x * state->velocity.x
+      + state->velocity.y * state->velocity.y
+      + state->velocity.z * state->velocity.z);
+  float pixel_margin =
+      perceptBaseMarginPx
+      + g_gate_fx * (perceptDroneRadiusM + perceptSafetyMarginM) / range
+      + 4.0f * uncertainty
+      + g_gate_fx * speed * perceptLatencyS / range;
+  if (pixel_margin > 24.0f) pixel_margin = 24.0f;
+  g_percept_pixel_margin = pixel_margin;
+
+  perception_corridor_config_t config = {
+    perceptDangerThreshold, pixel_margin,
+    g_gate_fx, g_gate_fy, g_gate_cx, g_gate_cy
+  };
+  perception_corridor_t corridor;
+  if (!perceptionCorridorFit(g_perception_danger_map.probability,
+                             g_gate_corners_pixels, &config, &corridor)) {
     return;
   }
-
-  const bool new_map =
-      g_percept_sample != perception_constraint_sample_seen;
-  if (new_map) {
-    perception_constraint_sample_seen = g_percept_sample;
-  }
-  if (new_map && g_percept_valid && mpc_has_run &&
-      isfinite(g_gate_cx) && isfinite(g_gate_cy) &&
-      isfinite(g_gate_fx) && isfinite(g_gate_fy) &&
-      g_gate_fx > 0.0f && g_gate_fy > 0.0f) {
-    const PerceptionPathHit hit =
-        findEarliestDangerousNominalKnot(state);
-    g_percept_path_hit = hit.valid ? 1 : 0;
-    if (hit.valid) {
-      g_percept_path_knot = hit.knot;
-      g_percept_path_q = hit.danger_q;
-      g_percept_path_u = hit.u;
-      g_percept_path_v = hit.v;
-      const PerceptionSafeBand left =
-          safeBandOnSide(hit.row, hit.column, -1);
-      const PerceptionSafeBand right =
-          safeBandOnSide(hit.row, hit.column, 1);
-      g_percept_safe_left_cells =
-          left.valid ? left.distance_cells : 255;
-      g_percept_safe_right_cells =
-          right.valid ? right.distance_cells : 255;
-
-      if (percept_candidate_count > 0 &&
-          abs((int)hit.knot - (int)percept_candidate_k) <= 2) {
-        percept_candidate_count = (uint8_t)std::min(
-            255, (int)percept_candidate_count + 1);
-      } else {
-        percept_candidate_k = hit.knot;
-        percept_candidate_count = 1;
-      }
-
-      if (g_percept_mode == PERCEPT_MODE_AVOID) {
-        const PerceptionSafeBand committed =
-            percept_latched_side < 0 ? left : right;
-        installPerceptionAvoidance(
-            hit, committed, percept_latched_side, state, now_tick);
-      } else if (
-          percept_candidate_count >=
-          std::max(1, (int)perceptPersistMaps)) {
-        int selected_side = percept_latched_side;
-        if (selected_side == 0) {
-          if (left.valid &&
-              (!right.valid ||
-               left.distance_cells <= right.distance_cells)) {
-            selected_side = -1;
-          } else if (right.valid) {
-            selected_side = 1;
-          }
-        }
-        const PerceptionSafeBand selected =
-            selected_side < 0 ? left : right;
-        installPerceptionAvoidance(
-            hit, selected, selected_side, state, now_tick);
-      }
-      percept_clear_count = 0;
-    } else {
-      g_percept_path_knot = 0;
-      g_percept_path_q = 0;
-      g_percept_safe_left_cells = 255;
-      g_percept_safe_right_cells = 255;
-      percept_candidate_count = 0;
-      if (g_percept_mode == PERCEPT_MODE_AVOID) {
-        percept_clear_count = (uint8_t)std::min(
-            255, (int)percept_clear_count + 1);
-        const uint32_t active_steps =
-            (now_tick - percept_avoid_start_tick) /
-            std::max(1u, M2T((uint32_t)(1000.0f * DT)));
-        if (percept_clear_count >=
-                std::max(1, (int)perceptClearMaps) &&
-            active_steps >=
-                (uint32_t)std::max(1, (int)perceptHoldSteps)) {
-          g_percept_mode = PERCEPT_MODE_REJOIN;
-          percept_plane_latch_valid = 0;
-        }
-      }
-    }
-  }
-
-  g_percept_persist_count = percept_candidate_count;
-  g_percept_clear_count = percept_clear_count;
-  if (perceptConstraintEnable && !perceptLogOnly) {
-    deformPerceptionReference(state);
-  } else {
-    g_percept_reference_offset = 0.0f;
-  }
-
-  if (!percept_plane_latch_valid ||
-      g_percept_mode != PERCEPT_MODE_AVOID) {
-    return;
-  }
-  g_percept_hold_active = 1;
-  g_percept_hold_age_ms =
-      (now_tick - percept_avoid_start_tick) * portTICK_PERIOD_MS;
   g_percept_corridor_valid = 1;
+  Eigen::Vector3f normals_world[2];
+  cameraNormalToWorld(corridor.camera_normal[0], state, &normals_world[0]);
+  cameraNormalToWorld(corridor.camera_normal[1], state, &normals_world[1]);
   for (int axis = 0; axis < 3; ++axis) {
-    g_percept_plane_a[axis] = percept_latched_a[axis];
-    g_percept_left_n[axis] = -percept_latched_a[axis];
-    g_percept_right_n[axis] = 0.0f;
+    g_percept_left_n[axis] = normals_world[0](axis);
+    g_percept_right_n[axis] = normals_world[1](axis);
   }
-  g_percept_plane_b = percept_latched_b;
-  g_percept_avoid_side = percept_latched_side;
-  g_percept_safe_u = percept_latched_safe_u;
-  g_percept_line_u = percept_latched_line_u;
   if (!perceptConstraintEnable || perceptLogOnly) return;
 
-  const Eigen::Vector3f a_position(
-      percept_latched_a[0], percept_latched_a[1], percept_latched_a[2]);
-  for (int k = percept_latched_first_k;
-       k <= percept_latched_last_k; ++k) {
-    tiny_SetPositionHalfspace(
-        &work, k, 1, &a_position, percept_latched_b, 1);
-    g_percept_constraints++;
-  }
-  if (g_percept_constraints) {
-    g_percept_applied = 1;
-    stgs.en_cstr_states = 1;
-  }
-}
-
-static void updatePerceptionViolationDiagnostics(const state_t *state) {
-  if (!percept_plane_latch_valid || !g_percept_applied) {
-    g_percept_plan_violation = 0.0f;
-    g_percept_state_violation = 0.0f;
-    return;
-  }
-  const Eigen::Vector3f a(
-      percept_latched_a[0], percept_latched_a[1], percept_latched_a[2]);
-  const Eigen::Vector3f measured(
-      state->position.x, state->position.y, state->position.z);
-  g_percept_state_violation = a.dot(measured) - percept_latched_b;
-  float maximum = -INFINITY;
-  for (int k = percept_latched_first_k;
-       k <= percept_latched_last_k && k < NHORIZON; ++k) {
-    const Eigen::Vector3f planned(Xhrz[k](0), Xhrz[k](1), Xhrz[k](2));
-    maximum = std::max(maximum, a.dot(planned) - percept_latched_b);
-  }
-  g_percept_plan_violation = isfinite(maximum) ? maximum : 0.0f;
-}
-
-static bool normalizedTestPlane(Eigen::Vector3f *a, float *b) {
-  const Eigen::Vector3f raw_a(
-      testPlaneA[0], testPlaneA[1], testPlaneA[2]);
-  const float norm = raw_a.norm();
-  if (!raw_a.allFinite() || !isfinite(testPlaneB) || norm < 1e-4f) {
-    return false;
-  }
-  *a = raw_a / norm;
-  *b = testPlaneB / norm;
-  return a->allFinite() && isfinite(*b);
-}
-
-static void updateTestPlaneHalfspace(void) {
-  g_test_plane_valid = 0;
-  g_test_plane_applied = 0;
-  g_test_plane_constraints = 0;
-  g_test_plane_worst_k = 0;
-  memset(g_test_plane_a, 0, sizeof(g_test_plane_a));
-  g_test_plane_b = 0.0f;
-
-  if (!testPlaneEnable) return;
-  Eigen::Vector3f a;
-  float b = 0.0f;
-  if (!normalizedTestPlane(&a, &b)) return;
-
-  g_test_plane_valid = 1;
-  for (int axis = 0; axis < 3; ++axis) {
-    g_test_plane_a[axis] = a(axis);
-  }
-  g_test_plane_b = b;
-  if (testPlaneLogOnly) return;
-
+  const Eigen::Vector3f camera_center = cameraCenterWorld(state);
   const int first_k =
-      std::max(1, std::min((int)testPlaneKStart, NHORIZON - 1));
+      perceptKStart < NHORIZON ? perceptKStart : NHORIZON - 1;
   for (int k = first_k; k < NHORIZON; ++k) {
-    tiny_SetPositionHalfspace(&work, k, 1, &a, b, 1);
-    g_test_plane_constraints++;
-  }
-  if (g_test_plane_constraints) {
-    g_test_plane_applied = 1;
-    stgs.en_cstr_states = 1;
-  }
-}
-
-static void updateTestPlaneViolationDiagnostics(const state_t *state) {
-  g_test_plane_plan_violation = 0.0f;
-  g_test_plane_output_violation = 0.0f;
-  g_test_plane_state_violation = 0.0f;
-  g_test_plane_worst_k = 0;
-  if (!g_test_plane_valid) return;
-
-  const Eigen::Vector3f a(
-      g_test_plane_a[0], g_test_plane_a[1], g_test_plane_a[2]);
-  const Eigen::Vector3f measured(
-      state->position.x, state->position.y, state->position.z);
-  g_test_plane_state_violation = a.dot(measured) - g_test_plane_b;
-
-  const int first_k =
-      std::max(1, std::min((int)testPlaneKStart, NHORIZON - 1));
-  float maximum = -INFINITY;
-  int worst_k = first_k;
-  for (int k = first_k; k < NHORIZON; ++k) {
-    const Eigen::Vector3f planned(Xhrz[k](0), Xhrz[k](1), Xhrz[k](2));
-    const float violation = a.dot(planned) - g_test_plane_b;
-    if (violation > maximum) {
-      maximum = violation;
-      worst_k = k;
+    const float tau = fminf(perceptLookaheadS, (k + 1) * DT);
+    for (int side = 0; side < 2; ++side) {
+      float normal[3], center[3], a_position_data[3], a_velocity_data[3], b;
+      for (int axis = 0; axis < 3; ++axis) {
+        normal[axis] = normals_world[side](axis);
+        center[axis] = camera_center(axis);
+      }
+      perceptionAngularConstraintRow(
+          normal, center, tau, a_position_data, a_velocity_data, &b);
+      Eigen::Vector3f a_position(
+          a_position_data[0], a_position_data[1], a_position_data[2]);
+      Eigen::Vector3f a_velocity(
+          a_velocity_data[0], a_velocity_data[1], a_velocity_data[2]);
+      tiny_SetKinematicHalfspace(
+          &work, k, side + 1, &a_position, &a_velocity, b,
+          perceptSlackPenalty, 1);
+      g_percept_constraints++;
     }
   }
-  g_test_plane_plan_violation = isfinite(maximum) ? maximum : 0.0f;
-  g_test_plane_worst_k = (uint8_t)worst_k;
-  const Eigen::Vector3f output(
-      g_mpc_output_position[0],
-      g_mpc_output_position[1],
-      g_mpc_output_position[2]);
-  g_test_plane_output_violation = a.dot(output) - g_test_plane_b;
+  if (g_percept_constraints) stgs.en_cstr_states = 1;
 }
 
-static float knotHalfspaceViolation(int knot, const VectorNf &state) {
-  float maximum = -INFINITY;
-  if (knot < 0 || knot >= NHORIZON) return maximum;
-  for (int h = 0; h < MAX_HS; ++h) {
-    if (!data.en_hs[knot][h]) continue;
-    const Eigen::Vector3f position(state(0), state(1), state(2));
-    const Eigen::Vector3f velocity(state(6), state(7), state(8));
-    const float allowed_slack =
-        std::max(0.0f, data.slack_used_hs[knot][h]);
-    const float violation =
-        data.a_pos_hs[knot][h].dot(position) +
-        data.a_vel_hs[knot][h].dot(velocity) -
-        data.b_hs[knot][h] - allowed_slack;
-    maximum = std::max(maximum, violation);
+static void updatePerceptionSlackDiagnostics(void) {
+  float maximum = 0.0f, total = 0.0f, square_sum = 0.0f;
+  for (int k = 0; k < NHORIZON; ++k) {
+    for (int side = 1; side <= 2; ++side) {
+      const float slack = data.slack_used_hs[k][side];
+      if (slack > maximum) maximum = slack;
+      total += slack;
+      square_sum += slack * slack;
+    }
   }
-  return maximum;
+  g_percept_max_slack = maximum;
+  g_percept_total_slack = total;
+  g_percept_slack_cost = perceptSlackPenalty * square_sum;
+  if (g_percept_constraints) {
+    if (info.status_val != TINY_SOLVED) g_percept_failed_solves++;
+    if (maximum >= 0.02f) {
+      g_percept_near_infeasible_solves++;
+    }
+  }
 }
 
 static void updateObstacleHalfspace(const state_t *state) {
@@ -1690,12 +1094,58 @@ static void updateObstacleHalfspace(const state_t *state) {
   g_obs_margin = 0.0f;
   g_obs_violation = 0.0f;
   g_obs_clearance = 0.0f;
+  g_obs_source = 0;
+  g_obs_flow_conf = 0.0f;
   const uint32_t since_activation_ms =
       (xTaskGetTickCount() - controller_activate_tick) * portTICK_PERIOD_MS;
+
+  if (obsFreezeClear) {
+    g_obs_freeze_valid = 0;
+    g_obs_freeze_cx = 0.0f;
+    g_obs_freeze_cy = 0.0f;
+    g_obs_freeze_radius = 0.0f;
+    g_obs_freeze_conf = 0.0f;
+    obsFreezeClear = 0;
+  }
 
   float cx = obsCx;
   float cy = obsCy;
   float radius = obsRadius;
+  if (obsUseFlow) {
+    if (obsFreezeFlow && g_obs_freeze_valid) {
+      cx = g_obs_freeze_cx;
+      cy = g_obs_freeze_cy;
+      radius = g_obs_freeze_radius;
+      g_obs_source = 2;
+      g_obs_flow_conf = g_obs_freeze_conf;
+    } else {
+      float flow_cx = 0.0f;
+      float flow_cy = 0.0f;
+      float flow_radius = 0.0f;
+      float flow_conf = 0.0f;
+      if (!flowObstacleLinkGetCylinder(&flow_cx, &flow_cy, &flow_radius, &flow_conf)) {
+        return;
+      }
+      if (obsFreezeFlow && since_activation_ms >= obsFreezeAfterMs) {
+        g_obs_freeze_valid = 1;
+        g_obs_freeze_cx = flow_cx;
+        g_obs_freeze_cy = flow_cy;
+        g_obs_freeze_radius = flow_radius;
+        g_obs_freeze_conf = flow_conf;
+        cx = g_obs_freeze_cx;
+        cy = g_obs_freeze_cy;
+        radius = g_obs_freeze_radius;
+        g_obs_source = 2;
+        g_obs_flow_conf = g_obs_freeze_conf;
+      } else {
+      cx = flow_cx;
+      cy = flow_cy;
+      radius = flow_radius;
+      g_obs_source = 1;
+      g_obs_flow_conf = flow_conf;
+      }
+    }
+  }
   g_obs_eff_cx = cx;
   g_obs_eff_cy = cy;
   g_obs_eff_radius = radius;
@@ -1776,13 +1226,13 @@ void controllerOutOfTreeInit(void) {
   // Precompute/Cache
   // #include "params_500hz.h"
   // #include "params_100hz.h"
-  #include "params_constrained.h"  // Exact 50 Hz constrained cache (demo-2 rho=250)
+  #include "params_constrained.h"  // Demo-2-style 50 Hz constrained cache (rho=63)
 
   // End of Precompute/Cache
 
   tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
   tiny_InitSettings(&stgs);
-  stgs.rho_init = 250.0f;  // Demo-2 penalty; must match params_constrained.h.
+  stgs.rho_init = 63.0f;  // Matches params_constrained.h
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
 
   // Fill in the remaining struct. State buffers are required when obstacle half-spaces
@@ -1816,7 +1266,6 @@ void controllerOutOfTreeInit(void) {
   }
   tiny_SetStateBound(&work, &Acx, &lcx, &ucx);
   tiny_ClearPositionHalfspaces(&work);
-  clearPerceptionPlaneLatch();
 
   tiny_UpdateLinearCost(&work);
 
@@ -1828,10 +1277,8 @@ void controllerOutOfTreeInit(void) {
   stgs.iters_check_rho_update = 10;  // Demo-2: no rho/cache update during 5-iter solve.
   stgs.verbose = 0;
   stgs.check_termination = 0;
-  // Match demo-2 diagnostics. Termination remains disabled so solve time stays
-  // deterministic at five iterations.
-  stgs.tol_abs_dual = 5e-2f;
-  stgs.tol_abs_prim = 5e-2f;
+  stgs.tol_abs_dual = 1e-3f;
+  stgs.tol_abs_prim = 1e-3f;
 
   Klqr <<
   -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
@@ -1843,7 +1290,7 @@ void controllerOutOfTreeInit(void) {
   step = 0;
   traj_iter = 0;
   mpc_has_run = false;
-  controllerPidInit();   // Used during the synchronized activation hold/fallback.
+  controllerPidInit();   // the cascade output drives the stock PID -- init its state
   // Bring up the AI-deck corner UART link once (re-selecting the controller must not
   // start a second RX task / re-init the UART).
   static bool s_gate_link_init = false;
@@ -1853,9 +1300,9 @@ void controllerOutOfTreeInit(void) {
   }
   q_ref0 = qeye();  // level reference until the first updateHorizonReference
   memset(&mpc_setpoint_data, 0, sizeof(mpc_setpoint_data));
-  mpc_setpoint_data.mode.x = modeAbs;
-  mpc_setpoint_data.mode.y = modeAbs;
-  mpc_setpoint_data.mode.z = modeAbs;
+  mpc_setpoint_data.mode.x   = modeAbs;
+  mpc_setpoint_data.mode.y   = modeAbs;
+  mpc_setpoint_data.mode.z   = modeAbs;
   mpc_setpoint_data.mode.yaw = modeAbs;
 
   static bool s_mpc_task_init = false;
@@ -1885,7 +1332,6 @@ static void tinympcControllerTask(void *parameters) {
 
   while (true) {
     xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
-    const uint32_t task_start_us = usecTimestamp();
 
     setpoint_t setpoint_task;
     sensorData_t sensors_task;
@@ -1903,11 +1349,12 @@ static void tinympcControllerTask(void *parameters) {
     updateInitialState(&sensors_task, &state_task);
     if (reset_requested) {
       resetMpcWarmStart();
-      clearPerceptionPlaneLatch();
     }
 
-    // Perception runs in the MPC task, faster than the AI-deck map producer.
+    // Perception runs in the MPC task, not in the stabilizer callback. It is still
+    // sampled at MPC_RATE, which is faster than the AI-deck camera/flow producer.
     pollGateVision(&state_task, &sensors_task);
+    pollFlowObstacleDepth(&state_task, &sensors_task);
     pollPerceptionDanger(&state_task);
     fuseGateIntoEkf(&state_task);
 
@@ -1921,82 +1368,47 @@ static void tinympcControllerTask(void *parameters) {
     x0(5) = phi.z;
 
     updateObstacleHalfspace(&state_task);
-    updateTestPlaneHalfspace();
-    updatePerceptionPositionHalfspace(&state_task);
+    updatePerceptionAngularHalfspaces(&state_task);
     tiny_UpdateLinearCost(&work);
-    stgs.max_iter = testPlaneEnable
-        ? std::max(1, std::min((int)testPlaneMaxIter, 20))
-        : 5;
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
+    updatePerceptionSlackDiagnostics();
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
     g_mpc_iter = (uint8_t)info.iter;
-    // Explicit residual computation is cheap and remains active even though
-    // early termination/verbose output are disabled.
-    ComputePrimalResidual(&work);
-    ComputeDualResidual(&work);
-    g_mpc_primal_residual = info.pri_res;
-    g_mpc_dual_residual = info.dua_res;
-    g_mpc_rho = work.rho;
-    updatePerceptionViolationDiagnostics(&state_task);
 
     result = info.status_val * info.iter;
 
-    const int output_k =
-        std::max(1, std::min(MPC_CASCADE_OUTPUT_K, NHORIZON - 1));
-    const float raw_output_violation =
-        knotHalfspaceViolation(output_k, Xhrz[output_k]);
-    const bool has_output_halfspace = isfinite(raw_output_violation);
-    const bool raw_output_safe =
-        Xhrz[output_k].allFinite() &&
-        (!has_output_halfspace ||
-         raw_output_violation <= MPC_OUTPUT_MAX_VIOLATION_M);
-    VectorNf executed_output_state =
-        raw_output_safe ? Xhrz[output_k] : ZX_new[output_k];
-    if (!executed_output_state.allFinite()) {
-      executed_output_state = x0;
-    }
-    g_mpc_output_safe = raw_output_safe ? 1 : 0;
-    g_mpc_output_violation =
-        has_output_halfspace ? raw_output_violation : 0.0f;
-    g_mpc_output_position[0] = executed_output_state(0);
-    g_mpc_output_position[1] = executed_output_state(1);
-    g_mpc_output_position[2] = executed_output_state(2);
-    g_mpc_output_yaw_deg = yawUseRef
-        ? yawRefDeg
-        : quat2rpy(q_ref0).z * (180.0f / M_PI_F);
-    updateTestPlaneViolationDiagnostics(&state_task);
-
     setpoint_t next_sp;
     memset(&next_sp, 0, sizeof(next_sp));
-    next_sp.mode.x = modeAbs;
-    next_sp.mode.y = modeAbs;
-    next_sp.mode.z = modeAbs;
+    next_sp.mode.x   = modeAbs;
+    next_sp.mode.y   = modeAbs;
+    next_sp.mode.z   = modeAbs;
     next_sp.mode.yaw = modeAbs;
-    next_sp.position.x = executed_output_state(0);
-    next_sp.position.y = executed_output_state(1);
-    next_sp.position.z = executed_output_state(2);
-    next_sp.attitude.yaw = g_mpc_output_yaw_deg;
+    next_sp.position.x = Xhrz[NHORIZON - 1](0);
+    next_sp.position.y = Xhrz[NHORIZON - 1](1);
+    next_sp.position.z = Xhrz[NHORIZON - 1](2);
+    next_sp.attitude.yaw = yawUseRef
+        ? yawRefDeg
+        : (enable_pid_face_forward_yaw
+             ? mpc_heading_yaw_deg
+             : (quat2rpy(q_meas).z * (180.0f / M_PI_F)));
 
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    memcpy(&mpc_setpoint_data, &next_sp, sizeof(mpc_setpoint_data));
+    memcpy(&mpc_setpoint_data, &next_sp, sizeof(setpoint_t));
     mpc_has_run = true;
-    mpc_last_finish_tick = xTaskGetTickCount();
     xSemaphoreGive(dataMutex);
 
-    g_mpc_task_us = usecTimestamp() - task_start_us;
-    g_mpc_stack_free_words = uxTaskGetStackHighWaterMark(NULL);
-
-    // If this job crossed one or more 50 Hz release boundaries, the binary
-    // semaphore contains a stale wake. Drop it instead of immediately running
-    // a catch-up solve: back-to-back solves can prevent the idle task from
-    // feeding the hardware watchdog.
-    while (xSemaphoreTake(runTaskSemaphore, 0) == pdTRUE) {
-      g_mpc_stale_wakes++;
+    static uint32_t mpc_log_counter = 0;
+    if (mpc_log_counter % 25 == 0) {
+      DEBUG_PRINT("MPC: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n",
+                  (double)x0(0), (double)x0(1), (double)x0(2),
+                  (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));
+      DEBUG_PRINT("MPC: u=(%.2f,%.2f,%.2f,%.2f) iter=%d solve=%luus\n",
+                  (double)(Uhrz[0](0) + u_hover[0]), (double)(Uhrz[0](1) + u_hover[1]),
+                  (double)(Uhrz[0](2) + u_hover[2]), (double)(Uhrz[0](3) + u_hover[3]),
+                  info.iter, (unsigned long)g_mpc_solve_us);
     }
-    // Guarantee a blocked interval after every solve so the idle task has an
-    // opportunity to run even under sustained MPC load.
-    vTaskDelay(1);
+    mpc_log_counter++;
   }
 }
 
@@ -2022,7 +1434,6 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   }
 
   bool has_run_snapshot = false;
-  uint32_t last_finish_tick_snapshot = 0;
   uint32_t activate_tick_snapshot = controller_activate_tick;
   setpoint_t output_sp;
   memcpy(&output_sp, &hold_sp, sizeof(output_sp));
@@ -2037,12 +1448,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       controller_activate_tick = tick;
       activate_tick_snapshot = controller_activate_tick;
       mpc_has_run = false;
-      mpc_last_finish_tick = 0;
       mpc_reset_requested = true;
     }
     has_run_snapshot = mpc_has_run;
-    last_finish_tick_snapshot = mpc_last_finish_tick;
-    memcpy(&output_sp, &mpc_setpoint_data, sizeof(output_sp));
+    memcpy(&output_sp, &mpc_setpoint_data, sizeof(setpoint_t));
     xSemaphoreGive(dataMutex);
   } else {
     controllerPid(control, &hold_sp, sensors, state, tick);
@@ -2058,36 +1467,27 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   }
 
   if (RATE_DO_EXECUTE(MPC_RATE, tick)) {
-    if (xSemaphoreGive(runTaskSemaphore) != pdTRUE) {
-      g_mpc_dropped_wakes++;
-    }
+    xSemaphoreGive(runTaskSemaphore);
   }
 
-  // Known-good integrated output path: the MPC supplies a guarded receding-horizon
-  // position/yaw setpoint and the stock PID supplies all low-level control.
+  /* Output: CASCADE (ishaan/debug-traj). Hand the MPC's planned position + face-forward
+     heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
+     control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
+    /* Independent looming cue: hold the current pose even while perception is
+     * otherwise in PID-passthrough/log-only mode. The cue requires multi-track
+     * support and expires with the feature packet, so stale UART data cannot
+     * leave the controller permanently latched. */
+    if (flowObstacleLinkEmergencyBrake()) {
+      controllerPid(control, &hold_sp, sensors, state, tick);
+      return;
+    }
     if (obsPidPassthrough) {
       controllerPid(control, setpoint, sensors, state, tick);
       return;
     }
-    // mpc_last_finish_tick is sampled with xTaskGetTickCount() in the worker.
-    // Use that same FreeRTOS clock here; the stabilizer's `tick` has a separate
-    // epoch and subtracting the two wraps the age to ~UINT32_MAX.
-    const uint32_t rtos_now_tick = xTaskGetTickCount();
-    const uint32_t plan_age_ticks =
-        last_finish_tick_snapshot
-            ? (rtos_now_tick - last_finish_tick_snapshot)
-            : UINT32_MAX;
-    const bool plan_fresh =
-        has_run_snapshot &&
-        last_finish_tick_snapshot &&
-        plan_age_ticks <= M2T(TINYMPC_PLAN_TIMEOUT_MS);
-    g_mpc_plan_age_ms =
-        plan_age_ticks == UINT32_MAX
-            ? 0
-            : plan_age_ticks * portTICK_PERIOD_MS;
     const bool hold_output =
-        (!plan_fresh) || ((tick - activate_tick_snapshot) < M2T(250));
+        (!has_run_snapshot) || ((tick - activate_tick_snapshot) < M2T(250));
 
     if (setpoint->mode.z == modeDisable && !hold_output) {
       // Not commanded to fly -> motors off.
@@ -2098,14 +1498,18 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       control->controlMode = controlModePWM;
     } else {
       memset(&mpc_setpoint_pid, 0, sizeof(mpc_setpoint_pid));
-      mpc_setpoint_pid.mode.x = modeAbs;
-      mpc_setpoint_pid.mode.y = modeAbs;
-      mpc_setpoint_pid.mode.z = modeAbs;
+      mpc_setpoint_pid.mode.x   = modeAbs;
+      mpc_setpoint_pid.mode.y   = modeAbs;
+      mpc_setpoint_pid.mode.z   = modeAbs;
       mpc_setpoint_pid.mode.yaw = modeAbs;
-      if (hold_output) {
-        memcpy(&mpc_setpoint_pid, &hold_sp, sizeof(mpc_setpoint_pid));
-      } else {
+      if (!hold_output) {
         memcpy(&mpc_setpoint_pid, &output_sp, sizeof(mpc_setpoint_pid));
+      } else {
+        // Before the first solve: hold current pose so we don't dive on the switch.
+        mpc_setpoint_pid.position.x = state->position.x;
+        mpc_setpoint_pid.position.y = state->position.y;
+        mpc_setpoint_pid.position.z = state->position.z;
+        mpc_setpoint_pid.attitude.yaw = quat2rpy(q_meas).z * (180.0f / M_PI_F);
       }
       controllerPid(control, &mpc_setpoint_pid, sensors, state, tick);
     }

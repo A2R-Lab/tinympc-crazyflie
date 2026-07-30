@@ -33,11 +33,6 @@
   ((int)(sizeof(perception_map_payload_t) + sizeof(uint32_t)))
 #define STATE_MSG_HEADER "!STA"
 
-/* The RX task owns the largest supported wire packet (the 408-byte legacy
- * track packet) as well as the neural map packet.  Two minimum stacks is only
- * 600 bytes on this target and is smaller than its local receive frame. */
-#define GATE8_RX_TASK_STACKSIZE (4 * configMINIMAL_STACK_SIZE)
-
 typedef struct __attribute__((packed)) {
   uint8_t header[4];
   uint32_t timestamp;
@@ -275,7 +270,7 @@ void gate8LinkInit(void) {
       &g_stateTxQueueStruct);
   configASSERT(g_stateTxQueue != NULL);
   const BaseType_t taskCreated =
-      xTaskCreate(gate8RxTask, "GATE8RX", GATE8_RX_TASK_STACKSIZE,
+      xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
                   NULL, tskIDLE_PRIORITY + 2, &g_rxTaskHandle);
   configASSERT(taskCreated == pdPASS);
   const BaseType_t txTaskCreated =
