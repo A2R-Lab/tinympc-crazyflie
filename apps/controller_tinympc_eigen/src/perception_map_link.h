@@ -18,6 +18,7 @@ extern "C" {
 #define PERCEPTION_MAP_CELLS 100
 #define PERCEPTION_MAP_PACKED_BYTES 200
 #define PERCEPTION_MAP_WIRE_VERSION 2
+#define PERCEPTION_MAP_FLAG_DANGER_RAW_U8 (1u << 0)
 
 typedef struct __attribute__((packed)) {
   uint32_t gap8_ts_us;
@@ -57,6 +58,7 @@ void perceptionMapLinkNoteCrcErr(void);
 bool perceptionMapLinkGetLatest(uint8_t obstacle_presence[PERCEPTION_MAP_CELLS],
                                 uint8_t inverse_range[PERCEPTION_MAP_CELLS],
                                 uint8_t uncertainty[PERCEPTION_MAP_CELLS],
+                                /* nullable; unused by neural avoidance */
                                 uint8_t gate_opening[PERCEPTION_MAP_CELLS],
                                 uint32_t *out_age_ms,
                                 uint32_t *out_stm32_capture_tick,
