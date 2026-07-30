@@ -8,11 +8,9 @@
  * macros compile.
  */
 #include "gate8_link.h"
-#include "flowdeck_obstacle_link.h"
 #include "perception_map_link.h"
 
 #include "FreeRTOS.h"
-#include "queue.h"
 #include "task.h"
 
 #include "uart1.h"     /* uart1Init, uart1GetDataWithDefaultTimeout, USART3 */
@@ -27,24 +25,8 @@
 
 #define GATE8_BAUD       115200
 #define GATE8_PAYLOAD_N  ((int)(sizeof(gate8_payload_t) + sizeof(uint32_t)))  /* payload + crc */
-#define FLOW_OBS_PAYLOAD_N ((int)(sizeof(flow_obstacle_payload_t) + sizeof(uint32_t)))
-#define FLOW_TRACK_PAYLOAD_N ((int)(sizeof(flow_track_payload_t) + sizeof(uint32_t)))
 #define PERCEPTION_MAP_PAYLOAD_N \
   ((int)(sizeof(perception_map_payload_t) + sizeof(uint32_t)))
-#define STATE_MSG_HEADER "!STA"
-
-typedef struct __attribute__((packed)) {
-  uint8_t header[4];
-  uint32_t timestamp;
-  int16_t x, y, z;
-  int16_t vx, vy, vz;
-  int16_t ax, ay, az;
-  int32_t quat;
-  int16_t rateRoll, ratePitch, rateYaw;
-  uint32_t checksum;
-} state_msg_wire_t;
-
-_Static_assert(sizeof(state_msg_wire_t) == 40, "state packet ABI changed");
 
 /* Published state. Seqlock: RX task writes, controller and LOG read. */
 static volatile uint32_t g_seq      = 0;   /* odd while writing, even when stable */
@@ -64,11 +46,6 @@ static volatile uint32_t g_linkResets = 0;
 static TickType_t        g_lastValidTick = 0;
 static bool              g_everValid = false;
 static uint32_t          g_lastProducerTs = 0;
-static uint32_t          g_stateTx = 0;
-static uint32_t          g_stateTxDrops = 0;
-static xQueueHandle      g_stateTxQueue = NULL;
-static StaticQueue_t     g_stateTxQueueStruct;
-static uint8_t           g_stateTxQueueStorage[sizeof(state_msg_wire_t)];
 
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
@@ -132,8 +109,6 @@ static void resetAiDeck(void) {
 static void gate8RxTask(void *arg) {
   (void)arg;
   gate8_msg_t msg;
-  flow_obstacle_msg_t flow_msg;
-  flow_track_msg_t track_msg;
   perception_map_msg_t map_msg;
   uint8_t sync[GATE8_HEADER_LEN] = {0};
 
@@ -145,13 +120,10 @@ static void gate8RxTask(void *arg) {
   resetAiDeck();
 
   while (1) {
-    /* Sync to either 4-byte header. The AI-deck UART is shared by gate corners
-     * and obstacle-flow sectors, so one RX task must dispatch both message types. */
+    /* The AI-deck UART carries gate corners and neural danger maps. */
     bool is_gate = false;
-    bool is_flow = false;
-    bool is_track = false;
     bool is_map = false;
-    while (!is_gate && !is_flow && !is_track && !is_map) {
+    while (!is_gate && !is_map) {
       uint8_t b;
       if (!uart1GetDataWithDefaultTimeout(&b)) {
         const TickType_t now = xTaskGetTickCount();
@@ -166,8 +138,6 @@ static void gate8RxTask(void *arg) {
       memmove(sync, sync + 1, GATE8_HEADER_LEN - 1);
       sync[GATE8_HEADER_LEN - 1] = b;
       is_gate = headerMatches(sync, GATE8_MSG_HEADER);
-      is_flow = headerMatches(sync, FLOW_OBS_MSG_HEADER);
-      is_track = headerMatches(sync, FLOW_TRACK_MSG_HEADER);
       is_map = headerMatches(sync, PERCEPTION_MAP_MSG_HEADER);
     }
 
@@ -186,44 +156,6 @@ static void gate8RxTask(void *arg) {
         continue;
       }
       if (perceptionMapLinkPublishFromRx(&map_msg)) {
-        g_lastValidTick = xTaskGetTickCount();
-        g_everValid = true;
-      }
-      continue;
-    }
-
-    if (is_track) {
-      memcpy(track_msg.header, FLOW_TRACK_MSG_HEADER, FLOW_OBS_HEADER_LEN);
-      if (!readBytes((uint8_t *)&track_msg.p, FLOW_TRACK_PAYLOAD_N)) {
-        flowObstacleLinkNoteBadRx();
-        continue;
-      }
-      uint32_t crc = crc32CalculateBuffer(
-          &track_msg,
-          FLOW_OBS_HEADER_LEN + sizeof(flow_track_payload_t));
-      if (crc != track_msg.checksum) {
-        flowObstacleLinkNoteCrcErr();
-        continue;
-      }
-      if (flowObstacleLinkPublishTracksFromRx(&track_msg)) {
-        g_lastValidTick = xTaskGetTickCount();
-        g_everValid = true;
-      }
-      continue;
-    }
-
-    if (is_flow) {
-      memcpy(flow_msg.header, FLOW_OBS_MSG_HEADER, FLOW_OBS_HEADER_LEN);
-      if (!readBytes((uint8_t *)&flow_msg.p, FLOW_OBS_PAYLOAD_N)) {
-        flowObstacleLinkNoteBadRx();
-        continue;
-      }
-      uint32_t crc = crc32CalculateBuffer(&flow_msg, FLOW_OBS_HEADER_LEN + sizeof(flow_obstacle_payload_t));
-      if (crc != flow_msg.checksum) {
-        flowObstacleLinkNoteCrcErr();
-        continue;
-      }
-      if (flowObstacleLinkPublishFromRx(&flow_msg)) {
         g_lastValidTick = xTaskGetTickCount();
         g_everValid = true;
       }
@@ -249,68 +181,16 @@ static void gate8RxTask(void *arg) {
   }
 }
 
-static void gate8StateTxTask(void *arg) {
-  (void)arg;
-  state_msg_wire_t msg;
-  systemWaitStart();
-  while (1) {
-    if (xQueueReceive(g_stateTxQueue, &msg, portMAX_DELAY) == pdTRUE) {
-      uart1SendDataDmaBlocking(sizeof(msg), (uint8_t *)&msg);
-      g_stateTx++;
-    }
-  }
-}
-
 void gate8LinkInit(void) {
   uart1Init(GATE8_BAUD);   /* USART3, the GAP8 deck UART */
-  flowObstacleLinkInit();
   perceptionMapLinkInit();
-  g_stateTxQueue = xQueueCreateStatic(
-      1, sizeof(state_msg_wire_t), g_stateTxQueueStorage,
-      &g_stateTxQueueStruct);
-  configASSERT(g_stateTxQueue != NULL);
   const BaseType_t taskCreated =
       xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
                   NULL, tskIDLE_PRIORITY + 2, &g_rxTaskHandle);
   configASSERT(taskCreated == pdPASS);
-  const BaseType_t txTaskCreated =
-      xTaskCreate(gate8StateTxTask, "GATE8TX", configMINIMAL_STACK_SIZE,
-                  NULL, tskIDLE_PRIORITY + 1, NULL);
-  configASSERT(txTaskCreated == pdPASS);
   DEBUG_PRINT("vision link: UART1/USART3@%d started\n", GATE8_BAUD);
 }
 
-static int16_t saturatingMilli(float value) {
-  const float scaled = value * 1000.0f;
-  if (scaled > 32767.0f) return 32767;
-  if (scaled < -32768.0f) return -32768;
-  return (int16_t)lrintf(scaled);
-}
-
-void gate8LinkSendState(uint32_t timestamp_ms,
-                        float world_x_m, float world_y_m, float world_z_m,
-                        float world_vx_m_s, float world_vy_m_s,
-                        float world_vz_m_s, uint32_t compressed_quat,
-                        float roll_rate_rad_s, float pitch_rate_rad_s,
-                        float yaw_rate_rad_s) {
-  state_msg_wire_t msg = {0};
-  memcpy(msg.header, STATE_MSG_HEADER, sizeof(msg.header));
-  msg.timestamp = timestamp_ms;
-  msg.x = saturatingMilli(world_x_m);
-  msg.y = saturatingMilli(world_y_m);
-  msg.z = saturatingMilli(world_z_m);
-  msg.vx = saturatingMilli(world_vx_m_s);
-  msg.vy = saturatingMilli(world_vy_m_s);
-  msg.vz = saturatingMilli(world_vz_m_s);
-  msg.quat = (int32_t)compressed_quat;
-  msg.rateRoll = saturatingMilli(roll_rate_rad_s);
-  msg.ratePitch = saturatingMilli(pitch_rate_rad_s);
-  msg.rateYaw = saturatingMilli(yaw_rate_rad_s);
-  msg.checksum = crc32CalculateBuffer(&msg, sizeof(msg) - sizeof(msg.checksum));
-  if (xQueueOverwrite(g_stateTxQueue, &msg) != pdPASS) {
-    g_stateTxDrops++;
-  }
-}
 
 bool gate8LinkGetLatestSeqTimed(float corners[GATE8_N_CORNERS],
                                uint32_t *out_age_ms, uint32_t *out_sample,
@@ -368,6 +248,4 @@ LOG_ADD(LOG_UINT32, invalid, &g_invalidRx)
 LOG_ADD(LOG_UINT32, qDrop,  &g_queueDrops)
 LOG_ADD(LOG_UINT32, stackFree, &g_stackFreeWords)
 LOG_ADD(LOG_UINT32, resets, &g_linkResets)
-LOG_ADD(LOG_UINT32, stateTx, &g_stateTx)
-LOG_ADD(LOG_UINT32, stateDrop, &g_stateTxDrops)
 LOG_GROUP_STOP(gate8)

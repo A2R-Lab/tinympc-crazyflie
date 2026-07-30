@@ -55,11 +55,8 @@ extern "C" {
 #include "num.h"
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
-#include "estimator.h"         // estimatorEnqueuePosition (Stage 4: vision -> EKF)
-#include "quatcompress.h"
 
 #include "gate8_link.h"   // AI-deck gate-corner UART receiver
-#include "flowdeck_obstacle_link.h"  // AI-deck obstacle-flow sector receiver
 #include "perception_map_link.h"
 #include "perception_danger.h"
 #include "perception_corridor.h"
@@ -245,10 +242,6 @@ static float g_gate_corners_pixels[8];
 uint8_t obsEnable = 0;       // PARAM: master enable for modeled cylinder constraints
 uint8_t obsLogOnly = 1;      // PARAM: 1 = compute/log only, 0 = write constraints to ADMM
 uint8_t obsPidPassthrough = 0;// PARAM: run perception task but pass commander setpoints to PID
-uint8_t obsUseFlow = 0;      // PARAM: 1 = use AI-deck flow cylinder instead of cx/cy
-uint8_t obsFreezeFlow = 0;   // PARAM: 1 = latch one valid flow cylinder and hold it
-uint8_t obsFreezeClear = 0;  // PARAM: write 1 to clear the latched flow cylinder
-uint32_t obsFreezeAfterMs = 0;// PARAM: wait after OOT activation before latching flow
 float   obsCx = 0.5f;        // PARAM: obstacle center x [m]
 float   obsCy = 0.15f;       // PARAM: obstacle center y [m]
 float   obsCz = 0.5f;        // PARAM: cylinder center z [m]
@@ -271,16 +264,6 @@ float    g_obs_b = 0.0f;
 float    g_obs_margin = 0.0f;
 float    g_obs_violation = 0.0f;
 float    g_obs_clearance = 0.0f;
-uint8_t  g_obs_source = 0;
-float    g_obs_eff_cx = 0.0f;
-float    g_obs_eff_cy = 0.0f;
-float    g_obs_eff_radius = 0.0f;
-float    g_obs_flow_conf = 0.0f;
-uint8_t  g_obs_freeze_valid = 0;
-float    g_obs_freeze_cx = 0.0f;
-float    g_obs_freeze_cy = 0.0f;
-float    g_obs_freeze_radius = 0.0f;
-float    g_obs_freeze_conf = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
 
@@ -403,77 +386,6 @@ static inline void circuitPoint(float theta, float P[3], float T[3]) {
   T[2] = 0.5f * (gAz - gBz) * s;
 }
 
-// Unit normal of the gate plane, in xy. Both gates are surveyed as lying in one plane,
-// so the A->B line spans it and the normal is that line rotated 90 deg. This is also the
-// direction the drone crosses each gate in (the loop tangent at the major-axis ends), so
-// a gate seen along +/-n is seen head-on. Derived from the survey -- no extra param.
-static inline void gatePlaneNormal(float *nx, float *ny) {
-  float ux = gBx - gAx, uy = gBy - gAy;
-  float L = sqrtf(ux * ux + uy * uy);
-  if (L < 1e-3f) { *nx = 1.0f; *ny = 0.0f; return; }
-  *nx = -uy / L; *ny = ux / L;
-}
-
-// --- Stage 4: vision -> EKF, weighted by where we are on the trajectory ---
-//
-// The gates are SURVEYED landmarks, so a sighting of one is really a measurement of the
-// DRONE: gate_pnp gives the drone->gate offset in world axes (g_gate_rel, which depends
-// on attitude but not on the drifting position estimate), hence
-//     drone_position = gate_surveyed - g_gate_rel
-// which is enqueued as an absolute position measurement. That is the correction for the
-// Flow-deck's unbounded odometry drift; the MPC and the trajectory are untouched.
-//
-// The weight (how hard the EKF is allowed to pull on a fix) is scheduled by trajectory
-// phase, which is the point of this stage. For each surveyed gate we ask what the PLAN
-// says: from the planned pose on the loop, is that gate framed by the camera (inside the
-// FOV cone), is it near enough to range reliably, and is it being viewed square-on rather
-// than edge-on? Their product is the expected visibility w in [0,1] -- ~1 on the approach
-// legs, ~0 on the far side of the loop where no gate can be in shot. It is computed from
-// the SCHEDULED pose, not the estimated one, so it cannot be corrupted by the very drift
-// we are trying to correct. w then does two jobs:
-//   - data association: the gate with the higher w is the one we must be looking at;
-//   - weighting: stdDev = sigma(range) / w. On an approach leg w~1 and the fix is trusted
-//     to a few cm; where the plan says no gate is visible, w floors at visWFloor (0.02),
-//     inflating stdDev ~50x (variance ~2500x) so a stray detection moves the EKF by
-//     essentially nothing, exactly as if it had been ignored.
-// A detection that survives all that still has to pass an innovation gate (visMaxIn), so
-// a mis-associated or phantom gate can never yank the state across the room.
-//
-// Bring-up is deliberately two-stage: visEn=1 computes and LOGS the correction without
-// touching the estimator; visInj=1 actually feeds the EKF. Fly the first, then the second.
-// Non-static for the C param file (PARAM/LOG macros don't compile in this C++ TU).
-uint8_t visFuseEn   = 0;      // PARAM: 1 = run the fusion + log the correction
-uint8_t visFuseInj  = 0;      // PARAM: 1 = actually enqueue the fix into the EKF
-uint8_t visUseSched = 1;      // PARAM: 1 = weight/associate from the PLANNED loop pose
-                              //        0 = from the estimated pose (bench / no circuit)
-float   visStd0     = 0.05f;  // PARAM: position-fix noise, constant term [m]
-float   visStdR     = 0.05f;  // PARAM: ... plus this * range^2 (size-based range error
-                              //        grows quadratically) [m/m^2]
-float   visFovDeg   = 40.0f;  // PARAM: camera half-FOV used for the framing weight [deg]
-float   visIncMin   = 0.35f;  // PARAM: min |cos| between line-of-sight and gate normal
-                              //        (~70 deg off-normal) before the gate is edge-on
-float   visRGood    = 1.2f;   // PARAM: full range weight out to here [m]
-float   visRFar     = 3.0f;   // PARAM: ... falling to zero at this range [m]
-float   visWFloor   = 0.02f;  // PARAM: weight floor -> "almost nothing" off-schedule
-float   visWCut     = 0.01f;  // PARAM: below this expected visibility, drop the fix
-float   visMaxIn    = 0.75f;  // PARAM: reject corrections larger than this [m]
-float    g_vf_w     = 0.0f;   // LOG: current scheduled visibility weight [0..1]
-uint8_t  g_vf_gate  = 0;      // LOG: associated gate (0=none, 1=A, 2=B)
-float    g_vf_std   = 0.0f;   // LOG: stdDev handed to the EKF [m]
-float    g_vf_dx    = 0.0f;   // LOG: correction applied (implied pos - estimated pos) [m]
-float    g_vf_dy    = 0.0f;
-float    g_vf_dz    = 0.0f;
-float    g_vf_expr  = 0.0f;   // LOG: expected range to the associated gate [m]
-float    g_vf_expa  = 0.0f;   // LOG: expected off-axis angle to it [deg]
-uint32_t g_vf_n     = 0;      // LOG: fixes injected
-uint32_t g_vf_rej   = 0;      // LOG: detections rejected (no gate scheduled / innovation)
-
-// Fresh-sample tracking: an EKF must see each vision frame at most ONCE. Fusing a frame
-// the camera has not refreshed would double-count the same evidence and make the filter
-// over-confident, so the corner link's sample counter is latched and only advances fuse.
-static uint32_t gate_sample_seen = 0xFFFFFFFFu;
-static bool     gate_sample_fresh = false;
-
 static void resetMpcWarmStart(void) {
   for (int k = 0; k < NHORIZON; ++k) {
     Xhrz[k] = x0;
@@ -492,155 +404,6 @@ static void resetMpcWarmStart(void) {
   stgs.en_cstr_states = 0;
   work.first_run = 1;
 }
-
-// Expected visibility of one gate from a given pose: the product of a framing term (gate
-// inside the FOV cone), an incidence term (gate square-on, not edge-on) and a range term
-// (near enough for the apparent-size range estimate to mean anything). Each is 1 when
-// ideal and ramps smoothly to 0, so the weight has no cliffs for the EKF to step off.
-static float gateVisibility(float px, float py, float pz, float yaw_rad,
-                            float gx, float gy, float gz,
-                            float nx, float ny,
-                            float *out_range_m, float *out_offaxis_deg) {
-  const float dx = gx - px, dy = gy - py, dz = gz - pz;
-  const float rxy = sqrtf(dx * dx + dy * dy);
-  const float r   = sqrtf(rxy * rxy + dz * dz);
-  if (out_range_m) *out_range_m = r;
-  if (out_offaxis_deg) *out_offaxis_deg = 180.0f;
-  if (r < 1e-3f || rxy < 1e-3f) return 0.0f;   // on top of it: nothing framed
-
-  // Framing: angle between the camera boresight (body +x, pitched down by the mount) and
-  // the line of sight. Roll/pitch of the airframe are small on this loop, so the planned
-  // heading + mount pitch is enough to say what is in shot.
-  const float cp = cosf(g_gate_mount_pitch_rad), sp = sinf(g_gate_mount_pitch_rad);
-  const float bx = cosf(yaw_rad) * cp, by = sinf(yaw_rad) * cp, bz = -sp;
-  float cos_off = (bx * dx + by * dy + bz * dz) / r;
-  if (cos_off >  1.0f) cos_off =  1.0f;
-  if (cos_off < -1.0f) cos_off = -1.0f;
-  const float off = acosf(cos_off);                       // off-axis angle [rad]
-  if (out_offaxis_deg) *out_offaxis_deg = off * (180.0f / M_PI_F);
-  const float fov = radians(visFovDeg) > 1e-3f ? radians(visFovDeg) : 1e-3f;
-  float w_fov = 1.0f - off / fov;                          // 1 on-axis, 0 at the edge
-  if (w_fov <= 0.0f) return 0.0f;
-  if (w_fov > 1.0f) w_fov = 1.0f;
-
-  // Incidence: a gate viewed edge-on projects to a sliver, and the apparent-size range
-  // estimate (and the corner detector itself) fall apart. |cos| -- either face counts.
-  float cinc = fabsf((dx * nx + dy * ny) / rxy);
-  const float imin = (visIncMin < 0.99f) ? visIncMin : 0.99f;
-  float w_inc = (cinc - imin) / (1.0f - imin);
-  if (w_inc <= 0.0f) return 0.0f;
-  if (w_inc > 1.0f) w_inc = 1.0f;
-
-  // Range: full weight while close, fading out to visRFar. Beyond it the gate is a few
-  // pixels wide and the range estimate is noise.
-  float w_rng;
-  if (visRFar <= visRGood) {
-    w_rng = (r <= visRFar) ? 1.0f : 0.0f;
-  } else {
-    w_rng = (visRFar - r) / (visRFar - visRGood);
-    if (w_rng > 1.0f) w_rng = 1.0f;
-    if (w_rng < 0.0f) w_rng = 0.0f;
-  }
-  if (w_rng <= 0.0f) return 0.0f;
-
-  return w_fov * w_inc * w_rng;
-}
-
-// Fuse the latest gate sighting into the EKF, weighted by the scheduled visibility above.
-// Runs at the perception rate; consumes each corner frame at most once.
-static void fuseGateIntoEkf(const state_t *state) {
-  if (!visFuseEn) {
-    g_vf_w = 0.0f; g_vf_gate = 0; g_vf_std = 0.0f;
-    gate_sample_fresh = false;   // don't fuse a frame that went stale while disabled
-    return;
-  }
-
-  // Pose the WEIGHT is computed from. On the circuit this is the planned point on the
-  // loop and its tangent heading: the schedule is what "this part of the trajectory"
-  // means, and unlike the estimate it cannot have drifted. Off the circuit (bench, hover)
-  // fall back to the estimate -- fine there, since drift is what we are measuring, not
-  // something the weight has to be robust to.
-  float px, py, pz, yaw;
-  if (circEn && visUseSched && circ_armed) {
-    float P[3], T[3];
-    circuitPoint(circ_phase, P, T);
-    px = P[0]; py = P[1]; pz = P[2];
-    yaw = atan2f(T[1], T[0]);
-  } else {
-    px = state->position.x; py = state->position.y; pz = state->position.z;
-    yaw = quat2rpy(q_meas).z;
-  }
-
-  // Association: score both surveyed gates from that pose; the better-framed one is the
-  // gate a detection must belong to. On this loop the two are never both in shot, so the
-  // winner is unambiguous -- and when neither scores, nothing should be visible at all.
-  float nx, ny;
-  gatePlaneNormal(&nx, &ny);
-  float rA, aA, rB, aB;
-  const float wA = gateVisibility(px, py, pz, yaw, gAx, gAy, gAz, nx, ny, &rA, &aA);
-  const float wB = gateVisibility(px, py, pz, yaw, gBx, gBy, gBz, nx, ny, &rB, &aB);
-
-  float w, sel_x, sel_y, sel_z;
-  if (wB > wA) {
-    w = wB; sel_x = gBx; sel_y = gBy; sel_z = gBz;
-    g_vf_gate = 2; g_vf_expr = rB; g_vf_expa = aB;
-  } else {
-    w = wA; sel_x = gAx; sel_y = gAy; sel_z = gAz;
-    g_vf_gate = 1; g_vf_expr = rA; g_vf_expa = aA;
-  }
-  g_vf_w = w;
-  if (w < visWCut) g_vf_gate = 0;          // the plan says neither gate can be in shot
-
-  // Only ever act on a corner frame the camera has actually refreshed (see above).
-  if (!gate_sample_fresh) return;
-  gate_sample_fresh = false;
-  if (!g_gate_valid) return;               // this frame produced no usable gate fix
-
-  if (w < visWCut) {                       // nothing should be visible here, so whatever
-    g_vf_rej++;                            // the detector saw is not a gate -- drop it
-    return;
-  }
-  const float w_eff = (w > visWFloor) ? w : visWFloor;   // floor -> "almost nothing"
-
-  // The measurement: a surveyed landmark minus the measured offset to it IS the drone.
-  const float ix = sel_x - g_gate_rel_x;
-  const float iy = sel_y - g_gate_rel_y;
-  const float iz = sel_z - g_gate_rel_z;
-  const float dx = ix - state->position.x;
-  const float dy = iy - state->position.y;
-  const float dz = iz - state->position.z;
-  g_vf_dx = dx; g_vf_dy = dy; g_vf_dz = dz;
-
-  // Innovation gate: a true sighting of the expected gate lands near the current estimate
-  // (drift is slow). Anything further out is a mis-association or a phantom -- drop it
-  // rather than let it teleport the state.
-  if (sqrtf(dx * dx + dy * dy + dz * dz) > visMaxIn) {
-    g_vf_rej++;
-    return;
-  }
-
-  // Noise model: range comes from apparent size, so its error grows ~quadratically with
-  // range; the schedule weight then scales it.
-  const float r = g_gate_range_m;
-  float sigma = visStd0 + visStdR * r * r;
-  if (sigma < 0.01f) sigma = 0.01f;
-  float std = sigma / w_eff;
-  if (std > 10.0f) std = 10.0f;            // keep the EKF's arithmetic sane
-  g_vf_std = std;
-
-  if (!visFuseInj) return;                 // bring-up: computed and logged, not applied
-
-  positionMeasurement_t pos;
-  pos.x = ix;
-  pos.y = iy;
-  pos.z = iz;
-  pos.stdDev = std;
-  pos.source = MeasurementSourceLocationService;
-  estimatorEnqueuePosition(&pos);
-  g_vf_n++;
-}
-
-// Basic mode - no obstacle avoidance constraints
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
@@ -810,21 +573,14 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   float corners[GATE8_N_CORNERS];
   uint32_t age_ms = 0;
-  uint32_t sample = 0;
   uint32_t capture_tick = 0;
   if (!gate8LinkGetLatestSeqTimed(
-          corners, &age_ms, &sample, &capture_tick)) {
+          corners, &age_ms, NULL, &capture_tick)) {
     g_gate_valid = 0;   // no corner data received yet
     return;
   }
   memcpy(g_gate_corners_pixels, corners, sizeof(g_gate_corners_pixels));
   gate_capture_tick = capture_tick;
-  // Flag a corner frame the camera has actually refreshed, so Stage 4 fuses each one at
-  // most once (the poll runs at 50 Hz, well above the camera's frame rate).
-  if (sample != gate_sample_seen) {
-    gate_sample_seen = sample;
-    gate_sample_fresh = true;
-  }
   DroneState ds;
   ds.x  = state->position.x;  ds.y  = state->position.y;  ds.z  = state->position.z;
   ds.vx = state->velocity.x;  ds.vy = state->velocity.y;  ds.vz = state->velocity.z;
@@ -833,47 +589,6 @@ static void pollGateVision(const state_t *state, const sensorData_t *sensors) {
   ds.wx = radians(sensors->gyro.x);  ds.wy = radians(sensors->gyro.y);  ds.wz = radians(sensors->gyro.z);
   // Writes g_gate_center_x/y/z, g_gate_range_m, g_gate_valid, and the dbg globals.
   gate_pnp_project(corners, age_ms, &ds, &g_gate_vision);
-}
-
-static void pollFlowObstacleDepth(const state_t *state, const sensorData_t *sensors) {
-  const quaternion_t *q = &state->attitudeQuaternion;
-  const float yaw = atan2f(2.0f * (q->w * q->z + q->x * q->y),
-                          1.0f - 2.0f * (q->y * q->y + q->z * q->z));
-  /* Rotate world velocity with R(q)^T. A yaw-only rotation biases monocular
-   * inverse depth during the pitch/roll angles used in racing flight. */
-  const float body_vx =
-      (1.0f - 2.0f * (q->y*q->y + q->z*q->z)) * state->velocity.x +
-      2.0f * (q->x*q->y + q->w*q->z) * state->velocity.y +
-      2.0f * (q->x*q->z - q->w*q->y) * state->velocity.z;
-  const float body_vy =
-      2.0f * (q->x*q->y - q->w*q->z) * state->velocity.x +
-      (1.0f - 2.0f * (q->x*q->x + q->z*q->z)) * state->velocity.y +
-      2.0f * (q->y*q->z + q->w*q->x) * state->velocity.z;
-  const float yaw_rate = radians(sensors->gyro.z);
-  const float roll_rate = radians(sensors->gyro.x);
-  const float pitch_rate = radians(sensors->gyro.y);
-  const uint32_t now_ms = (uint32_t)xTaskGetTickCount();
-
-  flowObstacleLinkRecordState(now_ms, body_vx, body_vy, yaw_rate,
-                              state->position.x, state->position.y, yaw);
-
-  /* Forward state at 100 Hz. GAP8 maps each camera exposure into this STM32
-   * tick domain and echoes the capture tick in its flow packet. */
-  static uint32_t last_state_tx_ms = 0;
-  if ((uint32_t)(now_ms - last_state_tx_ms) >= 10u) {
-    const float quat_xyzw[4] = {
-      q->x, q->y, q->z, q->w
-    };
-    gate8LinkSendState(now_ms,
-                       state->position.x, state->position.y, state->position.z,
-                       state->velocity.x, state->velocity.y, state->velocity.z,
-                       quatcompress(quat_xyzw),
-                       roll_rate, pitch_rate, yaw_rate);
-    last_state_tx_ms = now_ms;
-  }
-
-  flowObstacleLinkUpdateDepth(body_vx, body_vy, yaw_rate,
-                              state->position.x, state->position.y, yaw);
 }
 
 static void pollPerceptionDanger(const state_t *state) {
@@ -1094,61 +809,12 @@ static void updateObstacleHalfspace(const state_t *state) {
   g_obs_margin = 0.0f;
   g_obs_violation = 0.0f;
   g_obs_clearance = 0.0f;
-  g_obs_source = 0;
-  g_obs_flow_conf = 0.0f;
   const uint32_t since_activation_ms =
       (xTaskGetTickCount() - controller_activate_tick) * portTICK_PERIOD_MS;
-
-  if (obsFreezeClear) {
-    g_obs_freeze_valid = 0;
-    g_obs_freeze_cx = 0.0f;
-    g_obs_freeze_cy = 0.0f;
-    g_obs_freeze_radius = 0.0f;
-    g_obs_freeze_conf = 0.0f;
-    obsFreezeClear = 0;
-  }
 
   float cx = obsCx;
   float cy = obsCy;
   float radius = obsRadius;
-  if (obsUseFlow) {
-    if (obsFreezeFlow && g_obs_freeze_valid) {
-      cx = g_obs_freeze_cx;
-      cy = g_obs_freeze_cy;
-      radius = g_obs_freeze_radius;
-      g_obs_source = 2;
-      g_obs_flow_conf = g_obs_freeze_conf;
-    } else {
-      float flow_cx = 0.0f;
-      float flow_cy = 0.0f;
-      float flow_radius = 0.0f;
-      float flow_conf = 0.0f;
-      if (!flowObstacleLinkGetCylinder(&flow_cx, &flow_cy, &flow_radius, &flow_conf)) {
-        return;
-      }
-      if (obsFreezeFlow && since_activation_ms >= obsFreezeAfterMs) {
-        g_obs_freeze_valid = 1;
-        g_obs_freeze_cx = flow_cx;
-        g_obs_freeze_cy = flow_cy;
-        g_obs_freeze_radius = flow_radius;
-        g_obs_freeze_conf = flow_conf;
-        cx = g_obs_freeze_cx;
-        cy = g_obs_freeze_cy;
-        radius = g_obs_freeze_radius;
-        g_obs_source = 2;
-        g_obs_flow_conf = g_obs_freeze_conf;
-      } else {
-      cx = flow_cx;
-      cy = flow_cy;
-      radius = flow_radius;
-      g_obs_source = 1;
-      g_obs_flow_conf = flow_conf;
-      }
-    }
-  }
-  g_obs_eff_cx = cx;
-  g_obs_eff_cy = cy;
-  g_obs_eff_radius = radius;
 
   const float dx0 = state->position.x - cx;
   const float dy0 = state->position.y - cy;
@@ -1351,12 +1017,9 @@ static void tinympcControllerTask(void *parameters) {
       resetMpcWarmStart();
     }
 
-    // Perception runs in the MPC task, not in the stabilizer callback. It is still
-    // sampled at MPC_RATE, which is faster than the AI-deck camera/flow producer.
+    // Perception runs in the MPC task, not in the stabilizer callback.
     pollGateVision(&state_task, &sensors_task);
-    pollFlowObstacleDepth(&state_task, &sensors_task);
     pollPerceptionDanger(&state_task);
-    fuseGateIntoEkf(&state_task);
 
     updateHorizonReference(&setpoint_task);
 
@@ -1474,14 +1137,6 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
      heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
      control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
-    /* Independent looming cue: hold the current pose even while perception is
-     * otherwise in PID-passthrough/log-only mode. The cue requires multi-track
-     * support and expires with the feature packet, so stale UART data cannot
-     * leave the controller permanently latched. */
-    if (flowObstacleLinkEmergencyBrake()) {
-      controllerPid(control, &hold_sp, sensors, state, tick);
-      return;
-    }
     if (obsPidPassthrough) {
       controllerPid(control, setpoint, sensors, state, tick);
       return;

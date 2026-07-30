@@ -39,10 +39,6 @@ float g_gate_center_y = 0.0f;
 float g_gate_center_z = 0.0f;
 float g_gate_range_m = 0.0f;
 uint8_t g_gate_valid = 0;
-/* Drone -> gate offset in world axes (position-estimate independent). See header. */
-float g_gate_rel_x = 0.0f;
-float g_gate_rel_y = 0.0f;
-float g_gate_rel_z = 0.0f;
 
 /* --- Debug: expose why the last projection bailed (logged for HW triage) ---
  * reason codes: 0=ok 1=stale(age) 2=degenerate(width/height<1) 3=too_far(>max)
@@ -194,7 +190,6 @@ bool gate_pnp_project(const float corners[8], uint32_t age_ms,
   out->invalid_reason = GATE_INVALID_NONE;
 
   g_gate_center_x = gx; g_gate_center_y = gy; g_gate_center_z = gz;
-  g_gate_rel_x = g_rot[0]; g_gate_rel_y = g_rot[1]; g_gate_rel_z = g_rot[2];
   g_gate_range_m = range;
   g_gate_valid = 1;
   g_gate_dbg_reason = 0;

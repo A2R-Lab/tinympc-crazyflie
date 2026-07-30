@@ -65,29 +65,6 @@ extern float   circSpeed;
 extern int8_t  circDir;
 extern float   g_circ_phase;
 
-/* Stage 4 vision->EKF fusion (defined in controller_tinympc.cpp). */
-extern uint8_t  visFuseEn;
-extern uint8_t  visFuseInj;
-extern uint8_t  visUseSched;
-extern float    visStd0;
-extern float    visStdR;
-extern float    visFovDeg;
-extern float    visIncMin;
-extern float    visRGood;
-extern float    visRFar;
-extern float    visWFloor;
-extern float    visWCut;
-extern float    visMaxIn;
-extern float    g_vf_w;
-extern uint8_t  g_vf_gate;
-extern float    g_vf_std;
-extern float    g_vf_dx;
-extern float    g_vf_dy;
-extern float    g_vf_dz;
-extern float    g_vf_expr;
-extern float    g_vf_expa;
-extern uint32_t g_vf_n;
-extern uint32_t g_vf_rej;
 
 PARAM_GROUP_START(visGate)
 PARAM_ADD(PARAM_FLOAT,  fx,     &g_gate_fx)
@@ -137,27 +114,6 @@ PARAM_ADD(PARAM_FLOAT, speed, &circSpeed)
 PARAM_ADD(PARAM_INT8,  dir,   &circDir)
 PARAM_GROUP_STOP(circuit)
 
-/* Stage 4 vision->EKF fusion, weighted by trajectory phase. Both default OFF, and the
- * enable is deliberately split: en=1 computes and LOGS the correction the vision WOULD
- * apply (fly this first and watch visFuse.dx/dy/dz -- they are the live Flow-deck drift);
- * inj=1 then actually feeds it to the estimator. w is the scheduled visibility weight and
- * std is what it does to the fix's noise: on a gate approach w~1 and std~std0, while off
- * the approach legs w floors at wFlr and std inflates ~50x, so a stray detection is worth
- * almost nothing to the filter. */
-PARAM_GROUP_START(visFuse)
-PARAM_ADD(PARAM_UINT8, en,    &visFuseEn)
-PARAM_ADD(PARAM_UINT8, inj,   &visFuseInj)
-PARAM_ADD(PARAM_UINT8, sched, &visUseSched)   /* weight from the planned pose, not the estimate */
-PARAM_ADD(PARAM_FLOAT, std0,  &visStd0)       /* fix noise = std0 + stdR*range^2 [m] */
-PARAM_ADD(PARAM_FLOAT, stdR,  &visStdR)
-PARAM_ADD(PARAM_FLOAT, fov,   &visFovDeg)     /* camera half-FOV for the framing weight [deg] */
-PARAM_ADD(PARAM_FLOAT, incMin,&visIncMin)     /* min |cos(LOS, gate normal)| before edge-on */
-PARAM_ADD(PARAM_FLOAT, rGood, &visRGood)      /* full range weight out to here [m] */
-PARAM_ADD(PARAM_FLOAT, rFar,  &visRFar)       /* ... zero beyond here [m] */
-PARAM_ADD(PARAM_FLOAT, wFlr,  &visWFloor)     /* weight floor off-schedule ("almost nothing") */
-PARAM_ADD(PARAM_FLOAT, wCut,  &visWCut)       /* below this expected visibility, drop the fix */
-PARAM_ADD(PARAM_FLOAT, maxIn, &visMaxIn)      /* innovation gate [m] */
-PARAM_GROUP_STOP(visFuse)
 
 LOG_GROUP_START(visGate)
 LOG_ADD(LOG_FLOAT,  gx,     &g_gate_center_x)   /* world-frame gate center */
@@ -177,19 +133,3 @@ LOG_ADD(LOG_FLOAT,  ty,     &g_gate_ty)
 LOG_ADD(LOG_FLOAT,  tz,     &g_gate_tz)
 LOG_ADD(LOG_FLOAT,  phase,  &g_circ_phase)   /* Stage 3 circuit loop phase [rad] */
 LOG_GROUP_STOP(visGate)
-
-/* Stage 4 fusion. Watch w/gate to see the schedule hand off between the gates around the
- * loop, dx/dy/dz for the drift the vision is removing, and n/rej for how much of the
- * vision is actually reaching the filter. */
-LOG_GROUP_START(visFuse)
-LOG_ADD(LOG_FLOAT,  w,     &g_vf_w)      /* scheduled visibility weight [0..1] */
-LOG_ADD(LOG_UINT8,  gate,  &g_vf_gate)   /* associated gate: 0=none 1=A 2=B */
-LOG_ADD(LOG_FLOAT,  std,   &g_vf_std)    /* stdDev handed to the EKF [m] */
-LOG_ADD(LOG_FLOAT,  dx,    &g_vf_dx)     /* correction = implied pos - estimated pos [m] */
-LOG_ADD(LOG_FLOAT,  dy,    &g_vf_dy)
-LOG_ADD(LOG_FLOAT,  dz,    &g_vf_dz)
-LOG_ADD(LOG_FLOAT,  expR,  &g_vf_expr)   /* expected range to the associated gate [m] */
-LOG_ADD(LOG_FLOAT,  expA,  &g_vf_expa)   /* expected off-axis angle to it [deg] */
-LOG_ADD(LOG_UINT32, n,     &g_vf_n)      /* fixes injected */
-LOG_ADD(LOG_UINT32, rej,   &g_vf_rej)    /* detections rejected */
-LOG_GROUP_STOP(visFuse)
