@@ -7,7 +7,7 @@
 # define NSTATES 12
 # define NINPUTS 4
 # define NHORIZON 25
-# define MAX_HS 3
+# define MAX_HS 5
 
 /************************************
 * Printing Constants to set Layout *

@@ -61,6 +61,8 @@ extern "C" {
 #include "perception_danger.h"
 #include "perception_corridor.h"
 #include "perception_model_qparams.h"
+#include "sequential_obstacle_link.h"
+#include "sequential_obstacle_control.h"
 #include "gate_pnp.h"     // corners -> world-frame gate center (Stage 1: perception only)
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
@@ -310,6 +312,46 @@ uint8_t g_percept_gate_open_cells = 0;
 static perception_danger_map_t g_perception_danger_map;
 static uint32_t perception_sample_seen = 0;
 static uint32_t gate_capture_tick = 0;
+
+// Four fixed body-frame visual planes from the sequential Tiny Racer network.
+// This path is opt-in during bring-up and supersedes the dense-map corridor when
+// enabled. Stale or wholly unreliable data changes the reference to a position hold.
+uint8_t seqAvoidEnable = 0;
+uint8_t seqAvoidConstraintEnable = 1;
+uint8_t seqAvoidLogOnly = 0;
+float seqAvoidConfidenceMin = 0.0f;
+uint32_t seqAvoidMaxAgeMs = 250;
+float seqAvoidDroneRadiusM = 0.10f;
+float seqAvoidTrackingMarginM = 0.08f;
+float seqAvoidLatencyS = 0.08f;
+float seqAvoidPerceptionMarginM = 0.03f;
+float seqAvoidConfidenceGainM = 0.05f;
+float seqAvoidDefaultOffsetM = 0.25f;
+float seqAvoidMaxRangeM = 6.0f;
+float seqAvoidTriggerM = 1.20f;
+float seqAvoidActivationEpsM = 0.25f;
+float seqAvoidReferenceShiftM = 0.35f;
+float seqAvoidSlackPenalty = 5000.0f;
+float seqAvoidDistanceWeight = 0.45f;
+float seqAvoidGoalWeight = 0.40f;
+float seqAvoidHysteresisWeight = 0.15f;
+float seqAvoidDynamicWeight = 0.10f;
+uint8_t seqAvoidKStart = 1;
+
+uint8_t g_seq_valid = 0;
+uint8_t g_seq_stop = 0;
+uint8_t g_seq_reliable_mask = 0;
+int8_t g_seq_chosen = -1;
+uint8_t g_seq_constraints = 0;
+uint32_t g_seq_age_ms = 0;
+uint32_t g_seq_sample = 0;
+float g_seq_pressure = 0.0f;
+float g_seq_score = 0.0f;
+float g_seq_max_slack = 0.0f;
+float g_seq_effective[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
+float g_seq_margin[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
+static sequential_control_result_t g_seq_plan;
+static int g_seq_previous_direction = -1;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -655,6 +697,183 @@ static void pollPerceptionDanger(const state_t *state) {
   g_percept_center_danger =
       g_perception_danger_map.probability[5 * PERCEPTION_MAP_W + 5];
   g_percept_min_ttc = isfinite(minimum_ttc) ? minimum_ttc : 0.0f;
+}
+
+static void rotateBodyToWorld(const float body[3], const state_t *state,
+                              float world[3]) {
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float tx = 2.0f * (q->y * body[2] - q->z * body[1]);
+  const float ty = 2.0f * (q->z * body[0] - q->x * body[2]);
+  const float tz = 2.0f * (q->x * body[1] - q->y * body[0]);
+  world[0] = body[0] + q->w * tx + (q->y * tz - q->z * ty);
+  world[1] = body[1] + q->w * ty + (q->z * tx - q->x * tz);
+  world[2] = body[2] + q->w * tz + (q->x * ty - q->y * tx);
+}
+
+static void rotateWorldToBody(const float world[3], const state_t *state,
+                              float body[3]) {
+  const quaternion_t *q = &state->attitudeQuaternion;
+  const float tx = 2.0f * (-q->y * world[2] + q->z * world[1]);
+  const float ty = 2.0f * (-q->z * world[0] + q->x * world[2]);
+  const float tz = 2.0f * (-q->x * world[1] + q->y * world[0]);
+  body[0] = world[0] + q->w * tx + (-q->y * tz + q->z * ty);
+  body[1] = world[1] + q->w * ty + (-q->z * tx + q->x * tz);
+  body[2] = world[2] + q->w * tz + (-q->x * ty + q->y * tx);
+}
+
+static void pollSequentialObstacle(const state_t *state,
+                                   const setpoint_t *setpoint) {
+  memset(&g_seq_plan, 0, sizeof(g_seq_plan));
+  g_seq_plan.chosen_direction = -1;
+  g_seq_valid = 0;
+  g_seq_stop = 0;
+  g_seq_reliable_mask = 0;
+  g_seq_chosen = -1;
+  g_seq_pressure = 0.0f;
+  g_seq_score = 0.0f;
+  if (!seqAvoidEnable) {
+    g_seq_previous_direction = -1;
+    return;
+  }
+
+  float clearance[SEQUENTIAL_CONTROL_DIRECTIONS];
+  float confidence[SEQUENTIAL_CONTROL_DIRECTIONS];
+  uint8_t gate_valid = 0;
+  uint32_t capture_tick = 0;
+  if (!sequentialObstacleLinkGetLatest(clearance, confidence, &gate_valid,
+                                        &g_seq_age_ms, &capture_tick,
+                                        &g_seq_sample) ||
+      g_seq_age_ms > seqAvoidMaxAgeMs) {
+    g_seq_stop = 1;
+    g_seq_previous_direction = -1;
+    return;
+  }
+  (void)gate_valid;   // Gate validation is separate from obstacle-plane validity.
+  (void)capture_tick;
+
+  const float goal_world[3] = {
+    setpoint->position.x - state->position.x,
+    setpoint->position.y - state->position.y,
+    setpoint->position.z - state->position.z,
+  };
+  const float velocity_world[3] = {
+    state->velocity.x, state->velocity.y, state->velocity.z,
+  };
+  float goal_body[3], velocity_body[3];
+  rotateWorldToBody(goal_world, state, goal_body);
+  rotateWorldToBody(velocity_world, state, velocity_body);
+  const sequential_control_config_t config = {
+    seqAvoidConfidenceMin,
+    seqAvoidDroneRadiusM,
+    seqAvoidTrackingMarginM,
+    seqAvoidLatencyS,
+    seqAvoidPerceptionMarginM,
+    seqAvoidConfidenceGainM,
+    seqAvoidDefaultOffsetM,
+    seqAvoidMaxRangeM,
+    seqAvoidTriggerM,
+    seqAvoidDistanceWeight,
+    seqAvoidGoalWeight,
+    seqAvoidHysteresisWeight,
+    seqAvoidDynamicWeight,
+  };
+  sequentialObstacleControlPlan(clearance, confidence, goal_body,
+                                velocity_body, g_seq_previous_direction,
+                                &config, &g_seq_plan);
+  g_seq_valid = g_seq_plan.valid;
+  g_seq_stop = g_seq_plan.stop;
+  g_seq_reliable_mask = g_seq_plan.reliable_mask;
+  g_seq_chosen = g_seq_plan.chosen_direction;
+  g_seq_pressure = g_seq_plan.avoidance_pressure;
+  g_seq_score = isfinite(g_seq_plan.chosen_score)
+      ? g_seq_plan.chosen_score : 0.0f;
+  memcpy(g_seq_effective, g_seq_plan.effective_offset_m,
+         sizeof(g_seq_effective));
+  memcpy(g_seq_margin, g_seq_plan.margin_m, sizeof(g_seq_margin));
+  if (g_seq_plan.valid) {
+    g_seq_previous_direction = g_seq_plan.chosen_direction;
+  } else {
+    g_seq_previous_direction = -1;
+  }
+}
+
+static void applySequentialFailSafeHold(const state_t *state,
+                                        setpoint_t *setpoint) {
+  if (!seqAvoidEnable || !g_seq_stop) return;
+  setpoint->mode.x = modeAbs;
+  setpoint->mode.y = modeAbs;
+  setpoint->mode.z = modeAbs;
+  setpoint->position.x = state->position.x;
+  setpoint->position.y = state->position.y;
+  setpoint->position.z = state->position.z;
+  setpoint->velocity.x = 0.0f;
+  setpoint->velocity.y = 0.0f;
+  setpoint->velocity.z = 0.0f;
+}
+
+static void adjustSequentialReference(const state_t *state) {
+  if (!seqAvoidEnable || !g_seq_plan.valid || g_seq_plan.stop ||
+      g_seq_plan.chosen_direction < 0) return;
+  float direction_world[3];
+  rotateBodyToWorld(
+      g_seq_plan.body_normal[g_seq_plan.chosen_direction], state,
+      direction_world);
+  for (int k = 0; k < NHORIZON; ++k) {
+    const float phase = (float)(k + 1) / (float)NHORIZON;
+    const float eta = seqAvoidReferenceShiftM * g_seq_plan.avoidance_pressure *
+                      phase * phase;
+    Xref[k](0) += eta * direction_world[0];
+    Xref[k](1) += eta * direction_world[1];
+    Xref[k](2) += eta * direction_world[2];
+  }
+}
+
+static void updateSequentialHalfspaces(const state_t *state) {
+  g_seq_constraints = 0;
+  if (!seqAvoidEnable || !g_seq_plan.valid || g_seq_plan.stop ||
+      !seqAvoidConstraintEnable || seqAvoidLogOnly) return;
+  const Eigen::Vector3f zero_velocity(0.0f, 0.0f, 0.0f);
+  const uint8_t first_k = seqAvoidKStart < NHORIZON
+      ? seqAvoidKStart : NHORIZON - 1;
+  for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
+       ++direction) {
+    float normal_world_data[3];
+    rotateBodyToWorld(g_seq_plan.body_normal[direction], state,
+                      normal_world_data);
+    Eigen::Vector3f normal_world(normal_world_data[0], normal_world_data[1],
+                                 normal_world_data[2]);
+    normal_world.normalize();
+    const float b = g_seq_plan.effective_offset_m[direction] +
+        normal_world(0) * state->position.x +
+        normal_world(1) * state->position.y +
+        normal_world(2) * state->position.z;
+    for (int k = first_k; k < NHORIZON; ++k) {
+      const auto &nominal = mpc_has_run ? Xhrz[k] : Xref[k];
+      const float g = normal_world(0) *
+              (nominal(0) - state->position.x) +
+          normal_world(1) * (nominal(1) - state->position.y) +
+          normal_world(2) * (nominal(2) - state->position.z) -
+          g_seq_plan.effective_offset_m[direction];
+      if (g <= -seqAvoidActivationEpsM) continue;
+      tiny_SetKinematicHalfspace(
+          &work, k, direction + 1, &normal_world, &zero_velocity, b,
+          seqAvoidSlackPenalty, 1);
+      if (g_seq_constraints < UINT8_MAX) g_seq_constraints++;
+    }
+  }
+  if (g_seq_constraints) stgs.en_cstr_states = 1;
+}
+
+static void updateSequentialSlackDiagnostics(void) {
+  g_seq_max_slack = 0.0f;
+  if (!seqAvoidEnable) return;
+  for (int k = 0; k < NHORIZON; ++k) {
+    for (int direction = 1; direction <= SEQUENTIAL_CONTROL_DIRECTIONS;
+         ++direction) {
+      g_seq_max_slack = fmaxf(g_seq_max_slack,
+                              data.slack_used_hs[k][direction]);
+    }
+  }
 }
 
 static void cameraNormalToWorld(const float camera[3],
@@ -1020,8 +1239,11 @@ static void tinympcControllerTask(void *parameters) {
     // Perception runs in the MPC task, not in the stabilizer callback.
     pollGateVision(&state_task, &sensors_task);
     pollPerceptionDanger(&state_task);
+    pollSequentialObstacle(&state_task, &setpoint_task);
+    applySequentialFailSafeHold(&state_task, &setpoint_task);
 
     updateHorizonReference(&setpoint_task);
+    adjustSequentialReference(&state_task);
 
     // Multiplicative attitude error in the reference frame: q_err = q_ref0^-1 (x) q_meas.
     struct quat q_err = qqmul(qinv(q_ref0), q_meas);
@@ -1031,11 +1253,19 @@ static void tinympcControllerTask(void *parameters) {
     x0(5) = phi.z;
 
     updateObstacleHalfspace(&state_task);
-    updatePerceptionAngularHalfspaces(&state_task);
+    if (seqAvoidEnable) {
+      updateSequentialHalfspaces(&state_task);
+    } else {
+      updatePerceptionAngularHalfspaces(&state_task);
+    }
     tiny_UpdateLinearCost(&work);
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
-    updatePerceptionSlackDiagnostics();
+    if (seqAvoidEnable) {
+      updateSequentialSlackDiagnostics();
+    } else {
+      updatePerceptionSlackDiagnostics();
+    }
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
     g_mpc_iter = (uint8_t)info.iter;
 

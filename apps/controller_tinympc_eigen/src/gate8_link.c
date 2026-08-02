@@ -9,6 +9,7 @@
  */
 #include "gate8_link.h"
 #include "perception_map_link.h"
+#include "sequential_obstacle_link.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -27,6 +28,8 @@
 #define GATE8_PAYLOAD_N  ((int)(sizeof(gate8_payload_t) + sizeof(uint32_t)))  /* payload + crc */
 #define PERCEPTION_MAP_PAYLOAD_N \
   ((int)(sizeof(perception_map_payload_t) + sizeof(uint32_t)))
+#define SEQUENTIAL_OBSTACLE_PAYLOAD_N \
+  ((int)(sizeof(sequential_obstacle_payload_t) + sizeof(uint32_t)))
 
 /* Published state. Seqlock: RX task writes, controller and LOG read. */
 static volatile uint32_t g_seq      = 0;   /* odd while writing, even when stable */
@@ -110,6 +113,7 @@ static void gate8RxTask(void *arg) {
   (void)arg;
   gate8_msg_t msg;
   perception_map_msg_t map_msg;
+  sequential_obstacle_msg_t sequential_msg;
   uint8_t sync[GATE8_HEADER_LEN] = {0};
 
   systemWaitStart();
@@ -123,7 +127,8 @@ static void gate8RxTask(void *arg) {
     /* The AI-deck UART carries gate corners and neural danger maps. */
     bool is_gate = false;
     bool is_map = false;
-    while (!is_gate && !is_map) {
+    bool is_sequential = false;
+    while (!is_gate && !is_map && !is_sequential) {
       uint8_t b;
       if (!uart1GetDataWithDefaultTimeout(&b)) {
         const TickType_t now = xTaskGetTickCount();
@@ -139,6 +144,29 @@ static void gate8RxTask(void *arg) {
       sync[GATE8_HEADER_LEN - 1] = b;
       is_gate = headerMatches(sync, GATE8_MSG_HEADER);
       is_map = headerMatches(sync, PERCEPTION_MAP_MSG_HEADER);
+      is_sequential = headerMatches(sync, SEQUENTIAL_OBSTACLE_MSG_HEADER);
+    }
+
+    if (is_sequential) {
+      memcpy(sequential_msg.header, SEQUENTIAL_OBSTACLE_MSG_HEADER,
+             SEQUENTIAL_OBSTACLE_HEADER_LEN);
+      if (!readBytes((uint8_t *)&sequential_msg.p,
+                     SEQUENTIAL_OBSTACLE_PAYLOAD_N)) {
+        sequentialObstacleLinkNoteBadRx();
+        continue;
+      }
+      uint32_t crc = crc32CalculateBuffer(
+          &sequential_msg, SEQUENTIAL_OBSTACLE_HEADER_LEN +
+                               sizeof(sequential_obstacle_payload_t));
+      if (crc != sequential_msg.checksum) {
+        sequentialObstacleLinkNoteCrcErr();
+        continue;
+      }
+      if (sequentialObstacleLinkPublishFromRx(&sequential_msg)) {
+        g_lastValidTick = xTaskGetTickCount();
+        g_everValid = true;
+      }
+      continue;
     }
 
     if (is_map) {
@@ -184,6 +212,7 @@ static void gate8RxTask(void *arg) {
 void gate8LinkInit(void) {
   uart1Init(GATE8_BAUD);   /* USART3, the GAP8 deck UART */
   perceptionMapLinkInit();
+  sequentialObstacleLinkInit();
   const BaseType_t taskCreated =
       xTaskCreate(gate8RxTask, "GATE8RX", 2 * configMINIMAL_STACK_SIZE,
                   NULL, tskIDLE_PRIORITY + 2, &g_rxTaskHandle);
