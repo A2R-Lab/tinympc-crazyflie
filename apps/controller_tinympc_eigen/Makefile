@@ -49,3 +49,8 @@ OOT_CONFIG := $(CURDIR)/app-config
 OOT_USES_CXX := 1
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
+
+# The upstream OOT `cload` target only transfers the existing binary.  Make
+# flashing safe after a source update: build the app first so `make cload`
+# cannot silently reinstall a stale cf21bl.bin lacking new parameters/logs.
+cload: all
