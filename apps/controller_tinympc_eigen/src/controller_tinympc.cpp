@@ -212,6 +212,8 @@ static bool  mpc_has_run = false;          // hold current pose until the first 
 static uint32_t last_controller_tick = 0;
 static uint32_t controller_activate_tick = 0;
 static const bool enable_pid_face_forward_yaw = true;
+static bool obs_pid_passthrough_seen = false;
+static uint8_t last_obs_pid_passthrough = 0;
 
 // Demo-2 watchdog fix: run TinyMPC in its own lower-priority task. The stabilizer loop
 // only snapshots inputs, wakes this task at MPC_RATE, and feeds the latest MPC setpoint
@@ -268,6 +270,11 @@ float    g_obs_violation = 0.0f;
 float    g_obs_clearance = 0.0f;
 uint32_t g_mpc_solve_us = 0;
 uint8_t  g_mpc_iter = 0;
+int8_t   g_mpc_status = TINY_UNSOLVED;
+float    g_mpc_primal_residual = 0.0f;
+float    g_mpc_dual_residual = 0.0f;
+uint8_t  g_mpc_health_hold = 0;
+uint32_t g_mpc_health_faults = 0;
 
 // NanoCockpit multi-task CNN maps. The quantized model is accepted for
 // obstacle-avoidance use; packet validity, age checks, confidence margins,
@@ -313,14 +320,15 @@ static perception_danger_map_t g_perception_danger_map;
 static uint32_t perception_sample_seen = 0;
 static uint32_t gate_capture_tick = 0;
 
-// Four fixed body-frame visual planes from the sequential Tiny Racer network.
-// This path is opt-in during bring-up and supersedes the dense-map corridor when
-// enabled. Stale or wholly unreliable data changes the reference to a position hold.
+// Four fixed body-frame direction scores from the sequential Tiny Racer network.
+// This path is opt-in and supersedes the dense-map corridor. It classifies the
+// scores into open/blocked directions and uses them only to select waypoints.
 uint8_t seqAvoidEnable = 0;
 uint8_t seqAvoidConstraintEnable = 1;
 uint8_t seqAvoidLogOnly = 0;
 float seqAvoidConfidenceMin = 0.0f;
 uint32_t seqAvoidMaxAgeMs = 250;
+uint32_t seqAvoidDropoutGraceMs = 300;
 float seqAvoidDroneRadiusM = 0.10f;
 float seqAvoidTrackingMarginM = 0.08f;
 float seqAvoidLatencyS = 0.08f;
@@ -328,9 +336,29 @@ float seqAvoidPerceptionMarginM = 0.03f;
 float seqAvoidConfidenceGainM = 0.05f;
 float seqAvoidDefaultOffsetM = 0.25f;
 float seqAvoidMaxRangeM = 6.0f;
+float seqAvoidDirectionSafeMinM = 0.22f;
+uint8_t seqAvoidAverageWindow = 5;
+float seqAvoidTriggerAverage = 3.5f;
+float seqAvoidClearAverage = 1.5f;
 float seqAvoidTriggerM = 1.20f;
 float seqAvoidActivationEpsM = 0.25f;
 float seqAvoidReferenceShiftM = 0.35f;
+float seqAvoidSideMinimumM = 0.35f;
+uint8_t seqAvoidSideVotesRequired = 3;
+float seqAvoidForwardMinimumM = 0.35f;
+float seqAvoidForwardStepM = 0.40f;
+float seqAvoidPassDistanceM = 0.80f;
+float seqAvoidWaypointToleranceM = 0.10f;
+uint8_t seqAvoidClearVotesRequired = 3;
+float seqAvoidMaxLateralM = 0.75f;
+float seqAvoidProbeProgressM = 0.08f;
+uint8_t seqAvoidProbeVotesRequired = 8;
+/* The five-iteration flight solve routinely ends at TINY_MAX_ITER. These
+ * limits reject grossly pathological output rather than treating an ordinary
+ * truncated-ADMM residual as an immediate fault. */
+float seqAvoidMaxPrimalResidual = 0.50f;
+float seqAvoidMaxDualResidual = 300.0f;
+uint32_t seqAvoidMaxSolveUs = 20000;
 float seqAvoidSlackPenalty = 5000.0f;
 float seqAvoidDistanceWeight = 0.45f;
 float seqAvoidGoalWeight = 0.40f;
@@ -343,15 +371,46 @@ uint8_t g_seq_stop = 0;
 uint8_t g_seq_reliable_mask = 0;
 int8_t g_seq_chosen = -1;
 uint8_t g_seq_constraints = 0;
+uint8_t g_seq_grace = 0;
+uint32_t g_seq_grace_age_ms = 0;
 uint32_t g_seq_age_ms = 0;
 uint32_t g_seq_sample = 0;
 float g_seq_pressure = 0.0f;
+float g_seq_danger_average = 0.0f;
+uint8_t g_seq_average_count = 0;
 float g_seq_score = 0.0f;
 float g_seq_max_slack = 0.0f;
 float g_seq_effective[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
 float g_seq_margin[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
 static sequential_control_result_t g_seq_plan;
+static sequential_danger_average_t g_seq_danger_history;
+static uint32_t g_seq_average_sample_seen = 0;
+static bool g_seq_average_clear = false;
 static int g_seq_previous_direction = -1;
+int8_t g_seq_side = -1;
+uint8_t g_seq_side_votes = 0;
+static int8_t g_seq_side_candidate = -1;
+static uint32_t g_seq_side_sample_seen = 0;
+enum {
+  SEQ_ROUTE_IDLE = 0,
+  SEQ_ROUTE_SIDESTEP = 1,
+  SEQ_ROUTE_ADVANCE = 2,
+  SEQ_ROUTE_HOLD = 3,
+};
+uint8_t g_seq_route_phase = SEQ_ROUTE_IDLE;
+uint8_t g_seq_clear_votes = 0;
+uint32_t g_seq_route_replans = 0;
+float g_seq_waypoint_x = 0.0f;
+float g_seq_waypoint_y = 0.0f;
+float g_seq_waypoint_z = 0.0f;
+float g_seq_path_offset_x = 0.0f;
+float g_seq_path_offset_y = 0.0f;
+static uint32_t g_seq_route_sample_seen = 0;
+static float g_seq_route_side_world[3] = {0.0f, 0.0f, 0.0f};
+static float g_seq_route_start_world[3] = {0.0f, 0.0f, 0.0f};
+static int8_t g_seq_route_side_index = -1;
+static float g_seq_route_altitude_m = 0.0f;
+static bool g_seq_route_lateral_limited = false;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -731,8 +790,15 @@ static void pollSequentialObstacle(const state_t *state,
   g_seq_chosen = -1;
   g_seq_pressure = 0.0f;
   g_seq_score = 0.0f;
+  g_seq_grace = 0;
+  g_seq_grace_age_ms = 0;
   if (!seqAvoidEnable) {
     g_seq_previous_direction = -1;
+    sequentialDangerAverageReset(&g_seq_danger_history);
+    g_seq_average_sample_seen = 0;
+    g_seq_danger_average = 0.0f;
+    g_seq_average_count = 0;
+    g_seq_average_clear = false;
     return;
   }
 
@@ -776,10 +842,59 @@ static void pollSequentialObstacle(const state_t *state,
     seqAvoidGoalWeight,
     seqAvoidHysteresisWeight,
     seqAvoidDynamicWeight,
+    seqAvoidDirectionSafeMinM,
   };
   sequentialObstacleControlPlan(clearance, confidence, goal_body,
                                 velocity_body, g_seq_previous_direction,
                                 &config, &g_seq_plan);
+
+  if (g_seq_sample != g_seq_average_sample_seen) {
+    g_seq_average_sample_seen = g_seq_sample;
+    const uint8_t open_count = (uint8_t)__builtin_popcount(
+        (unsigned int)(g_seq_plan.reliable_mask & 0x0fu));
+    g_seq_danger_average = sequentialDangerAverageUpdate(
+        &g_seq_danger_history,
+        (uint8_t)(SEQUENTIAL_CONTROL_DIRECTIONS - open_count),
+        seqAvoidAverageWindow);
+    g_seq_average_count = g_seq_danger_history.count;
+  }
+  const uint8_t effective_window = seqAvoidAverageWindow < 1 ? 1 :
+      seqAvoidAverageWindow > SEQUENTIAL_DANGER_WINDOW_MAX
+          ? SEQUENTIAL_DANGER_WINDOW_MAX : seqAvoidAverageWindow;
+  const bool average_ready = g_seq_average_count >= effective_window;
+  g_seq_average_clear = average_ready &&
+      g_seq_danger_average < seqAvoidClearAverage;
+  g_seq_plan.avoidance_pressure = average_ready &&
+      g_seq_danger_average > seqAvoidTriggerAverage ? 1.0f : 0.0f;
+
+  /* A high dangerous-slice average starts avoidance. Prefer the only open outer slice
+   * when one exists; if neither is open, either direction is allowed and the
+   * deterministic fallback is slice 0 (vehicle right / negative body y). */
+  if (g_seq_plan.avoidance_pressure > 0.0f) {
+    const bool outer0_open = g_seq_plan.reliable_mask & (1u << 0);
+    const bool outer3_open = g_seq_plan.reliable_mask & (1u << 3);
+    int8_t candidate = -1;
+    candidate = !outer3_open ? 0 : !outer0_open ? 3 :
+        (g_seq_plan.effective_offset_m[3] >
+         g_seq_plan.effective_offset_m[0] ? 3 : 0);
+    /* Once a route has started, never switch sides during the maneuver. */
+    if (g_seq_route_phase != SEQ_ROUTE_IDLE &&
+        g_seq_route_side_index >= 0) {
+      candidate = g_seq_route_side_index;
+    }
+
+    if (g_seq_sample != g_seq_side_sample_seen) {
+      g_seq_side_sample_seen = g_seq_sample;
+      g_seq_side_candidate = candidate;
+      g_seq_side = candidate;
+      g_seq_side_votes = 1;
+    }
+    g_seq_plan.chosen_direction = g_seq_side;
+  } else if (g_seq_route_phase != SEQ_ROUTE_IDLE &&
+             g_seq_route_side_index >= 0) {
+    g_seq_plan.chosen_direction = g_seq_route_side_index;
+  }
+
   g_seq_valid = g_seq_plan.valid;
   g_seq_stop = g_seq_plan.stop;
   g_seq_reliable_mask = g_seq_plan.reliable_mask;
@@ -811,69 +926,163 @@ static void applySequentialFailSafeHold(const state_t *state,
   setpoint->velocity.z = 0.0f;
 }
 
-static void adjustSequentialReference(const state_t *state) {
-  if (!seqAvoidEnable || !g_seq_plan.valid || g_seq_plan.stop ||
-      g_seq_plan.chosen_direction < 0) return;
-  float direction_world[3];
-  rotateBodyToWorld(
-      g_seq_plan.body_normal[g_seq_plan.chosen_direction], state,
-      direction_world);
-  for (int k = 0; k < NHORIZON; ++k) {
-    const float phase = (float)(k + 1) / (float)NHORIZON;
-    const float eta = seqAvoidReferenceShiftM * g_seq_plan.avoidance_pressure *
-                      phase * phase;
-    Xref[k](0) += eta * direction_world[0];
-    Xref[k](1) += eta * direction_world[1];
-    Xref[k](2) += eta * direction_world[2];
-  }
+static void resetSequentialRoute(void) {
+  g_seq_route_phase = SEQ_ROUTE_IDLE;
+  g_seq_clear_votes = 0;
+  g_seq_route_sample_seen = 0;
+  g_seq_route_side_index = -1;
+  g_seq_route_lateral_limited = false;
 }
 
-static void updateSequentialHalfspaces(const state_t *state) {
+static void applySequentialPathOffset(setpoint_t *setpoint) {
+  setpoint->position.x += g_seq_path_offset_x;
+  setpoint->position.y += g_seq_path_offset_y;
+}
+
+static void setSequentialWaypoint(const state_t *state, const float direction[3],
+                                  float distance, uint8_t phase) {
+  g_seq_waypoint_x = state->position.x + distance * direction[0];
+  g_seq_waypoint_y = state->position.y + distance * direction[1];
+  g_seq_waypoint_z = g_seq_route_altitude_m;
+  g_seq_route_phase = phase;
+  if (g_seq_route_replans < UINT32_MAX) g_seq_route_replans++;
+}
+
+static bool setSequentialLateralWaypoint(const state_t *state) {
+  const float lateral_progress =
+      (state->position.x - g_seq_route_start_world[0]) *
+          g_seq_route_side_world[0] +
+      (state->position.y - g_seq_route_start_world[1]) *
+          g_seq_route_side_world[1];
+  const float remaining = seqAvoidMaxLateralM - fmaxf(0.0f, lateral_progress);
+  if (remaining <= seqAvoidWaypointToleranceM) {
+    g_seq_route_phase = SEQ_ROUTE_HOLD;
+    g_seq_route_lateral_limited = true;
+    g_seq_waypoint_x = state->position.x;
+    g_seq_waypoint_y = state->position.y;
+    g_seq_waypoint_z = g_seq_route_altitude_m;
+    return false;
+  }
+  setSequentialWaypoint(state, g_seq_route_side_world,
+                        fminf(seqAvoidReferenceShiftM, remaining),
+                        SEQ_ROUTE_SIDESTEP);
+  return true;
+}
+
+static void beginSequentialRoute(const state_t *state,
+                                 const setpoint_t *setpoint) {
+  g_seq_route_side_index = g_seq_side;
+  const float side_body[3] = {0.0f, g_seq_side == 3 ? 1.0f : -1.0f, 0.0f};
+  rotateBodyToWorld(side_body, state, g_seq_route_side_world);
+  g_seq_route_side_world[2] = 0.0f;
+  const float side_norm = hypotf(g_seq_route_side_world[0],
+                                 g_seq_route_side_world[1]);
+  if (side_norm > 1e-3f) {
+    g_seq_route_side_world[0] /= side_norm;
+    g_seq_route_side_world[1] /= side_norm;
+  }
+  g_seq_route_start_world[0] = state->position.x;
+  g_seq_route_start_world[1] = state->position.y;
+  g_seq_route_start_world[2] = state->position.z;
+  /* Preserve the commander's flight level for the complete route. Copying the
+   * measured height at each replan turns ordinary tracking error into a climb. */
+  g_seq_route_altitude_m = setpoint->position.z;
+  g_seq_clear_votes = 0;
+  g_seq_route_lateral_limited = false;
+  setSequentialLateralWaypoint(state);
+}
+
+/* Build a persistent lateral route. Every reached waypoint produces another
+ * lateral step until the dangerous-slice moving average clears. */
+static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
+  if (!seqAvoidEnable) {
+    resetSequentialRoute();
+    g_seq_path_offset_x = 0.0f;
+    g_seq_path_offset_y = 0.0f;
+    g_seq_waypoint_x = state->position.x;
+    g_seq_waypoint_y = state->position.y;
+    g_seq_waypoint_z = state->position.z;
+    return;
+  }
+  if (obsPidPassthrough) {
+    /* Perception continues to run during PID takeoff/landing, but a waypoint
+     * created there would be stale when MPC later assumes control. Keep the
+     * route disarmed and make its logged target reflect the current pose. */
+    resetSequentialRoute();
+    g_seq_waypoint_x = state->position.x;
+    g_seq_waypoint_y = state->position.y;
+    g_seq_waypoint_z = state->position.z;
+    return;
+  }
+  if (g_seq_stop || !g_seq_plan.valid) {
+    if (g_seq_route_phase != SEQ_ROUTE_IDLE) {
+      g_seq_route_phase = SEQ_ROUTE_HOLD;
+      g_seq_waypoint_x = state->position.x;
+      g_seq_waypoint_y = state->position.y;
+      g_seq_waypoint_z = state->position.z;
+    }
+    return;
+  }
+
+  const bool fresh = g_seq_sample != g_seq_route_sample_seen;
+  const uint8_t open_count = (uint8_t)__builtin_popcount(
+      (unsigned int)(g_seq_plan.reliable_mask & 0x0fu));
+  if (fresh) {
+    g_seq_route_sample_seen = g_seq_sample;
+    g_seq_clear_votes = open_count;
+  }
+
+  if (g_seq_route_phase == SEQ_ROUTE_IDLE &&
+      g_seq_plan.avoidance_pressure > 0.0f && g_seq_side >= 0) {
+    beginSequentialRoute(state, setpoint);
+  }
+
+  if (g_seq_route_phase == SEQ_ROUTE_IDLE) {
+    applySequentialPathOffset(setpoint);
+    return;
+  }
+
+  if (fresh && g_seq_average_clear) {
+    const float lateral_progress = fmaxf(0.0f,
+        (state->position.x - g_seq_route_start_world[0]) *
+            g_seq_route_side_world[0] +
+        (state->position.y - g_seq_route_start_world[1]) *
+            g_seq_route_side_world[1]);
+    g_seq_path_offset_x += lateral_progress * g_seq_route_side_world[0];
+    g_seq_path_offset_y += lateral_progress * g_seq_route_side_world[1];
+    resetSequentialRoute();
+    g_seq_side = -1;
+    g_seq_side_candidate = -1;
+    g_seq_side_votes = 0;
+    applySequentialPathOffset(setpoint);
+    return;
+  }
+
+  const float waypoint_distance = hypotf(
+      g_seq_waypoint_x - state->position.x,
+      g_seq_waypoint_y - state->position.y);
+  const bool reached = waypoint_distance <= seqAvoidWaypointToleranceM;
+  if (fresh && reached && g_seq_route_phase == SEQ_ROUTE_SIDESTEP) {
+    setSequentialLateralWaypoint(state);
+  }
+
+  if (g_seq_route_phase == SEQ_ROUTE_IDLE) return;
+  setpoint->mode.x = modeAbs;
+  setpoint->mode.y = modeAbs;
+  setpoint->mode.z = modeAbs;
+  setpoint->position.x = g_seq_waypoint_x;
+  setpoint->position.y = g_seq_waypoint_y;
+  setpoint->position.z = g_seq_waypoint_z;
+  setpoint->velocity.x = 0.0f;
+  setpoint->velocity.y = 0.0f;
+  setpoint->velocity.z = 0.0f;
+}
+
+static void disableSequentialHalfspaces(void) {
+  /* Sequential vision now selects waypoint stages only. It never turns a
+   * directional classifier output into a metric state constraint. */
   g_seq_constraints = 0;
-  if (!seqAvoidEnable || !g_seq_plan.valid || g_seq_plan.stop ||
-      !seqAvoidConstraintEnable || seqAvoidLogOnly) return;
-  const Eigen::Vector3f zero_velocity(0.0f, 0.0f, 0.0f);
-  const uint8_t first_k = seqAvoidKStart < NHORIZON
-      ? seqAvoidKStart : NHORIZON - 1;
-  for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
-       ++direction) {
-    float normal_world_data[3];
-    rotateBodyToWorld(g_seq_plan.body_normal[direction], state,
-                      normal_world_data);
-    Eigen::Vector3f normal_world(normal_world_data[0], normal_world_data[1],
-                                 normal_world_data[2]);
-    normal_world.normalize();
-    const float b = g_seq_plan.effective_offset_m[direction] +
-        normal_world(0) * state->position.x +
-        normal_world(1) * state->position.y +
-        normal_world(2) * state->position.z;
-    for (int k = first_k; k < NHORIZON; ++k) {
-      const auto &nominal = mpc_has_run ? Xhrz[k] : Xref[k];
-      const float g = normal_world(0) *
-              (nominal(0) - state->position.x) +
-          normal_world(1) * (nominal(1) - state->position.y) +
-          normal_world(2) * (nominal(2) - state->position.z) -
-          g_seq_plan.effective_offset_m[direction];
-      if (g <= -seqAvoidActivationEpsM) continue;
-      tiny_SetKinematicHalfspace(
-          &work, k, direction + 1, &normal_world, &zero_velocity, b,
-          seqAvoidSlackPenalty, 1);
-      if (g_seq_constraints < UINT8_MAX) g_seq_constraints++;
-    }
-  }
-  if (g_seq_constraints) stgs.en_cstr_states = 1;
-}
-
-static void updateSequentialSlackDiagnostics(void) {
   g_seq_max_slack = 0.0f;
-  if (!seqAvoidEnable) return;
-  for (int k = 0; k < NHORIZON; ++k) {
-    for (int direction = 1; direction <= SEQUENTIAL_CONTROL_DIRECTIONS;
-         ++direction) {
-      g_seq_max_slack = fmaxf(g_seq_max_slack,
-                              data.slack_used_hs[k][direction]);
-    }
-  }
 }
 
 static void cameraNormalToWorld(const float camera[3],
@@ -1161,7 +1370,9 @@ void controllerOutOfTreeInit(void) {
   stgs.max_iter = 5;        // Match demo-2 hardcoded-obstacle solve depth.
   stgs.iters_check_rho_update = 10;  // Demo-2: no rho/cache update during 5-iter solve.
   stgs.verbose = 0;
-  stgs.check_termination = 0;
+  /* Compute residuals on every solve. This may terminate early, while still
+   * retaining the five-iteration upper bound used by the flight controller. */
+  stgs.check_termination = 1;
   stgs.tol_abs_dual = 1e-3f;
   stgs.tol_abs_prim = 1e-3f;
 
@@ -1241,9 +1452,9 @@ static void tinympcControllerTask(void *parameters) {
     pollPerceptionDanger(&state_task);
     pollSequentialObstacle(&state_task, &setpoint_task);
     applySequentialFailSafeHold(&state_task, &setpoint_task);
+    updateSequentialRoute(&state_task, &setpoint_task);
 
     updateHorizonReference(&setpoint_task);
-    adjustSequentialReference(&state_task);
 
     // Multiplicative attitude error in the reference frame: q_err = q_ref0^-1 (x) q_meas.
     struct quat q_err = qqmul(qinv(q_ref0), q_meas);
@@ -1254,20 +1465,36 @@ static void tinympcControllerTask(void *parameters) {
 
     updateObstacleHalfspace(&state_task);
     if (seqAvoidEnable) {
-      updateSequentialHalfspaces(&state_task);
+      disableSequentialHalfspaces();
     } else {
       updatePerceptionAngularHalfspaces(&state_task);
     }
     tiny_UpdateLinearCost(&work);
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
-    if (seqAvoidEnable) {
-      updateSequentialSlackDiagnostics();
-    } else {
+    if (!seqAvoidEnable) {
       updatePerceptionSlackDiagnostics();
     }
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
     g_mpc_iter = (uint8_t)info.iter;
+    g_mpc_status = (int8_t)info.status_val;
+    g_mpc_primal_residual = info.pri_res;
+    g_mpc_dual_residual = info.dua_res;
+    const bool nonfinite_solve =
+        !isfinite(g_mpc_primal_residual) || !isfinite(g_mpc_dual_residual) ||
+        !isfinite(Xhrz[NHORIZON - 1](0)) ||
+        !isfinite(Xhrz[NHORIZON - 1](1)) ||
+        !isfinite(Xhrz[NHORIZON - 1](2));
+    const bool residual_limit = seqAvoidEnable &&
+        ((seqAvoidMaxPrimalResidual > 0.0f &&
+         g_mpc_primal_residual > seqAvoidMaxPrimalResidual) ||
+        (seqAvoidMaxDualResidual > 0.0f &&
+         g_mpc_dual_residual > seqAvoidMaxDualResidual) ||
+        (seqAvoidMaxSolveUs > 0 && g_mpc_solve_us > seqAvoidMaxSolveUs));
+    const bool health_fault = nonfinite_solve ||
+        info.status_val == TINY_NON_CVX || residual_limit;
+    if (health_fault && !g_mpc_health_hold) g_mpc_health_faults++;
+    g_mpc_health_hold = health_fault;
 
     result = info.status_val * info.iter;
 
@@ -1277,9 +1504,9 @@ static void tinympcControllerTask(void *parameters) {
     next_sp.mode.y   = modeAbs;
     next_sp.mode.z   = modeAbs;
     next_sp.mode.yaw = modeAbs;
-    next_sp.position.x = Xhrz[NHORIZON - 1](0);
-    next_sp.position.y = Xhrz[NHORIZON - 1](1);
-    next_sp.position.z = Xhrz[NHORIZON - 1](2);
+    next_sp.position.x = health_fault ? state_task.position.x : Xhrz[NHORIZON - 1](0);
+    next_sp.position.y = health_fault ? state_task.position.y : Xhrz[NHORIZON - 1](1);
+    next_sp.position.z = health_fault ? state_task.position.z : Xhrz[NHORIZON - 1](2);
     next_sp.attitude.yaw = yawUseRef
         ? yawRefDeg
         : (enable_pid_face_forward_yaw
@@ -1327,23 +1554,30 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   }
 
   bool has_run_snapshot = false;
+  bool health_hold_snapshot = false;
   uint32_t activate_tick_snapshot = controller_activate_tick;
   setpoint_t output_sp;
   memcpy(&output_sp, &hold_sp, sizeof(output_sp));
   const bool controller_reactivated =
       (last_controller_tick == 0) || ((tick - last_controller_tick) > M2T(200));
+  const uint8_t pid_passthrough_now = obsPidPassthrough;
+  const bool pid_to_mpc_handoff = obs_pid_passthrough_seen &&
+      last_obs_pid_passthrough && !pid_passthrough_now;
+  obs_pid_passthrough_seen = true;
+  last_obs_pid_passthrough = pid_passthrough_now;
 
   if (xSemaphoreTake(dataMutex, M2T(2)) == pdTRUE) {
     memcpy(&setpoint_data, setpoint, sizeof(setpoint_t));
     memcpy(&sensors_data, sensors, sizeof(sensorData_t));
     memcpy(&state_data, state, sizeof(state_t));
-    if (controller_reactivated) {
+    if (controller_reactivated || pid_to_mpc_handoff) {
       controller_activate_tick = tick;
       activate_tick_snapshot = controller_activate_tick;
       mpc_has_run = false;
       mpc_reset_requested = true;
     }
     has_run_snapshot = mpc_has_run;
+    health_hold_snapshot = g_mpc_health_hold;
     memcpy(&output_sp, &mpc_setpoint_data, sizeof(setpoint_t));
     xSemaphoreGive(dataMutex);
   } else {
@@ -1352,8 +1586,9 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   }
   last_controller_tick = tick;
 
-  if (controller_reactivated) {
-    DEBUG_PRINT("OOT activated: hold pos=(%.2f,%.2f,%.2f)\n",
+  if (controller_reactivated || pid_to_mpc_handoff) {
+    DEBUG_PRINT("OOT %s: hold pos=(%.2f,%.2f,%.2f)\n",
+                pid_to_mpc_handoff ? "PID->MPC" : "activated",
                 (double)state->position.x,
                 (double)state->position.y,
                 (double)state->position.z);
@@ -1367,12 +1602,13 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
      heading to the stock Crazyflie PID, which does all low-level attitude/rate/motor
      control -- including yaw, which it handles robustly at any angle. */
   if (RATE_DO_EXECUTE(RATE_500_HZ, tick)) {
-    if (obsPidPassthrough) {
+    if (pid_passthrough_now) {
       controllerPid(control, setpoint, sensors, state, tick);
       return;
     }
     const bool hold_output =
-        (!has_run_snapshot) || ((tick - activate_tick_snapshot) < M2T(250));
+        (!has_run_snapshot) || health_hold_snapshot ||
+        ((tick - activate_tick_snapshot) < M2T(250));
 
     if (setpoint->mode.z == modeDisable && !hold_output) {
       // Not commanded to fly -> motors off.

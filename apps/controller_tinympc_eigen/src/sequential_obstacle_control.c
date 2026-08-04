@@ -16,12 +16,41 @@ static float norm3(const float value[3]) {
                value[2] * value[2]);
 }
 
+void sequentialDangerAverageReset(sequential_danger_average_t *average) {
+  memset(average, 0, sizeof(*average));
+}
+
+float sequentialDangerAverageUpdate(sequential_danger_average_t *average,
+                                    uint8_t dangerous_slices,
+                                    uint8_t requested_window) {
+  const uint8_t window = requested_window < 1 ? 1 :
+      requested_window > SEQUENTIAL_DANGER_WINDOW_MAX
+          ? SEQUENTIAL_DANGER_WINDOW_MAX : requested_window;
+  if (average->window != window) {
+    sequentialDangerAverageReset(average);
+    average->window = window;
+  }
+
+  const float sample = fminf((float)SEQUENTIAL_CONTROL_DIRECTIONS,
+                             (float)dangerous_slices);
+  if (average->count == window) {
+    average->sum -= average->samples[average->next];
+  } else {
+    average->count++;
+  }
+  average->samples[average->next] = sample;
+  average->sum += sample;
+  average->next = (uint8_t)((average->next + 1u) % window);
+  return average->sum / (float)average->count;
+}
+
 void sequentialObstacleControlPlan(
     const float clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS],
     const float confidence[SEQUENTIAL_CONTROL_DIRECTIONS],
     const float goal_direction_body[3], const float velocity_body[3],
     int previous_direction, const sequential_control_config_t *config,
     sequential_control_result_t *result) {
+  (void)confidence;
   memset(result, 0, sizeof(*result));
   result->chosen_direction = -1;
   result->chosen_score = -INFINITY;
@@ -34,7 +63,6 @@ void sequentialObstacleControlPlan(
     }
   }
 
-  float center_effective = config->maximum_range_m;
   for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
        ++direction) {
     result->body_normal[direction][0] =
@@ -46,31 +74,15 @@ void sequentialObstacleControlPlan(
   for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
        ++direction) {
     float *normal = result->body_normal[direction];
-    const float confidence_excess =
-        fmaxf(0.0f, confidence[direction] - config->confidence_min);
-    const float perception_margin = config->perception_margin_m +
-        config->confidence_margin_gain_m / (1.0f + confidence_excess);
-    const float margin = config->drone_radius_m +
-        config->tracking_margin_m + speed * config->latency_s +
-        perception_margin;
-    result->margin_m[direction] = margin;
-    result->effective_offset_m[direction] = clearance_m[direction] - margin;
-    const bool confidence_reliable =
-        confidence[direction] >= config->confidence_min;
-    if (!confidence_reliable) {
-      result->effective_offset_m[direction] = clampf(
-          config->conservative_default_offset_m, 0.0f,
-          config->maximum_range_m);
-    }
-    if (direction == 1 || direction == 2) {
-      center_effective = fminf(center_effective,
-                               result->effective_offset_m[direction]);
-    }
-    if (!confidence_reliable) continue;
-    if (result->effective_offset_m[direction] <= 0.0f) {
-      result->effective_offset_m[direction] = 0.0f;
-      continue;
-    }
+    /* The network's metric output is used only to classify each fixed ray.
+     * Confidence and metric safety margins are deliberately ignored for this
+     * experiment. */
+    result->margin_m[direction] = 0.0f;
+    result->effective_offset_m[direction] = clampf(
+        clearance_m[direction], 0.0f, config->maximum_range_m);
+    const bool direction_open = result->effective_offset_m[direction] >=
+        config->direction_safe_min_m;
+    if (!direction_open) continue;
     result->reliable_mask |= (uint8_t)(1u << direction);
     float goal_alignment = 0.0f;
     if (goal_norm > 1.0e-4f) {
@@ -104,12 +116,9 @@ void sequentialObstacleControlPlan(
     }
   }
 
-  result->stop = result->reliable_mask == 0;
-  result->valid = !result->stop;
-  if (config->trigger_distance_m > 1.0e-4f) {
-    result->avoidance_pressure = clampf(
-        (config->trigger_distance_m - center_effective) /
-            config->trigger_distance_m,
-        0.0f, 1.0f);
-  }
+  /* A fresh all-blocked classification starts the lateral escape; it is not a
+   * fail-safe fault. Packet loss/staleness is handled by the caller. */
+  result->stop = false;
+  result->valid = true;
+  result->avoidance_pressure = result->reliable_mask == 0 ? 1.0f : 0.0f;
 }

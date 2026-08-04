@@ -35,6 +35,7 @@ FIELDS = [
     "seqAvoid.waypointX", "seqAvoid.waypointY", "seqAvoid.waypointZ",
     "seqAvoid.pathOffX", "seqAvoid.pathOffY",
     "seqAvoid.pressure", "seqAvoid.maxSlack",
+    "seqAvoid.dangerAvg", "seqAvoid.avgCount",
     "seqAvoid.eff0", "seqAvoid.eff1", "seqAvoid.eff2", "seqAvoid.eff3",
     "obs.mpcUs", "obs.iter", "obs.status", "obs.priRes", "obs.duaRes",
     "obs.healthHold", "obs.healthFaults",
@@ -71,7 +72,9 @@ LOG_BLOCKS = [
                        ("seqAvoid.nCstr", "uint8_t"),
                        ("seqAvoid.ageMs", "uint32_t")]),
     ("seq_metric", 50, [("seqAvoid.pressure", "float"),
-                        ("seqAvoid.maxSlack", "float")]),
+                        ("seqAvoid.maxSlack", "float"),
+                        ("seqAvoid.dangerAvg", "float"),
+                        ("seqAvoid.avgCount", "uint8_t")]),
     ("seq_route", 50, [("seqAvoid.routePhase", "uint8_t"),
                         ("seqAvoid.clearVotes", "uint8_t"),
                         ("seqAvoid.replans", "uint32_t"),
@@ -115,6 +118,12 @@ def arguments():
     parser.add_argument("--confidence-min", type=float, default=0.0)
     parser.add_argument("--safe-min", type=float, default=0.22,
                         help="Raw directional clearance threshold for open versus blocked.")
+    parser.add_argument("--average-window", type=int, default=5,
+                        help="Fresh classifications in the dangerous-slice moving average.")
+    parser.add_argument("--trigger-average", type=float, default=3.5,
+                        help="Start evasion when average dangerous slices exceeds this value.")
+    parser.add_argument("--clear-average", type=float, default=1.5,
+                        help="Release evasion when average dangerous slices falls below this value.")
     parser.add_argument("--max-age-ms", type=int, default=250)
     parser.add_argument("--vision-grace-ms", type=int, default=300,
                         help="Legacy compatibility option; classifier mode does not use grace.")
@@ -271,6 +280,9 @@ def main():
             set_param(cf, "seqAvoid.constrain", 1)
             set_param(cf, "seqAvoid.confMin", args.confidence_min)
             set_param(cf, "seqAvoid.safeMin", args.safe_min)
+            set_param(cf, "seqAvoid.avgN", args.average_window)
+            set_param(cf, "seqAvoid.trigAvg", args.trigger_average)
+            set_param(cf, "seqAvoid.clearAvg", args.clear_average)
             set_param(cf, "seqAvoid.maxAge", args.max_age_ms)
             set_param(cf, "seqAvoid.graceMs", args.vision_grace_ms)
             set_param(cf, "seqAvoid.refShift", args.ref_shift)

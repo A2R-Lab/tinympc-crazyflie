@@ -10,6 +10,15 @@ extern "C" {
 #endif
 
 #define SEQUENTIAL_CONTROL_DIRECTIONS 4
+#define SEQUENTIAL_DANGER_WINDOW_MAX 32
+
+typedef struct {
+  float samples[SEQUENTIAL_DANGER_WINDOW_MAX];
+  float sum;
+  uint8_t next;
+  uint8_t count;
+  uint8_t window;
+} sequential_danger_average_t;
 
 typedef struct {
   float confidence_min;
@@ -25,12 +34,13 @@ typedef struct {
   float goal_weight;
   float hysteresis_weight;
   float dynamic_weight;
+  float direction_safe_min_m;
 } sequential_control_config_t;
 
 typedef struct {
   bool valid;
   bool stop;
-  uint8_t reliable_mask;
+  uint8_t reliable_mask;  /* Open-direction mask; name retained for log ABI. */
   int8_t chosen_direction;
   float body_normal[SEQUENTIAL_CONTROL_DIRECTIONS][3];
   float effective_offset_m[SEQUENTIAL_CONTROL_DIRECTIONS];
@@ -45,6 +55,11 @@ void sequentialObstacleControlPlan(
     const float goal_direction_body[3], const float velocity_body[3],
     int previous_direction, const sequential_control_config_t *config,
     sequential_control_result_t *result);
+
+void sequentialDangerAverageReset(sequential_danger_average_t *average);
+float sequentialDangerAverageUpdate(sequential_danger_average_t *average,
+                                    uint8_t dangerous_slices,
+                                    uint8_t requested_window);
 
 #ifdef __cplusplus
 }

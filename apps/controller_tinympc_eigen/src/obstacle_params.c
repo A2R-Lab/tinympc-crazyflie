@@ -34,6 +34,11 @@ extern float g_obs_violation;
 extern float g_obs_clearance;
 extern uint32_t g_mpc_solve_us;
 extern uint8_t g_mpc_iter;
+extern int8_t g_mpc_status;
+extern float g_mpc_primal_residual;
+extern float g_mpc_dual_residual;
+extern uint8_t g_mpc_health_hold;
+extern uint32_t g_mpc_health_faults;
 
 PARAM_GROUP_START(obs)
 PARAM_ADD(PARAM_UINT8,  enable,  &obsEnable)
@@ -65,4 +70,9 @@ LOG_ADD(LOG_FLOAT,  viol,   &g_obs_violation)
 LOG_ADD(LOG_FLOAT,  clear,  &g_obs_clearance)
 LOG_ADD(LOG_UINT32, mpcUs,  &g_mpc_solve_us)
 LOG_ADD(LOG_UINT8,  iter,   &g_mpc_iter)
+LOG_ADD(LOG_INT8,   status, &g_mpc_status)
+LOG_ADD(LOG_FLOAT,  priRes, &g_mpc_primal_residual)
+LOG_ADD(LOG_FLOAT,  duaRes, &g_mpc_dual_residual)
+LOG_ADD(LOG_UINT8,  healthHold, &g_mpc_health_hold)
+LOG_ADD(LOG_UINT32, healthFaults, &g_mpc_health_faults)
 LOG_GROUP_STOP(obs)
