@@ -71,8 +71,12 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
     /* Update for next primal solve */
     tiny_UpdateConstrainedLinearCost(work);
 
-     // Update rho every 5 iterations
-    if (iter > 1 && iter % 5 == 0) {
+    // Match demo-2 semantics: rho/cache updates are explicitly scheduled. With
+    // max_iter=5 and iters_check_rho_update=10, the solve uses fixed precomputed
+    // caches for the full control step instead of rewriting rho on the final iter.
+    if (work->stgs->iters_check_rho_update > 0 &&
+        iter > 1 &&
+        iter % work->stgs->iters_check_rho_update == 0) {
       RhoBenchmarkResult rho_result;
       
       // Use existing residuals from work->info
@@ -129,6 +133,7 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
   if (work->info->status_val == TINY_UNSOLVED) {
     work->info->status_val = TINY_MAX_ITER_REACHED;
   }
+  work->info->iter = iter - 1;
   if (work->stgs->verbose) PrintSummary(work->info);
   return TINY_NO_ERROR;
 }
@@ -156,25 +161,49 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
       // ADMM update: y = y + x
       work->soln->YX[k] = work->soln->YX[k] + work->soln->X[k];
       
-      // Half-space projection for obstacle avoidance (position only)
-      // Match eigen_task: full projection without clamping
-      if (work->data->en_hs[k]) {
-        Eigen::Vector3f y_pos = work->soln->YX[k].head(3);
-        Eigen::Vector3f a = work->data->a_hs[k];
-        float b = work->data->b_hs[k];
-        // Compute distance to half-space boundary: a^T * y - b
-        float dist = a.dot(y_pos) - b;
-        if (dist > 0) {
-          // Project fully onto half-space: z = y - dist * a (since ||a|| = 1)
-          Eigen::Vector3f z_pos = y_pos - dist * a;
-          work->ZX_new[k] = work->soln->YX[k];
-          work->ZX_new[k].head(3) = z_pos;
-        } else {
-          work->ZX_new[k] = work->soln->YX[k];
+      // Half-space projection for obstacle avoidance (position only).
+      // Multiple active planes are applied with one sequential projection pass.
+      bool has_hs = false;
+      for (int h = 0; h < MAX_HS; ++h) {
+        has_hs = has_hs || (work->data->en_hs[k][h] != 0);
+      }
+      if (has_hs) {
+        work->ZX_new[k] = work->soln->YX[k];
+        for (int h = 0; h < MAX_HS; ++h) {
+          if (!work->data->en_hs[k][h]) {
+            continue;
+          }
+          const Eigen::Vector3f a_pos = work->data->a_pos_hs[k][h];
+          const Eigen::Vector3f a_vel = work->data->a_vel_hs[k][h];
+          const float b = work->data->b_hs[k][h];
+          const float violation =
+              a_pos.dot(work->ZX_new[k].head(3))
+              + a_vel.dot(work->ZX_new[k].segment(6, 3)) - b;
+          const float penalty = work->data->slack_penalty_hs[k][h];
+          const float positive_violation = T_MAX(violation, 0.0f);
+          /*
+           * Exact proximal projection after analytically eliminating a
+           * nonnegative quadratic-penalty slack:
+           *   min 0.5||z-y||² + 0.5*penalty*s²
+           *   s.t. a'z-b <= s, s>=0.
+           * penalty=0 retains the legacy hard projection.
+           */
+          const float slack = penalty > 0.0f
+              ? positive_violation / (1.0f + penalty) : 0.0f;
+          work->data->slack_used_hs[k][h] = slack;
+          const float correction = positive_violation - slack;
+          if (correction > 0) {
+            work->ZX_new[k].head(3) -= correction * a_pos;
+            work->ZX_new[k].segment(6, 3) -= correction * a_vel;
+          }
         }
       } else {
         // Box constraint fallback (original behavior)
-        work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx)); 
+        if (work->data->ucx && work->data->lcx) {
+          work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx));
+        } else {
+          work->ZX_new[k] = work->soln->YX[k];
+        }
       }
       
       // Dual update: y = y - z
