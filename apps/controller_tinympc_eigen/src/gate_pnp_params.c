@@ -64,6 +64,7 @@ extern float   loopWidth;
 extern float   circSpeed;
 extern int8_t  circDir;
 extern float   g_circ_phase;
+extern uint32_t g_circ_laps;
 
 
 PARAM_GROUP_START(visGate)
@@ -132,4 +133,5 @@ LOG_ADD(LOG_FLOAT,  tx,     &g_gate_tx)
 LOG_ADD(LOG_FLOAT,  ty,     &g_gate_ty)
 LOG_ADD(LOG_FLOAT,  tz,     &g_gate_tz)
 LOG_ADD(LOG_FLOAT,  phase,  &g_circ_phase)   /* Stage 3 circuit loop phase [rad] */
+LOG_ADD(LOG_UINT32, laps,   &g_circ_laps)
 LOG_GROUP_STOP(visGate)

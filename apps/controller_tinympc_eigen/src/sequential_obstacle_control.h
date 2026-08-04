@@ -21,6 +21,14 @@ typedef struct {
 } sequential_danger_average_t;
 
 typedef struct {
+  float samples[SEQUENTIAL_CONTROL_DIRECTIONS][SEQUENTIAL_DANGER_WINDOW_MAX];
+  float sum[SEQUENTIAL_CONTROL_DIRECTIONS];
+  uint8_t next;
+  uint8_t count;
+  uint8_t window;
+} sequential_clearance_average_t;
+
+typedef struct {
   float confidence_min;
   float drone_radius_m;
   float tracking_margin_m;
@@ -60,6 +68,31 @@ void sequentialDangerAverageReset(sequential_danger_average_t *average);
 float sequentialDangerAverageUpdate(sequential_danger_average_t *average,
                                     uint8_t dangerous_slices,
                                     uint8_t requested_window);
+void sequentialClearanceAverageReset(sequential_clearance_average_t *average);
+void sequentialClearanceAverageUpdate(
+    sequential_clearance_average_t *average,
+    const float clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS],
+    uint8_t requested_window,
+    float mean_clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS]);
+int8_t sequentialSelectEvasionSide(
+    const float open_fraction[SEQUENTIAL_CONTROL_DIRECTIONS],
+    float score_bias, int previous_side, float *score_0, float *score_3);
+bool sequentialLateralBarrierRow(const float side_world[3],
+                                 const float anchor_world[3],
+                                 float a_position[3], float *b);
+float sequentialReturnScanYawDeg(float base_yaw_deg, int evasion_direction,
+                                 float yaw_offset_deg);
+float sequentialSlewYawDeg(float current_yaw_deg, float target_yaw_deg,
+                           float maximum_step_deg);
+float sequentialClearanceSpeedMps(float forward_clearance_m,
+                                  float safety_distance_m,
+                                  float cruise_speed_mps,
+                                  float braking_acceleration_mps2);
+float sequentialRateLimitSpeedMps(float current_speed_mps,
+                                  float target_speed_mps,
+                                  float acceleration_mps2,
+                                  float braking_acceleration_mps2,
+                                  float dt_s);
 
 #ifdef __cplusplus
 }

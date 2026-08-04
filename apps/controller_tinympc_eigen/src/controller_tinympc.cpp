@@ -275,6 +275,23 @@ float    g_mpc_primal_residual = 0.0f;
 float    g_mpc_dual_residual = 0.0f;
 uint8_t  g_mpc_health_hold = 0;
 uint32_t g_mpc_health_faults = 0;
+uint32_t g_mpc_solve_started = 0;
+uint32_t g_mpc_solve_completed = 0;
+uint32_t g_mpc_heartbeat_age_ms = 0;
+uint8_t  g_mpc_stall_hold = 0;
+uint32_t g_mpc_warm_resets = 0;
+uint8_t  g_mpc_last_reset_reason = 0;
+uint8_t  g_mpc_solve_route_phase = 0;
+uint32_t g_mpc_stack_free_words = 0;
+uint32_t g_mpc_scan_bypass_cycles = 0;
+uint32_t g_mpc_pid_bypass_cycles = 0;
+static TickType_t g_mpc_last_complete_tick = 0;
+
+enum {
+  MPC_RESET_ACTIVATION = 1,
+};
+
+static const uint32_t MPC_HEARTBEAT_TIMEOUT_MS = 250;
 
 // NanoCockpit multi-task CNN maps. The quantized model is accepted for
 // obstacle-avoidance use; packet validity, age checks, confidence margins,
@@ -336,13 +353,31 @@ float seqAvoidPerceptionMarginM = 0.03f;
 float seqAvoidConfidenceGainM = 0.05f;
 float seqAvoidDefaultOffsetM = 0.25f;
 float seqAvoidMaxRangeM = 6.0f;
-float seqAvoidDirectionSafeMinM = 0.22f;
+float seqAvoidDirectionSafeMinM = 0.30f;
 uint8_t seqAvoidAverageWindow = 5;
 float seqAvoidTriggerAverage = 3.5f;
-float seqAvoidClearAverage = 1.5f;
+float seqAvoidClearAverage = 1.0f;
 float seqAvoidTriggerM = 1.20f;
 float seqAvoidActivationEpsM = 0.25f;
 float seqAvoidReferenceShiftM = 0.35f;
+float seqAvoidReturnDelayS = 1.0f;
+float seqAvoidReturnRateMps = 0.20f;
+uint8_t seqAvoidReturnScanEnable = 1;
+float seqAvoidReturnScanYawDeg = 50.0f;
+float seqAvoidReturnScanYawRateDegS = 45.0f;
+float seqAvoidReturnScanSettleS = 0.50f;
+uint8_t seqAvoidReturnScanWindow = 5;
+float seqAvoidReturnScanClearAverage = 1.0f;
+float seqAvoidReturnScanRetryS = 3.0f;
+float seqAvoidSideBiasM = 0.03f;
+float seqAvoidScanGradientM = 0.06f;
+float seqAvoidScanImprovementM = 0.04f;
+float seqAvoidScanRetryMinS = 1.5f;
+float seqAvoidScanRetryMaxS = 6.0f;
+float seqAvoidCruiseSpeedMps = 0.40f;
+float seqAvoidCruiseAccelMps2 = 0.40f;
+float seqAvoidBrakingAccelMps2 = 0.60f;
+float seqAvoidGoalToleranceM = 0.10f;
 float seqAvoidSideMinimumM = 0.35f;
 uint8_t seqAvoidSideVotesRequired = 3;
 float seqAvoidForwardMinimumM = 0.35f;
@@ -396,6 +431,7 @@ enum {
   SEQ_ROUTE_SIDESTEP = 1,
   SEQ_ROUTE_ADVANCE = 2,
   SEQ_ROUTE_HOLD = 3,
+  SEQ_ROUTE_RETURN_SCAN = 4,
 };
 uint8_t g_seq_route_phase = SEQ_ROUTE_IDLE;
 uint8_t g_seq_clear_votes = 0;
@@ -405,12 +441,55 @@ float g_seq_waypoint_y = 0.0f;
 float g_seq_waypoint_z = 0.0f;
 float g_seq_path_offset_x = 0.0f;
 float g_seq_path_offset_y = 0.0f;
+static float g_seq_circle_offset_m = 0.0f;
+float g_seq_return_delay_s = 0.0f;
+float g_seq_scan_average = 0.0f;
+uint8_t g_seq_scan_count = 0;
+uint32_t g_seq_scan_retries = 0;
+float g_seq_scan_target_yaw_deg = 0.0f;
+float g_seq_scan_goal_yaw_deg = 0.0f;
+float g_seq_scan_settle_s = 0.0f;
+int8_t g_seq_scan_decision = 0;
+uint8_t g_seq_scan_pid_yaw_override = 0;
+uint8_t g_seq_barrier_active = 0;
+float g_seq_barrier_a0 = 0.0f;
+float g_seq_barrier_a1 = 0.0f;
+float g_seq_barrier_b = 0.0f;
+float g_seq_forward_clearance_m = 0.0f;
+float g_seq_cruise_speed_mps = 0.0f;
+float g_seq_goal_distance_m = 0.0f;
+uint8_t g_seq_goal_reached = 0;
+float g_seq_forward_open_average[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
+float g_seq_scan_clearance_average[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
+float g_seq_side_score_0 = 0.0f;
+float g_seq_side_score_3 = 0.0f;
+float g_seq_scan_forward_slope = 0.0f;
+float g_seq_scan_retry_delay_s = 0.0f;
+static bool g_seq_cruise_active = false;
+static float g_seq_cruise_ref_x = 0.0f;
+static float g_seq_cruise_ref_y = 0.0f;
 static uint32_t g_seq_route_sample_seen = 0;
 static float g_seq_route_side_world[3] = {0.0f, 0.0f, 0.0f};
 static float g_seq_route_start_world[3] = {0.0f, 0.0f, 0.0f};
 static int8_t g_seq_route_side_index = -1;
 static float g_seq_route_altitude_m = 0.0f;
 static bool g_seq_route_lateral_limited = false;
+static bool g_seq_route_completed_step = false;
+static bool g_seq_halfspace_was_applied = false;
+static bool g_seq_return_scan_pending = false;
+static float g_seq_return_base_yaw_deg = 0.0f;
+static int8_t g_seq_return_evasion_side = -1;
+static sequential_danger_average_t g_seq_scan_history;
+static uint32_t g_seq_scan_sample_seen = 0;
+static float g_seq_forward_average_inhibit_s = 0.0f;
+static bool g_seq_scan_yaw_slewing = false;
+static float g_seq_latest_clearance[SEQUENTIAL_CONTROL_DIRECTIONS] = {0};
+static sequential_clearance_average_t g_seq_forward_open_history;
+static sequential_clearance_average_t g_seq_scan_clearance_history;
+static uint32_t g_seq_forward_clearance_sample_seen = 0;
+static int8_t g_seq_last_evasion_side = -1;
+static bool g_seq_previous_scan_valid = false;
+static float g_seq_previous_scan_mean_m = 0.0f;
 
 // --- Stage 2: gate navigation (fly a trajectory THROUGH the detected gate) ---
 // When gateNavEn=1, override the commander setpoint with a gate waypoint: on the first
@@ -464,6 +543,7 @@ float   circSpeed   = 0.3f;   // PARAM: circuit tangential speed [m/s]
 //     default and it is why the drone flew backwards on engage.)
 int8_t  circDir     = 1;      // PARAM: +1 / -1 = which way round the loop
 float   g_circ_phase = 0.0f;  // LOG: current loop phase [rad]
+uint32_t g_circ_laps = 0;     // LOG: completed circuit revolutions
 static float circ_phase = 0.0f;
 static uint8_t circ_armed = 0;
 
@@ -487,7 +567,35 @@ static inline void circuitPoint(float theta, float P[3], float T[3]) {
   T[2] = 0.5f * (gAz - gBz) * s;
 }
 
-static void resetMpcWarmStart(void) {
+static void armCircuitAtNearestPoint(float x, float y) {
+  if (circ_armed) return;
+  float best = 1e30f;
+  for (int k = 0; k < 48; ++k) {
+    const float theta = (2.0f * M_PI_F * k) / 48.0f;
+    float point[3], tangent[3];
+    circuitPoint(theta, point, tangent);
+    const float dx = point[0] - x;
+    const float dy = point[1] - y;
+    const float distance_sq = dx * dx + dy * dy;
+    if (distance_sq < best) {
+      best = distance_sq;
+      circ_phase = theta;
+    }
+  }
+  g_circ_laps = 0;
+  circ_armed = 1;
+}
+
+static void advanceCircuitPhase(float speed_mps, float tangent_norm) {
+  if (tangent_norm < 1e-6f || speed_mps <= 0.0f) return;
+  circ_phase += speed_mps * (1.0f / (float)MPC_RATE) / tangent_norm;
+  while (circ_phase >= 2.0f * M_PI_F) {
+    circ_phase -= 2.0f * M_PI_F;
+    if (g_circ_laps < UINT32_MAX) ++g_circ_laps;
+  }
+}
+
+static void resetMpcWarmStart(uint8_t reason) {
   for (int k = 0; k < NHORIZON; ++k) {
     Xhrz[k] = x0;
     YX[k].setZero();
@@ -503,7 +611,21 @@ static void resetMpcWarmStart(void) {
   }
   tiny_ClearPositionHalfspaces(&work);
   stgs.en_cstr_states = 0;
+  g_seq_halfspace_was_applied = false;
   work.first_run = 1;
+  g_mpc_last_reset_reason = reason;
+  if (g_mpc_warm_resets < UINT32_MAX) g_mpc_warm_resets++;
+}
+
+static void resetStateConstraintWarmStart(void) {
+  /* State constraints may be disabled for hundreds of solves, during which
+   * their ADMM buffers do not advance. Seed them from the current unconstrained
+   * horizon before enabling a new plane instead of injecting stale state. */
+  for (int k = 0; k < NHORIZON; ++k) {
+    YX[k].setZero();
+    ZX[k] = Xhrz[k];
+    ZX_new[k] = Xhrz[k];
+  }
 }
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
@@ -566,25 +688,13 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     float ref_yaw_deg, ref_roll_deg, ref_pitch_deg;
 
     // --- Stage 3: two-gate racetrack circuit override (highest priority) ---
-    if (circEn) {
-      if (!circ_armed) {
-        // Join the loop at the phase whose point is nearest the drone (smooth entry).
-        float best = 1e30f;
-        for (int k = 0; k < 48; k++) {
-          float th = (2.0f * M_PI_F * k) / 48.0f;
-          float Pk[3], Tk[3]; circuitPoint(th, Pk, Tk);
-          float dx = Pk[0] - x0(0), dy = Pk[1] - x0(1);
-          float d = dx * dx + dy * dy;
-          if (d < best) { best = d; circ_phase = th; }
-        }
-        circ_armed = 1;
-      }
+    if (circEn && !seqAvoidEnable) {
+      armCircuitAtNearestPoint(x0(0), x0(1));
       float P[3], T[3];
       circuitPoint(circ_phase, P, T);
       float Tn = sqrtf(T[0]*T[0] + T[1]*T[1] + T[2]*T[2]);
       if (Tn < 1e-6f) Tn = 1e-6f;
-      circ_phase += circSpeed * (1.0f / (float)MPC_RATE) / Tn;   // advance ~const speed
-      while (circ_phase >= 2.0f * M_PI_F) circ_phase -= 2.0f * M_PI_F;
+      advanceCircuitPhase(circSpeed, Tn);
       xg(0) = P[0]; xg(1) = P[1]; xg(2) = P[2];
       xg(6) = circSpeed * T[0] / Tn; xg(7) = circSpeed * T[1] / Tn; xg(8) = circSpeed * T[2] / Tn;
       xg(9) = 0.0f; xg(10) = 0.0f; xg(11) = 0.0f;
@@ -593,8 +703,9 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       g_gate_tx = P[0]; g_gate_ty = P[1]; g_gate_tz = P[2];  // reuse the target logs
       g_circ_phase = circ_phase;
       gate_cmd = true;
-    } else {
+    } else if (!circEn) {
       circ_armed = 0;   // re-arm nearest-phase entry on next enable
+      g_circ_laps = 0;
     }
 
     // --- Stage 2: single-gate navigation override (fly through the detected gate) ---
@@ -792,6 +903,7 @@ static void pollSequentialObstacle(const state_t *state,
   g_seq_score = 0.0f;
   g_seq_grace = 0;
   g_seq_grace_age_ms = 0;
+  g_seq_forward_clearance_m = 0.0f;
   if (!seqAvoidEnable) {
     g_seq_previous_direction = -1;
     sequentialDangerAverageReset(&g_seq_danger_history);
@@ -799,6 +911,18 @@ static void pollSequentialObstacle(const state_t *state,
     g_seq_danger_average = 0.0f;
     g_seq_average_count = 0;
     g_seq_average_clear = false;
+    sequentialClearanceAverageReset(&g_seq_forward_open_history);
+    sequentialClearanceAverageReset(&g_seq_scan_clearance_history);
+    memset(g_seq_forward_open_average, 0,
+           sizeof(g_seq_forward_open_average));
+    memset(g_seq_scan_clearance_average, 0,
+           sizeof(g_seq_scan_clearance_average));
+    g_seq_forward_clearance_sample_seen = 0;
+    g_seq_side_score_0 = 0.0f;
+    g_seq_side_score_3 = 0.0f;
+    g_seq_scan_retry_delay_s = 0.0f;
+    g_seq_previous_scan_valid = false;
+    g_seq_previous_scan_mean_m = 0.0f;
     return;
   }
 
@@ -816,6 +940,8 @@ static void pollSequentialObstacle(const state_t *state,
   }
   (void)gate_valid;   // Gate validation is separate from obstacle-plane validity.
   (void)capture_tick;
+  memcpy(g_seq_latest_clearance, clearance, sizeof(g_seq_latest_clearance));
+  g_seq_forward_clearance_m = fminf(clearance[1], clearance[2]);
 
   const float goal_world[3] = {
     setpoint->position.x - state->position.x,
@@ -848,7 +974,23 @@ static void pollSequentialObstacle(const state_t *state,
                                 velocity_body, g_seq_previous_direction,
                                 &config, &g_seq_plan);
 
-  if (g_seq_sample != g_seq_average_sample_seen) {
+  const bool return_scan_active =
+      g_seq_route_phase == SEQ_ROUTE_RETURN_SCAN;
+  if (!return_scan_active &&
+      g_seq_sample != g_seq_forward_clearance_sample_seen) {
+    g_seq_forward_clearance_sample_seen = g_seq_sample;
+    float open_sample[SEQUENTIAL_CONTROL_DIRECTIONS];
+    for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
+         ++direction) {
+      open_sample[direction] =
+          (g_seq_plan.reliable_mask & (1u << direction)) ? 1.0f : 0.0f;
+    }
+    sequentialClearanceAverageUpdate(&g_seq_forward_open_history,
+                                     open_sample, seqAvoidAverageWindow,
+                                     g_seq_forward_open_average);
+  }
+  if (!return_scan_active && g_seq_forward_average_inhibit_s <= 0.0f &&
+      g_seq_sample != g_seq_average_sample_seen) {
     g_seq_average_sample_seen = g_seq_sample;
     const uint8_t open_count = (uint8_t)__builtin_popcount(
         (unsigned int)(g_seq_plan.reliable_mask & 0x0fu));
@@ -862,21 +1004,19 @@ static void pollSequentialObstacle(const state_t *state,
       seqAvoidAverageWindow > SEQUENTIAL_DANGER_WINDOW_MAX
           ? SEQUENTIAL_DANGER_WINDOW_MAX : seqAvoidAverageWindow;
   const bool average_ready = g_seq_average_count >= effective_window;
-  g_seq_average_clear = average_ready &&
+  g_seq_average_clear = !return_scan_active && average_ready &&
       g_seq_danger_average < seqAvoidClearAverage;
-  g_seq_plan.avoidance_pressure = average_ready &&
+  g_seq_plan.avoidance_pressure = !return_scan_active && average_ready &&
       g_seq_danger_average > seqAvoidTriggerAverage ? 1.0f : 0.0f;
 
-  /* A high dangerous-slice average starts avoidance. Prefer the only open outer slice
-   * when one exists; if neither is open, either direction is allowed and the
-   * deterministic fallback is slice 0 (vehicle right / negative body y). */
+  /* A high dangerous-slice average starts avoidance. Side choice compares
+   * only the two outer rays' binary open frequencies across the last N
+   * classifications, not metric distances or the inner rays. */
   if (g_seq_plan.avoidance_pressure > 0.0f) {
-    const bool outer0_open = g_seq_plan.reliable_mask & (1u << 0);
-    const bool outer3_open = g_seq_plan.reliable_mask & (1u << 3);
     int8_t candidate = -1;
-    candidate = !outer3_open ? 0 : !outer0_open ? 3 :
-        (g_seq_plan.effective_offset_m[3] >
-         g_seq_plan.effective_offset_m[0] ? 3 : 0);
+    candidate = sequentialSelectEvasionSide(
+        g_seq_forward_open_average, seqAvoidSideBiasM,
+        g_seq_last_evasion_side, &g_seq_side_score_0, &g_seq_side_score_3);
     /* Once a route has started, never switch sides during the maneuver. */
     if (g_seq_route_phase != SEQ_ROUTE_IDLE &&
         g_seq_route_side_index >= 0) {
@@ -926,17 +1066,367 @@ static void applySequentialFailSafeHold(const state_t *state,
   setpoint->velocity.z = 0.0f;
 }
 
+static void updateSequentialCruiseReference(const state_t *state,
+                                            setpoint_t *setpoint) {
+  if (!seqAvoidEnable || obsPidPassthrough) {
+    g_seq_cruise_active = false;
+    g_seq_cruise_speed_mps = 0.0f;
+    g_seq_goal_distance_m = 0.0f;
+    g_seq_goal_reached = 0;
+    return;
+  }
+
+  if (circEn) {
+    armCircuitAtNearestPoint(state->position.x, state->position.y);
+    float point[3], tangent[3];
+    circuitPoint(circ_phase, point, tangent);
+    float tangent_norm = sqrtf(tangent[0] * tangent[0] +
+                               tangent[1] * tangent[1] +
+                               tangent[2] * tangent[2]);
+    if (tangent_norm < 1.0e-6f) tangent_norm = 1.0e-6f;
+    const bool avoidance_pause = g_seq_stop || !g_seq_plan.valid ||
+        g_seq_plan.avoidance_pressure > 0.0f ||
+        g_seq_route_phase != SEQ_ROUTE_IDLE;
+    float target_speed = fminf(fmaxf(0.0f, circSpeed),
+        sequentialClearanceSpeedMps(
+            g_seq_forward_clearance_m, seqAvoidDirectionSafeMinM,
+            fmaxf(0.0f, circSpeed), seqAvoidBrakingAccelMps2));
+    if (avoidance_pause) target_speed = 0.0f;
+    g_seq_cruise_speed_mps = sequentialRateLimitSpeedMps(
+        g_seq_cruise_speed_mps, target_speed, seqAvoidCruiseAccelMps2,
+        seqAvoidBrakingAccelMps2, 1.0f / (float)MPC_RATE);
+    if (!avoidance_pause) {
+      advanceCircuitPhase(g_seq_cruise_speed_mps, tangent_norm);
+    }
+    g_seq_cruise_active = true;
+    g_seq_goal_distance_m = 0.0f;
+    g_seq_goal_reached = 0;
+    setpoint->position.x = point[0];
+    setpoint->position.y = point[1];
+    setpoint->position.z = point[2];
+    setpoint->velocity.x = g_seq_cruise_speed_mps * tangent[0] / tangent_norm;
+    setpoint->velocity.y = g_seq_cruise_speed_mps * tangent[1] / tangent_norm;
+    setpoint->velocity.z = g_seq_cruise_speed_mps * tangent[2] / tangent_norm;
+    setpoint->attitude.yaw = wrap_deg(
+        atan2f(tangent[1], tangent[0]) * (180.0f / M_PI_F));
+    g_gate_tx = point[0];
+    g_gate_ty = point[1];
+    g_gate_tz = point[2];
+    g_circ_phase = circ_phase;
+    return;
+  }
+  g_seq_circle_offset_m = 0.0f;
+
+  const float goal_x = setpoint->position.x;
+  const float goal_y = setpoint->position.y;
+  if (!g_seq_cruise_active) {
+    g_seq_cruise_ref_x = state->position.x;
+    g_seq_cruise_ref_y = state->position.y;
+    g_seq_cruise_speed_mps = 0.0f;
+    g_seq_cruise_active = true;
+  }
+
+  float dx = goal_x - g_seq_cruise_ref_x;
+  float dy = goal_y - g_seq_cruise_ref_y;
+  float reference_distance = hypotf(dx, dy);
+  g_seq_goal_distance_m = hypotf(goal_x - state->position.x,
+                                 goal_y - state->position.y);
+
+  const bool avoidance_pause = g_seq_stop || !g_seq_plan.valid ||
+      g_seq_plan.avoidance_pressure > 0.0f ||
+      g_seq_route_phase != SEQ_ROUTE_IDLE;
+  float target_speed = sequentialClearanceSpeedMps(
+      g_seq_forward_clearance_m, seqAvoidDirectionSafeMinM,
+      seqAvoidCruiseSpeedMps, seqAvoidBrakingAccelMps2);
+  if (avoidance_pause || reference_distance <= 1.0e-4f) {
+    target_speed = 0.0f;
+  }
+  g_seq_cruise_speed_mps = sequentialRateLimitSpeedMps(
+      g_seq_cruise_speed_mps, target_speed, seqAvoidCruiseAccelMps2,
+      seqAvoidBrakingAccelMps2, 1.0f / (float)MPC_RATE);
+
+  if (!avoidance_pause && reference_distance > 1.0e-4f) {
+    const float step = fminf(
+        reference_distance,
+        g_seq_cruise_speed_mps * (1.0f / (float)MPC_RATE));
+    g_seq_cruise_ref_x += step * dx / reference_distance;
+    g_seq_cruise_ref_y += step * dy / reference_distance;
+    dx = goal_x - g_seq_cruise_ref_x;
+    dy = goal_y - g_seq_cruise_ref_y;
+    reference_distance = hypotf(dx, dy);
+  }
+
+  const float tolerance = fmaxf(0.01f, seqAvoidGoalToleranceM);
+  g_seq_goal_reached = reference_distance <= 1.0e-4f &&
+      g_seq_goal_distance_m <= tolerance;
+  setpoint->position.x = g_seq_cruise_ref_x;
+  setpoint->position.y = g_seq_cruise_ref_y;
+  setpoint->velocity.x = 0.0f;
+  setpoint->velocity.y = 0.0f;
+  setpoint->velocity.z = 0.0f;
+}
+
 static void resetSequentialRoute(void) {
   g_seq_route_phase = SEQ_ROUTE_IDLE;
   g_seq_clear_votes = 0;
   g_seq_route_sample_seen = 0;
   g_seq_route_side_index = -1;
   g_seq_route_lateral_limited = false;
+  g_seq_route_completed_step = false;
 }
 
 static void applySequentialPathOffset(setpoint_t *setpoint) {
+  if (seqAvoidEnable && circEn) {
+    const float center_x = 0.5f * (gAx + gBx);
+    const float center_y = 0.5f * (gAy + gBy);
+    float radial_x = setpoint->position.x - center_x;
+    float radial_y = setpoint->position.y - center_y;
+    const float radial_norm = hypotf(radial_x, radial_y);
+    if (radial_norm > 1.0e-4f) {
+      radial_x /= radial_norm;
+      radial_y /= radial_norm;
+      g_seq_path_offset_x = g_seq_circle_offset_m * radial_x;
+      g_seq_path_offset_y = g_seq_circle_offset_m * radial_y;
+    } else {
+      g_seq_path_offset_x = 0.0f;
+      g_seq_path_offset_y = 0.0f;
+    }
+  }
   setpoint->position.x += g_seq_path_offset_x;
   setpoint->position.y += g_seq_path_offset_y;
+}
+
+static void resetSequentialForwardAverage(void) {
+  sequentialDangerAverageReset(&g_seq_danger_history);
+  g_seq_average_sample_seen = g_seq_sample;
+  g_seq_danger_average = 0.0f;
+  g_seq_average_count = 0;
+  g_seq_average_clear = false;
+  g_seq_plan.avoidance_pressure = 0.0f;
+  g_seq_pressure = 0.0f;
+}
+
+static void resetSequentialReturnScanWindow(void) {
+  sequentialDangerAverageReset(&g_seq_scan_history);
+  sequentialClearanceAverageReset(&g_seq_scan_clearance_history);
+  g_seq_scan_sample_seen = g_seq_sample;
+  g_seq_scan_average = 0.0f;
+  g_seq_scan_count = 0;
+  memset(g_seq_scan_clearance_average, 0,
+         sizeof(g_seq_scan_clearance_average));
+  g_seq_scan_forward_slope = 0.0f;
+}
+
+static float selectSequentialScanRetryDelay(void) {
+  const int forward_edge = g_seq_return_evasion_side == 3 ? 3 : 0;
+  const int obstacle_edge = forward_edge == 0 ? 3 : 0;
+  const float scan_mean = 0.25f * (
+      g_seq_scan_clearance_average[0] + g_seq_scan_clearance_average[1] +
+      g_seq_scan_clearance_average[2] + g_seq_scan_clearance_average[3]);
+  /* At the peer yaw, the evasion-side outer slice points back toward the
+   * original forward path. A positive slope therefore means the obstacle is
+   * opening toward forward travel and another check can happen sooner. */
+  g_seq_scan_forward_slope =
+      g_seq_scan_clearance_average[forward_edge] -
+      g_seq_scan_clearance_average[obstacle_edge];
+  const float improvement = g_seq_previous_scan_valid
+      ? scan_mean - g_seq_previous_scan_mean_m : 0.0f;
+  const float gradient = fmaxf(0.0f, seqAvoidScanGradientM);
+  const float improvement_min = fmaxf(0.0f, seqAvoidScanImprovementM);
+  float factor = 1.25f;
+  if (g_seq_scan_forward_slope >= gradient ||
+      improvement >= improvement_min) {
+    factor = 0.75f;
+  } else if (g_seq_scan_forward_slope <= -gradient &&
+             improvement <= 0.0f) {
+    factor = 1.75f;
+  }
+  g_seq_previous_scan_mean_m = scan_mean;
+  g_seq_previous_scan_valid = true;
+  const float minimum = fmaxf(0.0f, seqAvoidScanRetryMinS);
+  const float maximum = fmaxf(minimum, seqAvoidScanRetryMaxS);
+  return fminf(maximum, fmaxf(minimum,
+      fmaxf(0.0f, seqAvoidReturnScanRetryS) * factor));
+}
+
+static void holdSequentialReturnScan(const state_t *state,
+                                     setpoint_t *setpoint) {
+  setpoint->mode.x = modeAbs;
+  setpoint->mode.y = modeAbs;
+  setpoint->mode.z = modeAbs;
+  setpoint->mode.yaw = modeAbs;
+  setpoint->position.x = g_seq_waypoint_x;
+  setpoint->position.y = g_seq_waypoint_y;
+  setpoint->position.z = g_seq_waypoint_z;
+  setpoint->velocity.x = 0.0f;
+  setpoint->velocity.y = 0.0f;
+  setpoint->velocity.z = 0.0f;
+  /* Keep TinyMPC's attitude reference fixed at forward yaw. The peering yaw is
+   * injected only into the downstream stock PID output after the MPC solve. */
+  setpoint->attitude.yaw = g_seq_return_base_yaw_deg;
+  (void)state;
+}
+
+static void beginSequentialReturnScan(const state_t *state,
+                                      const setpoint_t *setpoint) {
+  g_seq_route_phase = SEQ_ROUTE_RETURN_SCAN;
+  g_seq_waypoint_x = state->position.x;
+  g_seq_waypoint_y = state->position.y;
+  g_seq_waypoint_z = setpoint->position.z;
+  g_seq_return_base_yaw_deg = setpoint->attitude.yaw;
+  g_seq_scan_goal_yaw_deg = sequentialReturnScanYawDeg(
+      g_seq_return_base_yaw_deg, g_seq_return_evasion_side,
+      seqAvoidReturnScanYawDeg);
+  g_seq_scan_target_yaw_deg = g_seq_return_base_yaw_deg;
+  g_seq_scan_yaw_slewing = true;
+  g_seq_scan_pid_yaw_override = true;
+  g_seq_scan_settle_s = 0.0f;
+  g_seq_scan_decision = 0;
+  resetSequentialReturnScanWindow();
+  resetStateConstraintWarmStart();
+}
+
+static void updateSequentialPathReturn(const state_t *state,
+                                       setpoint_t *setpoint) {
+  const float dt = 1.0f / (float)MPC_RATE;
+
+  if (g_seq_route_phase == SEQ_ROUTE_RETURN_SCAN) {
+    if (g_seq_scan_yaw_slewing) {
+      g_seq_scan_target_yaw_deg = sequentialSlewYawDeg(
+          g_seq_scan_target_yaw_deg, g_seq_scan_goal_yaw_deg,
+          fmaxf(1.0f, seqAvoidReturnScanYawRateDegS) * dt);
+      if (g_seq_scan_target_yaw_deg == g_seq_scan_goal_yaw_deg) {
+        g_seq_scan_yaw_slewing = false;
+        g_seq_scan_settle_s = fmaxf(0.0f, seqAvoidReturnScanSettleS);
+        if (g_seq_scan_decision == 0) {
+          resetSequentialReturnScanWindow();
+        }
+      }
+      holdSequentialReturnScan(state, setpoint);
+      return;
+    }
+
+    holdSequentialReturnScan(state, setpoint);
+    if (g_seq_scan_settle_s > 0.0f) {
+      g_seq_scan_settle_s = fmaxf(0.0f, g_seq_scan_settle_s - dt);
+      return;
+    }
+
+    if (g_seq_scan_decision != 0) {
+      const bool side_clear = g_seq_scan_decision > 0;
+      g_seq_scan_decision = 0;
+      g_seq_scan_pid_yaw_override = false;
+      /* ADMM was paused for the complete peer and never observed the PID yaw.
+       * Preserve its position/constraint warm start when forward motion
+       * resumes; repeated full resets here caused failures after blocked scans. */
+      resetSequentialRoute();
+      applySequentialPathOffset(setpoint);
+      if (side_clear) {
+        g_seq_return_scan_pending = false;
+        g_seq_return_delay_s = 0.0f;
+        g_seq_barrier_active = 0;
+      } else {
+        if (g_seq_scan_retries < UINT32_MAX) g_seq_scan_retries++;
+        g_seq_return_scan_pending = true;
+        g_seq_return_delay_s = g_seq_scan_retry_delay_s;
+      }
+      return;
+    }
+
+    if (g_seq_sample != g_seq_scan_sample_seen) {
+      g_seq_scan_sample_seen = g_seq_sample;
+      const uint8_t open_count = (uint8_t)__builtin_popcount(
+          (unsigned int)(g_seq_plan.reliable_mask & 0x0fu));
+      g_seq_scan_average = sequentialDangerAverageUpdate(
+          &g_seq_scan_history,
+          (uint8_t)(SEQUENTIAL_CONTROL_DIRECTIONS - open_count),
+          seqAvoidReturnScanWindow);
+      sequentialClearanceAverageUpdate(&g_seq_scan_clearance_history,
+                                       g_seq_latest_clearance,
+                                       seqAvoidReturnScanWindow,
+                                       g_seq_scan_clearance_average);
+      g_seq_scan_count = g_seq_scan_history.count;
+    }
+
+    const uint8_t window = seqAvoidReturnScanWindow < 1 ? 1 :
+        seqAvoidReturnScanWindow > SEQUENTIAL_DANGER_WINDOW_MAX
+            ? SEQUENTIAL_DANGER_WINDOW_MAX : seqAvoidReturnScanWindow;
+    if (g_seq_scan_count < window) return;
+
+    g_seq_scan_decision =
+        g_seq_scan_average < seqAvoidReturnScanClearAverage ? 1 : -1;
+    g_seq_scan_retry_delay_s = g_seq_scan_decision < 0
+        ? selectSequentialScanRetryDelay() : 0.0f;
+    resetSequentialForwardAverage();
+    g_seq_forward_average_inhibit_s =
+        fmaxf(0.0f, seqAvoidReturnScanSettleS);
+    g_seq_scan_goal_yaw_deg = g_seq_return_base_yaw_deg;
+    g_seq_scan_yaw_slewing = true;
+    g_seq_scan_settle_s = 0.0f;
+    resetStateConstraintWarmStart();
+    return;
+  }
+
+  if (g_seq_forward_average_inhibit_s > 0.0f) {
+    g_seq_forward_average_inhibit_s = fmaxf(
+        0.0f, g_seq_forward_average_inhibit_s - dt);
+  }
+  if (g_seq_return_delay_s > 0.0f) {
+    g_seq_return_delay_s = fmaxf(0.0f, g_seq_return_delay_s - dt);
+    applySequentialPathOffset(setpoint);
+    return;
+  }
+  if (g_seq_return_scan_pending && seqAvoidReturnScanEnable &&
+      seqAvoidReturnRateMps > 0.0f) {
+    beginSequentialReturnScan(state, setpoint);
+    holdSequentialReturnScan(state, setpoint);
+    return;
+  }
+  if (seqAvoidReturnRateMps <= 0.0f) {
+    applySequentialPathOffset(setpoint);
+    return;
+  }
+  /* The path is about to move back toward the centerline, so the one-sided
+   * post-evasion barrier has completed its job. */
+  g_seq_barrier_active = 0;
+
+  const float offset_norm = (seqAvoidEnable && circEn)
+      ? fabsf(g_seq_circle_offset_m)
+      : hypotf(g_seq_path_offset_x, g_seq_path_offset_y);
+  const float return_step = seqAvoidReturnRateMps * dt;
+  if (offset_norm <= return_step) {
+    if (seqAvoidEnable && circEn) {
+      g_seq_circle_offset_m = 0.0f;
+    } else {
+      g_seq_path_offset_x = 0.0f;
+      g_seq_path_offset_y = 0.0f;
+    }
+    applySequentialPathOffset(setpoint);
+    return;
+  }
+  const float scale = (offset_norm - return_step) / offset_norm;
+  if (seqAvoidEnable && circEn) {
+    g_seq_circle_offset_m *= scale;
+  } else {
+    g_seq_path_offset_x *= scale;
+    g_seq_path_offset_y *= scale;
+  }
+  applySequentialPathOffset(setpoint);
+}
+
+static void armSequentialLateralBarrier(const state_t *state) {
+  /* Permitted side: side_world' * position >= side_world' * anchor.
+   * TinyMPC stores half-spaces as a' * position <= b, hence a=-side. */
+  const float anchor[3] = {
+    state->position.x, state->position.y, state->position.z,
+  };
+  float a_position[3];
+  if (sequentialLateralBarrierRow(g_seq_route_side_world, anchor,
+                                  a_position, &g_seq_barrier_b)) {
+    g_seq_barrier_a0 = a_position[0];
+    g_seq_barrier_a1 = a_position[1];
+    g_seq_barrier_active = 1;
+  }
 }
 
 static void setSequentialWaypoint(const state_t *state, const float direction[3],
@@ -972,6 +1462,7 @@ static bool setSequentialLateralWaypoint(const state_t *state) {
 static void beginSequentialRoute(const state_t *state,
                                  const setpoint_t *setpoint) {
   g_seq_route_side_index = g_seq_side;
+  g_seq_last_evasion_side = g_seq_side;
   const float side_body[3] = {0.0f, g_seq_side == 3 ? 1.0f : -1.0f, 0.0f};
   rotateBodyToWorld(side_body, state, g_seq_route_side_world);
   g_seq_route_side_world[2] = 0.0f;
@@ -989,6 +1480,19 @@ static void beginSequentialRoute(const state_t *state,
   g_seq_route_altitude_m = setpoint->position.z;
   g_seq_clear_votes = 0;
   g_seq_route_lateral_limited = false;
+  g_seq_route_completed_step = false;
+  g_seq_return_delay_s = 0.0f;
+  g_seq_return_scan_pending = false;
+  g_seq_scan_settle_s = 0.0f;
+  g_seq_scan_decision = 0;
+  g_seq_scan_yaw_slewing = false;
+  g_seq_scan_pid_yaw_override = false;
+  g_seq_scan_retries = 0;
+  g_seq_scan_retry_delay_s = 0.0f;
+  g_seq_previous_scan_valid = false;
+  g_seq_previous_scan_mean_m = 0.0f;
+  g_seq_forward_average_inhibit_s = 0.0f;
+  g_seq_barrier_active = 0;
   setSequentialLateralWaypoint(state);
 }
 
@@ -999,6 +1503,20 @@ static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
     resetSequentialRoute();
     g_seq_path_offset_x = 0.0f;
     g_seq_path_offset_y = 0.0f;
+    g_seq_circle_offset_m = 0.0f;
+    g_seq_return_delay_s = 0.0f;
+    g_seq_return_scan_pending = false;
+    g_seq_scan_settle_s = 0.0f;
+    g_seq_scan_decision = 0;
+    g_seq_scan_yaw_slewing = false;
+    g_seq_scan_pid_yaw_override = false;
+    g_seq_scan_retries = 0;
+    g_seq_scan_retry_delay_s = 0.0f;
+    g_seq_previous_scan_valid = false;
+    g_seq_previous_scan_mean_m = 0.0f;
+    g_seq_forward_average_inhibit_s = 0.0f;
+    resetSequentialReturnScanWindow();
+    g_seq_barrier_active = 0;
     g_seq_waypoint_x = state->position.x;
     g_seq_waypoint_y = state->position.y;
     g_seq_waypoint_z = state->position.z;
@@ -1009,18 +1527,33 @@ static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
      * created there would be stale when MPC later assumes control. Keep the
      * route disarmed and make its logged target reflect the current pose. */
     resetSequentialRoute();
+    g_seq_scan_pid_yaw_override = false;
+    sequentialClearanceAverageReset(&g_seq_forward_open_history);
+    memset(g_seq_forward_open_average, 0,
+           sizeof(g_seq_forward_open_average));
+    g_seq_forward_clearance_sample_seen = g_seq_sample;
+    g_seq_side_score_0 = 0.0f;
+    g_seq_side_score_3 = 0.0f;
+    g_seq_previous_scan_valid = false;
+    g_seq_previous_scan_mean_m = 0.0f;
     g_seq_waypoint_x = state->position.x;
     g_seq_waypoint_y = state->position.y;
     g_seq_waypoint_z = state->position.z;
     return;
   }
   if (g_seq_stop || !g_seq_plan.valid) {
+    g_seq_scan_pid_yaw_override = false;
     if (g_seq_route_phase != SEQ_ROUTE_IDLE) {
       g_seq_route_phase = SEQ_ROUTE_HOLD;
       g_seq_waypoint_x = state->position.x;
       g_seq_waypoint_y = state->position.y;
       g_seq_waypoint_z = state->position.z;
     }
+    return;
+  }
+
+  if (g_seq_route_phase == SEQ_ROUTE_RETURN_SCAN) {
+    updateSequentialPathReturn(state, setpoint);
     return;
   }
 
@@ -1038,18 +1571,57 @@ static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
   }
 
   if (g_seq_route_phase == SEQ_ROUTE_IDLE) {
-    applySequentialPathOffset(setpoint);
+    updateSequentialPathReturn(state, setpoint);
     return;
   }
 
-  if (fresh && g_seq_average_clear) {
+  const float waypoint_distance = hypotf(
+      g_seq_waypoint_x - state->position.x,
+      g_seq_waypoint_y - state->position.y);
+  const bool reached = waypoint_distance <= seqAvoidWaypointToleranceM;
+  if (reached && !g_seq_route_completed_step) {
+    g_seq_route_completed_step = true;
+    armSequentialLateralBarrier(state);
+  }
+
+  /* Never release on an early clear classification before completing the
+   * first lateral waypoint. Once one full step is complete, a later clear may
+   * release the route without forcing completion of an additional step. */
+  if (fresh && g_seq_average_clear &&
+      g_seq_route_completed_step) {
     const float lateral_progress = fmaxf(0.0f,
         (state->position.x - g_seq_route_start_world[0]) *
             g_seq_route_side_world[0] +
         (state->position.y - g_seq_route_start_world[1]) *
             g_seq_route_side_world[1]);
-    g_seq_path_offset_x += lateral_progress * g_seq_route_side_world[0];
-    g_seq_path_offset_y += lateral_progress * g_seq_route_side_world[1];
+    if (circEn) {
+      const float center_x = 0.5f * (gAx + gBx);
+      const float center_y = 0.5f * (gAy + gBy);
+      float radial_x = state->position.x - center_x;
+      float radial_y = state->position.y - center_y;
+      const float radial_norm = hypotf(radial_x, radial_y);
+      if (radial_norm > 1.0e-4f) {
+        radial_x /= radial_norm;
+        radial_y /= radial_norm;
+        g_seq_circle_offset_m += lateral_progress *
+            (g_seq_route_side_world[0] * radial_x +
+             g_seq_route_side_world[1] * radial_y);
+      }
+    } else {
+      g_seq_path_offset_x += lateral_progress * g_seq_route_side_world[0];
+      g_seq_path_offset_y += lateral_progress * g_seq_route_side_world[1];
+    }
+    g_seq_return_delay_s = fmaxf(0.0f, seqAvoidReturnDelayS);
+    g_seq_return_scan_pending = seqAvoidReturnScanEnable &&
+        seqAvoidReturnRateMps > 0.0f;
+    g_seq_scan_retries = 0;
+    g_seq_return_evasion_side = g_seq_route_side_index;
+    g_seq_return_base_yaw_deg = setpoint->attitude.yaw;
+    g_seq_scan_target_yaw_deg = g_seq_return_base_yaw_deg;
+    g_seq_scan_goal_yaw_deg = g_seq_return_base_yaw_deg;
+    g_seq_scan_yaw_slewing = false;
+    g_seq_scan_settle_s = 0.0f;
+    resetSequentialReturnScanWindow();
     resetSequentialRoute();
     g_seq_side = -1;
     g_seq_side_candidate = -1;
@@ -1058,10 +1630,6 @@ static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
     return;
   }
 
-  const float waypoint_distance = hypotf(
-      g_seq_waypoint_x - state->position.x,
-      g_seq_waypoint_y - state->position.y);
-  const bool reached = waypoint_distance <= seqAvoidWaypointToleranceM;
   if (fresh && reached && g_seq_route_phase == SEQ_ROUTE_SIDESTEP) {
     setSequentialLateralWaypoint(state);
   }
@@ -1078,11 +1646,39 @@ static void updateSequentialRoute(const state_t *state, setpoint_t *setpoint) {
   setpoint->velocity.z = 0.0f;
 }
 
-static void disableSequentialHalfspaces(void) {
-  /* Sequential vision now selects waypoint stages only. It never turns a
-   * directional classifier output into a metric state constraint. */
+static void updateSequentialHalfspaces(void) {
   g_seq_constraints = 0;
   g_seq_max_slack = 0.0f;
+  const bool apply_halfspace = g_seq_barrier_active &&
+      seqAvoidConstraintEnable && !seqAvoidLogOnly;
+  if (apply_halfspace != g_seq_halfspace_was_applied) {
+    resetStateConstraintWarmStart();
+    g_seq_halfspace_was_applied = apply_halfspace;
+  }
+  if (!apply_halfspace) {
+    return;
+  }
+
+  Eigen::Vector3f a_position(g_seq_barrier_a0, g_seq_barrier_a1, 0.0f);
+  const Eigen::Vector3f zero_velocity(0.0f, 0.0f, 0.0f);
+  const uint8_t first_k = seqAvoidKStart < NHORIZON
+      ? seqAvoidKStart : NHORIZON - 1;
+  for (int k = first_k; k < NHORIZON; ++k) {
+    tiny_SetKinematicHalfspace(
+        &work, k, 1, &a_position, &zero_velocity, g_seq_barrier_b,
+        seqAvoidSlackPenalty, 1);
+    if (g_seq_constraints < UINT8_MAX) g_seq_constraints++;
+  }
+  stgs.en_cstr_states = 1;
+}
+
+static void updateSequentialSlackDiagnostics(void) {
+  g_seq_max_slack = 0.0f;
+  if (!seqAvoidEnable || !g_seq_barrier_active) return;
+  for (int k = 0; k < NHORIZON; ++k) {
+    g_seq_max_slack = fmaxf(g_seq_max_slack,
+                            data.slack_used_hs[k][1]);
+  }
 }
 
 static void cameraNormalToWorld(const float camera[3],
@@ -1442,37 +2038,101 @@ static void tinympcControllerTask(void *parameters) {
     mpc_reset_requested = false;
     xSemaphoreGive(dataMutex);
 
+    if (obsPidPassthrough) {
+      /* During takeoff and landing the stock PID owns the vehicle. Keep only
+       * the inexpensive sequential-link poll alive so the host can perform its
+       * preflight age/validity checks. Dense perception, horizon generation,
+       * ADMM, and MPC debug printing stay dormant until the PID->MPC edge.
+       * That edge requests a fresh warm start in controllerOutOfTree(). */
+      pollSequentialObstacle(&state_task, &setpoint_task);
+      updateSequentialCruiseReference(&state_task, &setpoint_task);
+      updateSequentialRoute(&state_task, &setpoint_task);
+      if (g_mpc_pid_bypass_cycles < UINT32_MAX) {
+        g_mpc_pid_bypass_cycles++;
+      }
+      g_mpc_last_complete_tick = xTaskGetTickCount();
+      g_mpc_heartbeat_age_ms = 0;
+      g_mpc_stall_hold = 0;
+      g_mpc_stack_free_words =
+          (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+      continue;
+    }
+
     updateInitialState(&sensors_task, &state_task);
     if (reset_requested) {
-      resetMpcWarmStart();
+      resetMpcWarmStart(MPC_RESET_ACTIVATION);
     }
 
     // Perception runs in the MPC task, not in the stabilizer callback.
     pollGateVision(&state_task, &sensors_task);
     pollPerceptionDanger(&state_task);
     pollSequentialObstacle(&state_task, &setpoint_task);
+    updateSequentialCruiseReference(&state_task, &setpoint_task);
     applySequentialFailSafeHold(&state_task, &setpoint_task);
     updateSequentialRoute(&state_task, &setpoint_task);
+
+    if (g_seq_scan_pid_yaw_override) {
+      /* A return scan is a stationary position hold with a PID-owned yaw.
+       * Running constrained ADMM here adds no path-planning value and was the
+       * common factor in repeated watchdog resets during the peer maneuver.
+       * Keep perception and the scan state machine at MPC_RATE, but publish the
+       * held pose directly to the stock PID until forward yaw is restored. */
+      setpoint_t scan_sp;
+      memset(&scan_sp, 0, sizeof(scan_sp));
+      scan_sp.mode.x = modeAbs;
+      scan_sp.mode.y = modeAbs;
+      scan_sp.mode.z = modeAbs;
+      scan_sp.mode.yaw = modeAbs;
+      scan_sp.position.x = setpoint_task.position.x;
+      scan_sp.position.y = setpoint_task.position.y;
+      scan_sp.position.z = setpoint_task.position.z;
+      scan_sp.attitude.yaw = g_seq_scan_target_yaw_deg;
+
+      if (g_mpc_scan_bypass_cycles < UINT32_MAX) {
+        g_mpc_scan_bypass_cycles++;
+      }
+      g_mpc_last_complete_tick = xTaskGetTickCount();
+      g_mpc_heartbeat_age_ms = 0;
+      g_mpc_stall_hold = 0;
+      g_mpc_stack_free_words =
+          (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+
+      xSemaphoreTake(dataMutex, portMAX_DELAY);
+      memcpy(&mpc_setpoint_data, &scan_sp, sizeof(setpoint_t));
+      mpc_has_run = true;
+      xSemaphoreGive(dataMutex);
+      continue;
+    }
 
     updateHorizonReference(&setpoint_task);
 
     // Multiplicative attitude error in the reference frame: q_err = q_ref0^-1 (x) q_meas.
     struct quat q_err = qqmul(qinv(q_ref0), q_meas);
     phi = quat2rp(q_err);
+    if (g_seq_scan_pid_yaw_override) {
+      /* Camera peering is owned by the downstream PID. Do not expose that
+       * deliberate yaw excursion to the MPC state or its ADMM warm start. */
+      phi.z = 0.0f;
+      x0(11) = 0.0f;
+    }
     x0(3) = phi.x;
     x0(4) = phi.y;
     x0(5) = phi.z;
 
     updateObstacleHalfspace(&state_task);
     if (seqAvoidEnable) {
-      disableSequentialHalfspaces();
+      updateSequentialHalfspaces();
     } else {
       updatePerceptionAngularHalfspaces(&state_task);
     }
     tiny_UpdateLinearCost(&work);
+    if (g_mpc_solve_started < UINT32_MAX) g_mpc_solve_started++;
+    g_mpc_solve_route_phase = g_seq_route_phase;
     const uint32_t mpc_start_us = usecTimestamp();
     tiny_SolveAdmm(&work);
-    if (!seqAvoidEnable) {
+    if (seqAvoidEnable) {
+      updateSequentialSlackDiagnostics();
+    } else {
       updatePerceptionSlackDiagnostics();
     }
     g_mpc_solve_us = usecTimestamp() - mpc_start_us;
@@ -1480,6 +2140,9 @@ static void tinympcControllerTask(void *parameters) {
     g_mpc_status = (int8_t)info.status_val;
     g_mpc_primal_residual = info.pri_res;
     g_mpc_dual_residual = info.dua_res;
+    if (g_mpc_solve_completed < UINT32_MAX) g_mpc_solve_completed++;
+    g_mpc_last_complete_tick = xTaskGetTickCount();
+    g_mpc_stack_free_words = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
     const bool nonfinite_solve =
         !isfinite(g_mpc_primal_residual) || !isfinite(g_mpc_dual_residual) ||
         !isfinite(Xhrz[NHORIZON - 1](0)) ||
@@ -1507,11 +2170,13 @@ static void tinympcControllerTask(void *parameters) {
     next_sp.position.x = health_fault ? state_task.position.x : Xhrz[NHORIZON - 1](0);
     next_sp.position.y = health_fault ? state_task.position.y : Xhrz[NHORIZON - 1](1);
     next_sp.position.z = health_fault ? state_task.position.z : Xhrz[NHORIZON - 1](2);
-    next_sp.attitude.yaw = yawUseRef
-        ? yawRefDeg
-        : (enable_pid_face_forward_yaw
-             ? mpc_heading_yaw_deg
-             : (quat2rpy(q_meas).z * (180.0f / M_PI_F)));
+    next_sp.attitude.yaw = g_seq_scan_pid_yaw_override
+        ? g_seq_scan_target_yaw_deg
+        : (yawUseRef
+             ? yawRefDeg
+             : (enable_pid_face_forward_yaw
+                  ? mpc_heading_yaw_deg
+                  : (quat2rpy(q_meas).z * (180.0f / M_PI_F))));
 
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     memcpy(&mpc_setpoint_data, &next_sp, sizeof(setpoint_t));
@@ -1555,6 +2220,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 
   bool has_run_snapshot = false;
   bool health_hold_snapshot = false;
+  bool stall_hold_snapshot = false;
   uint32_t activate_tick_snapshot = controller_activate_tick;
   setpoint_t output_sp;
   memcpy(&output_sp, &hold_sp, sizeof(output_sp));
@@ -1578,6 +2244,16 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     }
     has_run_snapshot = mpc_has_run;
     health_hold_snapshot = g_mpc_health_hold;
+    if (has_run_snapshot) {
+      g_mpc_heartbeat_age_ms = T2M(
+          xTaskGetTickCount() - g_mpc_last_complete_tick);
+      g_mpc_stall_hold =
+          g_mpc_heartbeat_age_ms > MPC_HEARTBEAT_TIMEOUT_MS;
+    } else {
+      g_mpc_heartbeat_age_ms = 0;
+      g_mpc_stall_hold = 0;
+    }
+    stall_hold_snapshot = g_mpc_stall_hold;
     memcpy(&output_sp, &mpc_setpoint_data, sizeof(setpoint_t));
     xSemaphoreGive(dataMutex);
   } else {
@@ -1607,7 +2283,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       return;
     }
     const bool hold_output =
-        (!has_run_snapshot) || health_hold_snapshot ||
+        (!has_run_snapshot) || health_hold_snapshot || stall_hold_snapshot ||
         ((tick - activate_tick_snapshot) < M2T(250));
 
     if (setpoint->mode.z == modeDisable && !hold_output) {

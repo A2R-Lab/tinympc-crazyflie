@@ -44,6 +44,142 @@ float sequentialDangerAverageUpdate(sequential_danger_average_t *average,
   return average->sum / (float)average->count;
 }
 
+void sequentialClearanceAverageReset(sequential_clearance_average_t *average) {
+  memset(average, 0, sizeof(*average));
+}
+
+void sequentialClearanceAverageUpdate(
+    sequential_clearance_average_t *average,
+    const float clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS],
+    uint8_t requested_window,
+    float mean_clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS]) {
+  const uint8_t window = requested_window < 1 ? 1 :
+      requested_window > SEQUENTIAL_DANGER_WINDOW_MAX
+          ? SEQUENTIAL_DANGER_WINDOW_MAX : requested_window;
+  if (average->window != window) {
+    sequentialClearanceAverageReset(average);
+    average->window = window;
+  }
+  if (average->count == window) {
+    for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
+         ++direction) {
+      average->sum[direction] -= average->samples[direction][average->next];
+    }
+  } else {
+    average->count++;
+  }
+  for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
+       ++direction) {
+    const float value = isfinite(clearance_m[direction])
+        ? fmaxf(0.0f, clearance_m[direction]) : 0.0f;
+    average->samples[direction][average->next] = value;
+    average->sum[direction] += value;
+    mean_clearance_m[direction] = average->sum[direction] /
+        (float)average->count;
+  }
+  average->next = (uint8_t)((average->next + 1) % window);
+}
+
+int8_t sequentialSelectEvasionSide(
+    const float open_fraction[SEQUENTIAL_CONTROL_DIRECTIONS],
+    float score_bias, int previous_side, float *score_0, float *score_3) {
+  float open[SEQUENTIAL_CONTROL_DIRECTIONS];
+  for (int direction = 0; direction < SEQUENTIAL_CONTROL_DIRECTIONS;
+       ++direction) {
+    open[direction] = isfinite(open_fraction[direction])
+        ? clampf(open_fraction[direction], 0.0f, 1.0f) : 0.0f;
+  }
+  /* Evasion side is determined only by the corresponding outer ray. The
+   * inner rays remain available to the obstacle trigger and diagnostics, but
+   * must not influence the left/right choice. */
+  const float right_score = open[0];
+  const float left_score = open[3];
+  if (score_0 != NULL) *score_0 = right_score;
+  if (score_3 != NULL) *score_3 = left_score;
+  const float bias = clampf(score_bias, 0.0f, 1.0f);
+  if (left_score > right_score + bias) return 3;
+  if (right_score > left_score + bias) return 0;
+  return previous_side == 0 ? 3 : 0;
+}
+
+bool sequentialLateralBarrierRow(const float side_world[3],
+                                 const float anchor_world[3],
+                                 float a_position[3], float *b) {
+  const float norm = hypotf(side_world[0], side_world[1]);
+  if (norm < 1.0e-4f || b == NULL) return false;
+  a_position[0] = -side_world[0] / norm;
+  a_position[1] = -side_world[1] / norm;
+  a_position[2] = 0.0f;
+  *b = a_position[0] * anchor_world[0] +
+       a_position[1] * anchor_world[1];
+  return true;
+}
+
+float sequentialReturnScanYawDeg(float base_yaw_deg, int evasion_direction,
+                                 float yaw_offset_deg) {
+  const float sign = evasion_direction == 0 ? 1.0f :
+      evasion_direction == 3 ? -1.0f : 0.0f;
+  float yaw = base_yaw_deg + sign * fabsf(yaw_offset_deg);
+  while (yaw > 180.0f) yaw -= 360.0f;
+  while (yaw < -180.0f) yaw += 360.0f;
+  return yaw;
+}
+
+float sequentialSlewYawDeg(float current_yaw_deg, float target_yaw_deg,
+                           float maximum_step_deg) {
+  float delta = target_yaw_deg - current_yaw_deg;
+  while (delta > 180.0f) delta -= 360.0f;
+  while (delta < -180.0f) delta += 360.0f;
+  const float step = fabsf(maximum_step_deg);
+  if (fabsf(delta) <= step || step <= 0.0f) {
+    return step <= 0.0f ? current_yaw_deg : target_yaw_deg;
+  }
+  float yaw = current_yaw_deg + copysignf(step, delta);
+  while (yaw > 180.0f) yaw -= 360.0f;
+  while (yaw < -180.0f) yaw += 360.0f;
+  return yaw;
+}
+
+float sequentialClearanceSpeedMps(float forward_clearance_m,
+                                  float safety_distance_m,
+                                  float cruise_speed_mps,
+                                  float braking_acceleration_mps2) {
+  if (!isfinite(forward_clearance_m) || !isfinite(safety_distance_m) ||
+      !isfinite(cruise_speed_mps) ||
+      !isfinite(braking_acceleration_mps2)) {
+    return 0.0f;
+  }
+  const float cruise = fmaxf(0.0f, cruise_speed_mps);
+  const float braking = fmaxf(0.0f, braking_acceleration_mps2);
+  const float available = forward_clearance_m -
+      fmaxf(0.0f, safety_distance_m);
+  if (cruise <= 0.0f || braking <= 0.0f || available <= 0.0f) {
+    return 0.0f;
+  }
+  return fminf(cruise, sqrtf(2.0f * braking * available));
+}
+
+float sequentialRateLimitSpeedMps(float current_speed_mps,
+                                  float target_speed_mps,
+                                  float acceleration_mps2,
+                                  float braking_acceleration_mps2,
+                                  float dt_s) {
+  if (!isfinite(current_speed_mps) || !isfinite(target_speed_mps) ||
+      !isfinite(acceleration_mps2) ||
+      !isfinite(braking_acceleration_mps2) || !isfinite(dt_s)) {
+    return 0.0f;
+  }
+  const float current = fmaxf(0.0f, current_speed_mps);
+  const float target = fmaxf(0.0f, target_speed_mps);
+  const float dt = fmaxf(0.0f, dt_s);
+  const float rate = target >= current
+      ? fmaxf(0.0f, acceleration_mps2)
+      : fmaxf(0.0f, braking_acceleration_mps2);
+  const float step = rate * dt;
+  if (target > current) return fminf(target, current + step);
+  return fmaxf(target, current - step);
+}
+
 void sequentialObstacleControlPlan(
     const float clearance_m[SEQUENTIAL_CONTROL_DIRECTIONS],
     const float confidence[SEQUENTIAL_CONTROL_DIRECTIONS],
