@@ -25,6 +25,7 @@ FIELDS = [
     "host_time", "phase", "cmd_x", "cmd_y", "cmd_z",
     "stateEstimate.x", "stateEstimate.y", "stateEstimate.z",
     "stateEstimate.vx", "stateEstimate.vy", "pm.vbat",
+    "radio.rssi", "supervisor.info", "obs.cmdAge", "obs.cmdDisabled",
     "seqRx.rxOk", "seqRx.crcErr", "seqRx.badRx", "seqRx.invalid",
     "seqRx.duplicate", "seqRx.seqGap", "gate8.raw", "gate8.qDrop",
     "seqRx.d0", "seqRx.d1", "seqRx.d2", "seqRx.d3",
@@ -42,7 +43,7 @@ FIELDS = [
     "seqAvoid.barrierA0", "seqAvoid.barrierA1", "seqAvoid.barrierB",
     "seqAvoid.maxSlack",
     "seqAvoid.dangerAvg", "seqAvoid.avgCount",
-    "seqAvoid.fwdClear", "seqAvoid.speedCmd", "seqAvoid.goalDist",
+    "seqAvoid.fwdClear", "seqAvoid.speedCmd", "seqAvoid.speedHalt", "seqAvoid.goalDist",
     "seqAvoid.goalReached",
     "seqAvoid.openAvg0", "seqAvoid.openAvg1", "seqAvoid.openAvg2",
     "seqAvoid.openAvg3", "seqAvoid.sideScore0", "seqAvoid.sideScore3",
@@ -59,22 +60,26 @@ LOG_BLOCKS = [
     ("seq_state", 50, [("stateEstimate.x", "float"),
                        ("stateEstimate.y", "float"),
                        ("stateEstimate.z", "float"),
-                       ("pm.vbat", "float")]),
-    ("seq_motion", 50, [("stateEstimate.vx", "float"),
+                       ("pm.vbat", "float"),
+                       ("radio.rssi", "uint8_t"),
+                       ("supervisor.info", "uint16_t"),
+                       ("obs.cmdAge", "uint32_t"),
+                       ("obs.cmdDisabled", "uint8_t")]),
+    ("seq_motion", 100, [("stateEstimate.vx", "float"),
                         ("stateEstimate.vy", "float")]),
-    ("seq_link", 100, [("seqRx.rxOk", "uint32_t"),
+    ("seq_link", 200, [("seqRx.rxOk", "uint32_t"),
                        ("seqRx.crcErr", "uint32_t"),
                        ("seqRx.badRx", "uint32_t"),
                        ("seqRx.invalid", "uint32_t")]),
-    ("seq_link_detail", 100, [("seqRx.duplicate", "uint32_t"),
+    ("seq_link_detail", 200, [("seqRx.duplicate", "uint32_t"),
                                ("seqRx.seqGap", "uint32_t"),
                                ("gate8.raw", "uint32_t"),
                                ("gate8.qDrop", "uint32_t")]),
-    ("seq_raw_distance", 50, [("seqRx.d0", "float"),
+    ("seq_raw_distance", 100, [("seqRx.d0", "float"),
                                ("seqRx.d1", "float"),
                                ("seqRx.d2", "float"),
                                ("seqRx.d3", "float")]),
-    ("seq_classify", 50, [("seqAvoid.sample", "uint32_t"),
+    ("seq_classify", 100, [("seqAvoid.sample", "uint32_t"),
                            ("seqAvoid.mask", "uint8_t"),
                            ("seqAvoid.dangerAvg", "float"),
                            ("seqAvoid.avgCount", "uint8_t"),
@@ -83,19 +88,19 @@ LOG_BLOCKS = [
                            ("seqAvoid.stop", "uint8_t"),
                            ("seqAvoid.side", "int8_t"),
                            ("seqAvoid.maxSlack", "float")]),
-    ("seq_route", 50, [("seqAvoid.routePhase", "uint8_t"),
+    ("seq_route", 100, [("seqAvoid.routePhase", "uint8_t"),
                         ("seqAvoid.replans", "uint32_t"),
                         ("obs.pidBypass", "uint32_t")]),
-    ("seq_waypoint", 50, [("seqAvoid.waypointX", "float"),
+    ("seq_waypoint", 100, [("seqAvoid.waypointX", "float"),
                            ("seqAvoid.waypointY", "float"),
                            ("seqAvoid.pathOffX", "float"),
                            ("seqAvoid.pathOffY", "float"),
                            ("seqAvoid.returnWait", "float")]),
-    ("seq_barrier", 50, [("seqAvoid.barrier", "uint8_t"),
+    ("seq_barrier", 200, [("seqAvoid.barrier", "uint8_t"),
                           ("seqAvoid.barrierA0", "float"),
                           ("seqAvoid.barrierA1", "float"),
                           ("seqAvoid.barrierB", "float")]),
-    ("seq_scan", 50, [("seqAvoid.scanAvg", "float"),
+    ("seq_scan", 100, [("seqAvoid.scanAvg", "float"),
                        ("seqAvoid.scanCount", "uint8_t"),
                        ("seqAvoid.scanRetries", "uint32_t"),
                        ("seqAvoid.scanYaw", "float"),
@@ -103,25 +108,26 @@ LOG_BLOCKS = [
                        ("seqAvoid.scanSettle", "float"),
                        ("seqAvoid.scanDecision", "int8_t"),
                        ("seqAvoid.scanPidYaw", "uint8_t")]),
-    ("seq_speed", 50, [("seqAvoid.fwdClear", "float"),
+    ("seq_speed", 100, [("seqAvoid.fwdClear", "float"),
                         ("seqAvoid.speedCmd", "float"),
+                        ("seqAvoid.speedHalt", "uint8_t"),
                         ("seqAvoid.goalDist", "float"),
                         ("seqAvoid.goalReached", "uint8_t"),
                         ("seqAvoid.scanSlope", "float"),
                         ("seqAvoid.scanRetryWait", "float")]),
-    ("seq_direction_forward", 100, [("seqAvoid.openAvg0", "float"),
+    ("seq_direction_forward", 200, [("seqAvoid.openAvg0", "float"),
                                      ("seqAvoid.openAvg1", "float"),
                                      ("seqAvoid.openAvg2", "float"),
                                      ("seqAvoid.openAvg3", "float"),
                                      ("seqAvoid.sideScore0", "float"),
                                      ("seqAvoid.sideScore3", "float")]),
-    ("seq_direction_scan", 100, [("seqAvoid.scanClr0", "float"),
+    ("seq_direction_scan", 200, [("seqAvoid.scanClr0", "float"),
                                   ("seqAvoid.scanClr1", "float"),
                                   ("seqAvoid.scanClr2", "float"),
                                   ("seqAvoid.scanClr3", "float")]),
     ("seq_circle", 100, [("visGate.phase", "float"),
                            ("visGate.laps", "uint32_t")]),
-    ("seq_solver", 100, [("obs.mpcUs", "uint32_t"),
+    ("seq_solver", 200, [("obs.mpcUs", "uint32_t"),
                            ("obs.iter", "uint8_t"),
                            ("obs.status", "int8_t"),
                            ("obs.priRes", "float"),
@@ -129,7 +135,7 @@ LOG_BLOCKS = [
                            ("obs.healthHold", "uint8_t"),
                            ("obs.healthFaults", "uint32_t"),
                            ("obs.scanBypass", "uint32_t")]),
-    ("seq_solver_diag", 100, [("obs.solveStart", "uint32_t"),
+    ("seq_solver_diag", 200, [("obs.solveStart", "uint32_t"),
                                ("obs.solveDone", "uint32_t"),
                                ("obs.hbAge", "uint32_t"),
                                ("obs.stallHold", "uint8_t"),
@@ -216,6 +222,10 @@ def arguments():
                         help="Firmware forward-reference acceleration limit (m/s^2).")
     parser.add_argument("--braking-accel", type=float, default=0.60,
                         help="Firmware assumed and commanded braking acceleration (m/s^2).")
+    parser.add_argument("--speed-stop-min", type=float, default=0.20,
+                        help="Center-slice clearance that stops forward motion (m).")
+    parser.add_argument("--speed-resume-min", type=float, default=0.23,
+                        help="Center-slice clearance required to resume after a stop (m).")
     parser.add_argument("--goal-tolerance", type=float, default=0.10,
                         help="Horizontal distance used to declare goal reached (m).")
     parser.add_argument("--trigger", type=float, default=1.2)
@@ -296,6 +306,12 @@ def arguments():
         parser.error("--accel-limit must be positive")
     if args.braking_accel <= 0.0:
         parser.error("--braking-accel must be positive")
+    if args.speed_stop_min < 0.0:
+        parser.error("--speed-stop-min must be non-negative")
+    if args.speed_resume_min < args.speed_stop_min:
+        parser.error("--speed-resume-min must not be below --speed-stop-min")
+    if args.speed_resume_min > args.safe_min:
+        parser.error("--speed-resume-min must not exceed --safe-min")
     if args.goal_tolerance <= 0.0:
         parser.error("--goal-tolerance must be positive")
     if args.circle_radius < 0.0:
@@ -561,6 +577,8 @@ def main():
             set_param(cf, "seqAvoid.cruise", args.cruise_speed)
             set_param(cf, "seqAvoid.cruiseAcc", args.accel_limit)
             set_param(cf, "seqAvoid.brakeAcc", args.braking_accel)
+            set_param(cf, "seqAvoid.speedStop", args.speed_stop_min)
+            set_param(cf, "seqAvoid.speedResume", args.speed_resume_min)
             set_param(cf, "seqAvoid.goalTol", args.goal_tolerance)
             set_param(cf, "seqAvoid.trigger", args.trigger)
             set_param(cf, "seqAvoid.sideMin", args.side_min)
@@ -584,7 +602,6 @@ def main():
                 value = 0 if args.zero_margins else normal_value
                 set_param(cf, f"seqAvoid.{name}", value)
             circle_enabled = args.circle_radius > 0.0
-            set_param(cf, "gateNav.navEn", 0)
             if circle_enabled:
                 # Start at the near point on the circumference with yaw along +x.
                 # CCW puts the center to the left; clockwise puts it to the right.
