@@ -1,0 +1,33 @@
+{
+  "format": "tinympc-handheld-danger-replay-v1",
+  "capture": "capture_runs/handheld_head_on_01",
+  "model": "/Users/char_chen/School/TinyMPC/tinympc-nanocockpit/gap8_stdc_release_shared_real_v1",
+  "model_checkpoint": "/Users/char_chen/School/TinyMPC/tinympc-nanocockpit/gap8_stdc_release_shared_real_v1",
+  "processed_frames": 59,
+  "stride": 1,
+  "deployed_integer_threshold": 42,
+  "published_probability_threshold": 0.07227228581905365,
+  "proposed_probability_threshold": 0.6,
+  "map_shape": [
+    8,
+    10
+  ],
+  "controller_mapping": "These 80 cells become rows 1-8 of the controller 10x10 map; controller rows 0 and 9 are forced unsafe and excluded from perceptMass.cells.",
+  "obstacle_cells": {
+    "minimum": 0,
+    "median": 11.0,
+    "maximum": 36,
+    "frames_nonzero": 46
+  },
+  "deployed_obstacle_cells": {
+    "minimum": 4,
+    "median": 38.0,
+    "maximum": 62
+  },
+  "largest_cluster": {
+    "minimum": 0,
+    "median": 9.0,
+    "maximum": 36
+  },
+  "center_unsafe_frames": 21
+}

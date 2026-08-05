@@ -1,0 +1,9 @@
+{
+  "format": "tinympc-handheld-danger-capture-v1",
+  "frames": 59,
+  "duration_s": 22.059004874899983,
+  "host": "192.168.4.1",
+  "port": 5000,
+  "flight_commands_sent": false,
+  "image_note": "Native grayscale crop received from NanoCockpit CPX streamer."
+}

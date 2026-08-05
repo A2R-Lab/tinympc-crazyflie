@@ -1,0 +1,55 @@
+{
+  "steps": 160,
+  "sim_time_s": 8.0,
+  "control_mode": "admm",
+  "avoidance_enabled": true,
+  "constraint_active_steps": 47,
+  "constraint_active_fraction": 0.29375,
+  "max_active_halfspaces": 1,
+  "camera_rate_hz": 20.0,
+  "depth_noise_std": 0.0,
+  "depth_bias": 0.0,
+  "sector_dropout_prob": 0.0,
+  "false_hit_prob": 0.0,
+  "dropout_count": 0,
+  "false_hit_count": 0,
+  "stale_disabled_count": 113,
+  "switch_suppressed_count": 0,
+  "max_command_jump_mps": 0.08000000000000003,
+  "max_terminal_jump_m": 2.208894240842585,
+  "collision": false,
+  "obstacle_collision": false,
+  "env_collision": false,
+  "reached_goal": false,
+  "reached_goal_x": false,
+  "goal": {
+    "x": 2.8,
+    "y": 0.0,
+    "z": 1.1
+  },
+  "min_obstacle_clearance_m": 0.20796770711125576,
+  "min_z_m": 1.076278639955126,
+  "final_state": [
+    5.202513838259439,
+    0.02221524780508029,
+    1.098531742291052,
+    0.8902021209993213,
+    0.4681457615900907,
+    -0.020241192847289306
+  ],
+  "obstacles": [
+    {
+      "name": "center_box",
+      "center": [
+        1.55,
+        0.18,
+        1.1
+      ],
+      "half_extents": [
+        0.16,
+        0.22,
+        0.28
+      ]
+    }
+  ]
+}

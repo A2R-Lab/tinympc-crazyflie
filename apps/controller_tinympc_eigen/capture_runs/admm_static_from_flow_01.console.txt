@@ -1,0 +1,44 @@
+SUP: Ready to fly
+vision link: UART1/USART3@115200 started
+TINYMPC-E: Commander/setpoint mode enabled
+CONTROLLER: Using OutOfTree (6) controller
+TINYMPC-E: OOT activated: hold pos=(-0.0,-0.01,0.44)
+TINYMPC-E: MPC: pos=(-0.0,-0.01,0.44) ref=(0.0,0.0,0.40)
+TINYMPC-E: MPC: u=(0.37,0.38,0.37,0.39) iter=5 solve=7325us
+TINYMPC-E: MPC: pos=(0.06,-0.02,0.31) ref=(0.0,0.0,0.40)
+TINYMPC-E: MPC: u=(1.0,1.0,0.99,1.0) iter=5 solve=7178us
+TINYMPC-E: MPC: pos=(0.04,-0.03,0.27) ref=(0.0,0.0,0.40)
+TINYMPC-E: MPC: u=(0.99,1.0,0.98,0.99) iter=5 solve=8286us
+TINYMPC-E: MPC: pos=(0.02,-0.04,0.30) ref=(0.08,0.0,0.40)
+TINYMPC-E: MPC: u=(0.91,0.92,0.93,0.92) iter=5 solve=8205us
+TINYMPC-E: MPC: pos=(0.05,-0.03,0.34) ref=(0.19,0.0,0.40)
+TINYMPC-E: MPC: u=(0.78,0.83,0.82,0.79) iter=5 solve=8936us
+TINYMPC-E: MPC: pos=(0.13,-0.02,0.38) ref=(0.28,0.0,0.40)
+TINYMPC-E: MPC: u=(0.66,0.65,0.69,0.62) iter=5 solve=9622us
+TINYMPC-E: MPC: pos=(0.23,-0.01,0.40) ref=(0.38,0.0,0.40)
+TINYMPC-E: MPC: u=(0.55,0.59,0.60,0.55) iter=5 solve=9603us
+TINYMPC-E: MPC: pos=(0.33,0.0,0.41) ref=(0.48,0.0,0.40)
+TINYMPC-E: MPC: u=(0.58,0.50,0.49,0.51) iter=5 solve=10831us
+TINYMPC-E: MPC: pos=(0.38,0.02,0.41) ref=(0.59,0.0,0.40)
+TINYMPC-E: MPC: u=(0.68,0.48,0.43,0.51) iter=5 solve=11516us
+TINYMPC-E: MPC: pos=(0.36,0.10,0.42) ref=(0.68,0.0,0.40)
+TINYMPC-E: MPC: u=(0.63,0.47,0.43,0.45) iter=5 solve=9740us
+TINYMPC-E: MPC: pos=(0.40,0.17,0.42) ref=(0.79,0.0,0.40)
+TINYMPC-E: MPC: u=(0.71,0.53,0.35,0.42) iter=5 solve=10030us
+TINYMPC-E: MPC: pos=(0.43,0.29,0.43) ref=(0.88,0.0,0.40)
+TINYMPC-E: MPC: u=(0.61,0.52,0.40,0.34) iter=5 solve=10625us
+TINYMPC-E: MPC: pos=(0.53,0.44,0.43) ref=(0.98,0.0,0.40)
+TINYMPC-E: MPC: u=(0.57,0.56,0.43,0.29) iter=5 solve=9629us
+TINYMPC-E: MPC: pos=(0.76,0.59,0.43) ref=(1.08,0.0,0.40)
+TINYMPC-E: MPC: u=(0.41,0.56,0.57,0.27) iter=5 solve=9677us
+TINYMPC-E: MPC: pos=(1.08,0.65,0.42) ref=(1.18,0.0,0.40)
+TINYMPC-E: MPC: u=(0.36,0.66,0.56,0.50) iter=5 solve=9026us
+TINYMPC-E: MPC: pos=(1.39,0.53,0.42) ref=(1.28,0.0,0.40)
+TINYMPC-E: MPC: u=(0.44,0.55,0.49,0.54) iter=5 solve=10878us
+TINYMPC-E: MPC: pos=(1.53,0.37,0.41) ref=(1.38,0.0,0.40)
+TINYMPC-E: MPC: u=(0.47,0.53,0.55,0.57) iter=5 solve=9598us
+TINYMPC-E: MPC: pos=(1.60,0.26,0.40) ref=(1.48,0.0,0.40)
+TINYMPC-E: MPC: u=(0.51,0.60,0.57,0.64) iter=5 solve=10595us
+TINYMPC-E: MPC: pos=(1.64,0.13,0.41) ref=(1.58,0.0,0.40)
+TINYMPC-E: MPC: u=(0.54,0.57,0.52,0.58) iter=5 solve=11048us
+CONTROLLER: Using PID (1) controller

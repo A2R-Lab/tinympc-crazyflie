@@ -1,8 +1,2 @@
 obj-y += controller_tinympc.o
-obj-y += yaw_cmd_params.o
-obj-y += sequential_obstacle_link.o
-obj-y += sequential_obstacle_control.o
-obj-y += sequential_obstacle_params.o
-obj-y += gate_pnp_params.o
-obj-y += obstacle_params.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/

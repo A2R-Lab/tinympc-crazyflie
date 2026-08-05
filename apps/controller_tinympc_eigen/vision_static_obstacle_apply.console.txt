@@ -1,0 +1,32 @@
+SUP: Ready to fly
+vision link: UART1/USART3@115200 started
+TINYMPC-E: Commander/setpoint mode enabled
+CONTROLLER: Using OutOfTree (6) controller
+TINYMPC-E: OOT activated: hold pos=(0.01,-0.01,0.55)
+TINYMPC-E: MPC: pos=(0.01,-0.01,0.55) ref=(0.0,0.0,0.50)
+TINYMPC-E: MPC: u=(0.35,0.37,0.38,0.35) iter=5 solve=9695us
+TINYMPC-E: MPC: pos=(-0.04,-0.0,0.39) ref=(0.0,0.0,0.50)
+TINYMPC-E: MPC: u=(0.99,1.0,0.99,0.99) iter=5 solve=9634us
+TINYMPC-E: MPC: pos=(0.06,-0.03,0.36) ref=(0.0,0.0,0.50)
+TINYMPC-E: MPC: u=(1.04,1.03,1.03,1.02) iter=5 solve=8835us
+TINYMPC-E: MPC: pos=(0.02,-0.03,0.41) ref=(0.09,0.0,0.50)
+TINYMPC-E: MPC: u=(0.96,1.0,1.0,0.97) iter=5 solve=8662us
+TINYMPC-E: MPC: pos=(0.07,-0.02,0.45) ref=(0.19,0.0,0.50)
+TINYMPC-E: MPC: u=(0.78,0.82,0.79,0.81) iter=5 solve=9748us
+TINYMPC-E: MPC: pos=(0.17,-0.02,0.48) ref=(0.29,0.0,0.50)
+TINYMPC-E: MPC: u=(0.66,0.69,0.66,0.67) iter=5 solve=8713us
+TINYMPC-E: MPC: pos=(0.22,-0.01,0.50) ref=(0.39,0.0,0.50)
+TINYMPC-E: MPC: u=(0.70,0.59,0.49,0.58) iter=5 solve=9655us
+TINYMPC-E: MPC: pos=(0.21,0.11,0.51) ref=(0.49,0.0,0.50)
+TINYMPC-E: MPC: u=(0.56,0.56,0.49,0.47) iter=5 solve=9828us
+TINYMPC-E: MPC: pos=(0.29,0.12,0.52) ref=(0.58,0.0,0.50)
+TINYMPC-E: MPC: u=(0.68,0.60,0.35,0.33) iter=5 solve=9401us
+TINYMPC-E: MPC: pos=(0.43,0.32,0.52) ref=(0.69,0.0,0.50)
+TINYMPC-E: MPC: u=(0.41,0.61,0.58,0.40) iter=5 solve=8941us
+TINYMPC-E: MPC: pos=(0.65,0.37,0.52) ref=(0.79,0.0,0.50)
+TINYMPC-E: MPC: u=(0.42,0.58,0.55,0.45) iter=5 solve=10195us
+TINYMPC-E: MPC: pos=(0.89,0.25,0.53) ref=(0.89,0.0,0.50)
+TINYMPC-E: MPC: u=(0.42,0.44,0.43,0.46) iter=5 solve=9149us
+TINYMPC-E: MPC: pos=(0.98,0.10,0.53) ref=(0.98,0.0,0.50)
+TINYMPC-E: MPC: u=(0.44,0.47,0.49,0.50) iter=5 solve=9399us
+CONTROLLER: Using PID (1) controller
