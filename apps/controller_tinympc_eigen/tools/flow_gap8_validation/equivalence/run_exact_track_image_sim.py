@@ -218,7 +218,7 @@ def main() -> int:
     parser.add_argument("--nanocockpit", type=Path, required=True)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    repo = HERE.parents[3]
+    repo = HERE.parents[4]
     with tempfile.TemporaryDirectory(prefix="exact-track-sim-") as tmp_name:
         gap, stm = build(repo, args.nanocockpit, Path(tmp_name))
         image_wire, states = render_inputs()

@@ -27,7 +27,7 @@ import sys
 import numpy as np
 
 
-DEFAULT_VISION_ROOT = Path(__file__).resolve().parents[4] / "tinympc-vision"
+DEFAULT_VISION_ROOT = Path(__file__).resolve().parents[5] / "tinympc-vision"
 
 
 def parse_args() -> argparse.Namespace:

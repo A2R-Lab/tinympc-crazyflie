@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 HERE = Path(__file__).resolve().parent
-APP = HERE.parents[1]
+APP = HERE.parents[2]
 STM32_HEADER = APP / "src" / "flowdeck_obstacle_link.h"
 DEFAULT_GAP8_HEADER = (
     APP.parents[2]

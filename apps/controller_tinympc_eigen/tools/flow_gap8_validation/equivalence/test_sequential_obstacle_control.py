@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[2]
+APP = Path(__file__).resolve().parents[3]
 SRC = APP / "src"
 F4 = ctypes.c_float * 4
 F3 = ctypes.c_float * 3
@@ -90,6 +90,11 @@ def build_library(output: Path):
         ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
     ]
     lib.sequentialLateralBarrierRow.restype = ctypes.c_bool
+    lib.sequentialOffsetBarrierRow.argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
+    ]
+    lib.sequentialOffsetBarrierRow.restype = ctypes.c_bool
     lib.sequentialReturnScanYawDeg.argtypes = [
         ctypes.c_float, ctypes.c_int, ctypes.c_float,
     ]
@@ -100,6 +105,8 @@ def build_library(output: Path):
     lib.sequentialSlewYawDeg.restype = ctypes.c_float
     lib.sequentialClearanceSpeedMps.argtypes = [ctypes.c_float] * 4
     lib.sequentialClearanceSpeedMps.restype = ctypes.c_float
+    lib.sequentialSpeedStopUpdate.argtypes = [ctypes.c_bool] + [ctypes.c_float] * 3
+    lib.sequentialSpeedStopUpdate.restype = ctypes.c_bool
     lib.sequentialRateLimitSpeedMps.argtypes = [ctypes.c_float] * 5
     lib.sequentialRateLimitSpeedMps.restype = ctypes.c_float
     return lib
@@ -279,6 +286,22 @@ class SequentialObstacleControlTest(unittest.TestCase):
         self.assertLessEqual(row[1] * 0.50, boundary.value)
         self.assertGreater(row[1] * 0.0, boundary.value)
 
+    def test_circle_offset_barrier_rotates_with_reference(self) -> None:
+        row, boundary = F3(), ctypes.c_float()
+        self.assertTrue(self.library.sequentialOffsetBarrierRow(
+            F3(0.0, 2.0, 0.3), F3(0.0, 0.3, 0.0), row,
+            ctypes.byref(boundary)))
+        self.assertAlmostEqual(row[0], 0.0)
+        self.assertAlmostEqual(row[1], -1.0)
+        self.assertAlmostEqual(boundary.value, -2.3)
+
+        self.assertTrue(self.library.sequentialOffsetBarrierRow(
+            F3(1.0, 1.0, 0.3), F3(0.3, 0.0, 0.0), row,
+            ctypes.byref(boundary)))
+        self.assertAlmostEqual(row[0], -1.0)
+        self.assertAlmostEqual(row[1], 0.0)
+        self.assertAlmostEqual(boundary.value, -1.3)
+
     def test_right_evasion_scans_left(self) -> None:
         yaw = self.library.sequentialReturnScanYawDeg(0.0, 0, 50.0)
         self.assertAlmostEqual(yaw, 50.0)
@@ -316,6 +339,16 @@ class SequentialObstacleControlTest(unittest.TestCase):
     def test_clearance_speed_stops_at_safety_distance(self) -> None:
         self.assertEqual(self.library.sequentialClearanceSpeedMps(
             0.25, 0.25, 0.35, 0.40), 0.0)
+
+    def test_speed_stop_uses_separate_hysteresis(self) -> None:
+        self.assertFalse(self.library.sequentialSpeedStopUpdate(
+            False, 0.25, 0.20, 0.23))
+        self.assertTrue(self.library.sequentialSpeedStopUpdate(
+            False, 0.20, 0.20, 0.23))
+        self.assertTrue(self.library.sequentialSpeedStopUpdate(
+            True, 0.22, 0.20, 0.23))
+        self.assertFalse(self.library.sequentialSpeedStopUpdate(
+            True, 0.23, 0.20, 0.23))
 
     def test_nonfinite_clearance_stops(self) -> None:
         self.assertEqual(self.library.sequentialClearanceSpeedMps(

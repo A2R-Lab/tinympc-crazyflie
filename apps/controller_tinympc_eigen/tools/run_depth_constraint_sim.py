@@ -8,8 +8,8 @@ This runner keeps the first closed-loop experiment deliberately small:
 * The controller turns the selected sector into a TinyMPC-shaped half-space
   ``a^T p <= b``.
 * ``--control-mode admm`` compiles a host TinyMPC-ADMM shared library, writes
-  ``a_hs/b_hs/en_hs`` into ``tiny_AdmmData``, and commands the terminal planned
-  position through the PyBullet acceleration/PID shim.
+  ``a_hs/b_hs/en_hs`` into ``tiny_AdmmData``, and executes consecutive planned
+  state references between slower MPC replans.
 * ``--control-mode projection`` keeps the earlier velocity-lookahead projection
   experiment for comparison.
 
@@ -110,19 +110,24 @@ class ReferenceTrajectory:
 class AdmmHostSolver:
     NSTATES = 12
     NINPUTS = 4
-    NHORIZON = 25
     MAX_HS = 3
 
-    def __init__(self, max_iter: int, rho: float, force_rebuild: bool = False) -> None:
-        self._lib = ctypes.CDLL(str(_build_admm_host_library(force=force_rebuild)))
+    def __init__(self, max_iter: int, rho: float, horizon: int, model_dt_s: float,
+                 force_rebuild: bool = False) -> None:
+        self._lib = ctypes.CDLL(str(_build_admm_host_library(horizon, force=force_rebuild)))
         self._configure_abi()
-        if not self._lib.tinympc_admm_host_init(int(max_iter), ctypes.c_float(float(rho)), True):
+        if not self._lib.tinympc_admm_host_init(
+            int(max_iter), ctypes.c_float(float(rho)), True, ctypes.c_float(float(model_dt_s))
+        ):
             raise RuntimeError("tinympc_admm_host_init failed")
+        self.horizon = int(self._lib.tinympc_admm_host_horizon())
+        if self.horizon != int(horizon):
+            raise RuntimeError(f"host solver horizon {self.horizon} != requested {horizon}")
 
     def _configure_abi(self) -> None:
         f32p = ctypes.POINTER(ctypes.c_float)
         i32p = ctypes.POINTER(ctypes.c_int)
-        self._lib.tinympc_admm_host_init.argtypes = [ctypes.c_int, ctypes.c_float, ctypes.c_bool]
+        self._lib.tinympc_admm_host_init.argtypes = [ctypes.c_int, ctypes.c_float, ctypes.c_bool, ctypes.c_float]
         self._lib.tinympc_admm_host_init.restype = ctypes.c_bool
         self._lib.tinympc_admm_host_reset_duals.argtypes = []
         self._lib.tinympc_admm_host_reset_duals.restype = None
@@ -149,22 +154,23 @@ class AdmmHostSolver:
         x_ref: np.ndarray,
         constraints: list[HalfspaceConstraint],
         start_k: int,
+        end_k: int,
         enable_constraints: bool,
     ) -> dict[str, Any]:
         x0_f = np.ascontiguousarray(np.asarray(x0, dtype=np.float32).reshape(self.NSTATES))
-        xref_f = np.ascontiguousarray(np.asarray(x_ref, dtype=np.float32).reshape(self.NHORIZON, self.NSTATES))
-        uref_f = np.zeros((self.NHORIZON - 1, self.NINPUTS), dtype=np.float32)
-        a_hs = np.zeros((self.NHORIZON, self.MAX_HS, 3), dtype=np.float32)
-        b_hs = np.zeros((self.NHORIZON, self.MAX_HS), dtype=np.float32)
-        en_hs = np.zeros((self.NHORIZON, self.MAX_HS), dtype=np.int32)
+        xref_f = np.ascontiguousarray(np.asarray(x_ref, dtype=np.float32).reshape(self.horizon, self.NSTATES))
+        uref_f = np.zeros((self.horizon - 1, self.NINPUTS), dtype=np.float32)
+        a_hs = np.zeros((self.horizon, self.MAX_HS, 3), dtype=np.float32)
+        b_hs = np.zeros((self.horizon, self.MAX_HS), dtype=np.float32)
+        en_hs = np.zeros((self.horizon, self.MAX_HS), dtype=np.int32)
         active_constraints = [constraint for constraint in constraints[: self.MAX_HS] if constraint.active]
         for h, constraint in enumerate(active_constraints):
-            for k in range(max(0, int(start_k)), self.NHORIZON):
+            for k in range(max(0, int(start_k)), min(int(end_k), self.horizon)):
                 a_hs[k, h, :] = np.asarray(constraint.a, dtype=np.float32)
                 b_hs[k, h] = np.float32(constraint.b)
                 en_hs[k, h] = 1
-        x_out = np.zeros((self.NHORIZON, self.NSTATES), dtype=np.float32)
-        u_out = np.zeros((self.NHORIZON - 1, self.NINPUTS), dtype=np.float32)
+        x_out = np.zeros((self.horizon, self.NSTATES), dtype=np.float32)
+        u_out = np.zeros((self.horizon - 1, self.NINPUTS), dtype=np.float32)
         status = ctypes.c_int(0)
         iters = ctypes.c_int(0)
         pri = ctypes.c_float(0.0)
@@ -200,7 +206,12 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=Path("flow_sim_dataset/depth_constraint_closed_loop"))
     ap.add_argument("--duration", type=float, default=7.0)
-    ap.add_argument("--dt", type=float, default=0.05)
+    ap.add_argument("--plant-dt", "--dt", dest="plant_dt", type=float, default=0.002,
+                    help="PyBullet integration and acceleration-shim step [s]")
+    ap.add_argument("--model-dt", type=float, default=0.04,
+                    help="MPC discrete-model knot interval [s]; regenerated from the continuous hover model")
+    ap.add_argument("--mpc-rate-hz", type=float, default=5.0,
+                    help="receding-horizon solve rate; five 0.04 s plan knots are executed at the 5 Hz default")
     ap.add_argument("--gui", action="store_true")
     ap.add_argument("--image-size", type=int, default=160)
     ap.add_argument("--fov-deg", type=float, default=70.0)
@@ -244,8 +255,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--sector-switch-ratio", type=float, default=1.0,
                     help="while a sector is active, switch sectors only if new depth is below ratio*held_depth; >=1 disables")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--start-k", type=int, default=3)
-    ap.add_argument("--horizon", type=int, default=25)
+    ap.add_argument("--start-k", type=int, default=1,
+                    help="first horizon knot with an enabled obstacle half-space")
+    ap.add_argument("--constraint-end-k", type=int, default=11,
+                    help="exclusive final constrained knot; default constrains ten future knots of a 20-knot horizon")
+    ap.add_argument("--horizon", type=int, default=20)
     ap.add_argument("--max-accel", type=float, default=0.8)
     ap.add_argument("--max-forward-speed", type=float, default=0.6)
     ap.add_argument("--max-lateral-speed", type=float, default=0.25)
@@ -280,6 +294,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    _validate_timing(args)
     if args.out.exists() and not args.overwrite:
         raise SystemExit(f"{args.out} exists; use --overwrite or choose --out")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -294,7 +309,7 @@ def main() -> int:
     )
     trajectory = _load_reference_trajectory(args, geometry)
     env_config = GymPybulletGateEnvConfig(
-        dt=float(args.dt),
+        dt=float(args.plant_dt),
         image_size=int(args.image_size),
         fov_deg=float(args.fov_deg),
         max_accel=float(args.max_accel),
@@ -304,7 +319,7 @@ def main() -> int:
         initial_vx=0.0,
         initial_vy=0.0,
         initial_vz=0.0,
-        ctrl_freq=int(round(1.0 / float(args.dt))),
+        ctrl_freq=int(round(1.0 / float(args.plant_dt))),
         gui=bool(args.gui),
         max_forward_speed=float(args.max_forward_speed),
         max_lateral_speed=float(args.max_lateral_speed),
@@ -318,7 +333,13 @@ def main() -> int:
     env = GymPybulletGateEnv(geometry=geometry, config=env_config)
     obstacles = _parse_obstacles(args.obstacle)
     admm_solver = (
-        AdmmHostSolver(args.tinympc_max_iter, args.tinympc_rho, force_rebuild=bool(args.force_rebuild_solver))
+        AdmmHostSolver(
+            args.tinympc_max_iter,
+            args.tinympc_rho,
+            horizon=int(args.horizon),
+            model_dt_s=float(args.model_dt),
+            force_rebuild=bool(args.force_rebuild_solver),
+        )
         if str(args.control_mode) == "admm"
         else None
     )
@@ -331,9 +352,11 @@ def main() -> int:
     try:
         env.reset()
         _add_obstacles(env, obstacles)
-        steps = int(round(float(args.duration) / float(args.dt)))
-        camera_period_steps = max(1, int(round(1.0 / max(1e-6, float(args.camera_rate_hz)) / float(args.dt))))
-        max_constraint_age_steps = max(0, int(round(float(args.constraint_max_age_s) / float(args.dt))))
+        steps = int(round(float(args.duration) / float(args.plant_dt)))
+        camera_period_steps = _period_steps(1.0 / max(1e-6, float(args.camera_rate_hz)), args.plant_dt, "camera")
+        mpc_period_steps = _period_steps(1.0 / float(args.mpc_rate_hz), args.plant_dt, "MPC")
+        model_period_steps = _period_steps(float(args.model_dt), args.plant_dt, "model")
+        max_constraint_age_steps = max(0, int(round(float(args.constraint_max_age_s) / float(args.plant_dt))))
         held_constraints = [_inactive_constraint("no_depth")]
         held_age_steps = max_constraint_age_steps + 1
         min_clearance = math.inf
@@ -351,8 +374,12 @@ def main() -> int:
         false_hit_count = 0
         stale_disabled_count = 0
         switch_suppressed_count = 0
+        mpc_solve_count = 0
+        held_plan: np.ndarray | None = None
+        held_solver_info: dict[str, Any] = {}
+        plan_k = 0
         for step in range(steps):
-            t = step * float(args.dt)
+            t = step * float(args.plant_dt)
             state = env.get_state()
             quat = _env_quat(env)
             rot_wb = _quat_xyzw_to_rot(quat)
@@ -376,17 +403,31 @@ def main() -> int:
             constraint = constraints[0] if constraints else _inactive_constraint("no_depth")
             nominal_velocity = _nominal_velocity(state, t, trajectory, args)
             solver_info: dict[str, Any] = {}
+            mpc_solved = False
             if admm_solver is not None:
-                x0_solver = _solver_state(env, state)
-                x_ref = _reference_trajectory(x0_solver, t, trajectory, constraint, args)
-                solver_info = admm_solver.solve(
-                    x0=x0_solver,
-                    x_ref=x_ref,
-                    constraints=constraints,
-                    start_k=int(args.start_k),
-                    enable_constraints=not bool(args.no_avoidance),
+                if step % mpc_period_steps == 0:
+                    x0_solver = _solver_state(env, state)
+                    x_ref = _reference_trajectory(x0_solver, t, trajectory, constraint, args, admm_solver.horizon)
+                    held_solver_info = admm_solver.solve(
+                        x0=x0_solver,
+                        x_ref=x_ref,
+                        constraints=constraints,
+                        start_k=int(args.start_k),
+                        end_k=int(args.constraint_end_k),
+                        enable_constraints=not bool(args.no_avoidance),
+                    )
+                    held_plan = np.asarray(held_solver_info["states"], dtype=np.float64)
+                    plan_k = 0
+                    mpc_solved = True
+                    mpc_solve_count += 1
+                elif held_plan is not None:
+                    plan_k = min(plan_k + int(step % model_period_steps == 0), admm_solver.horizon - 1)
+                if held_plan is None:
+                    raise RuntimeError("ADMM plan was not initialized")
+                solver_info = held_solver_info
+                command_velocity, violation = _velocity_from_admm_plan(
+                    state, held_plan, constraint, args, plan_k=plan_k
                 )
-                command_velocity, violation = _velocity_from_admm_plan(state, solver_info["states"], constraint, args)
                 if bool(args.admm_safety_filter):
                     command_velocity, violation = _project_velocity(command_velocity, state[:3], constraint, args)
             else:
@@ -399,7 +440,7 @@ def main() -> int:
             if prev_command_velocity is not None:
                 max_command_jump = max(max_command_jump, float(np.linalg.norm(command_velocity - prev_command_velocity)))
             prev_command_velocity = command_velocity.copy()
-            if solver_info.get("states") is not None:
+            if mpc_solved and solver_info.get("states") is not None:
                 terminal = np.asarray(solver_info["states"], dtype=np.float64)[-1, 0:3]
                 if prev_terminal is not None and np.all(np.isfinite(terminal)) and np.all(np.isfinite(prev_terminal)):
                     max_terminal_jump = max(max_terminal_jump, float(np.linalg.norm(terminal - prev_terminal)))
@@ -418,9 +459,13 @@ def main() -> int:
             reached_goal = bool(reached_goal or (t >= float(trajectory.t[-1]) and goal_error <= float(args.goal_tolerance)))
             if constraint.active:
                 active_count += 1
-            rows.append(_log_row(step, t, state, next_state, nominal_velocity, command_velocity, accel, constraint, violation, clearance, info, solver_info))
-            _append_horizon_rows(horizon_rows, step, t, constraint, args)
-            _append_plan_rows(plan_rows, step, t, solver_info)
+            rows.append(_log_row(
+                step, t, state, next_state, nominal_velocity, command_velocity, accel,
+                constraint, violation, clearance, info, solver_info, mpc_solved, plan_k,
+            ))
+            if mpc_solved:
+                _append_horizon_rows(horizon_rows, step, t, constraint, args)
+                _append_plan_rows(plan_rows, step, t, solver_info)
             if collision or reached_goal:
                 break
             held_age_steps += 1
@@ -428,7 +473,14 @@ def main() -> int:
         final_state = env.get_state()
         summary = {
             "steps": len(rows),
-            "sim_time_s": len(rows) * float(args.dt),
+            "sim_time_s": len(rows) * float(args.plant_dt),
+            "plant_dt_s": float(args.plant_dt),
+            "model_dt_s": float(args.model_dt),
+            "mpc_rate_hz": float(args.mpc_rate_hz),
+            "horizon": int(args.horizon),
+            "constraint_start_k": int(args.start_k),
+            "constraint_end_k": int(args.constraint_end_k),
+            "mpc_solve_count": int(mpc_solve_count),
             "control_mode": str(args.control_mode),
             "avoidance_enabled": not bool(args.no_avoidance),
             "constraint_active_steps": active_count,
@@ -503,7 +555,7 @@ def _parse_obstacles(raw_obstacles: list[str] | None) -> list[BoxObstacle]:
 
 def _load_reference_trajectory(args: argparse.Namespace, geometry: GateGeometry) -> ReferenceTrajectory:
     if args.trajectory_file is None:
-        duration = max(float(args.duration), float(args.dt))
+        duration = max(float(args.duration), float(args.plant_dt))
         return ReferenceTrajectory(
             t=np.asarray([0.0, duration], dtype=np.float64),
             pos=np.asarray(
@@ -548,9 +600,10 @@ def _load_reference_trajectory(args: argparse.Namespace, geometry: GateGeometry)
     return ReferenceTrajectory(t=t, pos=pos, vel=vel)
 
 
-def _build_admm_host_library(force: bool = False) -> Path:
+def _build_admm_host_library(horizon: int, force: bool = False) -> Path:
+    game_root = APP_ROOT.parents[2] / "game-on-the-flat"
     build_dir = Path(tempfile.gettempdir()) / "tinympc_admm_host"
-    output = build_dir / "libtinympc_admm_host.so"
+    output = build_dir / f"libtinympc_admm_host_n{int(horizon)}.so"
     sources = [
         APP_ROOT / "tools" / "tinympc_admm_host.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "model.cpp",
@@ -561,11 +614,16 @@ def _build_admm_host_library(force: bool = False) -> Path:
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "admm.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "rho_benchmark.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "utils.cpp",
+        game_root / "src" / "tinympc_model.c",
+        game_root / "src" / "dare.c",
+        game_root / "src" / "quat.c",
+        game_root / "src" / "linalg.c",
     ]
     headers = [
         APP_ROOT / "src" / "params_100hz.h",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "types.h",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "admm.h",
+        game_root / "include" / "gotf" / "tinympc_model.h",
     ]
     newest_input = max(path.stat().st_mtime for path in [*sources, *headers])
     if output.exists() and not force and output.stat().st_mtime >= newest_input:
@@ -577,14 +635,39 @@ def _build_admm_host_library(force: bool = False) -> Path:
         "-O2",
         "-shared",
         "-fPIC",
+        f"-DNHORIZON={int(horizon)}",
         f"-I{APP_ROOT / 'TinyMPC-ADMM' / 'src'}",
         f"-I{APP_ROOT / 'TinyMPC-ADMM' / 'ext' / 'Eigen'}",
+        f"-I{game_root / 'include'}",
         *[str(path) for path in sources],
         "-o",
         str(output),
     ]
     subprocess.run(command, cwd=APP_ROOT, check=True)
     return output
+
+
+def _period_steps(period_s: float, plant_dt_s: float, label: str) -> int:
+    ratio = float(period_s) / float(plant_dt_s)
+    rounded = int(round(ratio))
+    if rounded < 1 or not math.isclose(ratio, rounded, rel_tol=0.0, abs_tol=1e-8):
+        raise SystemExit(f"{label} period {period_s:g}s is not an integer multiple of plant dt {plant_dt_s:g}s")
+    return rounded
+
+
+def _validate_timing(args: argparse.Namespace) -> None:
+    if float(args.plant_dt) <= 0.0 or float(args.model_dt) <= 0.0 or float(args.mpc_rate_hz) <= 0.0:
+        raise SystemExit("--plant-dt, --model-dt, and --mpc-rate-hz must be positive")
+    _period_steps(float(args.model_dt), float(args.plant_dt), "model")
+    mpc_period_s = 1.0 / float(args.mpc_rate_hz)
+    _period_steps(mpc_period_s, float(args.plant_dt), "MPC")
+    model_per_mpc = mpc_period_s / float(args.model_dt)
+    if not math.isclose(model_per_mpc, round(model_per_mpc), rel_tol=0.0, abs_tol=1e-8):
+        raise SystemExit("MPC period must contain an integer number of model knots")
+    if int(args.horizon) < 2:
+        raise SystemExit("--horizon must be at least 2")
+    if not 0 <= int(args.start_k) < int(args.constraint_end_k) <= int(args.horizon):
+        raise SystemExit("need 0 <= --start-k < --constraint-end-k <= --horizon")
 
 
 def _add_obstacles(env: GymPybulletGateEnv, obstacles: list[BoxObstacle]) -> None:
@@ -837,10 +920,11 @@ def _reference_trajectory(
     trajectory: ReferenceTrajectory,
     constraint: HalfspaceConstraint,
     args: argparse.Namespace,
+    horizon: int,
 ) -> np.ndarray:
-    x_ref = np.zeros((AdmmHostSolver.NHORIZON, AdmmHostSolver.NSTATES), dtype=np.float64)
-    for k in range(AdmmHostSolver.NHORIZON):
-        ref_pos, ref_vel = trajectory.sample(float(t) + k * float(args.dt))
+    x_ref = np.zeros((int(horizon), AdmmHostSolver.NSTATES), dtype=np.float64)
+    for k in range(int(horizon)):
+        ref_pos, ref_vel = trajectory.sample(float(t) + k * float(args.model_dt))
         if constraint.active and float(args.admm_reference_sidestep) > 0.0:
             obstacle_side = float(constraint.obstacle_center[1] - x0[1])
             side = -math.copysign(1.0, obstacle_side) if abs(obstacle_side) > 1e-3 else -1.0
@@ -856,12 +940,17 @@ def _velocity_from_admm_plan(
     planned_states: np.ndarray,
     constraint: HalfspaceConstraint,
     args: argparse.Namespace,
+    plan_k: int,
 ) -> tuple[np.ndarray, float]:
-    plan = np.asarray(planned_states, dtype=np.float64).reshape(AdmmHostSolver.NHORIZON, AdmmHostSolver.NSTATES)
-    target = plan[-1, 0:3].copy()
+    plan = np.asarray(planned_states, dtype=np.float64).reshape(-1, AdmmHostSolver.NSTATES)
+    # The simulation's acceleration/PID shim cannot accept motor duty directly.
+    # Execute the next consecutive state target instead of repeatedly steering
+    # toward the terminal point, which faithfully represents 25 Hz plan-knot
+    # execution between 5 Hz replans.
+    target = plan[min(max(1, int(plan_k) + 1), len(plan) - 1), 0:3].copy()
     target[2] = float(np.clip(target[2], float(args.admm_min_target_z), float(args.admm_max_target_z)))
     pos = np.asarray(state[:3], dtype=np.float64)
-    velocity = (target - pos) / max(1e-3, float(args.lookahead_s))
+    velocity = (target - pos) / max(1e-3, float(args.model_dt))
     velocity[0] = float(np.clip(velocity[0], 0.05, float(args.max_forward_speed)))
     if constraint.active and float(args.admm_forward_slack_scale) > 0.0:
         forward_cap = max(0.05, float(args.admm_forward_slack_scale) * max(0.0, constraint.current_slack_m) / max(1e-3, float(args.lookahead_s)))
@@ -913,7 +1002,7 @@ def _append_horizon_rows(
     args: argparse.Namespace,
 ) -> None:
     for k in range(int(args.horizon)):
-        enabled = bool(constraint.active and k >= int(args.start_k))
+        enabled = bool(constraint.active and int(args.start_k) <= k < int(args.constraint_end_k))
         rows.append(
             [
                 step,
@@ -943,7 +1032,7 @@ def _append_plan_rows(
 ) -> None:
     if solver_info.get("states") is None:
         return
-    states = np.asarray(solver_info["states"], dtype=np.float64).reshape(AdmmHostSolver.NHORIZON, AdmmHostSolver.NSTATES)
+    states = np.asarray(solver_info["states"], dtype=np.float64).reshape(-1, AdmmHostSolver.NSTATES)
     for k, state in enumerate(states):
         rows.append(
             [
@@ -973,6 +1062,8 @@ def _log_row(
     clearance: float,
     info: dict[str, Any],
     solver_info: dict[str, Any],
+    mpc_solved: bool,
+    plan_k: int,
 ) -> list[object]:
     terminal = np.full(3, math.nan, dtype=np.float64)
     if solver_info.get("states") is not None:
@@ -1001,6 +1092,8 @@ def _log_row(
         constraint.status,
         constraint.age_frames,
         bool(info.get("collision", False)),
+        int(mpc_solved),
+        int(plan_k),
         solver_info.get("status", ""),
         solver_info.get("iterations", ""),
         "" if not solver_info else f"{float(solver_info.get('pri_res', math.nan)):.9f}",
@@ -1055,6 +1148,8 @@ def _write_log(path: Path, rows: list[list[object]]) -> None:
                 "status",
                 "constraint_age_frames",
                 "gate_collision",
+                "mpc_solved",
+                "executed_plan_k",
                 "admm_status",
                 "admm_iterations",
                 "admm_pri_res",

@@ -47,6 +47,42 @@ tools/run_depth_constraint_sim.py \
   --overwrite
 ```
 
+## 5 Hz multirate experiment
+
+The following is the first experiment for the proposed slow-replanning
+architecture. PyBullet integrates the plant at 500 Hz, the MPC model has 40 ms
+knots, and the solver replans every 200 ms. Between replans the acceleration/PID
+shim follows five consecutive predicted state targets; it does not repeatedly
+command the terminal state.
+
+```bash
+tools/run_depth_constraint_sim.py \
+  --out sim_runs/multirate_5hz \
+  --duration 8 \
+  --plant-dt 0.002 \
+  --model-dt 0.04 \
+  --mpc-rate-hz 5 \
+  --horizon 20 \
+  --start-k 1 \
+  --constraint-end-k 11 \
+  --camera-rate-hz 25 \
+  --target-speed 0.4 \
+  --control-mode admm \
+  --obstacle center_box,1.55,0.18,1.10,0.16,0.22,0.28 \
+  --overwrite
+```
+
+The host solver regenerates its `A/B` at the requested model timestep from the
+continuous Crazyflie hover model using RK4 plus a discrete-transition
+linearization. It then recomputes `Pinf`, `Kinf`, and the ADMM primal-cache
+matrices. This follows TinyMPC's documented model workflow: discretize first,
+then linearize the discrete transition. It is host-simulation-only; it does not
+change the firmware's generated 20 ms data.
+
+`--constraint-end-k 11` is exclusive, so with `--horizon 20` the half-space is
+active at the ten future knots 1 through 10. The remainder of the horizon is intentionally
+unconstrained, leaving the optimizer a route to the nominal destination.
+
 Outputs:
 
 - `summary.json`: run result and obstacle/goal metadata.

@@ -277,7 +277,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     image_wire, states, capture_rows, saved_frames = make_inputs(args.capture)
-    repo = Path(__file__).resolve().parents[3]
+    repo = Path(__file__).resolve().parents[5]
     with tempfile.TemporaryDirectory(prefix="himax-capture-replay-") as tmp:
         gap, stm = build(repo, args.nanocockpit, Path(tmp))
         gap_rows = run_csv(gap, image_wire)

@@ -15,8 +15,8 @@ import analyze_obstacle_corpus
 
 
 SCRIPT = Path(__file__).resolve()
-APP_DIR = SCRIPT.parents[2]
-CF_REPO = SCRIPT.parents[4]
+APP_DIR = SCRIPT.parents[3]
+CF_REPO = SCRIPT.parents[5]
 WORKSPACE = CF_REPO.parent
 DEFAULT_GAP_REPO = WORKSPACE / "tinympc-nanocockpit"
 RESULTS = APP_DIR / "tools/results/flow_obstacle_validation_2026-07-23.json"

@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 
-APP = pathlib.Path(__file__).resolve().parents[2]
+APP = pathlib.Path(__file__).resolve().parents[3]
 SOURCE = r"""
 #include <math.h>
 #include <stdint.h>
@@ -140,8 +140,8 @@ def main() -> None:
                 "-Wextra",
                 "-Wno-unused-variable",
                 f"-I{APP}",
-                f"-I{APP / 'tools/equivalence/mocks'}",
-                f"-I{APP / 'tools/equivalence/stubs'}",
+                f"-I{APP / 'tools/flow_gap8_validation/equivalence/mocks'}",
+                f"-I{APP / 'tools/flow_gap8_validation/equivalence/stubs'}",
                 str(source),
                 "-lm",
                 "-o",

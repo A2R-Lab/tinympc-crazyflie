@@ -41,6 +41,8 @@ extern float seqAvoidScanRetryMaxS;
 extern float seqAvoidCruiseSpeedMps;
 extern float seqAvoidCruiseAccelMps2;
 extern float seqAvoidBrakingAccelMps2;
+extern float seqAvoidSpeedStopMinM;
+extern float seqAvoidSpeedResumeMinM;
 extern float seqAvoidGoalToleranceM;
 extern float seqAvoidSideMinimumM;
 extern uint8_t seqAvoidSideVotesRequired;
@@ -103,6 +105,7 @@ extern float g_seq_barrier_a1;
 extern float g_seq_barrier_b;
 extern float g_seq_forward_clearance_m;
 extern float g_seq_cruise_speed_mps;
+extern uint8_t g_seq_speed_halted;
 extern float g_seq_goal_distance_m;
 extern uint8_t g_seq_goal_reached;
 extern float g_seq_forward_open_average[4];
@@ -150,6 +153,8 @@ PARAM_ADD(PARAM_FLOAT, scanRetryMax, &seqAvoidScanRetryMaxS)
 PARAM_ADD(PARAM_FLOAT, cruise, &seqAvoidCruiseSpeedMps)
 PARAM_ADD(PARAM_FLOAT, cruiseAcc, &seqAvoidCruiseAccelMps2)
 PARAM_ADD(PARAM_FLOAT, brakeAcc, &seqAvoidBrakingAccelMps2)
+PARAM_ADD(PARAM_FLOAT, speedStop, &seqAvoidSpeedStopMinM)
+PARAM_ADD(PARAM_FLOAT, speedResume, &seqAvoidSpeedResumeMinM)
 PARAM_ADD(PARAM_FLOAT, goalTol, &seqAvoidGoalToleranceM)
 PARAM_ADD(PARAM_FLOAT, sideMin, &seqAvoidSideMinimumM)
 PARAM_ADD(PARAM_UINT8, sideVotes, &seqAvoidSideVotesRequired)
@@ -220,6 +225,7 @@ LOG_ADD(LOG_FLOAT, barrierA1, &g_seq_barrier_a1)
 LOG_ADD(LOG_FLOAT, barrierB, &g_seq_barrier_b)
 LOG_ADD(LOG_FLOAT, fwdClear, &g_seq_forward_clearance_m)
 LOG_ADD(LOG_FLOAT, speedCmd, &g_seq_cruise_speed_mps)
+LOG_ADD(LOG_UINT8, speedHalt, &g_seq_speed_halted)
 LOG_ADD(LOG_FLOAT, goalDist, &g_seq_goal_distance_m)
 LOG_ADD(LOG_UINT8, goalReached, &g_seq_goal_reached)
 LOG_ADD(LOG_FLOAT, openAvg0, &g_seq_forward_open_average[0])

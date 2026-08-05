@@ -337,7 +337,7 @@ def main() -> int:
     parser.add_argument("--nanocockpit", type=Path, required=True)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    repo = HERE.parents[3]
+    repo = HERE.parents[4]
     controller_defaults = audit_controller_defaults(repo)
     with tempfile.TemporaryDirectory(prefix="exact-course-sim-") as tmp_name:
         gap, stm = build(repo, args.nanocockpit, Path(tmp_name))

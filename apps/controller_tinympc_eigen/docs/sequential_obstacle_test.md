@@ -74,12 +74,16 @@ this mode.
 The host sends one fixed final goal. Firmware advances an internal centerline
 reference at 50 Hz and pauses it during lateral avoidance or return scanning.
 Forward clearance is `min(d1, d2)`, using the two center camera slices so side
-walls do not unnecessarily limit longitudinal speed. The stopping-distance bound
-is `sqrt(2 * brakeAcc * max(fwdClear - safeMin, 0))`, capped by `cruise` and
-rate-limited by `cruiseAcc` and `brakeAcc`. Defaults are 0.40 m/s cruise,
-0.40 m/s^2 acceleration, and 0.60 m/s^2 braking. `speedCmd`, `fwdClear`,
-`goalDist`, and `goalReached` expose the governor. The script's `--timeout-s` is
-only a safety deadline; it does not determine flight speed.
+walls do not unnecessarily limit longitudinal speed. Its stop/restart threshold
+is intentionally separate from `safeMin`: defaults are `speedStop=0.20 m` and
+`speedResume=0.23 m`, while `safeMin` still controls classifier danger and
+evasion. This prevents borderline readings around `safeMin` from stopping the
+circle before the moving-average trigger has decided to evade. When not halted,
+the stopping-distance bound is `sqrt(2 * brakeAcc * max(fwdClear - speedStop, 0))`,
+capped by `cruise` and rate-limited by `cruiseAcc` and `brakeAcc`. Defaults are
+0.40 m/s cruise, 0.40 m/s^2 acceleration, and 0.60 m/s^2 braking. `speedCmd`,
+`speedHalt`, `fwdClear`, `goalDist`, and `goalReached` expose the governor. The
+script's `--timeout-s` is only a safety deadline; it does not determine flight speed.
 
 ## Circular obstacle course
 
@@ -95,7 +99,10 @@ The circle phase freezes throughout a lateral sidestep and PID-only peer scan.
 Once a sidestep clears, its retained displacement is represented as a signed
 radial offset that rotates with the circular centerline. This keeps the bypass
 arc lateral to the path instead of leaving a fixed world-frame offset as the
-vehicle turns. `visGate.phase` and `visGate.laps` are logged in the CSV.
+vehicle turns. The post-evasion half-space rotates with the same offset and is
+re-anchored on the current displaced circle point; it therefore cannot become a
+stale world-frame plane that opposes the circle as its tangent changes.
+`visGate.phase` and `visGate.laps` are logged in the CSV.
 
 For the first props-on course, use one lap at radius 1.5 m and 0.35--0.40 m/s,
 with room for the 0.75 m maximum lateral bypass on both sides of the nominal
@@ -165,6 +172,13 @@ paused and the held position plus scan yaw are sent directly to the stock PID;
 `obs.scanBypass` counts these PID-only scan cycles. Since TinyMPC never observes
 the peer yaw, its position/constraint warm start is preserved when longitudinal
 planning resumes.
+TinyMPC runs at 25 Hz with a three-iteration ADMM cap in a priority-1 worker while the stock PID remains at
+500 Hz. CRTP transmission and GAP8 UART reception run above the MPC worker, so
+an approximately 11 ms ADMM solve cannot starve commander keepalives or vision
+input. Periodic solver console printing is disabled and nonessential CSV blocks
+are sampled at 5--10 Hz to preserve radio margin. `obs.cmdAge`,
+`obs.cmdDisabled`, `radio.rssi`, and `supervisor.info` distinguish a commander
+watchdog event from a solver-task failure on subsequent runs.
 `--confidence-min`,
 `--vision-grace-ms`, `--side-min`, `--side-votes`, `--forward-min`,
 `--forward-step`, `--pass-distance`, `--clear-votes`, `--probe-progress`,

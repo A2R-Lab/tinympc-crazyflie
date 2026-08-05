@@ -344,7 +344,7 @@ def main() -> int:
                         default=Path("/home/cchen/tinympc-nanocockpit"))
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    repo = HERE.parents[3]
+    repo = HERE.parents[4]
 
     records, corpus_wire = render_corpus()
     state_wire = stm32_input(records, python_gap8(records)[0])

@@ -80,6 +80,9 @@ int8_t sequentialSelectEvasionSide(
 bool sequentialLateralBarrierRow(const float side_world[3],
                                  const float anchor_world[3],
                                  float a_position[3], float *b);
+bool sequentialOffsetBarrierRow(const float nominal_world[3],
+                                const float offset_world[3],
+                                float a_position[3], float *b);
 float sequentialReturnScanYawDeg(float base_yaw_deg, int evasion_direction,
                                  float yaw_offset_deg);
 float sequentialSlewYawDeg(float current_yaw_deg, float target_yaw_deg,
@@ -88,6 +91,9 @@ float sequentialClearanceSpeedMps(float forward_clearance_m,
                                   float safety_distance_m,
                                   float cruise_speed_mps,
                                   float braking_acceleration_mps2);
+bool sequentialSpeedStopUpdate(bool was_stopped, float forward_clearance_m,
+                               float stop_distance_m,
+                               float resume_distance_m);
 float sequentialRateLimitSpeedMps(float current_speed_mps,
                                   float target_speed_mps,
                                   float acceleration_mps2,

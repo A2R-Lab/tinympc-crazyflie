@@ -279,7 +279,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="exact-race-sim-") as tmp_name:
-        gap, stm = build(HERE.parents[3], args.nanocockpit, Path(tmp_name))
+        gap, stm = build(HERE.parents[4], args.nanocockpit, Path(tmp_name))
         image_wire, states = render_inputs()
         gap_rows = run_csv(gap, image_wire)
         stm_rows: list[dict[str, str]] = []

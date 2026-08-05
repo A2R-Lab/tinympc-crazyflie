@@ -9,7 +9,7 @@ import audit_gap8_firmware as audit
 
 
 ROOT = Path(os.environ.get("NANOCOCKPIT_ROOT", "/tmp/tinympc-nanocockpit"))
-APP = Path(__file__).resolve().parents[1]
+APP = Path(__file__).resolve().parents[2]
 WORKSPACE = APP.parents[1]
 
 

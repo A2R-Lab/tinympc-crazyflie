@@ -61,7 +61,7 @@ than the poor live tests:
 
 ## Exact-source image simulation
 
-`tools/equivalence/run_exact_track_image_sim.py` does not reimplement the
+`tools/flow_gap8_validation/equivalence/run_exact_track_image_sim.py` does not reimplement the
 algorithm in Python. Python renders deterministic calibrated grayscale inputs
 and orchestrates the run. The GAP8 executable contains verbatim function bodies
 extracted from `pulp-frontnet/main.c`; the STM32 executable directly includes

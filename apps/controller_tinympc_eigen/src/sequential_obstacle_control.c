@@ -115,6 +115,23 @@ bool sequentialLateralBarrierRow(const float side_world[3],
   return true;
 }
 
+bool sequentialOffsetBarrierRow(const float nominal_world[3],
+                                const float offset_world[3],
+                                float a_position[3], float *b) {
+  const float norm = hypotf(offset_world[0], offset_world[1]);
+  if (norm < 1.0e-4f || b == NULL) return false;
+  const float side_world[3] = {
+    offset_world[0] / norm, offset_world[1] / norm, 0.0f,
+  };
+  const float anchor_world[3] = {
+    nominal_world[0] + offset_world[0],
+    nominal_world[1] + offset_world[1],
+    nominal_world[2] + offset_world[2],
+  };
+  return sequentialLateralBarrierRow(side_world, anchor_world,
+                                     a_position, b);
+}
+
 float sequentialReturnScanYawDeg(float base_yaw_deg, int evasion_direction,
                                  float yaw_offset_deg) {
   const float sign = evasion_direction == 0 ? 1.0f :
@@ -157,6 +174,16 @@ float sequentialClearanceSpeedMps(float forward_clearance_m,
     return 0.0f;
   }
   return fminf(cruise, sqrtf(2.0f * braking * available));
+}
+
+bool sequentialSpeedStopUpdate(bool was_stopped, float forward_clearance_m,
+                               float stop_distance_m,
+                               float resume_distance_m) {
+  if (!isfinite(forward_clearance_m)) return true;
+  const float stop = fmaxf(0.0f, stop_distance_m);
+  const float resume = fmaxf(stop, resume_distance_m);
+  return was_stopped ? forward_clearance_m < resume
+                     : forward_clearance_m <= stop;
 }
 
 float sequentialRateLimitSpeedMps(float current_speed_mps,
