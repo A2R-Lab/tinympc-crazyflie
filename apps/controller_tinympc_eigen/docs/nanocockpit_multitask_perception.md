@@ -80,8 +80,8 @@ directions, map age, danger, and slack before untethered operation.
 ```bash
 cd ~/tinympc-crazyflie/apps/controller_tinympc_eigen
 ~/isaacsim-env/bin/python -m pytest -q \
-  tools/flow_gap8_validation/equivalence/test_perception_*.py \
-  tools/flow_gap8_validation/equivalence/test_gate_pnp_multitask_abi.py
+  tools/vision_validation/equivalence/test_perception_*.py \
+  tools/vision_validation/equivalence/test_gate_pnp_multitask_abi.py
 
 apptainer exec --bind ~/tinympc-crazyflie:~/tinympc-crazyflie \
   --pwd ~/tinympc-crazyflie/apps/controller_tinympc_eigen \

@@ -44,7 +44,7 @@ No changes were committed, pushed, or submitted as a pull request.
 - The bench logger now records all nine sectors, per-log-block Crazyflie
   timestamps, ground-truth metadata, exact source state, transport health,
   rejection intermediates, and evidence-vote counters.
-- `tools/flow_gap8_validation/hardware/obstacle_corpus.json` defines 90 positive and 48 negative
+- `tools/vision_validation/hardware/obstacle_corpus.json` defines 90 positive and 48 negative
   cases per feature configuration. It covers every requested
   distance/orientation/lateral-offset triple while balancing shape, width,
   depth configuration, texture, lighting, and motion. Negative cases cover
@@ -99,7 +99,7 @@ SDK-default 1500 kHz. Both final configurations link successfully:
 Raw clean-build logs and preserved ELF/size outputs are stored under
 `tinympc-nanocockpit/src/gap/examples/pulp-frontnet/tools/{build_logs,build_artifacts}`.
 The STM32 clean-build log and preserved `.bin`/`.hex` outputs are under
-`tools/flow_gap8_validation/hardware/{build_logs,build_artifacts}`. SHA-256 hashes for these
+`tools/vision_validation/hardware/{build_logs,build_artifacts}`. SHA-256 hashes for these
 artifacts are recorded in the machine-readable results JSON.
 
 Both HyperFlash writes reached `flasher is done` and subsequent JTAG runs
@@ -133,7 +133,7 @@ The updated STM32 raw image (reported by the radio loader as 337,339 bytes,
 `radio://0/80/2M/E7E7E7E7E8`. The prior 0.002-rad gate produced a stationary
 false cylinder, motivating a 0.004-rad aggregate-displacement threshold and a
 regression test. The 60 s rerun
-`tools/flow_gap8_validation/hardware/logs/f27-stationary-threshold-0p004.csv` contains 1,200 rows:
+`tools/vision_validation/hardware/logs/f27-stationary-threshold-0p004.csv` contains 1,200 rows:
 919 received samples, all 919 new, zero CRC/bad/duplicate/invalid frames,
 sequence gaps/resets, UART queue drops, persistent-map votes, obstacle outputs,
 or cylinder outputs. All 919 samples were rejected by the low-motion gate.
@@ -205,7 +205,7 @@ A subsequent physically protected, log-only flight diagnostic explicitly armed
 the Crazyflie, took off under PID to a commanded 0.30 m, switched to TinyMPC,
 commanded six seconds of +/-0.10 m lateral peering, returned to the origin
 setpoint, and landed under PID. The 634-row log is
-`tools/flow_gap8_validation/hardware/logs/f27-protected-hover-positive-001.csv`. During the peer
+`tools/vision_validation/hardware/logs/f27-protected-hover-positive-001.csv`. During the peer
 phase, estimated lateral position ranged from -0.130 to +0.036 m and estimated
 altitude averaged 0.271 m. Flow receive count advanced from 6098 to 6315, but
 `mapPeak`, `cylValid`, `cylConf`, and the frozen-obstacle flag all remained
@@ -329,7 +329,7 @@ respectively. A 20 ms setting starved parameter initialization after the 16 log
 blocks started and was rejected. These synchronization runs are explicitly
 outside the obstacle corpus.
 
-`tools/flow_gap8_validation/hardware/audit_validation_bundle.py` verifies current commit/dirty state,
+`tools/vision_validation/hardware/audit_validation_bundle.py` verifies current commit/dirty state,
 saved build hashes, compiled/Python equivalence, both timing gates, strict
 corpus coverage, and the remaining quality gates. Its saved
 `flow_obstacle_completion_audit.json` currently reports `incomplete`, as

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot one closed-loop depth-constraint run.
 
-The input is a run directory produced by tools/run_depth_constraint_sim.py, for
+The input is a run directory produced by tools/pybullet_simulation/run_depth_constraint_sim.py, for
 example flow_sim_dataset/depth_constraint_batch/case_010_avoid.
 """
 

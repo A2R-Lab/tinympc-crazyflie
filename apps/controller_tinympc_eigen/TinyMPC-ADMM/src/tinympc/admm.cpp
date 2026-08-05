@@ -41,6 +41,11 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
   can_print = work->stgs->verbose;
   compute_cost_function = work->stgs->verbose;
 
+  // Seed iteration 1 from the persisted ADMM auxiliaries and duals. The
+  // controller has already refreshed the reference-only linear cost, so this
+  // converts it to the constrained cost before the first primal update.
+  tiny_UpdateConstrainedLinearCost(work);
+
   if (work->stgs->verbose) {
   // Print Header for every column
     PrintHeader();

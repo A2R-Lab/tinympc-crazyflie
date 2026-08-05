@@ -24,7 +24,7 @@ checkout, and Python must have `autograd` and `numpy` installed.
 From `apps/controller_tinympc_eigen`, run:
 
 ```bash
-python3 tools/tinympc_to_crazyflie_adapter.py
+python3 tools/firmware_codegen/tinympc_to_crazyflie_adapter.py
 make
 ```
 
@@ -34,7 +34,7 @@ and constrained portion of the horizon. Press Enter to accept any displayed
 default. It then:
 
 1. builds and linearizes the selected Crazyflie dynamics with Autograd;
-2. calls current TinyMPC through `tools/tinympc_cpp_bridge.cpp` to precompute
+2. calls current TinyMPC through `tools/firmware_codegen/tinympc_cpp_bridge.cpp` to precompute
    the Riccati and affine caches; and
 3. writes `src/tinympc_generated_params.h` for the STM32 build.
 

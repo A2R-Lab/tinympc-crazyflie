@@ -38,7 +38,7 @@ sim/trajectories/straight.csv
 ## Single Run
 
 ```bash
-tools/run_depth_constraint_sim.py \
+tools/pybullet_simulation/run_depth_constraint_sim.py \
   --out sim_runs/single \
   --trajectory-file sim/trajectories/straight.csv \
   --duration 8.0 \
@@ -56,7 +56,7 @@ shim follows five consecutive predicted state targets; it does not repeatedly
 command the terminal state.
 
 ```bash
-tools/run_depth_constraint_sim.py \
+tools/pybullet_simulation/run_depth_constraint_sim.py \
   --out sim_runs/multirate_5hz \
   --duration 8 \
   --plant-dt 0.002 \
@@ -93,7 +93,7 @@ Outputs:
 Plot:
 
 ```bash
-tools/plot_depth_constraint_run.py sim_runs/single
+tools/pybullet_simulation/plot_depth_constraint_run.py sim_runs/single
 ```
 
 This writes:
@@ -105,7 +105,7 @@ sim_runs/single/trajectory_topdown.png
 ## Batch Run
 
 ```bash
-tools/batch_depth_constraint_sim.py \
+tools/pybullet_simulation/batch_depth_constraint_sim.py \
   --out sim_runs/batch \
   --cases 12 \
   --trajectory-file sim/trajectories/straight.csv \
@@ -117,7 +117,7 @@ tools/batch_depth_constraint_sim.py \
 Plot every case:
 
 ```bash
-tools/plot_depth_constraint_run.py sim_runs/batch
+tools/pybullet_simulation/plot_depth_constraint_run.py sim_runs/batch
 ```
 
 Find crashed avoidance runs:

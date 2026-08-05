@@ -207,8 +207,10 @@ def linearize_discrete_model(problem: CompileTimeProblem):
     hover_input = vehicle_mass(problem) * 9.81 / problem.input_dim
     ugoal = np.full(problem.input_dim, hover_input)
     A = AG.jacobian(lambda x_: rk4(dynamics, x_, ugoal, problem.model_dt_s))(xgoal)
-    B = AG.jacobian(lambda u_: rk4(dynamics, xgoal, u_, problem.model_dt_s))(ugoal)
-    f = rk4(dynamics, xgoal, ugoal, problem.model_dt_s) - A @ xgoal - B @ ugoal
+    B = AG.jacobian(
+        lambda delta_u: rk4(dynamics, xgoal, ugoal + delta_u, problem.model_dt_s)
+    )(np.zeros(problem.input_dim))
+    f = rk4(dynamics, xgoal, ugoal, problem.model_dt_s)
     return A, B, f
 
 
@@ -236,7 +238,23 @@ def build_cost_matrices(problem: CompileTimeProblem):
             ]
         )
     )
-    R = np.diag(np.full(problem.input_dim, 100.0))
+    _, _, physical_hover = build_input_bounds_and_reference(problem)
+    match problem.crazyflie:
+        case "brushless":
+            hover_command = np.sqrt(physical_hover / (3.72e-8 * 2900.0**2))
+            thrust_slope = 2.0 * 3.72e-8 * 2900.0**2 * hover_command
+        case "brushed":
+            a = 2.130295e-11
+            b = 1.032633e-6
+            c = 5.484560e-4 - physical_hover
+            raw_hover_command = (-b + np.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
+            thrust_slope = (2.0 * a * raw_hover_command + b) * 65535.0
+        case _:
+            raise ValueError(f"unsupported Crazyflie: {problem.crazyflie}")
+
+    # Preserve the legacy normalized-command cost after changing solver inputs
+    # to thrust deviations in Newtons.
+    R = np.diag(100.0 / thrust_slope**2)
     return Q, R
 
 
@@ -318,7 +336,7 @@ def build_constraint_time_mask(problem: CompileTimeProblem):
 def build_upstream_cache(problem: CompileTimeProblem, A, B, f, Q, R):
     import numpy as np
 
-    repository_root = Path(__file__).resolve().parents[3]
+    repository_root = Path(__file__).resolve().parents[4]
     upstream_root = (repository_root / "TinyMPC").resolve()
     bridge_source = Path(__file__).with_name("tinympc_cpp_bridge.cpp")
     required = (
@@ -435,7 +453,10 @@ def emit_firmware_header(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> P
     import numpy as np
 
     state_lower, state_upper = build_state_bounds(problem)
-    input_lower, input_upper, hover_reference = build_input_bounds_and_reference(problem)
+    physical_lower, physical_upper, physical_hover = build_input_bounds_and_reference(problem)
+    input_lower = physical_lower - physical_hover
+    input_upper = physical_upper - physical_hover
+    hover_reference = np.zeros(problem.input_dim)
     state_lower_horizon = np.repeat(state_lower[:, None], problem.horizon_knots, axis=1)
     state_upper_horizon = np.repeat(state_upper[:, None], problem.horizon_knots, axis=1)
     input_lower_horizon = np.repeat(input_lower[:, None], problem.horizon_knots - 1, axis=1)
@@ -473,6 +494,7 @@ def emit_firmware_header(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> P
         format_c_array("tinympc_generated_input_lower", input_lower_horizon),
         format_c_array("tinympc_generated_input_upper", input_upper_horizon),
         format_c_array("tinympc_generated_hover_reference", hover_reference),
+        format_c_array("tinympc_generated_physical_hover_thrust", physical_hover),
         format_c_array("tinympc_generated_constraint_knot_mask", constraint_mask, "uint8_t"),
         format_c_array("tinympc_generated_coeff_d2p", coeff_d2p),
         format_c_array("tinympc_generated_tv_state_a", tv_state_a, constant=False),
@@ -494,6 +516,10 @@ def emit_firmware_header(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> P
   float command = sqrtf(thrust_newtons / 3.72e-8f) / 2900.0f;
   return command > 1.0f ? 1.0f : command;
 """
+        inverse_actuator_body = """\
+  const float rotor_speed = 2900.0f * command;
+  return 3.72e-8f * rotor_speed * rotor_speed;
+"""
     else:
         actuator_body = """\
   const float a = 2.130295e-11f;
@@ -504,6 +530,11 @@ def emit_firmware_header(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> P
   float command = (-b + sqrtf(discriminant)) / (2.0f * a * 65535.0f);
   if (command <= 0.0f) return 0.0f;
   return command > 1.0f ? 1.0f : command;
+"""
+        inverse_actuator_body = """\
+  const float raw_command = 65535.0f * command;
+  return 2.130295e-11f * raw_command * raw_command
+      + 1.032633e-6f * raw_command + 5.484560e-4f;
 """
 
     content = f"""\
@@ -567,10 +598,15 @@ static inline float tinympc_generated_thrust_to_normalized_command(float thrust_
   if (thrust_newtons <= 0.0f) return 0.0f;
 {actuator_body}}}
 
+static inline float tinympc_generated_normalized_command_to_thrust(float command) {{
+  if (command <= 0.0f) return 0.0f;
+  if (command > 1.0f) command = 1.0f;
+{inverse_actuator_body}}}
+
 #endif
 """
 
-    output_path = Path(__file__).resolve().parents[1] / "src/tinympc_generated_params.h"
+    output_path = Path(__file__).resolve().parents[2] / "src/tinympc_generated_params.h"
     output_path.write_text(content)
     return output_path
 
@@ -578,12 +614,17 @@ static inline float tinympc_generated_thrust_to_normalized_command(float thrust_
 def validate_generated_problem(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> None:
     import numpy as np
 
-    input_lower, input_upper, hover_reference = build_input_bounds_and_reference(problem)
+    physical_lower, physical_upper, physical_hover = build_input_bounds_and_reference(problem)
+    input_lower = physical_lower - physical_hover
+    input_upper = physical_upper - physical_hover
+    hover_reference = np.zeros(problem.input_dim)
     hover_next = A @ np.zeros(problem.state_dim) + B @ hover_reference + f
     if np.linalg.norm(hover_next, ord=np.inf) > 1e-8:
         raise ValueError("the generated affine model does not preserve hover")
     if not np.all(input_lower <= hover_reference) or not np.all(hover_reference <= input_upper):
-        raise ValueError("hover thrust lies outside the generated input bounds")
+        raise ValueError("zero hover deviation lies outside the generated input bounds")
+    if not np.all(physical_lower <= physical_hover) or not np.all(physical_hover <= physical_upper):
+        raise ValueError("physical hover thrust lies outside the actuator bounds")
     state_lower, state_upper = build_state_bounds(problem)
     if not np.all(state_lower < state_upper):
         raise ValueError("every lower state bound must be below its upper bound")
@@ -640,7 +681,8 @@ def print_config(problem: CompileTimeProblem) -> None:
     print("Upstream TinyMPC -> Crazyflie fixed-size specialization")
     print(f"  state/input dimensions: {problem.state_dim} / {problem.input_dim}")
     print(f"  horizon: {problem.horizon_knots} knots, {problem.horizon_knots - 1} inputs")
-    print(f"  model timestep: {problem.model_dt_s:.3f} s (25 Hz prediction)")
+    print(f"  model timestep: {problem.model_dt_s:.3f} s "
+          f"({1.0 / problem.model_dt_s:.0f} Hz prediction)")
     print(f"  prediction span: {horizon_s:.3f} s")
     print(f"  MPC solve rate: {problem.solve_rate_hz} Hz")
     print(f"  ADMM iteration cap: {problem.admm_max_iterations}")
@@ -699,6 +741,7 @@ def prompt_problem(defaults: CompileTimeProblem) -> CompileTimeProblem:
         ("dt", defaults.model_dt_s, float),
         ("solve_rate", defaults.solve_rate_hz, int),
         ("admm_iterations", defaults.admm_max_iterations, int),
+        ("admm_rho", defaults.admm_rho, float),
         ("maximum_halfspaces", defaults.max_active_state_halfspaces, int),
         ("constrained_horizon_knots", defaults.constrained_horizon_knots, int),
     ):
@@ -729,7 +772,7 @@ def prompt_problem(defaults: CompileTimeProblem) -> CompileTimeProblem:
         scalar_c_type=defaults.scalar_c_type,
         max_active_state_halfspaces=values["maximum_halfspaces"],
         constrained_horizon_knots=values["constrained_horizon_knots"],
-        admm_rho=defaults.admm_rho,
+        admm_rho=values["admm_rho"],
     )
 
 

@@ -34,8 +34,8 @@ from typing import Any
 import numpy as np
 
 
-VISION_ROOT = Path(__file__).resolve().parents[4] / "tinympc-vision"
-APP_ROOT = Path(__file__).resolve().parents[1]
+VISION_ROOT = Path(__file__).resolve().parents[5] / "tinympc-vision"
+APP_ROOT = Path(__file__).resolve().parents[2]
 if str(VISION_ROOT) not in sys.path:
     sys.path.insert(0, str(VISION_ROOT))
 
@@ -605,7 +605,7 @@ def _build_admm_host_library(horizon: int, force: bool = False) -> Path:
     build_dir = Path(tempfile.gettempdir()) / "tinympc_admm_host"
     output = build_dir / f"libtinympc_admm_host_n{int(horizon)}.so"
     sources = [
-        APP_ROOT / "tools" / "tinympc_admm_host.cpp",
+        APP_ROOT / "tools" / "pybullet_simulation" / "tinympc_admm_host.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "model.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "auxil.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "cost_lqr.cpp",

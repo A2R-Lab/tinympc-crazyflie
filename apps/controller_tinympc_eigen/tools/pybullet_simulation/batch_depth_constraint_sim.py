@@ -14,8 +14,8 @@ from typing import Any
 import numpy as np
 
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-RUNNER = APP_ROOT / "tools" / "run_depth_constraint_sim.py"
+APP_ROOT = Path(__file__).resolve().parents[2]
+RUNNER = Path(__file__).with_name("run_depth_constraint_sim.py")
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,11 +36,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--sector-dropout-prob", type=float, default=0.08)
     ap.add_argument("--false-hit-prob", type=float, default=0.03)
     ap.add_argument("--constraint-max-age-s", type=float, default=0.20,
-                    help="passed through to run_depth_constraint_sim.py")
+                    help="passed through to pybullet_simulation/run_depth_constraint_sim.py")
     ap.add_argument("--admm-reference-sidestep", type=float, default=None,
-                    help="override run_depth_constraint_sim.py sidestep reference [m]")
+                    help="override pybullet_simulation/run_depth_constraint_sim.py sidestep reference [m]")
     ap.add_argument("--admm-forward-slack-scale", type=float, default=None,
-                    help="override run_depth_constraint_sim.py forward slack cap")
+                    help="override pybullet_simulation/run_depth_constraint_sim.py forward slack cap")
     ap.add_argument("--camera-rate-choices", default="10,15,20,30",
                     help="comma-separated camera update rates to sample [Hz]")
     ap.add_argument("--target-speed-choices", default="0.14,0.18,0.22",

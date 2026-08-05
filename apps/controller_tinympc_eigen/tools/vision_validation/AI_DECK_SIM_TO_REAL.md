@@ -125,7 +125,7 @@ box, the source-matched 160x160 camera renderer, the GAP8 sector frontend,
 ```sh
 python3 -m venv .venv-crazyflow
 .venv-crazyflow/bin/pip install -e /path/to/crazyflow
-apps/controller_tinympc_eigen/tools/flow_gap8_validation/run_crazyflow_pipeline.sh \
+apps/controller_tinympc_eigen/tools/vision_validation/run_crazyflow_pipeline.sh \
   --trials 2 \
   --out apps/controller_tinympc_eigen/tools/results/crazyflow_pipeline.json
 ```

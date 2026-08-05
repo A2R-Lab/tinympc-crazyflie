@@ -74,7 +74,7 @@ predeclared tolerances above.
 Audit the complete saved validation bundle from the Crazyflie repository root:
 
 ```sh
-python3 apps/controller_tinympc_eigen/tools/flow_gap8_validation/hardware/audit_validation_bundle.py \
+python3 apps/controller_tinympc_eigen/tools/vision_validation/hardware/audit_validation_bundle.py \
   --allow-incomplete \
   --out apps/controller_tinympc_eigen/tools/results/flow_obstacle_completion_audit.json
 ```

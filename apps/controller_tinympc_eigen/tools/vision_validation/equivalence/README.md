@@ -16,7 +16,7 @@ Recorded native Himax captures can be replayed through the same compiled
 boundaries with:
 
 ```sh
-python3 tools/flow_gap8_validation/equivalence/replay_himax_capture.py /path/to/capture \
+python3 tools/vision_validation/equivalence/replay_himax_capture.py /path/to/capture \
   --nanocockpit /path/to/tinympc-nanocockpit
 ```
 
@@ -44,7 +44,7 @@ path receives the identical uint8 frame bytes and state rows.
 Run:
 
 ```sh
-python3 apps/controller_tinympc_eigen/tools/flow_gap8_validation/equivalence/run_15hz_equivalence.py \
+python3 apps/controller_tinympc_eigen/tools/vision_validation/equivalence/run_15hz_equivalence.py \
   --nanocockpit /home/cchen/tinympc-nanocockpit \
   --out apps/controller_tinympc_eigen/tools/results/flow_15hz_equivalence.json
 ```
@@ -106,7 +106,7 @@ Recommended change sequence:
 The current planner path is validated with:
 
 ```sh
-python3 tools/flow_gap8_validation/equivalence/run_exact_track_image_sim.py \
+python3 tools/vision_validation/equivalence/run_exact_track_image_sim.py \
   --nanocockpit /home/cchen/tinympc-nanocockpit
 ```
 
@@ -134,7 +134,7 @@ path and is expected to fail while that mirror differs from production.
 Run the no-peering race corpus with:
 
 ```sh
-python3 tools/flow_gap8_validation/equivalence/run_exact_track_race_sim.py \
+python3 tools/vision_validation/equivalence/run_exact_track_race_sim.py \
   --nanocockpit /home/cchen/tinympc-nanocockpit
 ```
 
@@ -168,7 +168,7 @@ real HM01B0 statistics, UART scheduling, or physical hardware.
 Run the persistent multi-obstacle course with:
 
 ```sh
-python3 tools/flow_gap8_validation/equivalence/run_exact_track_course_sim.py \
+python3 tools/vision_validation/equivalence/run_exact_track_course_sim.py \
   --nanocockpit /home/cchen/tinympc-nanocockpit
 ```
 
