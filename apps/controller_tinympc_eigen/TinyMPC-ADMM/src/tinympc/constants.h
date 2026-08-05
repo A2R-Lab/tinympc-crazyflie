@@ -6,7 +6,10 @@
 ******************/
 # define NSTATES 12
 # define NINPUTS 4
-# define NHORIZON 25
+# ifndef NHORIZON
+#  define NHORIZON 25
+# endif
+# define TINY_MAX_HORIZON_KNOTS 25
 
 /************************************
 * Printing Constants to set Layout *

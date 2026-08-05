@@ -122,6 +122,18 @@ Eigen::MatrixMf* Quu_inv_data, Eigen::MatrixNf* AmBKt_data, Eigen::MatrixNMf* co
   work->Quu_inv   = Quu_inv_data;  
   work->AmBKt     = AmBKt_data; 
   work->coeff_d2p = coeff_d2p_data; 
+  work->APf       = TINY_NULL;
+  work->BPf       = TINY_NULL;
+  return TINY_NO_ERROR;
+}
+
+enum tiny_ErrorCode tiny_InitPrimalCacheAffine(tiny_AdmmWorkspace* work,
+Eigen::MatrixMf* Quu_inv_data, Eigen::MatrixNf* AmBKt_data,
+Eigen::MatrixNMf* coeff_d2p_data, Eigen::VectorNf* APf_data,
+Eigen::VectorMf* BPf_data) {
+  tiny_InitPrimalCache(work, Quu_inv_data, AmBKt_data, coeff_d2p_data);
+  work->APf       = APf_data;
+  work->BPf       = BPf_data;
   return TINY_NO_ERROR;
 }
 

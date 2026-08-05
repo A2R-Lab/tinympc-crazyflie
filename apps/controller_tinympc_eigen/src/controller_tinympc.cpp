@@ -30,6 +30,8 @@
  */
 
 #include "Eigen.h"
+#include "tinympc_generated_params.h"
+#define NHORIZON TINYMPC_GENERATED_HORIZON_KNOTS
 using namespace Eigen;
 
 #ifdef __cplusplus
@@ -87,11 +89,13 @@ void appMain() {
   }
 }
 
-// Macro variables - define locally to avoid dependency issues
-#define DT 0.002f       // dt
-#define NHORIZON 25     // horizon steps (must match constants.h if used)
-#define MPC_RATE RATE_100_HZ  // control frequency
+// Model and solve timing come from the generated upstream specialization.
+#define DT TINYMPC_GENERATED_MODEL_DT_S
+#define MPC_RATE TINYMPC_GENERATED_SOLVE_RATE_HZ
 #define LQR_RATE RATE_500_HZ  // control frequency
+
+static_assert(NSTATES == TINYMPC_GENERATED_STATE_DIM, "generated state dimension mismatch");
+static_assert(NINPUTS == TINYMPC_GENERATED_INPUT_DIM, "generated input dimension mismatch");
 
 /* Include trajectory to track */
 #include "traj_fig8_12.h"
@@ -103,20 +107,21 @@ void appMain() {
 // Precomputed data and cache, in params_*.h
 static MatrixNf A;
 static MatrixNMf B;
+static VectorNf f;
 static MatrixMNf Kinf;
-static MatrixMNf Klqr;
 static MatrixNf Pinf;
 static MatrixMf Quu_inv;
 static MatrixNf AmBKt;
 static MatrixNMf coeff_d2p;
+static VectorNf APf;
+static VectorMf BPf;
 static MatrixNf Q;
 static MatrixMf R;
 
 /* Allocate global variables for MPC */
 
 static VectorNf Xhrz[NHORIZON];
-static VectorMf Uhrz[NHORIZON-1]; 
-static VectorMf Ulqr;
+static VectorMf Uhrz[NHORIZON-1];
 static VectorMf d[NHORIZON-1];
 static VectorNf p[NHORIZON];
 static VectorMf YU[NHORIZON];
@@ -152,8 +157,6 @@ static tiny_AdmmWorkspace work;
 static uint64_t startTimestamp;
 // static bool isInit = false;  // fix for tracking problem - UNUSED, commented out
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
-static float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};  // cf1
-// static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = false;  // Default to commander/setpoint control on main
@@ -168,6 +171,44 @@ static struct quat attitude;
 static struct vec phi;
 
 // Basic mode - no obstacle avoidance constraints
+
+static void loadGeneratedSolverData(void) {
+  for (int row = 0; row < NSTATES; ++row) {
+    f(row) = tinympc_generated_f[row];
+    APf(row) = tinympc_generated_APf[row];
+    for (int column = 0; column < NSTATES; ++column) {
+      const int index = row * NSTATES + column;
+      A(row, column) = tinympc_generated_A[index];
+      Pinf(row, column) = tinympc_generated_Pinf[index];
+      AmBKt(row, column) = tinympc_generated_AmBKt[index];
+    }
+    for (int column = 0; column < NINPUTS; ++column) {
+      const int index = row * NINPUTS + column;
+      B(row, column) = tinympc_generated_B[index];
+      coeff_d2p(row, column) = tinympc_generated_coeff_d2p[index];
+    }
+  }
+
+  Q.setZero();
+  R.setZero();
+  for (int input = 0; input < NINPUTS; ++input) {
+    BPf(input) = tinympc_generated_BPf[input];
+    ug(input) = tinympc_generated_hover_reference[input];
+    lcu(input) = tinympc_generated_input_lower[input * (NHORIZON - 1)];
+    ucu(input) = tinympc_generated_input_upper[input * (NHORIZON - 1)];
+    R(input, input) = tinympc_generated_R_diagonal[input];
+    for (int state = 0; state < NSTATES; ++state) {
+      Kinf(input, state) = tinympc_generated_Kinf[input * NSTATES + state];
+    }
+    for (int column = 0; column < NINPUTS; ++column) {
+      Quu_inv(input, column) =
+          tinympc_generated_Quu_inv[input * NINPUTS + column];
+    }
+  }
+  for (int state = 0; state < NSTATES; ++state) {
+    Q(state, state) = tinympc_generated_Q_diagonal[state];
+  }
+}
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   x0(0) = state->position.x;
@@ -204,7 +245,7 @@ void updateHorizonReference(const setpoint_t *setpoint) {
         }
         if (i < NHORIZON - 1) {
           for (int j = 0; j < NINPUTS; ++j) {
-            Uref[i](j) = U_ref_data[traj_idx][j];
+            Uref[i](j) = ug(j);
           }          
         }
       }
@@ -251,22 +292,18 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
+  loadGeneratedSolverData();
+  static_cast<void>(U_ref_data);
 
-  // Precompute/Cache
-  // #include "params_500hz.h"
-  #include "params_100hz.h"  // Original gains (stable)
-  // #include "params_constrained.h"
-
-  // End of Precompute/Cache
-
-  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
+  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 1, DT, &A, &B, &f);
   tiny_InitSettings(&stgs);
-  stgs.rho_init = 250.0;  // Original stable rho
+  stgs.rho_init = TINYMPC_GENERATED_ADMM_RHO;
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
   
   // Fill in the remaining struct (pass 0 for state constraints - not used)
   tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, 0, 0);
-  tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
+  tiny_InitPrimalCacheAffine(
+      &work, &Quu_inv, &AmBKt, &coeff_d2p, &APf, &BPf);
   tiny_InitSolution(&work, Xhrz, Uhrz, 0, YU, 0, &Kinf, d, &Pinf, p);
 
   tiny_SetInitialState(&work, &x0);  
@@ -279,9 +316,15 @@ void controllerOutOfTreeInit(void) {
   tiny_InitDataCost(&work, &Q, q, &R, r, r_tilde);
   // R = R + stgs.rho_init * MatrixMf::Identity();
   // /* Set up constraints */
-  ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
-  lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
+
+  for (int k = 0; k < NHORIZON - 1; ++k) {
+    Uref[k] = ug;
+    Uhrz[k] = ug;
+    ZU[k] = ug;
+    ZU_new[k] = ug;
+    YU[k].setZero();
+  }
 
   tiny_UpdateLinearCost(&work);
 
@@ -289,17 +332,11 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;  // No state constraints for basic test
-  stgs.max_iter = 2;        // Original working value
+  stgs.max_iter = TINYMPC_GENERATED_ADMM_MAX_ITERATIONS;
   stgs.verbose = 0;
   stgs.check_termination = 0;
   stgs.tol_abs_dual = 5e-2;
   stgs.tol_abs_prim = 5e-2;
-
-  Klqr << 
-  -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
-  0.120236f,0.119379f,0.285625f,-0.346222f,0.403763f,0.475821f,0.071330f,0.068348f,0.186504f,-0.020972f,0.037152f,0.187009f,
-  0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
-  -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
   /* End of MPC initialization */  
   step = 0;  
@@ -345,8 +382,8 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
                   (double)x0(0), (double)x0(1), (double)x0(2),
                   (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));
       DEBUG_PRINT("MPC: u=(%.2f,%.2f,%.2f,%.2f) iter=%d\n",
-                  (double)(Uhrz[0](0) + u_hover[0]), (double)(Uhrz[0](1) + u_hover[1]),
-                  (double)(Uhrz[0](2) + u_hover[2]), (double)(Uhrz[0](3) + u_hover[3]),
+                  (double)Uhrz[0](0), (double)Uhrz[0](1),
+                  (double)Uhrz[0](2), (double)Uhrz[0](3),
                   info.iter);
     }
     mpc_log_counter++;
@@ -367,10 +404,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     control->normalizedForces[2] = 0.0f;
     control->normalizedForces[3] = 0.0f;
   } else {
-    control->normalizedForces[0] = ZU_new[0](0) + u_hover[0];  // PWM 0..1
-    control->normalizedForces[1] = ZU_new[0](1) + u_hover[1];
-    control->normalizedForces[2] = ZU_new[0](2) + u_hover[2];
-    control->normalizedForces[3] = ZU_new[0](3) + u_hover[3];
+    control->normalizedForces[0] =
+        tinympc_generated_thrust_to_normalized_command(ZU_new[0](0));
+    control->normalizedForces[1] =
+        tinympc_generated_thrust_to_normalized_command(ZU_new[0](1));
+    control->normalizedForces[2] =
+        tinympc_generated_thrust_to_normalized_command(ZU_new[0](2));
+    control->normalizedForces[3] =
+        tinympc_generated_thrust_to_normalized_command(ZU_new[0](3));
   }
   control->controlMode = controlModePWM;
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));

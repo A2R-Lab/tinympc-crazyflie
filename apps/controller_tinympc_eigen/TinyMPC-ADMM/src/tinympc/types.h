@@ -144,9 +144,9 @@ typedef struct {
   Eigen::VectorMf* lcu;
   
   // Half-space constraint for obstacle avoidance: a^T x <= b (position only)
-  Eigen::Vector3f a_hs[NHORIZON];  // Normal vectors (one per horizon step)
-  float b_hs[NHORIZON];             // Offsets (one per horizon step)
-  int en_hs[NHORIZON];              // Enable flag per step (0 = off, 1 = on)
+  Eigen::Vector3f a_hs[TINY_MAX_HORIZON_KNOTS];
+  float b_hs[TINY_MAX_HORIZON_KNOTS];
+  int en_hs[TINY_MAX_HORIZON_KNOTS];
   
   int data_size;
 } tiny_AdmmData;
@@ -168,6 +168,8 @@ typedef struct {
   Eigen::MatrixMf*  Quu_inv;     ///< mxm cache for (R + B'*Pinf*B)\I 
   Eigen::MatrixNf*  AmBKt;       ///< nxn cache for (A - BKinf)'
   Eigen::MatrixNMf* coeff_d2p;   ///< nxm cache for Kinf'*R - AmBKt*Pinf*B
+  Eigen::VectorNf*  APf;         ///< affine cache for AmBKt*Pinf*f
+  Eigen::VectorMf*  BPf;         ///< affine cache for B'*Pinf*f
   
   Eigen::MatrixMf*  Quu_inv_s;     ///< mxm cache for (R + B'*Pinf*B)\I 
   Eigen::MatrixNf*  AmBKt_s;       ///< nxn cache for (A - BKinf)'

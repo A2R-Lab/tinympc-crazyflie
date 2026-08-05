@@ -20,11 +20,9 @@ enum tiny_ErrorCode tiny_BackwardPassGrad(tiny_AdmmWorkspace* work) {
   if (model[0].ltv && !model[0].affine) {
     return TINY_NOT_SUPPORTED;
   }
-  if (!model[0].ltv && model[0].affine) {
-    return TINY_NOT_SUPPORTED;
-  }
-  // LTI model
-  if (!model[0].ltv && !model[0].affine) {
+  // LTI and affine-LTI models share the same cached Riccati recursion. The
+  // affine cache terms are zero for a non-affine model.
+  if (!model[0].ltv) {
     for (int k = N - 2; k >= 0; --k) {
       if (work->stgs->adaptive_horizon > 0 && k >= work->stgs->adaptive_horizon) {
         // printf("Stretch\n");
@@ -45,6 +43,9 @@ enum tiny_ErrorCode tiny_BackwardPassGrad(tiny_AdmmWorkspace* work) {
         /* Compute  Qu = B'*p[k+1] + r[k] */
         (*(work->Qu)).noalias() = (model[0].B[0]).transpose().lazyProduct(work->soln->p[k+1]);
         (*(work->Qu)) += work->data->r_tilde[k];
+        if (model[0].affine) {
+          (*(work->Qu)) += *(work->BPf);
+        }
 
         /* Compute d = Quu\Qu */
         (work->soln->d[k]).noalias() = (*(work->Quu_inv)).lazyProduct(*(work->Qu));
@@ -54,6 +55,9 @@ enum tiny_ErrorCode tiny_BackwardPassGrad(tiny_AdmmWorkspace* work) {
         work->soln->p[k] = work->data->q[k];
         (work->soln->p[k]).noalias() += (*(work->AmBKt)).lazyProduct(work->soln->p[k+1])
                           - ((*(work->soln->Kinf)).transpose()).lazyProduct(work->data->r_tilde[k]) + (*(work->coeff_d2p)).lazyProduct(work->soln->d[k]);   
+        if (model[0].affine) {
+          (work->soln->p[k]) += *(work->APf);
+        }
       }
     }
   }
