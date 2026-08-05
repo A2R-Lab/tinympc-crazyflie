@@ -47,7 +47,8 @@ enum tiny_ErrorCode tiny_InitModel(tiny_Model* model, const int nstates,
 
 enum tiny_ErrorCode tiny_EvalModel(Eigen::VectorNf* xn, Eigen::VectorNf* x, Eigen::VectorMf* u, tiny_Model* model, const int k) {
   if (model->affine) {
-    return TINY_NOT_SUPPORTED;
+    (*xn).noalias() = (model->A[k]).lazyProduct(*x) + (model->B[k]).lazyProduct(*u);
+    (*xn) += model->f[k];
   }
   else {
     (*xn).noalias() = (model->A[k]).lazyProduct(*x) + (model->B[k]).lazyProduct(*u);

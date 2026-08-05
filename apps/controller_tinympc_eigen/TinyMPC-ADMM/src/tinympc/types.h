@@ -148,12 +148,12 @@ typedef struct {
   //   a_pos^T position + a_vel^T velocity <= b + s, s>=0.
   // This directly represents camera angular look-ahead constraints while
   // retaining the position-only modeled-obstacle special case.
-  Eigen::Vector3f a_pos_hs[NHORIZON][MAX_HS];
-  Eigen::Vector3f a_vel_hs[NHORIZON][MAX_HS];
-  float b_hs[NHORIZON][MAX_HS];             // Offsets per horizon step
-  float slack_penalty_hs[NHORIZON][MAX_HS]; // Quadratic nonnegative slack cost
-  float slack_used_hs[NHORIZON][MAX_HS];    // Last projection diagnostic
-  int en_hs[NHORIZON][MAX_HS];              // Enable flag per step/plane (0 = off, 1 = on)
+  Eigen::Vector3f a_pos_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  Eigen::Vector3f a_vel_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float b_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float slack_penalty_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float slack_used_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  int en_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
   
   int data_size;
 } tiny_AdmmData;
@@ -175,6 +175,8 @@ typedef struct {
   Eigen::MatrixMf*  Quu_inv;     ///< mxm cache for (R + B'*Pinf*B)\I 
   Eigen::MatrixNf*  AmBKt;       ///< nxn cache for (A - BKinf)'
   Eigen::MatrixNMf* coeff_d2p;   ///< nxm cache for Kinf'*R - AmBKt*Pinf*B
+  Eigen::VectorNf*  APf;         ///< affine cache for AmBKt*Pinf*f
+  Eigen::VectorMf*  BPf;         ///< affine cache for B'*Pinf*f
   
   Eigen::MatrixMf*  Quu_inv_s;     ///< mxm cache for (R + B'*Pinf*B)\I 
   Eigen::MatrixNf*  AmBKt_s;       ///< nxn cache for (A - BKinf)'

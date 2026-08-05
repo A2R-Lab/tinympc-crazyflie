@@ -30,6 +30,8 @@
  */
 
 #include "Eigen.h"
+#include "tinympc_generated_params.h"
+#define NHORIZON TINYMPC_GENERATED_HORIZON_KNOTS
 using namespace Eigen;
 
 #ifdef __cplusplus
@@ -111,21 +113,25 @@ void appMain() {
   }
 }
 
-// Macro variables - define locally to avoid dependency issues
-#define DT 0.020f       // dt; matches the demo-2 50 Hz constrained cache
-#define NHORIZON 25     // horizon steps (must match constants.h if used)
-#define MPC_RATE RATE_25_HZ  // 11 ms solves need margin for radio/log/vision tasks
+// Model and solve timing come from the generated upstream specialization.
+#define DT TINYMPC_GENERATED_MODEL_DT_S
+#define MPC_RATE TINYMPC_GENERATED_SOLVE_RATE_HZ
 #define LQR_RATE RATE_500_HZ  // control frequency
+
+static_assert(NSTATES == TINYMPC_GENERATED_STATE_DIM, "generated state dimension mismatch");
+static_assert(NINPUTS == TINYMPC_GENERATED_INPUT_DIM, "generated input dimension mismatch");
 
 // Precomputed data and cache, in params_*.h
 static MatrixNf A;
 static MatrixNMf B;
+static VectorNf f;
 static MatrixMNf Kinf;
-static MatrixMNf Klqr;
 static MatrixNf Pinf;
 static MatrixMf Quu_inv;
 static MatrixNf AmBKt;
 static MatrixNMf coeff_d2p;
+static VectorNf APf;
+static VectorMf BPf;
 static MatrixNf Q;
 static MatrixMf R;
 
@@ -133,7 +139,6 @@ static MatrixMf R;
 
 static VectorNf Xhrz[NHORIZON];
 static VectorMf Uhrz[NHORIZON-1];
-static VectorMf Ulqr;
 static VectorMf d[NHORIZON-1];
 static VectorNf p[NHORIZON];
 static VectorNf YX[NHORIZON];
@@ -174,8 +179,6 @@ static tiny_AdmmWorkspace work;
 
 static bool isInit = false;
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
-static float u_hover[4] = {0.583f, 0.583f, 0.583f, 0.583f};  // demo-2 cf21bl normalized hover
-// static float u_hover[4] = {0.7467, 0.667f, 0.78, 0.7f};  // cf2 not correct
 static int8_t result = 0;
 static struct vec desired_rpy;
 static struct quat attitude;
@@ -196,6 +199,46 @@ static uint32_t controller_activate_tick = 0;
 static const bool enable_pid_face_forward_yaw = true;
 static bool obs_pid_passthrough_seen = false;
 static uint8_t last_obs_pid_passthrough = 0;
+
+static void loadGeneratedSolverData(void) {
+  for (int row = 0; row < NSTATES; ++row) {
+    f(row) = tinympc_generated_f[row];
+    APf(row) = tinympc_generated_APf[row];
+    for (int column = 0; column < NSTATES; ++column) {
+      const int index = row * NSTATES + column;
+      A(row, column) = tinympc_generated_A[index];
+      Pinf(row, column) = tinympc_generated_Pinf[index];
+      AmBKt(row, column) = tinympc_generated_AmBKt[index];
+    }
+    for (int column = 0; column < NINPUTS; ++column) {
+      const int index = row * NINPUTS + column;
+      B(row, column) = tinympc_generated_B[index];
+      coeff_d2p(row, column) = tinympc_generated_coeff_d2p[index];
+    }
+  }
+
+  Q.setZero();
+  R.setZero();
+  for (int row = 0; row < NINPUTS; ++row) {
+    BPf(row) = tinympc_generated_BPf[row];
+    ug(row) = tinympc_generated_hover_reference[row];
+    lcu(row) = tinympc_generated_input_lower[row * (NHORIZON - 1)];
+    ucu(row) = tinympc_generated_input_upper[row * (NHORIZON - 1)];
+    R(row, row) = tinympc_generated_R_diagonal[row];
+    for (int column = 0; column < NSTATES; ++column) {
+      Kinf(row, column) = tinympc_generated_Kinf[row * NSTATES + column];
+    }
+    for (int column = 0; column < NINPUTS; ++column) {
+      Quu_inv(row, column) =
+          tinympc_generated_Quu_inv[row * NINPUTS + column];
+    }
+  }
+  for (int state = 0; state < NSTATES; ++state) {
+    Q(state, state) = tinympc_generated_Q_diagonal[state];
+    lcx(state) = tinympc_generated_state_lower[state * NHORIZON];
+    ucx(state) = tinympc_generated_state_upper[state * NHORIZON];
+  }
+}
 
 // Demo-2 watchdog fix: run TinyMPC in its own lower-priority task. The stabilizer loop
 // only snapshots inputs, wakes this task at MPC_RATE, and feeds the latest MPC setpoint
@@ -496,10 +539,10 @@ static void resetMpcWarmStart(uint8_t reason) {
     ZX_new[k] = x0;
   }
   for (int k = 0; k < NHORIZON - 1; ++k) {
-    Uhrz[k].setZero();
+    Uhrz[k] = ug;
     YU[k].setZero();
-    ZU[k].setZero();
-    ZU_new[k].setZero();
+    ZU[k] = ug;
+    ZU_new[k] = ug;
     d[k].setZero();
   }
   tiny_ClearPositionHalfspaces(&work);
@@ -1417,9 +1460,10 @@ static void updateSequentialHalfspaces(void) {
   const Eigen::Vector3f zero_velocity(0.0f, 0.0f, 0.0f);
   const uint8_t first_k = seqAvoidKStart < NHORIZON
       ? seqAvoidKStart : NHORIZON - 1;
-  for (int k = first_k; k < NHORIZON; ++k) {
+  for (int k = first_k;
+       k < NHORIZON && tinympc_generated_constraint_knot_mask[k]; ++k) {
     tiny_SetKinematicHalfspace(
-        &work, k, 1, &a_position, &zero_velocity, g_seq_barrier_b,
+        &work, k, 0, &a_position, &zero_velocity, g_seq_barrier_b,
         seqAvoidSlackPenalty, 1);
     if (g_seq_constraints < UINT8_MAX) g_seq_constraints++;
   }
@@ -1431,28 +1475,25 @@ static void updateSequentialSlackDiagnostics(void) {
   if (!seqAvoidEnable || !g_seq_barrier_active) return;
   for (int k = 0; k < NHORIZON; ++k) {
     g_seq_max_slack = fmaxf(g_seq_max_slack,
-                            data.slack_used_hs[k][1]);
+                            data.slack_used_hs[k][0]);
   }
 }
 
 
 void controllerOutOfTreeInit(void) {
   /* Start MPC initialization*/
+  loadGeneratedSolverData();
 
-  // Precompute/Cache
-  #include "params_constrained.h"  // Demo-2-style 50 Hz constrained cache (rho=63)
-
-  // End of Precompute/Cache
-
-  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, DT, &A, &B, 0);
+  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 1, DT, &A, &B, &f);
   tiny_InitSettings(&stgs);
-  stgs.rho_init = 63.0f;  // Matches params_constrained.h
+  stgs.rho_init = TINYMPC_GENERATED_ADMM_RHO;
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
 
   // Fill in the remaining struct. State buffers are required when obstacle half-spaces
   // are enabled; passing null here makes the state-constraint ADMM path invalid.
   tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, ZX, ZX_new);
-  tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
+  tiny_InitPrimalCacheAffine(
+      &work, &Quu_inv, &AmBKt, &coeff_d2p, &APf, &BPf);
   tiny_InitSolution(&work, Xhrz, Uhrz, YX, YU, 0, &Kinf, d, &Pinf, p);
 
   tiny_SetInitialState(&work, &x0);
@@ -1465,14 +1506,8 @@ void controllerOutOfTreeInit(void) {
   tiny_InitDataCost(&work, &Q, q, &R, r, r_tilde);
   // R = R + stgs.rho_init * MatrixMf::Identity();
   // /* Set up constraints */
-  ucu << 1 - u_hover[0], 1 - u_hover[1], 1 - u_hover[2], 1 - u_hover[3];
-  lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
 
-  for (int i = 0; i < NSTATES; ++i) {
-    lcx(i) = -1e6f;
-    ucx(i) = 1e6f;
-  }
   for (int k = 0; k < NHORIZON; ++k) {
     YX[k].setZero();
     ZX[k] = x0;
@@ -1487,20 +1522,14 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 0;  // Obstacle state constraints are opt-in via obs params.
-  stgs.max_iter = 3;        // Bound CPU time; the PID tracks the latest MPC reference.
-  stgs.iters_check_rho_update = 10;  // No rho/cache update during a 3-iter solve.
+  stgs.max_iter = TINYMPC_GENERATED_ADMM_MAX_ITERATIONS;
+  stgs.iters_check_rho_update = 10;
   stgs.verbose = 0;
-  /* Compute residuals on every solve. This may terminate early, while still
-   * retaining the three-iteration upper bound used by the flight controller. */
+  /* Compute residuals on every solve so ADMM may terminate before the
+   * generated iteration cap. */
   stgs.check_termination = 1;
   stgs.tol_abs_dual = 1e-3f;
   stgs.tol_abs_prim = 1e-3f;
-
-  Klqr <<
-  -0.123589f,0.123635f,0.285625f,-0.394876f,-0.419547f,-0.474536f,-0.073759f,0.072612f,0.186504f,-0.031569f,-0.038547f,-0.187738f,
-  0.120236f,0.119379f,0.285625f,-0.346222f,0.403763f,0.475821f,0.071330f,0.068348f,0.186504f,-0.020972f,0.037152f,0.187009f,
-  0.121600f,-0.122839f,0.285625f,0.362241f,0.337953f,-0.478858f,0.069310f,-0.070833f,0.186504f,0.022379f,0.015573f,-0.185212f,
-  -0.118248f,-0.120176f,0.285625f,0.378857f,-0.322169f,0.477573f,-0.066881f,-0.070128f,0.186504f,0.030162f,-0.014177f,0.185941f;
 
   /* End of MPC initialization */
   mpc_has_run = false;

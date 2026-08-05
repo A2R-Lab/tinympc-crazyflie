@@ -23,7 +23,11 @@ enum tiny_ErrorCode tiny_SetStateBound(tiny_AdmmWorkspace* work, Eigen::MatrixNf
 }
 
 enum tiny_ErrorCode tiny_ClearPositionHalfspaces(tiny_AdmmWorkspace* work) {
-  for (int k = 0; k < NHORIZON; ++k) {
+  const int horizon = work->data->model[0].nhorizon;
+  if (horizon > TINY_MAX_HORIZON_KNOTS) {
+    return TINY_NOT_SUPPORTED;
+  }
+  for (int k = 0; k < horizon; ++k) {
     for (int h = 0; h < MAX_HS; ++h) {
       work->data->a_pos_hs[k][h].setZero();
       work->data->a_vel_hs[k][h].setZero();
@@ -56,7 +60,8 @@ enum tiny_ErrorCode tiny_SetKinematicHalfspace(
     float b,
     float slack_penalty,
     int enable) {
-  if (k < 0 || k >= NHORIZON || h < 0 || h >= MAX_HS) {
+  if (k < 0 || k >= work->data->model[0].nhorizon ||
+      k >= TINY_MAX_HORIZON_KNOTS || h < 0 || h >= MAX_HS) {
     return TINY_NOT_SUPPORTED;
   }
   if (!enable || a_position == 0 || a_velocity == 0) {

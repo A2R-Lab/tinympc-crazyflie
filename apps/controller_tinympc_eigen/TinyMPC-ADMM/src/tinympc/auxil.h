@@ -42,6 +42,11 @@ Eigen::VectorMf* ZU, Eigen::VectorMf* ZU_new, Eigen::VectorNf* ZX, Eigen::Vector
 enum tiny_ErrorCode tiny_InitPrimalCache(tiny_AdmmWorkspace* work, 
 Eigen::MatrixMf* Quu_inv_data, Eigen::MatrixNf* AmBKt_data, Eigen::MatrixNMf* coeff_d2p_data);
 
+enum tiny_ErrorCode tiny_InitPrimalCacheAffine(tiny_AdmmWorkspace* work,
+Eigen::MatrixMf* Quu_inv_data, Eigen::MatrixNf* AmBKt_data,
+Eigen::MatrixNMf* coeff_d2p_data, Eigen::VectorNf* APf_data,
+Eigen::VectorMf* BPf_data);
+
 enum tiny_ErrorCode tiny_InitPrimalCacheStretch(tiny_AdmmWorkspace* work, 
 Eigen::MatrixMf* Quu_inv_data, Eigen::MatrixNf* AmBKt_data, Eigen::MatrixNMf* coeff_d2p_data);
 
