@@ -159,12 +159,12 @@ static uint64_t startTimestamp;
 // static uint32_t mpcTime = 0;  // UNUSED (was for logging), commented out
 static int8_t result = 0;
 static uint32_t step = 0;
-static bool en_traj = false;  // Default to commander/setpoint control on main
-static uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
-//static int8_t user_traj_iter = 1;  // number of times to execute full trajectory
-static int8_t traj_hold = 1;       // hold current trajectory for this no of steps
-static int8_t traj_iter = 0;
+static bool en_traj = true;   // Track the stored figure-eight trajectory.
+static const uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
+static const uint8_t traj_hold = 1;
 static uint32_t traj_idx = 0;
+static const float legacy_hover_command[NINPUTS] = {
+    0.7f, 0.663f, 0.7373f, 0.633f};
 
 static struct vec desired_rpy;
 static struct quat attitude;
@@ -238,15 +238,20 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   // Update reference: from stored trajectory or commander
   if (en_traj) {
     if (step % traj_hold == 0) {
-      traj_idx = (int)(step / traj_hold);
+      traj_idx = step / traj_hold;
       for (int i = 0; i < NHORIZON; ++i) {
         for (int j = 0; j < NSTATES; ++j) {
           Xref[i](j) = X_ref_data[traj_idx][j];
         }
         if (i < NHORIZON - 1) {
           for (int j = 0; j < NINPUTS; ++j) {
-            Uref[i](j) = ug(j);
-          }          
+            const float legacy_command =
+                legacy_hover_command[j] + U_ref_data[traj_idx][j];
+            Uref[i](j) =
+                tinympc_generated_normalized_command_to_thrust(legacy_command)
+                - tinympc_generated_normalized_command_to_thrust(
+                    legacy_hover_command[j]);
+          }
         }
       }
     }
@@ -274,17 +279,9 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     // // xg(1) = 1.0;
     // // xg(2) = 2.0;
   }
-  // DEBUG_PRINT("z_ref = %.2f\n", (double)(Xref[0](2)));
 
-  // Trajectory progression
-  if (en_traj) {
-    if (traj_idx >= traj_length - 1 - NHORIZON + 1) { 
-      // Reached end of trajectory - hold at final position
-      // Don't reset step, just stay at the end
-    } 
-    else {
-      step += 1;
-    }
+  if (en_traj && traj_idx < traj_length - NHORIZON) {
+    step += 1;
   }
 }
 
@@ -293,7 +290,6 @@ void updateHorizonReference(const setpoint_t *setpoint) {
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
   loadGeneratedSolverData();
-  static_cast<void>(U_ref_data);
 
   tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 1, DT, &A, &B, &f);
   tiny_InitSettings(&stgs);
@@ -339,8 +335,8 @@ void controllerOutOfTreeInit(void) {
   stgs.tol_abs_prim = 5e-2;
 
   /* End of MPC initialization */  
-  step = 0;  
-  traj_iter = 0;
+  step = 0;
+  traj_idx = 0;
   
   if (en_traj) {
     DEBUG_PRINT("Stored trajectory enabled\n");
@@ -377,13 +373,15 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     
     // Detailed logging every 0.5 seconds
     static uint32_t mpc_log_counter = 0;
-    if (mpc_log_counter % 50 == 0) {  // 100Hz / 50 = every 0.5s
+    if (mpc_log_counter % 50 == 0) {
       DEBUG_PRINT("MPC: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n", 
                   (double)x0(0), (double)x0(1), (double)x0(2),
                   (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));
-      DEBUG_PRINT("MPC: u=(%.2f,%.2f,%.2f,%.2f) iter=%d\n",
-                  (double)Uhrz[0](0), (double)Uhrz[0](1),
-                  (double)Uhrz[0](2), (double)Uhrz[0](3),
+      DEBUG_PRINT("MPC: thrust=(%.2f,%.2f,%.2f,%.2f) iter=%d\n",
+                  (double)(ZU_new[0](0) + tinympc_generated_physical_hover_thrust[0]),
+                  (double)(ZU_new[0](1) + tinympc_generated_physical_hover_thrust[1]),
+                  (double)(ZU_new[0](2) + tinympc_generated_physical_hover_thrust[2]),
+                  (double)(ZU_new[0](3) + tinympc_generated_physical_hover_thrust[3]),
                   info.iter);
     }
     mpc_log_counter++;
@@ -405,13 +403,17 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     control->normalizedForces[3] = 0.0f;
   } else {
     control->normalizedForces[0] =
-        tinympc_generated_thrust_to_normalized_command(ZU_new[0](0));
+        tinympc_generated_thrust_to_normalized_command(
+            ZU_new[0](0) + tinympc_generated_physical_hover_thrust[0]);
     control->normalizedForces[1] =
-        tinympc_generated_thrust_to_normalized_command(ZU_new[0](1));
+        tinympc_generated_thrust_to_normalized_command(
+            ZU_new[0](1) + tinympc_generated_physical_hover_thrust[1]);
     control->normalizedForces[2] =
-        tinympc_generated_thrust_to_normalized_command(ZU_new[0](2));
+        tinympc_generated_thrust_to_normalized_command(
+            ZU_new[0](2) + tinympc_generated_physical_hover_thrust[2]);
     control->normalizedForces[3] =
-        tinympc_generated_thrust_to_normalized_command(ZU_new[0](3));
+        tinympc_generated_thrust_to_normalized_command(
+            ZU_new[0](3) + tinympc_generated_physical_hover_thrust[3]);
   }
   control->controlMode = controlModePWM;
   // DEBUG_PRINT("pwm = [%.2f, %.2f]\n", (double)(control->normalizedForces[0]), (double)(control->normalizedForces[1]));
