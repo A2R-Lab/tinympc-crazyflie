@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 
-STATE_DIM = 12
+REFERENCE_DIM = 13
 GRAVITY_M_S2 = 9.81
 Vector3 = tuple[float, float, float]
 PathFunction = Callable[[float, float], tuple[Vector3, Vector3, Vector3]]
@@ -39,7 +39,7 @@ class Trajectory:
     duration_s: float
     loops: bool
     tangent_heading: bool
-    states: tuple[tuple[float, ...], ...]
+    references: tuple[tuple[float, ...], ...]
 
 
 def prompt_number(name: str, default: float | int, value_type: type):
@@ -169,7 +169,7 @@ def desired_rotation(acceleration: Vector3, yaw_rad: float) -> tuple[Vector3, ..
     )
 
 
-def rotation_to_rodrigues(rotation: tuple[Vector3, ...]) -> Vector3:
+def rotation_to_quaternion(rotation: tuple[Vector3, ...]) -> tuple[float, float, float, float]:
     trace = rotation[0][0] + rotation[1][1] + rotation[2][2]
     if trace > 0.0:
         root = math.sqrt(trace + 1.0) * 2.0
@@ -195,11 +195,7 @@ def rotation_to_rodrigues(rotation: tuple[Vector3, ...]) -> Vector3:
         qx = (rotation[0][2] + rotation[2][0]) / root
         qy = (rotation[1][2] + rotation[2][1]) / root
         qz = 0.25 * root
-    if qw < 0.0:
-        qw, qx, qy, qz = -qw, -qx, -qy, -qz
-    if abs(qw) <= 1e-6:
-        raise ValueError("trajectory attitude reaches the Rodrigues singularity")
-    return (qx / qw, qy / qw, qz / qw)
+    return (qw, qx, qy, qz)
 
 
 def transpose_multiply(
@@ -304,44 +300,67 @@ def generate_trajectory(
     duration_s = interval_count / sample_rate_hz
     dt = 1.0 / sample_rate_hz
     samples = [path(index * dt, duration_s) for index in range(interval_count + 1)]
-    rotations = [desired_rotation(acceleration, yaw_rad) for _, _, acceleration in samples]
-    states = []
+    rotations = [
+        desired_rotation(
+            acceleration,
+            math.atan2(velocity[1], velocity[0])
+            if tangent_heading and math.hypot(velocity[0], velocity[1]) > 1e-6
+            else yaw_rad,
+        )
+        for _, velocity, acceleration in samples
+    ]
+    references = []
     for index, ((position, velocity, _), rotation) in enumerate(zip(samples, rotations)):
         position = (position[0], position[1], position[2] + height_m)
-        rodrigues = rotation_to_rodrigues(rotation)
-        angular_velocity = body_rate(rotation, rotation_derivative(rotations, index, dt))
-        states.append(position + rodrigues + velocity + angular_velocity)
+        quaternion = rotation_to_quaternion(rotation)
+        if references and sum(
+            quaternion[axis] * references[-1][axis + 3] for axis in range(4)
+        ) < 0.0:
+            quaternion = tuple(-value for value in quaternion)
+        angular_velocity = body_rate(
+            rotation, rotation_derivative(rotations, index, dt)
+        )
+        references.append(position + quaternion + velocity + angular_velocity)
     return Trajectory(
-        name, sample_rate_hz, duration_s, loops, tangent_heading, tuple(states)
+        name, sample_rate_hz, duration_s, loops, tangent_heading, tuple(references)
     )
 
 
 def validate_trajectory(trajectory: Trajectory) -> None:
-    if len(trajectory.states) < 2:
+    if len(trajectory.references) < 2:
         raise ValueError(f"{trajectory.name}: trajectory needs at least two samples")
-    for index, state in enumerate(trajectory.states):
-        if len(state) != STATE_DIM:
-            raise ValueError(f"{trajectory.name}: sample {index} does not have 12 states")
-        if not all(math.isfinite(value) for value in state):
+    for index, reference in enumerate(trajectory.references):
+        if len(reference) != REFERENCE_DIM:
+            raise ValueError(
+                f"{trajectory.name}: sample {index} does not have "
+                f"{REFERENCE_DIM} reference values"
+            )
+        if not all(math.isfinite(value) for value in reference):
             raise ValueError(f"{trajectory.name}: sample {index} contains a non-finite value")
+        quaternion_norm = math.sqrt(sum(reference[axis] ** 2 for axis in range(3, 7)))
+        if abs(quaternion_norm - 1.0) > 1e-6:
+            raise ValueError(
+                f"{trajectory.name}: sample {index} quaternion is not normalized"
+            )
     expected_samples = round(trajectory.duration_s * trajectory.sample_rate_hz) + 1
-    if len(trajectory.states) != expected_samples:
+    if len(trajectory.references) != expected_samples:
         raise ValueError(f"{trajectory.name}: duration and sample count disagree")
 
     dt = 1.0 / trajectory.sample_rate_hz
     maximum_velocity = max(
-        math.sqrt(sum(state[axis] ** 2 for axis in range(6, 9)))
-        for state in trajectory.states
+        math.sqrt(sum(reference[axis] ** 2 for axis in range(7, 10)))
+        for reference in trajectory.references
     )
     maximum_error = 0.0
-    for index in range(1, len(trajectory.states) - 1):
+    for index in range(1, len(trajectory.references) - 1):
         for axis in range(3):
             numerical_velocity = (
-                trajectory.states[index + 1][axis] - trajectory.states[index - 1][axis]
+                trajectory.references[index + 1][axis]
+                - trajectory.references[index - 1][axis]
             ) / (2.0 * dt)
             maximum_error = max(
                 maximum_error,
-                abs(numerical_velocity - trajectory.states[index][axis + 6]),
+                abs(numerical_velocity - trajectory.references[index][axis + 7]),
             )
     tolerance = max(0.05, 0.25 * maximum_velocity)
     if maximum_error > tolerance:
@@ -365,7 +384,7 @@ def render_header(trajectory: Trajectory) -> str:
     guard = f"TRAJ_{trajectory_name}_{frequency_name}_H"
     rows = [
         "  {" + ", ".join(float_literal(value) for value in state) + "},"
-        for state in trajectory.states
+        for state in trajectory.references
     ]
     return "\n".join(
         [
@@ -377,12 +396,13 @@ def render_header(trajectory: Trajectory) -> str:
             f"#define TRAJECTORY_SAMPLE_RATE_HZ {trajectory.sample_rate_hz}",
             f"#define TRAJECTORY_SAMPLE_DT_S ({float_literal(1.0 / trajectory.sample_rate_hz)})",
             f"#define TRAJECTORY_DURATION_S ({float_literal(trajectory.duration_s)})",
-            f"#define TRAJECTORY_SAMPLE_COUNT {len(trajectory.states)}",
-            f"#define TRAJECTORY_STATE_DIM {STATE_DIM}",
+            f"#define TRAJECTORY_SAMPLE_COUNT {len(trajectory.references)}",
+            f"#define TRAJECTORY_REFERENCE_DIM {REFERENCE_DIM}",
             f"#define TRAJECTORY_LOOPS {1 if trajectory.loops else 0}",
             f"#define TRAJECTORY_TANGENT_HEADING {1 if trajectory.tangent_heading else 0}",
             "",
-            "static const float X_ref_data[TRAJECTORY_SAMPLE_COUNT][TRAJECTORY_STATE_DIM] = {",
+            "// [p_W(3), q_WB(wxyz), v_W(3), omega_B(3)]",
+            "static const float trajectory_reference_data[TRAJECTORY_SAMPLE_COUNT][TRAJECTORY_REFERENCE_DIM] = {",
             *rows,
             "};",
             "",
@@ -442,7 +462,7 @@ def main() -> int:
         output_path.write_text(render_header(trajectory))
         print(
             f"wrote {output_path.relative_to(app_directory)} "
-            f"({len(trajectory.states)} samples, {trajectory.duration_s:g} s)"
+            f"({len(trajectory.references)} samples, {trajectory.duration_s:g} s)"
         )
     return 0
 

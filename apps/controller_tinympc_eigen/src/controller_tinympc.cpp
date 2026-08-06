@@ -70,21 +70,50 @@ extern "C" {
 #define TINYMPC_TASK_NAME             "TINYMPC ADMM"
 #define TINYMPC_TASK_PRI              1
 
-// Rodriguez parameters conversion function (needed for old firmware compatibility)
-static inline struct vec quat2rp(struct quat q) {
-  struct vec v;
-  float w_abs = fabsf(q.w);
-  if (w_abs > 1e-6f) { // Avoid division by near-zero
-    v.x = q.x / q.w;
-    v.y = q.y / q.w;
-    v.z = q.z / q.w;
-  } else {
-    // Handle singular case
-    v.x = 0.0f;
-    v.y = 0.0f;
-    v.z = 0.0f;
-  }
-  return v;
+// Per-solve frame at the current position and yaw. Its z-axis stays aligned
+// with world z, so gravity and the hover linearization are unchanged.
+struct MpcLocalFrame {
+  float origin_x;
+  float origin_y;
+  float origin_z;
+  float yaw_world;
+  float cos_yaw;
+  float sin_yaw;
+};
+
+static Eigen::Vector3f worldVectorToLocal(
+    const MpcLocalFrame& frame, const Eigen::Vector3f& vector_world) {
+  return Eigen::Vector3f(
+      frame.cos_yaw * vector_world.x() + frame.sin_yaw * vector_world.y(),
+      -frame.sin_yaw * vector_world.x() + frame.cos_yaw * vector_world.y(),
+      vector_world.z());
+}
+
+static Eigen::Vector3f localVectorToWorld(
+    const MpcLocalFrame& frame, const Eigen::Vector3f& vector_local) {
+  return Eigen::Vector3f(
+      frame.cos_yaw * vector_local.x() - frame.sin_yaw * vector_local.y(),
+      frame.sin_yaw * vector_local.x() + frame.cos_yaw * vector_local.y(),
+      vector_local.z());
+}
+
+// Remove the local frame yaw from a body-to-world quaternion.
+static struct vec worldQuaternionToLocalRodrigues(
+    const MpcLocalFrame& frame, struct quat quaternion_world_body) {
+  const float half_yaw = 0.5f * frame.yaw_world;
+  const float c = cosf(half_yaw);
+  const float s = sinf(half_yaw);
+  struct quat quaternion_local_body = mkquat(
+      c * quaternion_world_body.x + s * quaternion_world_body.y,
+      c * quaternion_world_body.y - s * quaternion_world_body.x,
+      c * quaternion_world_body.z - s * quaternion_world_body.w,
+      c * quaternion_world_body.w + s * quaternion_world_body.z);
+  const float denominator = fabsf(quaternion_local_body.w) > 1e-6f
+      ? quaternion_local_body.w : copysignf(1e-6f, quaternion_local_body.w);
+  return mkvec(
+      quaternion_local_body.x / denominator,
+      quaternion_local_body.y / denominator,
+      quaternion_local_body.z / denominator);
 }
 
 // Edit the debug name to get nice debug prints
@@ -108,7 +137,8 @@ static_assert(NSTATES == TINYMPC_GENERATED_STATE_DIM, "generated state dimension
 static_assert(NINPUTS == TINYMPC_GENERATED_INPUT_DIM, "generated input dimension mismatch");
 
 /* Include trajectory to track */
-#include "trajectories/5hz/traj_straight_5hz.h"
+// #include "trajectories/5hz/traj_straight_5hz.h"
+#include "trajectories/5hz/traj_circle_5hz.h"
 // #include "traj_circle_500hz.h"  // Large circle (1m radius)
 // #include "traj_circle_small.h"  // Small circle (0.5m radius)
 // #include "traj_perching.h"
@@ -210,17 +240,17 @@ static tiny_AdmmWorkspace work;
 static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = true;   // Track the generated stored trajectory.
-static const uint32_t traj_length = T_ARRAY_SIZE(X_ref_data);
-static uint32_t traj_idx = 0;
+static const uint32_t traj_length = T_ARRAY_SIZE(trajectory_reference_data);
 
 static_assert(
     TRAJECTORY_SAMPLE_RATE_HZ == TINYMPC_GENERATED_SOLVE_RATE_HZ,
     "trajectory and MPC solve rates must match");
-static_assert(TRAJECTORY_STATE_DIM == NSTATES, "trajectory state dimension mismatch");
+static_assert(TRAJECTORY_REFERENCE_DIM == 13, "trajectory reference dimension mismatch");
 
-static struct vec desired_rpy;
 static struct quat attitude;
-static struct vec phi;
+static MpcLocalFrame active_local_frame;
+static float reference_yaw_unwrapped_rad[NHORIZON];
+static float reference_yaw_phase_rad = 0.0f;
 
 // TinyMPC plans a dynamically feasible position path. The stock cascaded PID
 // tracks a near-term point from that path and owns attitude, rate, and motor control.
@@ -229,8 +259,8 @@ static bool mpc_has_run = false;
 static uint32_t last_controller_tick = 0;
 static uint32_t plan_start_tick = 0;
 static bool motors_were_allowed = false;
-static float pid_yaw_reference_deg = 0.0f;
 static VectorNf published_Xhrz[NHORIZON];
+static float published_yaw_unwrapped_rad[NHORIZON];
 static int published_pid_lookahead_knots = 0;
 static SemaphoreHandle_t runTaskSemaphore = NULL;
 static SemaphoreHandle_t dataMutex = NULL;
@@ -281,41 +311,40 @@ static void loadGeneratedSolverData(void) {
   }
 }
 
+static float unwrapNear(float angle, float reference) {
+  return reference + remainderf(angle - reference, 6.28318530717958647692f);
+}
+
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
-  x0(0) = state->position.x;
-  x0(1) = state->position.y;
-  x0(2) = state->position.z;
-  // Body velocity error, [m/s]                          
-  x0(6) = state->velocity.x;
-  x0(7) = state->velocity.y;
-  x0(8) = state->velocity.z;
-  // Angular rate error, [rad/s]
-  x0(9)  = radians(sensors->gyro.x);   
-  x0(10) = radians(sensors->gyro.y);
-  x0(11) = radians(sensors->gyro.z);
-  attitude = mkquat(
+  attitude = qnormalize(mkquat(
     state->attitudeQuaternion.x,
     state->attitudeQuaternion.y,
     state->attitudeQuaternion.z,
-    state->attitudeQuaternion.w);  // current attitude
-  phi = quat2rp(qnormalize(attitude));  // quaternion to Rodriquez parameters  
-  // Attitude error
-  x0(3) = phi.x;
-  x0(4) = phi.y;
-  x0(5) = phi.z;
-}
+      state->attitudeQuaternion.w));
+  active_local_frame.origin_x = state->position.x;
+  active_local_frame.origin_y = state->position.y;
+  active_local_frame.origin_z = state->position.z;
+  active_local_frame.yaw_world = quat2rpy(attitude).z;
+  active_local_frame.cos_yaw = cosf(active_local_frame.yaw_world);
+  active_local_frame.sin_yaw = sinf(active_local_frame.yaw_world);
 
-void updateHorizonReference(const setpoint_t *setpoint) {
-  // Update reference: from stored trajectory or commander
-  if (en_traj) {
-    const float current_time_s = (float)step / (float)MPC_RATE;
-    traj_idx = (uint32_t)floorf(current_time_s / TRAJECTORY_SAMPLE_DT_S);
-    if (traj_idx >= traj_length) {
-      traj_idx = traj_length - 1;
+  const Eigen::Vector3f velocity_local = worldVectorToLocal(
+      active_local_frame,
+      Eigen::Vector3f(state->velocity.x, state->velocity.y, state->velocity.z));
+  const struct vec attitude_local =
+      worldQuaternionToLocalRodrigues(active_local_frame, attitude);
+
+  x0.head(3).setZero();
+  x0(3) = attitude_local.x;
+  x0(4) = attitude_local.y;
+  x0(5) = attitude_local.z;
+  x0.segment<3>(6) = velocity_local;
+  x0.segment<3>(9) << radians(sensors->gyro.x),
+      radians(sensors->gyro.y), radians(sensors->gyro.z);
     }
-    for (int i = 0; i < NHORIZON; ++i) {
-      const float reference_time_s = current_time_s + (float)i * DT;
-      float sample_position = reference_time_s / TRAJECTORY_SAMPLE_DT_S;
+
+static void sampleTrajectoryReference(
+    float sample_position, float reference[TRAJECTORY_REFERENCE_DIM]) {
       if (sample_position > (float)(traj_length - 1)) {
         sample_position = (float)(traj_length - 1);
       }
@@ -323,33 +352,93 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       const uint32_t upper_idx =
           lower_idx + 1 < traj_length ? lower_idx + 1 : lower_idx;
       const float alpha = sample_position - (float)lower_idx;
-      for (int j = 0; j < NSTATES; ++j) {
-        Xref[i](j) = (1.0f - alpha) * X_ref_data[lower_idx][j]
-                     + alpha * X_ref_data[upper_idx][j];
+  for (int field = 0; field < TRAJECTORY_REFERENCE_DIM; ++field) {
+    reference[field] =
+        (1.0f - alpha) * trajectory_reference_data[lower_idx][field]
+        + alpha * trajectory_reference_data[upper_idx][field];
+  }
+
+  // Quaternion signs are continuous in generated trajectories.
+  float quaternion_norm_sq = 0.0f;
+  for (int field = 3; field <= 6; ++field) {
+    quaternion_norm_sq += reference[field] * reference[field];
       }
+  const float quaternion_inverse_norm = 1.0f / sqrtf(quaternion_norm_sq);
+  for (int field = 3; field <= 6; ++field) {
+    reference[field] *= quaternion_inverse_norm;
+  }
+}
+
+static void setLocalReferenceState(
+    VectorNf& target, const Eigen::Vector3f& position_world,
+    struct quat attitude_world_body, const Eigen::Vector3f& velocity_world,
+    const Eigen::Vector3f& angular_velocity_body) {
+  const Eigen::Vector3f position_local =
+      worldVectorToLocal(
+          active_local_frame,
+          position_world - Eigen::Vector3f(
+              active_local_frame.origin_x,
+              active_local_frame.origin_y,
+              active_local_frame.origin_z));
+  const Eigen::Vector3f velocity_local =
+      worldVectorToLocal(active_local_frame, velocity_world);
+  const struct vec attitude_local =
+      worldQuaternionToLocalRodrigues(active_local_frame, attitude_world_body);
+  target << position_local.x(), position_local.y(), position_local.z(),
+      attitude_local.x, attitude_local.y, attitude_local.z,
+      velocity_local.x(), velocity_local.y(), velocity_local.z(),
+      angular_velocity_body.x(), angular_velocity_body.y(), angular_velocity_body.z();
+}
+
+void updateHorizonReference(const setpoint_t *setpoint) {
+  // Update reference: from stored trajectory or commander
+  if (en_traj) {
+    const float current_time_s = (float)step / (float)MPC_RATE;
+    float yaw_reference = step == 0
+        ? active_local_frame.yaw_world : reference_yaw_phase_rad;
+    for (int i = 0; i < NHORIZON; ++i) {
+      const float reference_time_s = current_time_s + (float)i * DT;
+      const float sample_position = reference_time_s / TRAJECTORY_SAMPLE_DT_S;
+      float reference[TRAJECTORY_REFERENCE_DIM];
+      sampleTrajectoryReference(sample_position, reference);
+      const struct quat reference_attitude = mkquat(
+          reference[4], reference[5], reference[6], reference[3]);
+      setLocalReferenceState(
+          Xref[i],
+          Eigen::Vector3f(reference[0], reference[1], reference[2]),
+          reference_attitude,
+          Eigen::Vector3f(reference[7], reference[8], reference[9]),
+          Eigen::Vector3f(reference[10], reference[11], reference[12]));
+      yaw_reference = unwrapNear(quat2rpy(reference_attitude).z, yaw_reference);
+      reference_yaw_unwrapped_rad[i] = yaw_reference;
       if (i < NHORIZON - 1) {
         Uref[i].setZero();
       }
     }
+    reference_yaw_phase_rad = reference_yaw_unwrapped_rad[0];
   }
   else {
-    xg(0)  = setpoint->position.x;
-    xg(1)  = setpoint->position.y;
-    xg(2)  = setpoint->position.z;
-    xg(6)  = setpoint->velocity.x;
-    xg(7)  = setpoint->velocity.y;
-    xg(8)  = setpoint->velocity.z;
-    xg(9)  = radians(setpoint->attitudeRate.roll);
-    xg(10) = radians(setpoint->attitudeRate.pitch);
-    xg(11) = radians(setpoint->attitudeRate.yaw);
-    desired_rpy = mkvec(radians(setpoint->attitude.roll), 
+    const struct quat reference_attitude = rpy2quat(mkvec(
+        radians(setpoint->attitude.roll),
                         radians(setpoint->attitude.pitch), 
-                        radians(setpoint->attitude.yaw));
-    attitude = rpy2quat(desired_rpy);
-    phi = quat2rp(qnormalize(attitude));  
-    xg(3) = phi.x;
-    xg(4) = phi.y;
-    xg(5) = phi.z;
+        radians(setpoint->attitude.yaw)));
+    setLocalReferenceState(
+        xg,
+        Eigen::Vector3f(
+            setpoint->position.x, setpoint->position.y, setpoint->position.z),
+        reference_attitude,
+        Eigen::Vector3f(
+            setpoint->velocity.x, setpoint->velocity.y, setpoint->velocity.z),
+        Eigen::Vector3f(
+            radians(setpoint->attitudeRate.roll),
+            radians(setpoint->attitudeRate.pitch),
+            radians(setpoint->attitudeRate.yaw)));
+    const float reference_yaw = unwrapNear(
+        radians(setpoint->attitude.yaw),
+        active_local_frame.yaw_world);
+    for (int i = 0; i < NHORIZON; ++i) {
+      reference_yaw_unwrapped_rad[i] = reference_yaw;
+    }
     tiny_SetGoalState(&work, Xref, &xg);
     tiny_SetGoalInput(&work, Uref, &ug);
     // // xg(1) = 1.0;
@@ -357,6 +446,16 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   }
   if (en_traj && (float)step / (float)MPC_RATE < TRAJECTORY_DURATION_S) {
     step += 1;
+  }
+}
+
+static void resetStateWarmStartInActiveFrame(void) {
+  // State warm starts belong to the previous local frame.
+  for (int k = 0; k < NHORIZON; ++k) {
+    Xhrz[k] = Xref[k];
+    ZX[k] = Xref[k];
+    ZX_new[k] = Xref[k];
+    YX[k].setZero();
   }
 }
 
@@ -369,17 +468,22 @@ static void clearPerceptionHalfspace(void) {
   perception_post_clear_deadline = 0;
 }
 
-static void setPerceptionHalfspace(void) {
+static void applyPerceptionHalfspace(void) {
   const Eigen::Vector3f zero_velocity = Eigen::Vector3f::Zero();
+  const Eigen::Vector3f normal_local =
+      worldVectorToLocal(active_local_frame, perception_halfspace_normal);
+  const float boundary_local = perception_halfspace_boundary
+      - perception_halfspace_normal.x() * active_local_frame.origin_x
+      - perception_halfspace_normal.y() * active_local_frame.origin_y
+      - perception_halfspace_normal.z() * active_local_frame.origin_z;
   const int constrained_knots =
       TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS < NHORIZON
           ? TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS : NHORIZON;
   for (int k = 0; k < constrained_knots; ++k) {
     tiny_SetKinematicHalfspace(
-        &work, k, 0, &perception_halfspace_normal, &zero_velocity,
-        perception_halfspace_boundary, perception_halfspace_penalty, 1);
+        &work, k, 0, &normal_local, &zero_velocity,
+        boundary_local, perception_halfspace_penalty, 1);
   }
-  perception_halfspace_active = true;
 }
 
 static void armPostClearHalfspace(const state_t *state, int8_t evasion_side) {
@@ -393,7 +497,7 @@ static void armPostClearHalfspace(const state_t *state, int8_t evasion_side) {
   perception_halfspace_boundary =
       perception_halfspace_normal(0) * state->position.x +
       perception_halfspace_normal(1) * state->position.y;
-  setPerceptionHalfspace();
+  perception_halfspace_active = true;
   perception_boundary_index = 4;
   perception_post_clear_deadline =
       xTaskGetTickCount() + pdMS_TO_TICKS(perception_post_clear_hold_ms);
@@ -602,7 +706,7 @@ static void updatePerceptionHalfspace(const state_t *state) {
       perception_halfspace_normal(0) * state->position.x +
       perception_halfspace_normal(1) * state->position.y;
 
-  setPerceptionHalfspace();
+  perception_halfspace_active = true;
   perception_boundary_index = selected_boundary >= 0
       ? (int8_t)selected_boundary : 3;
   if (selected_boundary >= 0) {
@@ -706,19 +810,11 @@ static void updatePidSetpointFromPlan(const uint32_t tick) {
   mpc_setpoint_pid.velocity.z =
       (1.0f - alpha) * published_Xhrz[lower_knot](8) + alpha * published_Xhrz[upper_knot](8);
 
-#if TRAJECTORY_TANGENT_HEADING
-  const float horizontal_speed_sq =
-      mpc_setpoint_pid.velocity.x * mpc_setpoint_pid.velocity.x
-      + mpc_setpoint_pid.velocity.y * mpc_setpoint_pid.velocity.y;
-  if (horizontal_speed_sq > 0.0025f) {
-    mpc_setpoint_pid.attitude.yaw = degrees(atan2f(
-        mpc_setpoint_pid.velocity.y, mpc_setpoint_pid.velocity.x));
-  } else {
-    mpc_setpoint_pid.attitude.yaw = pid_yaw_reference_deg;
-  }
-#else
-  mpc_setpoint_pid.attitude.yaw = pid_yaw_reference_deg;
-#endif
+  const float yaw_unwrapped_rad =
+      (1.0f - alpha) * published_yaw_unwrapped_rad[lower_knot]
+      + alpha * published_yaw_unwrapped_rad[upper_knot];
+  mpc_setpoint_pid.attitude.yaw =
+      remainderf(degrees(yaw_unwrapped_rad), 360.0f);
 }
 
 static void holdCurrentPose(setpoint_t *hold, const state_t *state) {
@@ -734,7 +830,7 @@ static void holdCurrentPose(setpoint_t *hold, const state_t *state) {
 }
 
 static bool planIsPublishable(
-    const state_t *state, int *bad_knot, int *bad_state, float *bad_value) {
+    int *bad_knot, int *bad_state, float *bad_value) {
   static const float max_position_change_m = 5.0f;
   static const float max_velocity_mps = 5.0f;
 
@@ -748,10 +844,8 @@ static bool planIsPublishable(
         return false;
       }
     }
-    const float position[3] = {
-        state->position.x, state->position.y, state->position.z};
     for (int j = 0; j < 3; ++j) {
-      if (fabsf(Xhrz[k](j) - position[j]) > max_position_change_m) {
+      if (fabsf(Xhrz[k](j)) > max_position_change_m) {
         *bad_knot = k;
         *bad_state = j;
         *bad_value = Xhrz[k](j);
@@ -778,6 +872,23 @@ static bool planIsPublishable(
   return true;
 }
 
+static VectorNf localPlanStateToWorld(const VectorNf& state_local) {
+  VectorNf state_world = state_local;
+  const Eigen::Vector3f position_world = localVectorToWorld(
+      active_local_frame,
+      Eigen::Vector3f(state_local(0), state_local(1), state_local(2)))
+      + Eigen::Vector3f(
+          active_local_frame.origin_x,
+          active_local_frame.origin_y,
+          active_local_frame.origin_z);
+  const Eigen::Vector3f velocity_world = localVectorToWorld(
+      active_local_frame,
+      Eigen::Vector3f(state_local(6), state_local(7), state_local(8)));
+  state_world.head(3) = position_world;
+  state_world.segment<3>(6) = velocity_world;
+  return state_world;
+}
+
 static void tinympcControllerTask(void *parameters) {
   (void)parameters;
   uint32_t log_counter = 0;
@@ -801,7 +912,6 @@ static void tinympcControllerTask(void *parameters) {
 
     if (reset_requested) {
       step = 0;
-      traj_idx = 0;
       perception_halfspace_active = false;
       perception_boundary_index = -1;
       perception_safe_mask = 0;
@@ -813,7 +923,11 @@ static void tinympcControllerTask(void *parameters) {
 
     updateInitialState(&sensors_task, &state_task);
     updateHorizonReference(&setpoint_task);
+    resetStateWarmStartInActiveFrame();
     updatePerceptionHalfspace(&state_task);
+    if (perception_halfspace_active) {
+      applyPerceptionHalfspace();
+    }
 
     tiny_UpdateLinearCost(&work);
     const uint64_t solve_start_us = usecTimestamp();
@@ -834,7 +948,7 @@ static void tinympcControllerTask(void *parameters) {
     int bad_state = -1;
     float bad_value = 0.0f;
     const bool plan_publishable =
-        planIsPublishable(&state_task, &bad_knot, &bad_state, &bad_value);
+        planIsPublishable(&bad_knot, &bad_state, &bad_value);
     float published_projection_m = 0.0f;
     if (plan_publishable) {
       xSemaphoreTake(dataMutex, portMAX_DELAY);
@@ -845,7 +959,8 @@ static void tinympcControllerTask(void *parameters) {
       const float previous_z = mpc_has_run
           ? mpc_setpoint_pid.position.z : state_task.position.z;
       for (int k = 0; k < NHORIZON; ++k) {
-        published_Xhrz[k] = Xhrz[k];
+        published_Xhrz[k] = localPlanStateToWorld(Xhrz[k]);
+        published_yaw_unwrapped_rad[k] = reference_yaw_unwrapped_rad[k];
       }
       if (continuity_knot == 0) {
         published_Xhrz[0](0) = previous_x;
@@ -855,11 +970,14 @@ static void tinympcControllerTask(void *parameters) {
         for (int k = 0; k <= continuity_knot; ++k) {
           const float blend = (float)k / (float)continuity_knot;
           published_Xhrz[k](0) =
-              (1.0f - blend) * previous_x + blend * Xhrz[continuity_knot](0);
+              (1.0f - blend) * previous_x
+              + blend * published_Xhrz[continuity_knot](0);
           published_Xhrz[k](1) =
-              (1.0f - blend) * previous_y + blend * Xhrz[continuity_knot](1);
+              (1.0f - blend) * previous_y
+              + blend * published_Xhrz[continuity_knot](1);
           published_Xhrz[k](2) =
-              (1.0f - blend) * previous_z + blend * Xhrz[continuity_knot](2);
+              (1.0f - blend) * previous_z
+              + blend * published_Xhrz[continuity_knot](2);
         }
       }
       published_projection_m =
@@ -889,11 +1007,9 @@ static void tinympcControllerTask(void *parameters) {
       float max_primal_aux_gap = 0.0f;
       for (int k = 0; k <= continuity_knot; ++k) {
         const float primal_violation =
-            perception_halfspace_normal.dot(Xhrz[k].head(3)) -
-            perception_halfspace_boundary;
+            data.a_pos_hs[k][0].dot(Xhrz[k].head(3)) - data.b_hs[k][0];
         const float aux_violation =
-            perception_halfspace_normal.dot(ZX_new[k].head(3)) -
-            perception_halfspace_boundary;
+            data.a_pos_hs[k][0].dot(ZX_new[k].head(3)) - data.b_hs[k][0];
         const float published_violation =
             perception_halfspace_normal.dot(published_Xhrz[k].head(3)) -
             perception_halfspace_boundary;
@@ -993,7 +1109,6 @@ void controllerOutOfTreeInit(void) {
 
   /* End of MPC initialization */  
   step = 0;
-  traj_idx = 0;
   perception_halfspace_active = false;
   perception_boundary_index = -1;
   perception_safe_mask = 0;
@@ -1005,7 +1120,6 @@ void controllerOutOfTreeInit(void) {
   plan_start_tick = 0;
   published_pid_lookahead_knots = 0;
   motors_were_allowed = false;
-  pid_yaw_reference_deg = 0.0f;
   controllerPidInit();
 
   sequentialObstacleLinkInit();
@@ -1021,6 +1135,7 @@ void controllerOutOfTreeInit(void) {
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   for (int k = 0; k < NHORIZON; ++k) {
     published_Xhrz[k].setZero();
+    published_yaw_unwrapped_rad[k] = 0.0f;
   }
   planner_reset_requested = true;
   xSemaphoreGive(dataMutex);
@@ -1047,9 +1162,6 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     if (controller_reactivated || (!motors_allowed && motors_were_allowed)) {
       mpc_has_run = false;
       planner_reset_requested = true;
-    }
-    if (controller_reactivated) {
-      pid_yaw_reference_deg = state->attitude.yaw;
     }
     if (motors_allowed && RATE_DO_EXECUTE(MPC_RATE, tick)) {
       memcpy(&planner_setpoint, setpoint, sizeof(planner_setpoint));
