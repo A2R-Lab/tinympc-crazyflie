@@ -1,3 +1,2 @@
 obj-y += controller_tinympc.o
-obj-y += sequential_obstacle_link.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/

@@ -54,23 +54,11 @@ enum tiny_ErrorCode tiny_UpdateConstrainedLinearCost(tiny_AdmmWorkspace* work) {
   }
   if (work->stgs->en_cstr_states) {
     for (int k = 0; k < N - 1; ++k) {
-      /* Rebuild q from the reference before adding the current ADMM term. */
-      (work->data->q[k]).noalias() =
-          -(*(work->data->Q)).lazyProduct(work->data->Xref[k]);
-      work->data->q[k] -=
-          work->rho * (work->ZX_new[k] - work->soln->YX[k]);
+      /* Add state constraint term to q[k]: q[k] += -ρ*(zx[k]-yx[k]) */ 
+      work->data->q[k] = work->data->q[k] - work->rho * (work->ZX_new[k] - work->soln->YX[k]);
     }
-    /* Rebuild the terminal cost before adding its current ADMM term. */
-    if (work->stgs->adaptive_horizon > 0) {
-      (work->soln->p[N-1]).noalias() =
-          -(*(work->soln->Pinf_s)).lazyProduct(work->data->Xref[N-1]);
-    }
-    else {
-      (work->soln->p[N-1]).noalias() =
-          -(*(work->soln->Pinf)).lazyProduct(work->data->Xref[N-1]);
-    }
-    work->soln->p[N-1] -=
-        work->rho * (work->ZX_new[N-1] - work->soln->YX[N-1]);
+    /* Terminal state constraint */
+    work->soln->p[N-1] = work->soln->p[N-1] - work->rho * (work->ZX_new[N-1] - work->soln->YX[N-1]);
   }
   return TINY_NO_ERROR;
 }
