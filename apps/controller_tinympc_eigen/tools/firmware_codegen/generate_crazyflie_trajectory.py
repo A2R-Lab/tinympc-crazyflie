@@ -38,6 +38,7 @@ class Trajectory:
     sample_rate_hz: int
     duration_s: float
     loops: bool
+    tangent_heading: bool
     states: tuple[tuple[float, ...], ...]
 
 
@@ -296,6 +297,7 @@ def generate_trajectory(
     height_m: float,
     yaw_rad: float,
     loops: bool,
+    tangent_heading: bool,
     path: PathFunction,
 ) -> Trajectory:
     interval_count = max(1, round(requested_duration_s * sample_rate_hz))
@@ -309,7 +311,9 @@ def generate_trajectory(
         rodrigues = rotation_to_rodrigues(rotation)
         angular_velocity = body_rate(rotation, rotation_derivative(rotations, index, dt))
         states.append(position + rodrigues + velocity + angular_velocity)
-    return Trajectory(name, sample_rate_hz, duration_s, loops, tuple(states))
+    return Trajectory(
+        name, sample_rate_hz, duration_s, loops, tangent_heading, tuple(states)
+    )
 
 
 def validate_trajectory(trajectory: Trajectory) -> None:
@@ -376,6 +380,7 @@ def render_header(trajectory: Trajectory) -> str:
             f"#define TRAJECTORY_SAMPLE_COUNT {len(trajectory.states)}",
             f"#define TRAJECTORY_STATE_DIM {STATE_DIM}",
             f"#define TRAJECTORY_LOOPS {1 if trajectory.loops else 0}",
+            f"#define TRAJECTORY_TANGENT_HEADING {1 if trajectory.tangent_heading else 0}",
             "",
             "static const float X_ref_data[TRAJECTORY_SAMPLE_COUNT][TRAJECTORY_STATE_DIM] = {",
             *rows,
@@ -396,10 +401,11 @@ def main() -> int:
     yaw_rad = math.radians(settings.yaw_deg)
 
     specifications = (
-        ("hover", settings.hover_duration_s, False, hover_path),
+        ("hover", settings.hover_duration_s, False, False, hover_path),
         (
             "straight",
             settings.straight_duration_s,
+            False,
             False,
             straight_path(settings.straight_length_m),
         ),
@@ -407,12 +413,14 @@ def main() -> int:
             "circle",
             settings.circle_period_s * settings.circle_laps,
             True,
+            True,
             circle_path(settings.circle_radius_m, settings.circle_laps),
         ),
         (
             "figure8",
             settings.figure8_period_s * settings.figure8_laps,
             True,
+            False,
             figure8_path(
                 settings.figure8_x_amplitude_m,
                 settings.figure8_y_amplitude_m,
@@ -424,9 +432,10 @@ def main() -> int:
     output_directory = app_directory / "src" / "trajectories" / f"{solve_rate_hz}hz"
     output_directory.mkdir(parents=True, exist_ok=True)
     print(f"Using firmware solve rate: {solve_rate_hz} Hz")
-    for name, duration_s, loops, path in specifications:
+    for name, duration_s, loops, tangent_heading, path in specifications:
         trajectory = generate_trajectory(
-            name, solve_rate_hz, duration_s, settings.height_m, yaw_rad, loops, path
+            name, solve_rate_hz, duration_s, settings.height_m, yaw_rad,
+            loops, tangent_heading, path
         )
         validate_trajectory(trajectory)
         output_path = output_directory / f"traj_{name}_{solve_rate_hz}hz.h"

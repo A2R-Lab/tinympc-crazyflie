@@ -53,6 +53,7 @@ extern "C" {
 
 #include "controller.h"
 #include "controller_pid.h"
+#include "position_controller.h"
 #include "physicalConstants.h"
 #include "log.h"
 #include "param.h"
@@ -167,14 +168,17 @@ static const float perception_boundary_angle_deg[3] = {
 static const float perception_safe_min_m = 0.30f;
 static const uint32_t perception_max_age_ms = 250;
 static const float perception_halfspace_penalty = 500.0f;
-static const uint8_t perception_average_window = 5;
-static const uint8_t perception_side_open_votes = 3;
-static const uint8_t perception_all_blocked_votes = 3;
+// Use the latest GAP8 result directly. A one-sample window retains the same
+// bookkeeping and decision code without adding temporal detection latency.
+static const uint8_t perception_average_window = 1;
+static const uint8_t perception_side_open_votes = 1;
+static const uint8_t perception_all_blocked_votes = 1;
 static const float perception_trigger_average = 2.0f;
 static const float perception_clear_average = 1.0f;
-static const uint32_t perception_post_clear_hold_ms = 5000;
+static const uint32_t perception_post_clear_hold_ms = 500;
 static const int perception_pid_lookahead_knots = 5;
 static const float perception_max_plan_projection_m = 0.75f;
+static const float perception_velocity_projection_margin_m = 0.15f;
 static bool perception_halfspace_active = false;
 static int8_t perception_boundary_index = -1;
 static uint8_t perception_safe_mask = 0;
@@ -189,6 +193,7 @@ static uint8_t perception_danger_sum = 0;
 static float perception_danger_average = 0.0f;
 static uint32_t perception_last_sample = 0;
 static int8_t perception_evasion_side = 0;  // +1 right, -1 left.
+static int8_t perception_remembered_safe_side = 0;  // +1 right, -1 left.
 static TickType_t perception_post_clear_deadline = 0;
 
 // Create TinyMPC struct
@@ -403,6 +408,7 @@ static void resetPerceptionAverage(void) {
   perception_danger_sum = 0;
   perception_danger_average = 0.0f;
   perception_last_sample = 0;
+  perception_remembered_safe_side = 0;
 }
 
 static void updatePerceptionAverage(uint8_t safe_mask) {
@@ -463,14 +469,29 @@ static void updatePerceptionHalfspace(const state_t *state) {
   if (sample != perception_last_sample) {
     perception_last_sample = sample;
     updatePerceptionAverage(perception_safe_mask);
+    const uint8_t right_open =
+        perception_open_sum[0] + perception_open_sum[1];
+    const uint8_t left_open =
+        perception_open_sum[2] + perception_open_sum[3];
+    if (right_open > left_open) {
+      perception_remembered_safe_side = 1;
+    } else if (left_open > right_open) {
+      perception_remembered_safe_side = -1;
+    }
   }
   if (perception_history_count < perception_average_window) {
     return;
   }
   if (perception_halfspace_active && perception_boundary_index == 4) {
-    if ((int32_t)(xTaskGetTickCount() - perception_post_clear_deadline) < 0) {
+    const bool post_clear_hold_valid =
+        (int32_t)(xTaskGetTickCount() - perception_post_clear_deadline) < 0;
+    if (post_clear_hold_valid &&
+        perception_danger_average <= perception_trigger_average) {
       return;
     }
+    // A post-clear side-retention plane must never mask a newly observed
+    // obstacle. Remove it and process the current frame below so a stopping
+    // or lateral avoidance plane is installed in this same MPC update.
     clearPerceptionHalfspace();
   }
   if (perception_halfspace_active &&
@@ -497,24 +518,36 @@ static void updatePerceptionHalfspace(const state_t *state) {
   if (perception_halfspace_active) {
     if (perception_boundary_index == 3) {
       if (all_directions_blocked) {
-        return;
-      }
-      const uint8_t right_open_votes = perception_open_sum[0];
-      const uint8_t left_open_votes = perception_open_sum[3];
-      if (right_open_votes < perception_side_open_votes &&
-          left_open_votes < perception_side_open_votes) {
-        return;
-      }
-      if (right_open_votes > left_open_votes) {
-        selected_boundary = 0;
-        selected_right_minus_left = 1;
+        if (perception_remembered_safe_side == 0) {
+          return;
+        }
+        selected_right_minus_left = perception_remembered_safe_side;
+        selected_boundary = selected_right_minus_left > 0 ? 0 : 2;
+        clearPerceptionHalfspace();
       } else {
-        selected_boundary = 2;
-        selected_right_minus_left = -1;
+        const uint8_t right_open_votes = perception_open_sum[0];
+        const uint8_t left_open_votes = perception_open_sum[3];
+        if (right_open_votes < perception_side_open_votes &&
+            left_open_votes < perception_side_open_votes) {
+          return;
+        }
+        if (right_open_votes > left_open_votes) {
+          selected_boundary = 0;
+          selected_right_minus_left = 1;
+        } else {
+          selected_boundary = 2;
+          selected_right_minus_left = -1;
+        }
+        clearPerceptionHalfspace();
       }
-      clearPerceptionHalfspace();
     } else if (!all_directions_blocked ||
                all_blocked_votes < perception_all_blocked_votes) {
+      return;
+    } else if (perception_remembered_safe_side != 0 &&
+               perception_evasion_side == perception_remembered_safe_side) {
+      // This lateral plane was selected from the last directional evidence
+      // before the view became fully blocked. Keep following that remembered
+      // escape instead of alternating between lateral and stop planes.
       return;
     } else {
       // Escalate a latched lateral plane only after the entire camera view
@@ -555,7 +588,7 @@ static void updatePerceptionHalfspace(const state_t *state) {
 
   const struct vec rpy = quat2rpy(qnormalize(attitude));
   float normal_angle = rpy.z;
-  if (!all_directions_blocked) {
+  if (selected_boundary >= 0) {
     normal_angle +=
         radians(perception_boundary_angle_deg[selected_boundary] + 90.0f);
     // n.p <= b selects the right side. Reverse n when the left side is safer.
@@ -570,9 +603,9 @@ static void updatePerceptionHalfspace(const state_t *state) {
       perception_halfspace_normal(1) * state->position.y;
 
   setPerceptionHalfspace();
-  perception_boundary_index = all_directions_blocked
-      ? 3 : (int8_t)selected_boundary;
-  if (!all_directions_blocked) {
+  perception_boundary_index = selected_boundary >= 0
+      ? (int8_t)selected_boundary : 3;
+  if (selected_boundary >= 0) {
     perception_evasion_side = selected_right_minus_left > 0 ? 1 : -1;
   }
 }
@@ -585,6 +618,12 @@ static float projectPublishedPlanToPerceptionHalfspace(
   const int constrained_knots =
       TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS < NHORIZON
           ? TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS : NHORIZON;
+  const Eigen::Vector3f current_position(
+      state->position.x, state->position.y, state->position.z);
+  const float current_safe_distance = perception_halfspace_boundary -
+      perception_halfspace_normal.dot(current_position);
+  const bool project_velocity =
+      current_safe_distance <= perception_velocity_projection_margin_m;
   float maximum_projection = 0.0f;
   for (int k = 0; k < constrained_knots; ++k) {
     const float violation =
@@ -594,6 +633,20 @@ static float projectPublishedPlanToPerceptionHalfspace(
       published_Xhrz[k].head(3) -=
           violation * perception_halfspace_normal;
       maximum_projection = T_MAX(maximum_projection, violation);
+    }
+
+    // The cascaded PID consumes both the projected position and the MPC
+    // velocity feedforward. Do not allow that feedforward to carry the
+    // vehicle through a plane whose position target has just been projected
+    // onto the safe side. Preserve all tangential velocity.
+    if (project_velocity) {
+      Eigen::Vector3f published_velocity = published_Xhrz[k].segment<3>(6);
+      const float forbidden_velocity =
+          perception_halfspace_normal.dot(published_velocity);
+      if (forbidden_velocity > 0.0f) {
+        published_Xhrz[k].segment<3>(6) -=
+            forbidden_velocity * perception_halfspace_normal;
+      }
     }
   }
   if (maximum_projection > perception_max_plan_projection_m) {
@@ -646,8 +699,26 @@ static void updatePidSetpointFromPlan(const uint32_t tick) {
       (1.0f - alpha) * published_Xhrz[lower_knot](1) + alpha * published_Xhrz[upper_knot](1);
   mpc_setpoint_pid.position.z =
       (1.0f - alpha) * published_Xhrz[lower_knot](2) + alpha * published_Xhrz[upper_knot](2);
+  mpc_setpoint_pid.velocity.x =
+      (1.0f - alpha) * published_Xhrz[lower_knot](6) + alpha * published_Xhrz[upper_knot](6);
+  mpc_setpoint_pid.velocity.y =
+      (1.0f - alpha) * published_Xhrz[lower_knot](7) + alpha * published_Xhrz[upper_knot](7);
+  mpc_setpoint_pid.velocity.z =
+      (1.0f - alpha) * published_Xhrz[lower_knot](8) + alpha * published_Xhrz[upper_knot](8);
 
+#if TRAJECTORY_TANGENT_HEADING
+  const float horizontal_speed_sq =
+      mpc_setpoint_pid.velocity.x * mpc_setpoint_pid.velocity.x
+      + mpc_setpoint_pid.velocity.y * mpc_setpoint_pid.velocity.y;
+  if (horizontal_speed_sq > 0.0025f) {
+    mpc_setpoint_pid.attitude.yaw = degrees(atan2f(
+        mpc_setpoint_pid.velocity.y, mpc_setpoint_pid.velocity.x));
+  } else {
+    mpc_setpoint_pid.attitude.yaw = pid_yaw_reference_deg;
+  }
+#else
   mpc_setpoint_pid.attitude.yaw = pid_yaw_reference_deg;
+#endif
 }
 
 static void holdCurrentPose(setpoint_t *hold, const state_t *state) {
@@ -842,10 +913,11 @@ static void tinympcControllerTask(void *parameters) {
       DEBUG_PRINT("MPC: iter=%d solve=%luus\n",
                   info.iter, (unsigned long)solve_us);
       DEBUG_PRINT(
-          "MPC: vision mask=%u avg=%.2f n=%u plane=%d active=%d corr=%.3f hs[0:%d] primal=%.3f aux=%.3f pub=%.3f slack=%.3f gap=%.3f accepted=%d\n",
+          "MPC: vision mask=%u avg=%.2f n=%u side=%d plane=%d active=%d corr=%.3f hs[0:%d] primal=%.3f aux=%.3f pub=%.3f slack=%.3f gap=%.3f accepted=%d\n",
           (unsigned int)perception_safe_mask,
           (double)perception_danger_average,
           (unsigned int)perception_history_count,
+          perception_remembered_safe_side,
           perception_boundary_index,
           perception_halfspace_active ? 1 : 0,
           (double)published_projection_m,
@@ -1001,6 +1073,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     holdCurrentPose(&hold_setpoint, state);
     pid_setpoint = &hold_setpoint;
   }
+  positionControllerSetVelocityFeedforward(pid_setpoint == &mpc_setpoint_pid);
   controllerPid(control, pid_setpoint, sensors, state, tick);
 }
 
