@@ -1,4 +1,21 @@
+# Target hardware is the Crazyflie 2.1 Brushless (CF21BL), NOT the brushed cf2.
+# A cf2-platform build boots on brushless HW but resets in the power/motor
+# supervisor (radio comes up, then "too many packets lost"). This selects the
+# correct platform so the OOT .config no longer defaults to CONFIG_PLATFORM_CF2.
+CONFIG_PLATFORM_CF21BL=y
+# The brushless ESCs speak DShot, not the default OneShot125. Selecting the
+# platform alone does NOT pull in cf21bl_defconfig's ESC protocol (app-config is
+# merged over the base defconfig), so set it explicitly or the motors get a
+# signal the ESCs ignore and never spin. Brushless also requires arming.
+CONFIG_MOTORS_ESC_PROTOCOL_DSHOT=y
+CONFIG_MOTORS_DSHOT_PWM_300KHZ=y
+CONFIG_MOTORS_REQUIRE_ARMING=y
+
 CONFIG_APP_ENABLE=y
 CONFIG_APP_PRIORITY=1
 CONFIG_APP_STACKSIZE=350
 CONFIG_CONTROLLER_OOT=y
+# AI-deck link is the custom UART corner protocol, not CPX. Disable the stock
+# bcAI/CPX deck driver. This also drops cfloader-over-radio GAP8 flashing, so
+# flash the GAP8 over JTAG.
+CONFIG_DECK_AI=n

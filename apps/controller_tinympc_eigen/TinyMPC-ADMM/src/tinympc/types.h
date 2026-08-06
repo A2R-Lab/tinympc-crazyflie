@@ -100,6 +100,7 @@ typedef struct {
   int   max_iter;            ///< Maximum number of AL iterations
   int   max_iter_riccati;    ///< Maximum number of Riccati solve iterations
   int   max_iter_ls;         ///< Maximum number of line-search iterations
+  int   iters_check_rho_update; ///< Rho update interval; 0 disables adaptive rho
 
   float tol_abs_prim;        ///< Riccati solve tolerance
   float tol_abs_dual;        ///< Constraint tolerance
@@ -143,10 +144,16 @@ typedef struct {
   Eigen::VectorMf* ucu;
   Eigen::VectorMf* lcu;
   
-  // Half-space constraint for obstacle avoidance: a^T x <= b (position only)
-  Eigen::Vector3f a_hs[TINY_MAX_HORIZON_KNOTS];
-  float b_hs[TINY_MAX_HORIZON_KNOTS];
-  int en_hs[TINY_MAX_HORIZON_KNOTS];
+  // Kinematic half-spaces:
+  //   a_pos^T position + a_vel^T velocity <= b + s, s>=0.
+  // This directly represents camera angular look-ahead constraints while
+  // retaining the position-only modeled-obstacle special case.
+  Eigen::Vector3f a_pos_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  Eigen::Vector3f a_vel_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float b_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float slack_penalty_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  float slack_used_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
+  int en_hs[TINY_MAX_HORIZON_KNOTS][MAX_HS];
   
   int data_size;
 } tiny_AdmmData;

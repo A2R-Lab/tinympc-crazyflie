@@ -38,6 +38,8 @@ EXTRA_CFLAGS += -DEIGEN_INITIALIZE_MATRICES_BY_ZERO
 EXTRA_CFLAGS += -DEIGEN_NO_MALLOC
 EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
+# The capture-time state channel uses a dedicated UART1 DMA sender task.
+EXTRA_CFLAGS += -DENABLE_UART1_DMA
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.
@@ -47,3 +49,8 @@ OOT_CONFIG := $(CURDIR)/app-config
 OOT_USES_CXX := 1
 
 include $(CRAZYFLIE_BASE)/tools/make/oot.mk
+
+# The upstream OOT `cload` target only transfers the existing binary.  Make
+# flashing safe after a source update: build the app first so `make cload`
+# cannot silently reinstall a stale cf21bl.bin lacking new parameters/logs.
+cload: all

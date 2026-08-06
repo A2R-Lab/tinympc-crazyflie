@@ -19,6 +19,7 @@ enum tiny_ErrorCode tiny_InitSettings(tiny_AdmmSettings* stgs) {
   stgs->max_iter          = MAX_ITER;
   stgs->max_iter_riccati  = MAX_ITER_RICCATI;
   stgs->max_iter_ls       = MAX_ITER_LS;
+  stgs->iters_check_rho_update = 0;
 
   stgs->tol_abs_prim    = (float)TOL_ABS_PRIM;
   stgs->tol_abs_dual    = (float)TOL_ABS_DUAL;

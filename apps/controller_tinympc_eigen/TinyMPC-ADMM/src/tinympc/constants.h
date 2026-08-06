@@ -10,6 +10,7 @@
 #  define NHORIZON 25
 # endif
 # define TINY_MAX_HORIZON_KNOTS 25
+# define MAX_HS 5
 
 /************************************
 * Printing Constants to set Layout *
