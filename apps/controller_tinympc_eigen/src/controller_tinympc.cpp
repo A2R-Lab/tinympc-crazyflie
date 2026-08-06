@@ -60,6 +60,7 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 #include "supervisor.h"
+#include "sequential_obstacle_link.h"
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
@@ -159,14 +160,36 @@ static VectorNf x0;
 static VectorNf xg;
 static VectorMf ug;
 
-// A world-fixed camera-style boundary captured on the first MPC update. In a
-// top-down view, its boundary line extends 45 degrees left of camera-forward
-// through the drone; the selected half-space keeps the plan left of that line.
-static const float camera_halfspace_angle_deg = 45.0f;
-static const float camera_halfspace_penalty = 500.0f;
-static bool camera_halfspace_armed = false;
-static Eigen::Vector3f camera_halfspace_normal = Eigen::Vector3f::Zero();
-static float camera_halfspace_boundary = 0.0f;
+// Three candidate image-aligned boundaries project to vertical planes through
+// the vehicle. Slice order is right-to-left.
+static const float perception_boundary_angle_deg[3] = {
+    -60.0f, 0.0f, 60.0f};
+static const float perception_safe_min_m = 0.30f;
+static const uint32_t perception_max_age_ms = 250;
+static const float perception_halfspace_penalty = 500.0f;
+static const uint8_t perception_average_window = 5;
+static const uint8_t perception_side_open_votes = 3;
+static const uint8_t perception_all_blocked_votes = 3;
+static const float perception_trigger_average = 2.0f;
+static const float perception_clear_average = 1.0f;
+static const uint32_t perception_post_clear_hold_ms = 5000;
+static const int perception_pid_lookahead_knots = 5;
+static const float perception_max_plan_projection_m = 0.75f;
+static bool perception_halfspace_active = false;
+static int8_t perception_boundary_index = -1;
+static uint8_t perception_safe_mask = 0;
+static Eigen::Vector3f perception_halfspace_normal = Eigen::Vector3f::Zero();
+static float perception_halfspace_boundary = 0.0f;
+static uint8_t perception_danger_history[perception_average_window] = {0};
+static uint8_t perception_safe_history[perception_average_window] = {0};
+static uint8_t perception_open_sum[SEQUENTIAL_OBSTACLE_DIRECTIONS] = {0};
+static uint8_t perception_history_next = 0;
+static uint8_t perception_history_count = 0;
+static uint8_t perception_danger_sum = 0;
+static float perception_danger_average = 0.0f;
+static uint32_t perception_last_sample = 0;
+static int8_t perception_evasion_side = 0;  // +1 right, -1 left.
+static TickType_t perception_post_clear_deadline = 0;
 
 // Create TinyMPC struct
 static tiny_Model model;
@@ -203,6 +226,7 @@ static uint32_t plan_start_tick = 0;
 static bool motors_were_allowed = false;
 static float pid_yaw_reference_deg = 0.0f;
 static VectorNf published_Xhrz[NHORIZON];
+static int published_pid_lookahead_knots = 0;
 static SemaphoreHandle_t runTaskSemaphore = NULL;
 static SemaphoreHandle_t dataMutex = NULL;
 static StaticSemaphore_t dataMutexBuffer;
@@ -331,33 +355,255 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   }
 }
 
-static void armCameraHalfspace(const state_t *state) {
-  const struct vec rpy = quat2rpy(qnormalize(attitude));
-  const float normal_angle = rpy.z - radians(camera_halfspace_angle_deg);
-  camera_halfspace_normal =
-      Eigen::Vector3f(cosf(normal_angle), sinf(normal_angle), 0.0f);
-  camera_halfspace_boundary =
-      camera_halfspace_normal(0) * state->position.x +
-      camera_halfspace_normal(1) * state->position.y +
-      camera_halfspace_normal(2) * state->position.z;
-
+static void clearPerceptionHalfspace(void) {
   tiny_ClearPositionHalfspaces(&work);
+  perception_halfspace_active = false;
+  perception_boundary_index = -1;
+  perception_halfspace_normal.setZero();
+  perception_halfspace_boundary = 0.0f;
+  perception_post_clear_deadline = 0;
+}
+
+static void setPerceptionHalfspace(void) {
   const Eigen::Vector3f zero_velocity = Eigen::Vector3f::Zero();
   const int constrained_knots =
       TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS < NHORIZON
           ? TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS : NHORIZON;
   for (int k = 0; k < constrained_knots; ++k) {
     tiny_SetKinematicHalfspace(
-        &work, k, 0, &camera_halfspace_normal, &zero_velocity,
-        camera_halfspace_boundary, camera_halfspace_penalty, 1);
+        &work, k, 0, &perception_halfspace_normal, &zero_velocity,
+        perception_halfspace_boundary, perception_halfspace_penalty, 1);
+  }
+  perception_halfspace_active = true;
+}
+
+static void armPostClearHalfspace(const state_t *state, int8_t evasion_side) {
+  tiny_ClearPositionHalfspaces(&work);
+  const struct vec rpy = quat2rpy(qnormalize(attitude));
+  const float left_x = -sinf(rpy.z);
+  const float left_y = cosf(rpy.z);
+  const float normal_sign = evasion_side > 0 ? 1.0f : -1.0f;
+  perception_halfspace_normal = Eigen::Vector3f(
+      normal_sign * left_x, normal_sign * left_y, 0.0f);
+  perception_halfspace_boundary =
+      perception_halfspace_normal(0) * state->position.x +
+      perception_halfspace_normal(1) * state->position.y;
+  setPerceptionHalfspace();
+  perception_boundary_index = 4;
+  perception_post_clear_deadline =
+      xTaskGetTickCount() + pdMS_TO_TICKS(perception_post_clear_hold_ms);
+}
+
+static void resetPerceptionAverage(void) {
+  memset(perception_danger_history, 0, sizeof(perception_danger_history));
+  memset(perception_safe_history, 0, sizeof(perception_safe_history));
+  memset(perception_open_sum, 0, sizeof(perception_open_sum));
+  perception_history_next = 0;
+  perception_history_count = 0;
+  perception_danger_sum = 0;
+  perception_danger_average = 0.0f;
+  perception_last_sample = 0;
+}
+
+static void updatePerceptionAverage(uint8_t safe_mask) {
+  if (perception_history_count == perception_average_window) {
+    perception_danger_sum -=
+        perception_danger_history[perception_history_next];
+    const uint8_t old_safe_mask =
+        perception_safe_history[perception_history_next];
+    for (int direction = 0; direction < SEQUENTIAL_OBSTACLE_DIRECTIONS;
+         ++direction) {
+      perception_open_sum[direction] -=
+          (old_safe_mask >> direction) & 1u;
+    }
+  } else {
+    perception_history_count++;
   }
 
-  camera_halfspace_armed = true;
-  DEBUG_PRINT("Camera half-space armed: n=(%.2f,%.2f) b=%.2f penalty=%.1f\n",
-              (double)camera_halfspace_normal(0),
-              (double)camera_halfspace_normal(1),
-              (double)camera_halfspace_boundary,
-              (double)camera_halfspace_penalty);
+  uint8_t safe_count = 0;
+  for (int direction = 0; direction < SEQUENTIAL_OBSTACLE_DIRECTIONS;
+       ++direction) {
+    const uint8_t is_safe = (safe_mask >> direction) & 1u;
+    safe_count += is_safe;
+    perception_open_sum[direction] += is_safe;
+  }
+  const uint8_t dangerous_count =
+      SEQUENTIAL_OBSTACLE_DIRECTIONS - safe_count;
+  perception_danger_history[perception_history_next] = dangerous_count;
+  perception_safe_history[perception_history_next] = safe_mask;
+  perception_danger_sum += dangerous_count;
+  perception_history_next =
+      (perception_history_next + 1u) % perception_average_window;
+  perception_danger_average = (float)perception_danger_sum /
+      (float)perception_history_count;
+}
+
+static void updatePerceptionHalfspace(const state_t *state) {
+  float clearance_m[SEQUENTIAL_OBSTACLE_DIRECTIONS];
+  uint32_t age_ms = 0;
+  uint32_t sample = 0;
+
+  if (!sequentialObstacleLinkGetLatest(clearance_m, &age_ms, &sample) ||
+      age_ms > perception_max_age_ms) {
+    perception_safe_mask = 0;
+    clearPerceptionHalfspace();
+    resetPerceptionAverage();
+    return;
+  }
+
+  perception_safe_mask = 0;
+  int safe_count = 0;
+  for (int direction = 0; direction < SEQUENTIAL_OBSTACLE_DIRECTIONS;
+       ++direction) {
+    if (clearance_m[direction] >= perception_safe_min_m) {
+      perception_safe_mask |= (uint8_t)(1u << direction);
+      safe_count++;
+    }
+  }
+  if (sample != perception_last_sample) {
+    perception_last_sample = sample;
+    updatePerceptionAverage(perception_safe_mask);
+  }
+  if (perception_history_count < perception_average_window) {
+    return;
+  }
+  if (perception_halfspace_active && perception_boundary_index == 4) {
+    if ((int32_t)(xTaskGetTickCount() - perception_post_clear_deadline) < 0) {
+      return;
+    }
+    clearPerceptionHalfspace();
+  }
+  if (perception_halfspace_active &&
+      perception_danger_average < perception_clear_average) {
+    if (perception_boundary_index >= 0 &&
+        perception_boundary_index < 3 && perception_evasion_side != 0) {
+      armPostClearHalfspace(state, perception_evasion_side);
+      return;
+    }
+    clearPerceptionHalfspace();
+    return;
+  }
+  if (!perception_halfspace_active &&
+      perception_danger_average <= perception_trigger_average) {
+    return;
+  }
+  const bool all_directions_blocked = safe_count == 0;
+  uint8_t all_blocked_votes = 0;
+  for (int history = 0; history < perception_history_count; ++history) {
+    all_blocked_votes += perception_safe_history[history] == 0;
+  }
+  int selected_boundary = -1;
+  int selected_right_minus_left = 0;
+  if (perception_halfspace_active) {
+    if (perception_boundary_index == 3) {
+      if (all_directions_blocked) {
+        return;
+      }
+      const uint8_t right_open_votes = perception_open_sum[0];
+      const uint8_t left_open_votes = perception_open_sum[3];
+      if (right_open_votes < perception_side_open_votes &&
+          left_open_votes < perception_side_open_votes) {
+        return;
+      }
+      if (right_open_votes > left_open_votes) {
+        selected_boundary = 0;
+        selected_right_minus_left = 1;
+      } else {
+        selected_boundary = 2;
+        selected_right_minus_left = -1;
+      }
+      clearPerceptionHalfspace();
+    } else if (!all_directions_blocked ||
+               all_blocked_votes < perception_all_blocked_votes) {
+      return;
+    } else {
+      // Escalate a latched lateral plane only after the entire camera view
+      // has been blocked persistently, rather than on one noisy frame.
+      clearPerceptionHalfspace();
+    }
+  }
+
+  if (!all_directions_blocked && selected_boundary < 0) {
+    int selected_imbalance = 0;
+    selected_right_minus_left = 0;
+    for (int boundary = 0; boundary < 3; ++boundary) {
+      int safe_right = 0;
+      for (int direction = 0; direction <= boundary; ++direction) {
+        safe_right += perception_open_sum[direction];
+      }
+      int safe_left = 0;
+      for (int direction = boundary + 1;
+           direction < SEQUENTIAL_OBSTACLE_DIRECTIONS; ++direction) {
+        safe_left += perception_open_sum[direction];
+      }
+      const int right_minus_left = safe_right - safe_left;
+      const int imbalance = right_minus_left < 0
+          ? -right_minus_left : right_minus_left;
+      if (imbalance > selected_imbalance) {
+        selected_boundary = boundary;
+        selected_imbalance = imbalance;
+        selected_right_minus_left = right_minus_left;
+      }
+    }
+  }
+  if (!all_directions_blocked && selected_boundary < 0) {
+    // A split safe mask has no preferred side. Use the same deterministic
+    // left escape as an all-blocked frame.
+    selected_boundary = 2;
+    selected_right_minus_left = -1;
+  }
+
+  const struct vec rpy = quat2rpy(qnormalize(attitude));
+  float normal_angle = rpy.z;
+  if (!all_directions_blocked) {
+    normal_angle +=
+        radians(perception_boundary_angle_deg[selected_boundary] + 90.0f);
+    // n.p <= b selects the right side. Reverse n when the left side is safer.
+    if (selected_right_minus_left < 0) {
+      normal_angle += radians(180.0f);
+    }
+  }
+  perception_halfspace_normal =
+      Eigen::Vector3f(cosf(normal_angle), sinf(normal_angle), 0.0f);
+  perception_halfspace_boundary =
+      perception_halfspace_normal(0) * state->position.x +
+      perception_halfspace_normal(1) * state->position.y;
+
+  setPerceptionHalfspace();
+  perception_boundary_index = all_directions_blocked
+      ? 3 : (int8_t)selected_boundary;
+  if (!all_directions_blocked) {
+    perception_evasion_side = selected_right_minus_left > 0 ? 1 : -1;
+  }
+}
+
+static float projectPublishedPlanToPerceptionHalfspace(
+    const state_t *state) {
+  if (!perception_halfspace_active) {
+    return 0.0f;
+  }
+  const int constrained_knots =
+      TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS < NHORIZON
+          ? TINYMPC_GENERATED_CONSTRAINED_HORIZON_KNOTS : NHORIZON;
+  float maximum_projection = 0.0f;
+  for (int k = 0; k < constrained_knots; ++k) {
+    const float violation =
+        perception_halfspace_normal.dot(published_Xhrz[k].head(3)) -
+        perception_halfspace_boundary;
+    if (violation > 0.0f) {
+      published_Xhrz[k].head(3) -=
+          violation * perception_halfspace_normal;
+      maximum_projection = T_MAX(maximum_projection, violation);
+    }
+  }
+  if (maximum_projection > perception_max_plan_projection_m) {
+    for (int k = 0; k < NHORIZON; ++k) {
+      published_Xhrz[k](0) = state->position.x;
+      published_Xhrz[k](1) = state->position.y;
+      published_Xhrz[k](2) = state->position.z;
+    }
+  }
+  return maximum_projection;
 }
 
 static int lastPidTrackingKnot(void) {
@@ -375,6 +621,7 @@ static void updatePidSetpointFromPlan(const uint32_t tick) {
   const float elapsed_s =
       (float)(tick - plan_start_tick) / (float)RATE_MAIN_LOOP;
   float knot_position = elapsed_s / DT;
+  knot_position += (float)published_pid_lookahead_knots;
   const int last_knot = lastPidTrackingKnot();
   if (knot_position < 0.0f) {
     knot_position = 0.0f;
@@ -484,15 +731,18 @@ static void tinympcControllerTask(void *parameters) {
     if (reset_requested) {
       step = 0;
       traj_idx = 0;
-      camera_halfspace_armed = false;
+      perception_halfspace_active = false;
+      perception_boundary_index = -1;
+      perception_safe_mask = 0;
+      perception_evasion_side = 0;
+      perception_post_clear_deadline = 0;
       tiny_ClearPositionHalfspaces(&work);
+      resetPerceptionAverage();
     }
 
     updateInitialState(&sensors_task, &state_task);
     updateHorizonReference(&setpoint_task);
-    if (!camera_halfspace_armed) {
-      armCameraHalfspace(&state_task);
-    }
+    updatePerceptionHalfspace(&state_task);
 
     tiny_UpdateLinearCost(&work);
     const uint64_t solve_start_us = usecTimestamp();
@@ -514,6 +764,7 @@ static void tinympcControllerTask(void *parameters) {
     float bad_value = 0.0f;
     const bool plan_publishable =
         planIsPublishable(&state_task, &bad_knot, &bad_state, &bad_value);
+    float published_projection_m = 0.0f;
     if (plan_publishable) {
       xSemaphoreTake(dataMutex, portMAX_DELAY);
       const float previous_x = mpc_has_run
@@ -540,10 +791,20 @@ static void tinympcControllerTask(void *parameters) {
               (1.0f - blend) * previous_z + blend * Xhrz[continuity_knot](2);
         }
       }
+      published_projection_m =
+          projectPublishedPlanToPerceptionHalfspace(&state_task);
+      published_pid_lookahead_knots = perception_halfspace_active
+          ? perception_pid_lookahead_knots : 0;
       plan_start_tick = solve_tick;
       mpc_has_run = true;
       xSemaphoreGive(dataMutex);
     } else {
+      xSemaphoreTake(dataMutex, portMAX_DELAY);
+      published_projection_m =
+          projectPublishedPlanToPerceptionHalfspace(&state_task);
+      published_pid_lookahead_knots = perception_halfspace_active
+          ? perception_pid_lookahead_knots : 0;
+      xSemaphoreGive(dataMutex);
       DEBUG_PRINT(
           "MPC: rejected plan knot=%d state=%d value=%.3g; retaining prior plan\n",
           bad_knot, bad_state, (double)bad_value);
@@ -557,14 +818,14 @@ static void tinympcControllerTask(void *parameters) {
       float max_primal_aux_gap = 0.0f;
       for (int k = 0; k <= continuity_knot; ++k) {
         const float primal_violation =
-            camera_halfspace_normal.dot(Xhrz[k].head(3)) -
-            camera_halfspace_boundary;
+            perception_halfspace_normal.dot(Xhrz[k].head(3)) -
+            perception_halfspace_boundary;
         const float aux_violation =
-            camera_halfspace_normal.dot(ZX_new[k].head(3)) -
-            camera_halfspace_boundary;
+            perception_halfspace_normal.dot(ZX_new[k].head(3)) -
+            perception_halfspace_boundary;
         const float published_violation =
-            camera_halfspace_normal.dot(published_Xhrz[k].head(3)) -
-            camera_halfspace_boundary;
+            perception_halfspace_normal.dot(published_Xhrz[k].head(3)) -
+            perception_halfspace_boundary;
         const float primal_aux_gap =
             (Xhrz[k].head(3) - ZX_new[k].head(3)).cwiseAbs().maxCoeff();
         max_primal_violation = T_MAX(max_primal_violation, primal_violation);
@@ -581,7 +842,13 @@ static void tinympcControllerTask(void *parameters) {
       DEBUG_PRINT("MPC: iter=%d solve=%luus\n",
                   info.iter, (unsigned long)solve_us);
       DEBUG_PRINT(
-          "MPC: hs[0:%d] primal=%.3f aux=%.3f pub=%.3f slack=%.3f gap=%.3f accepted=%d\n",
+          "MPC: vision mask=%u avg=%.2f n=%u plane=%d active=%d corr=%.3f hs[0:%d] primal=%.3f aux=%.3f pub=%.3f slack=%.3f gap=%.3f accepted=%d\n",
+          (unsigned int)perception_safe_mask,
+          (double)perception_danger_average,
+          (unsigned int)perception_history_count,
+          perception_boundary_index,
+          perception_halfspace_active ? 1 : 0,
+          (double)published_projection_m,
           continuity_knot,
           (double)max_primal_violation,
           (double)max_aux_violation,
@@ -645,7 +912,7 @@ void controllerOutOfTreeInit(void) {
   stgs.en_cstr_goal = 0;
   stgs.en_cstr_inputs = 1;
   stgs.en_cstr_states = 1;  // Constraints active
-  stgs.max_iter = 10;
+  stgs.max_iter = 5;
   stgs.iters_check_rho_update = 0;
   stgs.verbose = 0;
   stgs.check_termination = 0;
@@ -655,13 +922,21 @@ void controllerOutOfTreeInit(void) {
   /* End of MPC initialization */  
   step = 0;
   traj_idx = 0;
-  camera_halfspace_armed = false;
+  perception_halfspace_active = false;
+  perception_boundary_index = -1;
+  perception_safe_mask = 0;
+  perception_evasion_side = 0;
+  perception_post_clear_deadline = 0;
+  resetPerceptionAverage();
   mpc_has_run = false;
   last_controller_tick = 0;
   plan_start_tick = 0;
+  published_pid_lookahead_knots = 0;
   motors_were_allowed = false;
   pid_yaw_reference_deg = 0.0f;
   controllerPidInit();
+
+  sequentialObstacleLinkInit();
 
   static bool task_initialized = false;
   if (!task_initialized) {
