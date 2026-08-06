@@ -56,3 +56,23 @@ CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
 - The controller uses the Crazyflie out-of-tree app/controller build flow.
 - `en_traj` in `src/controller_tinympc.cpp` is a compile-time flag, not a runtime Crazyflie parameter.
 - On `main`, `en_traj` defaults to `false`, so the controller follows commander/setpoints unless you explicitly turn the baked trajectory back on in source.
+
+### Local MPC frame
+
+Each solve uses a local NWU frame anchored at the current position and yaw.
+States, references, and obstacle planes are transformed into this frame. The
+controller sends TinyMPC's first optimized input directly to the motors; there
+is no cascaded PID controller path.
+Trajectory headers store:
+
+```text
+[p_W(3), q_WB(wxyz), v_W(3), omega_B(3)]
+```
+
+The quaternion is converted to local Rodrigues coordinates for the 12-state
+MPC. Reference yaw is derived and unwrapped online from the quaternion sequence.
+Regenerate the headers with:
+
+```bash
+python3 tools/firmware_codegen/generate_crazyflie_trajectory.py
+```

@@ -18,12 +18,12 @@ class CompileTimeProblem:
     state_dim: int = 12
     input_dim: int = 4
     horizon_knots: int = 20
-    model_dt_s: float = 0.04
-    solve_rate_hz: int = 5
+    model_dt_s: float = 0.02
+    solve_rate_hz: int = 50
     admm_max_iterations: int = 5
     scalar_c_type: str = "float"
     max_active_state_halfspaces: int = 1
-    constrained_horizon_knots: int = 10
+    constrained_horizon_knots: int = 20
     crazyflie: str = "brushless"
     deck: str = "aideck"
     propeller_guards: bool = True
@@ -694,7 +694,7 @@ def print_config(problem: CompileTimeProblem) -> None:
     print(
         "  obstacle half-spaces: "
         f"{problem.max_active_state_halfspaces} active, "
-        f"first {problem.constrained_horizon_knots} knots only"
+        f"{problem.constrained_horizon_knots} constrained knots"
     )
 
 
