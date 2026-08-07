@@ -5,16 +5,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "tinyracer_interface.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define SEQUENTIAL_OBSTACLE_DIRECTIONS 4
+#define SEQUENTIAL_OBSTACLE_DIRECTIONS TINYRACER_CLEARANCE_SECTORS
 
 void sequentialObstacleLinkInit(void);
-bool sequentialObstacleLinkGetLatest(
-    float clearance_m[SEQUENTIAL_OBSTACLE_DIRECTIONS],
-    uint32_t *age_ms, uint32_t *sample);
+bool sequentialObstacleLinkGetLatest(TinyRacerPerceptionObservation *observation);
 
 #ifdef __cplusplus
 }

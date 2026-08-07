@@ -59,6 +59,8 @@ extern "C" {
 #include "math3d.h"
 #include "stabilizer_types.h"  // For controlModePWM
 #include "supervisor.h"
+#include "sequential_obstacle_link.h"
+#include "tinyracer_racing.h"
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
@@ -131,8 +133,8 @@ static_assert(NSTATES == TINYMPC_GENERATED_STATE_DIM, "generated state dimension
 static_assert(NINPUTS == TINYMPC_GENERATED_INPUT_DIM, "generated input dimension mismatch");
 
 /* Include trajectory to track */
-#include "trajectories/50hz/traj_straight_50hz.h"
-// #include "trajectories/50hz/traj_circle_50hz.h"
+// #include "trajectories/50hz/traj_straight_50hz.h"
+#include "trajectories/50hz/traj_circle_50hz.h"
 // #include "traj_circle_500hz.h"  // Large circle (1m radius)
 // #include "traj_circle_small.h"  // Small circle (0.5m radius)
 // #include "traj_perching.h"
@@ -186,9 +188,22 @@ static VectorNf xg;
 static VectorMf ug;
 
 static const float perception_halfspace_penalty = 0.0f;
-static bool perception_halfspace_active = false;
-static Eigen::Vector3f perception_halfspace_normal = Eigen::Vector3f::Zero();
-static float perception_halfspace_boundary = 0.0f;
+static const float perception_pass_distance_m = 0.75f;
+static const TinyRacerRaceConfig race_config = {
+  0.30f, 0.0f, 0.10f, 0.05f, 0.35f, 0.35f, 0.25f, 250,
+  0.35f, 0.70f, 3
+};
+typedef struct {
+  Eigen::Vector3f normal_world;
+  float boundary_world;
+} PerceptionPlane;
+static PerceptionPlane perception_stop_plane;
+static PerceptionPlane perception_recovery_plane;
+static bool perception_recovery_active = false;
+static Eigen::Vector3f avoidance_left_world = Eigen::Vector3f::Zero();
+static Eigen::Vector3f avoidance_start_world = Eigen::Vector3f::Zero();
+static TinyRacerRaceState race_state;
+static TinyRacerRaceIntent race_intent;
 
 // Create TinyMPC struct
 static tiny_Model model;
@@ -205,6 +220,8 @@ static int8_t result = 0;
 static uint32_t step = 0;
 static bool en_traj = true;   // Track the generated stored trajectory.
 static const uint32_t traj_length = T_ARRAY_SIZE(trajectory_reference_data);
+static bool takeoff_complete = false;
+static uint16_t takeoff_stable_samples = 0;
 
 static_assert(
     TRAJECTORY_SAMPLE_RATE_HZ == TINYMPC_GENERATED_SOLVE_RATE_HZ,
@@ -349,7 +366,7 @@ static void setLocalReferenceState(
       angular_velocity_body.x(), angular_velocity_body.y(), angular_velocity_body.z();
 }
 
-void updateHorizonReference(const setpoint_t *setpoint) {
+void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
   // Update reference: from stored trajectory or commander
   if (en_traj) {
     const float current_time_s = (float)step / (float)MPC_RATE;
@@ -371,7 +388,19 @@ void updateHorizonReference(const setpoint_t *setpoint) {
       yaw_reference = unwrapNear(quat2rpy(reference_attitude).z, yaw_reference);
       reference_yaw_unwrapped_rad[i] = yaw_reference;
       if (i < NHORIZON - 1) {
-        Uref[i].setZero();
+        float next_reference[TRAJECTORY_REFERENCE_DIM];
+        sampleTrajectoryReference(
+            sample_position + DT / TRAJECTORY_SAMPLE_DT_S, next_reference);
+        const Eigen::Vector3f specific_force(
+            (next_reference[7] - reference[7]) / DT,
+            (next_reference[8] - reference[8]) / DT,
+            (next_reference[9] - reference[9]) / DT + 9.81f);
+        const float thrust_scale = specific_force.norm() / 9.81f - 1.0f;
+        for (int motor = 0; motor < NINPUTS; ++motor) {
+          Uref[i](motor) = T_MIN(T_MAX(
+              tinympc_generated_physical_hover_thrust[motor] * thrust_scale,
+              lcu(motor)), ucu(motor));
+        }
       }
     }
     reference_yaw_phase_rad = reference_yaw_unwrapped_rad[0];
@@ -403,46 +432,129 @@ void updateHorizonReference(const setpoint_t *setpoint) {
     // // xg(1) = 1.0;
     // // xg(2) = 2.0;
   }
-  if (en_traj && (float)step / (float)MPC_RATE < TRAJECTORY_DURATION_S) {
+  if (advance && en_traj &&
+      (float)step / (float)MPC_RATE < TRAJECTORY_DURATION_S) {
     step += 1;
   }
 }
 
-static void applyPerceptionHalfspace(void) {
-  const Eigen::Vector3f normal_local =
-      worldVectorToLocal(active_local_frame, perception_halfspace_normal);
+static void applyRaceIntent(void) {
   const Eigen::Vector3f velocity_normal = Eigen::Vector3f::Zero();
-  const float boundary_local = perception_halfspace_boundary
-      - perception_halfspace_normal.x() * active_local_frame.origin_x
-      - perception_halfspace_normal.y() * active_local_frame.origin_y
-      - perception_halfspace_normal.z() * active_local_frame.origin_z;
-  for (int k = 1; k < NHORIZON; ++k) {
-    const float position_violation =
-        normal_local.dot(Xref[k].head(3)) - boundary_local;
-    if (position_violation > 0.0f) {
-      Xref[k].head(3) -= position_violation * normal_local;
+  const Eigen::Vector3f lateral_local = worldVectorToLocal(
+      active_local_frame, avoidance_left_world);
+  for (int k = 0; k < NHORIZON; ++k) {
+    Xref[k].head(3) += lateral_local * race_intent.lateral_offset_m *
+        ((float)k / (float)(NHORIZON - 1));
+  }
+
+  const PerceptionPlane *plane = race_intent.constraint_active
+      ? &perception_stop_plane
+      : (perception_recovery_active ? &perception_recovery_plane : NULL);
+  if (plane == NULL) {
+    return;
+  }
+  const Eigen::Vector3f normal_local = worldVectorToLocal(
+      active_local_frame, plane->normal_world);
+  const float boundary_local = plane->boundary_world
+      - plane->normal_world.x() * active_local_frame.origin_x
+      - plane->normal_world.y() * active_local_frame.origin_y
+      - plane->normal_world.z() * active_local_frame.origin_z;
+  for (int k = 0; k < NHORIZON; ++k) {
+    const float violation = normal_local.dot(Xref[k].head(3)) - boundary_local;
+    if (violation > 0.0f) {
+      Xref[k].head(3) -= violation * normal_local;
     }
     tiny_SetKinematicHalfspace(
-        &work, k, 0, &normal_local, &velocity_normal,
-        boundary_local, perception_halfspace_penalty, 1);
+        &work, k, 0, &normal_local, &velocity_normal, boundary_local,
+        perception_halfspace_penalty, 1);
   }
 }
 
-static void updatePerceptionHalfspace(const state_t *state) {
-  // Fixed vertical separating plane, rotated 45 degrees from body forward.
-  if (perception_halfspace_active) {
+static void updateRaceIntent(const state_t *state) {
+  TinyRacerPerceptionObservation observation = {};
+  sequentialObstacleLinkGetLatest(&observation);
+  const bool was_active = race_intent.constraint_active;
+  const bool continuing_encounter = race_intent.mode == TINYRACER_RACE_RECOVER;
+  const Eigen::Vector3f position_world(
+      state->position.x, state->position.y, state->position.z);
+  const Eigen::Vector3f velocity_world(
+      state->velocity.x, state->velocity.y, state->velocity.z);
+  const float lateral_displacement = (float)race_intent.pass_side *
+      avoidance_left_world.dot(position_world - avoidance_start_world);
+  const bool release_ready = was_active &&
+      fabsf(avoidance_left_world.dot(velocity_world)) < 0.10f &&
+      lateral_displacement >= race_config.bypass_offset_m;
+  tinyRacerRaceUpdate(
+      &race_state, &observation, &race_config, DT, release_ready,
+      perception_recovery_active, &race_intent);
+  if (perception_recovery_active && !race_intent.constraint_active &&
+      race_state.clear_samples >= race_config.clear_samples_required &&
+      perception_stop_plane.normal_world.dot(position_world) >=
+          perception_stop_plane.boundary_world + perception_pass_distance_m) {
+    perception_recovery_active = false;
+    tiny_ClearPositionHalfspaces(&work);
+    DEBUG_PRINT("Vision recovery plane cleared; returning to line\n");
+  }
+  if (was_active == race_intent.constraint_active) {
+    return;
+  }
+
+  tiny_ClearPositionHalfspaces(&work);
+  if (!race_intent.constraint_active) {
+    const Eigen::Vector3f pass_direction =
+        (float)race_intent.pass_side * avoidance_left_world;
+    perception_recovery_plane.normal_world = -pass_direction;
+    perception_recovery_plane.boundary_world =
+        perception_recovery_plane.normal_world.dot(position_world);
+    perception_recovery_active = true;
+    race_state.clear_samples = 0;
+    DEBUG_PRINT("Vision forward plane replaced by recovery side plane lateral=%.2f\n",
+                (double)lateral_displacement);
     return;
   }
 
   const struct vec rpy = quat2rpy(qnormalize(attitude));
-  const float plane_yaw = rpy.z + 0.78539816f;
-  perception_halfspace_normal =
-      Eigen::Vector3f(cosf(plane_yaw), sinf(plane_yaw), 0.0f);
-  perception_halfspace_boundary =
-      perception_halfspace_normal(0) * state->position.x +
-      perception_halfspace_normal(1) * state->position.y +
-      perception_halfspace_normal(2) * state->position.z;
-  perception_halfspace_active = true;
+  perception_recovery_active = false;
+  if (continuing_encounter) {
+    perception_stop_plane.boundary_world =
+        perception_stop_plane.normal_world.dot(position_world) +
+        race_intent.stop_boundary_distance_m;
+    DEBUG_PRINT("Vision blocked again; continuing pass=%s\n",
+                race_intent.pass_side > 0 ? "left" : "right");
+    return;
+  }
+  avoidance_left_world = Eigen::Vector3f(-sinf(rpy.z), cosf(rpy.z), 0.0f);
+  avoidance_start_world = position_world;
+  perception_stop_plane.normal_world = Eigen::Vector3f(
+      cosf(rpy.z), sinf(rpy.z), 0.0f);
+  perception_stop_plane.boundary_world =
+      perception_stop_plane.normal_world.dot(position_world) +
+      race_intent.stop_boundary_distance_m;
+  DEBUG_PRINT("Vision blocked pass=%s clearances=(%.2f,%.2f,%.2f,%.2f)\n",
+              race_intent.pass_side > 0 ? "left" : "right",
+              (double)observation.clearance_m[0],
+              (double)observation.clearance_m[1],
+              (double)observation.clearance_m[2],
+              (double)observation.clearance_m[3]);
+}
+
+static void updateTakeoffPhase(const state_t *state) {
+  if (!en_traj || takeoff_complete) {
+    takeoff_complete = true;
+    return;
+  }
+  const uint32_t takeoff_end =
+      (uint32_t)(TRAJECTORY_TAKEOFF_DURATION_S * MPC_RATE + 0.5f);
+  if (step < takeoff_end || state->position.z < 0.32f ||
+      fabsf(state->velocity.z) > 0.15f) {
+    takeoff_stable_samples = 0;
+    return;
+  }
+  if (++takeoff_stable_samples >= (uint16_t)(3 * MPC_RATE / 10)) {
+    takeoff_complete = true;
+    DEBUG_PRINT("Takeoff complete z=%.2f; vision enabled\n",
+                (double)state->position.z);
+  }
 }
 
 static void tinympcControllerTask(void *parameters) {
@@ -468,17 +580,26 @@ static void tinympcControllerTask(void *parameters) {
 
     if (reset_requested) {
       step = 0;
-      perception_halfspace_active = false;
+      takeoff_complete = !en_traj;
+      takeoff_stable_samples = 0;
+      tinyRacerRaceReset(&race_state);
+      memset(&race_intent, 0, sizeof(race_intent));
+      perception_recovery_active = false;
       tiny_ClearPositionHalfspaces(&work);
     }
 
     updateInitialState(&sensors_task, &state_task);
-    updateHorizonReference(&setpoint_task);
     // Intentionally preserve TinyMPC's state auxiliaries and duals.
-    updatePerceptionHalfspace(&state_task);
-    if (perception_halfspace_active) {
-      applyPerceptionHalfspace();
+    updateTakeoffPhase(&state_task);
+    if (takeoff_complete) {
+      updateRaceIntent(&state_task);
     }
+    const uint32_t takeoff_end =
+        (uint32_t)(TRAJECTORY_TAKEOFF_DURATION_S * MPC_RATE + 0.5f);
+    updateHorizonReference(
+        &setpoint_task,
+        (step < takeoff_end || takeoff_complete) && !race_intent.pause_reference);
+    applyRaceIntent();
 
     tiny_UpdateLinearCost(&work);
     const uint64_t solve_start_us = usecTimestamp();
@@ -499,7 +620,7 @@ static void tinympcControllerTask(void *parameters) {
     xSemaphoreGive(dataMutex);
 
     {
-      float max_primal_violation = -1000000.0f;
+      float max_primal_violation = 0.0f;
       float max_halfspace_slack = 0.0f;
       float max_primal_aux_gap = 0.0f;
       int diagnostic_last_knot =
@@ -514,15 +635,20 @@ static void tinympcControllerTask(void *parameters) {
         diagnostic_last_knot = constrained_knots - 1;
       }
       for (int k = 0; k <= diagnostic_last_knot; ++k) {
-        const float primal_violation =
-            data.a_pos_hs[k][0].dot(Xhrz[k].head(3)) +
-            data.a_vel_hs[k][0].dot(Xhrz[k].segment(6, 3)) - data.b_hs[k][0];
         const float primal_aux_gap =
             (Xhrz[k].head(3) - ZX_new[k].head(3)).cwiseAbs().maxCoeff();
-        max_primal_violation = T_MAX(max_primal_violation, primal_violation);
-        max_halfspace_slack =
-            T_MAX(max_halfspace_slack, data.slack_used_hs[k][0]);
         max_primal_aux_gap = T_MAX(max_primal_aux_gap, primal_aux_gap);
+        for (int h = 0; h < MAX_HS; ++h) {
+          if (!data.en_hs[k][h]) {
+            continue;
+          }
+          const float violation =
+              data.a_pos_hs[k][h].dot(Xhrz[k].head(3)) +
+              data.a_vel_hs[k][h].dot(Xhrz[k].segment(6, 3)) - data.b_hs[k][h];
+          max_primal_violation = T_MAX(max_primal_violation, violation);
+          max_halfspace_slack =
+              T_MAX(max_halfspace_slack, data.slack_used_hs[k][h]);
+        }
       }
       DEBUG_PRINT(
           "MPC: iterations=%d solve_us=%lu ref_local=(%.2f,%.2f,%.2f) plane_violation=%.3f consensus_error=%.3f slack=%.3f\n",
@@ -596,11 +722,17 @@ void controllerOutOfTreeInit(void) {
 
   /* End of MPC initialization */  
   step = 0;
-  perception_halfspace_active = false;
+  takeoff_complete = !en_traj;
+  takeoff_stable_samples = 0;
+  tinyRacerRaceReset(&race_state);
+  memset(&race_intent, 0, sizeof(race_intent));
+  perception_recovery_active = false;
   mpc_has_run = false;
   last_controller_tick = 0;
   plan_start_tick = 0;
   motors_were_allowed = false;
+
+  sequentialObstacleLinkInit();
 
   static bool task_initialized = false;
   if (!task_initialized) {

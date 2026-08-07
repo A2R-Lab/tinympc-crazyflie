@@ -36,7 +36,7 @@ _Static_assert(sizeof(sequential_obstacle_packet_t) == 48,
 #define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
 static volatile uint32_t sequence_lock;
-static float latest_clearance_m[SEQUENTIAL_OBSTACLE_DIRECTIONS];
+static TinyRacerPerceptionObservation latest_observation;
 static volatile uint32_t latest_rx_tick;
 static volatile uint32_t accepted_packets;
 static volatile uint32_t crc_errors;
@@ -54,7 +54,7 @@ static bool readBytes(uint8_t *destination, int count) {
   return true;
 }
 
-static bool publishPacket(const sequential_obstacle_packet_t *packet) {
+static bool acceptPacket(const sequential_obstacle_packet_t *packet) {
   if (packet->payload.sequence == 0 || packet->payload.gate_valid > 1) {
     invalid_packets++;
     return false;
@@ -76,12 +76,18 @@ static bool publishPacket(const sequential_obstacle_packet_t *packet) {
   const uint32_t lock = sequence_lock + 1;
   sequence_lock = lock;
   COMPILER_BARRIER();
-  memcpy(latest_clearance_m, packet->payload.clearance_m,
-         sizeof(latest_clearance_m));
+  latest_observation.valid = true;
+  latest_observation.source_timestamp = packet->payload.stm32_timestamp;
+  latest_observation.sequence = packet->payload.sequence;
+  latest_observation.gate_valid = packet->payload.gate_valid != 0;
+  memcpy(latest_observation.clearance_m, packet->payload.clearance_m,
+         sizeof(latest_observation.clearance_m));
+  memcpy(latest_observation.confidence, packet->payload.confidence,
+         sizeof(latest_observation.confidence));
   latest_rx_tick = xTaskGetTickCount();
+  latest_sequence = packet->payload.sequence;
   COMPILER_BARRIER();
   sequence_lock = lock + 1;
-  latest_sequence = packet->payload.sequence;
   accepted_packets++;
   return true;
 }
@@ -126,7 +132,7 @@ static void sequentialObstacleRxTask(void *parameters) {
       memset(header_window, 0, sizeof(header_window));
       continue;
     }
-    publishPacket(&packet);
+    acceptPacket(&packet);
     memset(header_window, 0, sizeof(header_window));
   }
 }
@@ -135,7 +141,7 @@ void sequentialObstacleLinkInit(void) {
   if (initialized) {
     return;
   }
-  memset(latest_clearance_m, 0, sizeof(latest_clearance_m));
+  memset(&latest_observation, 0, sizeof(latest_observation));
   uart1Init(SEQUENTIAL_OBSTACLE_BAUD);
   const BaseType_t created = xTaskCreate(
       sequentialObstacleRxTask, "SEQRX", 2 * configMINIMAL_STACK_SIZE,
@@ -145,29 +151,26 @@ void sequentialObstacleLinkInit(void) {
 }
 
 bool sequentialObstacleLinkGetLatest(
-    float clearance_m[SEQUENTIAL_OBSTACLE_DIRECTIONS],
-    uint32_t *age_ms, uint32_t *sample) {
+    TinyRacerPerceptionObservation *observation) {
   uint32_t before;
   uint32_t after;
   uint32_t rx_tick;
   do {
     before = sequence_lock;
     COMPILER_BARRIER();
-    memcpy(clearance_m, latest_clearance_m, sizeof(latest_clearance_m));
+    memcpy(observation, &latest_observation, sizeof(*observation));
     rx_tick = latest_rx_tick;
     COMPILER_BARRIER();
     after = sequence_lock;
   } while ((before & 1u) || before != after);
 
   if (accepted_packets == 0) {
+    memset(observation, 0, sizeof(*observation));
     return false;
   }
-  if (age_ms != NULL) {
-    *age_ms = (xTaskGetTickCount() - rx_tick) * portTICK_PERIOD_MS;
-  }
-  if (sample != NULL) {
-    *sample = before >> 1;
-  }
+  observation->received_age_ms =
+      (xTaskGetTickCount() - rx_tick) * portTICK_PERIOD_MS;
+  observation->sample = before >> 1;
   return true;
 }
 
@@ -176,8 +179,8 @@ LOG_ADD(LOG_UINT32, rxOk, &accepted_packets)
 LOG_ADD(LOG_UINT32, crcErr, &crc_errors)
 LOG_ADD(LOG_UINT32, invalid, &invalid_packets)
 LOG_ADD(LOG_UINT32, shortRx, &short_reads)
-LOG_ADD(LOG_FLOAT, d0, &latest_clearance_m[0])
-LOG_ADD(LOG_FLOAT, d1, &latest_clearance_m[1])
-LOG_ADD(LOG_FLOAT, d2, &latest_clearance_m[2])
-LOG_ADD(LOG_FLOAT, d3, &latest_clearance_m[3])
+LOG_ADD(LOG_FLOAT, d0, &latest_observation.clearance_m[0])
+LOG_ADD(LOG_FLOAT, d1, &latest_observation.clearance_m[1])
+LOG_ADD(LOG_FLOAT, d2, &latest_observation.clearance_m[2])
+LOG_ADD(LOG_FLOAT, d3, &latest_observation.clearance_m[3])
 LOG_GROUP_STOP(seqRx)
