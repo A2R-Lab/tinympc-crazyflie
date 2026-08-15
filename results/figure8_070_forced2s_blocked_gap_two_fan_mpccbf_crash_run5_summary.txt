@@ -1,0 +1,99 @@
+MPC-CBF — BLOCKED-GAP TWO-FAN MISSION, RUN 5
+===============================================
+
+Source
+------
+Raw console log:
+  figure8_070_forced2s_blocked_gap_two_fan_mpccbf_crash_run5.txt
+
+Configuration
+-------------
+- Benchmark mode: 1 (MPC-CBF)
+- Maneuver: 4 (two-lap figure-8)
+- Forced trajectory start: 2.000 s after OOT takeoff begins
+- Reference altitude target: 0.70 m
+- TinyMPC: 20 Hz, 5 ADMM iterations
+- MPC-to-PID bridge: x10
+- Common Z guard: [reference, reference + 0.20 m]
+- Analytic LTV constraint: always on, gate off, horizon 20
+- MPC-CBF floor: z = 0.70 m, zero margin
+- Mission samples: 482 (24.07 s)
+
+Outcome
+-------
+FAILURE — SUPERVISOR LOCK
+
+- Takeoff/trajectory transition:
+    TAKEOFF COMPLETE: t=2000 ms, z=0.40 m, vz=+0.21 m/s
+    TRAJ START: z=0.40 m
+- First failure marker:
+    SUP: Locked, reboot required
+- Last clean sample:
+    step 228 / 482 at t=11.386 s after trajectory start
+- Mission completion:
+    228 / 482 = 47.30%
+- No TRAJ DONE or controlled landing was reached before failure.
+- All samples after the supervisor lock are excluded; their multi-metre states
+  are post-lock contamination.
+
+Primary metrics, t >= 3 s -> lock
+----------------------------------
+Valid window: 84 decimated samples, t=3.080 to 11.386 s
+
+Boundary-relative XY RMSE:     0.8527 m
+Peak boundary-relative error:  6.3819 m
+Lateral tracking RMSE:         0.9310 m
+Peak lateral tracking error:   6.2322 m
+Z tracking RMSE:               0.2437 m
+Maximum absolute Z error:      0.5580 m
+Tilt RMSE:                    25.382 deg
+Peak tilt:                   117.750 deg
+Peak lateral speed:            2.879 m/s
+Peak absolute vertical speed:  4.019 m/s
+
+Full pre-lock diagnostics, trajectory start -> lock
+----------------------------------------------------
+Boundary-relative XY RMSE:     0.7639 m
+Peak boundary-relative error:  6.3819 m
+Lateral tracking RMSE:         0.8435 m
+Peak lateral tracking error:   6.2322 m
+Z tracking RMSE:               0.2359 m
+Maximum absolute Z error:      0.5580 m
+Tilt RMSE:                    22.803 deg
+Peak tilt:                   117.750 deg
+
+MPC-CBF mechanism, pre-lock
+---------------------------
+Analytic rows enabled:         20 / 20 at every logged step
+Binding rows:                  20 / 20 at every logged step
+Gate:                          disabled
+Constraint evaluation time:    0 us (analytic row construction)
+
+Timing
+------
+Primary-window median ADMM solve:       24.552 ms
+Primary-window median complete step:   25.060 ms
+Exact cumulative maximum:              30.677 ms
+Worst deadline use:                    61.35% of the 50 ms period
+Deadline overruns:                      0
+
+Interpretation
+--------------
+This is not an inactive MPC-CBF result. All 20 analytic horizon rows remained
+enabled and binding throughout the valid flight, yet the vehicle diverged and
+the supervisor locked after 47.30% of the mission. Computation was not the
+cause: the run had zero deadline overruns and substantial timing margin.
+
+Campaign bookkeeping
+--------------------
+This is MPC-CBF logged run 5. The planned five logged MPC-CBF trials are now
+complete at 0/5 mission success.
+
+The balanced blocked-gap campaign is complete:
+- Embedded LIMO: 5/5 successful logged missions
+- Posthoc LIMO: 0/5 in the planned cohort, plus one supplemental failure
+- Nominal TinyMPC: 0/5 logged missions
+- MPC-CBF: 0/5 logged missions
+
+That is 20 primary logged trials across the four methods, plus one supplemental
+posthoc failure.

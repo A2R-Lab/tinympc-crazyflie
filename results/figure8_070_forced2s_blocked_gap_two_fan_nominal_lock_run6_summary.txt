@@ -1,0 +1,92 @@
+NOMINAL TINYMPC — BLOCKED-GAP TWO-FAN MISSION, RUN 6
+======================================================
+
+Source
+------
+Raw console log:
+  figure8_070_forced2s_blocked_gap_two_fan_nominal_lock_run6.txt
+
+Run numbering
+-------------
+Existing campaign filenames already contain nominal runs 3, 4, and 5. This
+flight is therefore run 6 overall and the fourth nominal failure supported by
+a saved raw log. Runs 1 and 2 remain user-reported failures without raw logs.
+
+Configuration
+-------------
+- Benchmark mode: 0 (nominal TinyMPC)
+- Maneuver: 4 (two-lap figure-8)
+- Forced trajectory start: 2.000 s after OOT takeoff begins
+- Reference altitude target: 0.70 m
+- TinyMPC: 20 Hz, 5 ADMM iterations
+- MPC-to-PID bridge: x10
+- Common Z guard: [reference, reference + 0.20 m]
+- Adaptive LIMO cache: off
+- Learned/posthoc/analytic constraint rows: off
+- Mission samples: 482 (24.07 s)
+
+Outcome
+-------
+FAILURE — SUPERVISOR LOCK
+
+- Takeoff/trajectory transition:
+    TAKEOFF COMPLETE: t=2000 ms, z=0.18 m, vz=+0.22 m/s
+    TRAJ START: z=0.18 m
+- First failure marker:
+    SUP: Locked, reboot required
+- The lock marker is interleaved into the step-106 console line at
+  approximately t=5.276 s after trajectory start.
+- Last fully clean sample:
+    step 104 / 482 at t=5.175 s
+- Approximate mission completion at failure:
+    106 / 482 = 22.0%
+- Every sample after the lock marker is excluded. The large states printed
+  afterward are post-failure contamination.
+
+Primary metrics, t >= 3 s -> last clean sample
+-----------------------------------------------
+Valid window: 22 logged samples, t=3.074 to 5.175 s
+
+Boundary-relative XY RMSE:     0.4922 m
+Peak boundary-relative error:  0.6630 m
+Lateral tracking RMSE:         0.6523 m
+Peak lateral tracking error:   0.9324 m
+Z tracking RMSE:               0.0459 m
+Maximum absolute Z error:      0.0910 m
+Tilt RMSE:                    17.907 deg
+Peak tilt:                    44.129 deg
+Peak lateral speed:            2.280 m/s
+Peak absolute vertical speed:  0.339 m/s
+
+Full pre-lock diagnostics, trajectory start -> last clean sample
+-----------------------------------------------------------------
+Boundary-relative XY RMSE:     0.4544 m
+Peak boundary-relative error:  0.7273 m
+Lateral tracking RMSE:         0.5763 m
+Peak lateral tracking error:   0.9324 m
+Z tracking RMSE:               0.0340 m
+Maximum absolute Z error:      0.0910 m
+Tilt RMSE:                    15.256 deg
+Peak tilt:                    44.129 deg
+
+Timing
+------
+Primary-window median ADMM solve:       23.256 ms
+Primary-window median complete step:   23.311 ms
+Exact cumulative maximum:              29.539 ms
+Worst deadline use:                    59.08% of the 50 ms period
+Deadline overruns:                      0
+
+Interpretation
+--------------
+Nominal TinyMPC reached the t >= 3 s analysis window but locked after only
+about 22% of the planned mission. This is a mission failure, not a timing
+failure: it had zero deadline overruns and substantial compute margin. Its
+truncated t >= 3 s statistics are failure diagnostics and must not be averaged
+as if they came from a completed 24.07 s trajectory.
+
+Campaign bookkeeping
+--------------------
+Nominal now has four raw-log-supported failures (runs 3-6), plus two earlier
+user-reported failures (runs 1-2). One additional raw-log-supported nominal
+trial is needed to reach the planned five logged flights.

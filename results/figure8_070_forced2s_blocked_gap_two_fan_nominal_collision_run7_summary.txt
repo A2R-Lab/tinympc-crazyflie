@@ -1,0 +1,80 @@
+NOMINAL TINYMPC — BLOCKED-GAP TWO-FAN MISSION, RUN 7
+======================================================
+
+Source
+------
+Raw console log:
+  figure8_070_forced2s_blocked_gap_two_fan_nominal_collision_run7.txt
+
+Run numbering
+-------------
+Existing campaign filenames contain nominal runs 3-6. This flight is run 7
+overall and the fifth nominal failure supported by a saved raw log. Runs 1 and
+2 remain user-reported failures without raw logs.
+
+Configuration
+-------------
+- Benchmark mode: 0 (nominal TinyMPC)
+- Maneuver: 4 (two-lap figure-8)
+- Forced trajectory start: 2.000 s after OOT takeoff begins
+- Reference altitude target: 0.70 m
+- TinyMPC: 20 Hz, 5 ADMM iterations
+- MPC-to-PID bridge: x10
+- Common Z guard: [reference, reference + 0.20 m]
+- Adaptive LIMO cache: off
+- Learned/posthoc/analytic constraint rows: off
+- Mission samples: 482 (24.07 s)
+
+Outcome
+-------
+FAILURE — MULTIPLE CONTACTS / CRASH / SUPERVISOR LOCK
+
+- Operator report:
+    The vehicle hit multiple objects and crashed.
+- Takeoff/trajectory transition:
+    TAKEOFF COMPLETE: t=2000 ms, z=0.11 m, vz=+0.21 m/s
+    TRAJ START: z=0.11 m
+- First automatic failure marker:
+    SUP: Locked, reboot required
+- Last clean sample:
+    step 50 / 482 at t=2.479 s after trajectory start
+- Mission completion:
+    50 / 482 = 10.37%
+- The flight failed before t=3 s, so no standard primary window exists.
+- All samples after the lock are excluded. Their near-floor state is
+  post-collision/post-lock data, not valid trajectory tracking.
+
+Pre-lock diagnostics, trajectory start -> crash
+------------------------------------------------
+Boundary-relative XY RMSE:     0.6716 m
+Peak boundary-relative error:  1.0726 m
+Lateral tracking RMSE:         0.4586 m
+Peak lateral tracking error:   0.8098 m
+Z tracking RMSE:               0.0870 m
+Maximum absolute Z error:      0.1370 m
+Tilt RMSE:                    28.427 deg
+Peak tilt:                    76.131 deg
+Peak lateral speed:            1.896 m/s
+Peak absolute vertical speed:  1.289 m/s
+
+Timing, pre-lock
+----------------
+Median ADMM solve:             23.056 ms
+Median complete control step: 23.119 ms
+Exact cumulative maximum:     27.511 ms
+Worst deadline use:           55.02% of the 50 ms period
+Deadline overruns:             0
+
+Interpretation
+--------------
+Nominal TinyMPC physically contacted multiple objects and crashed after only
+10.37% of the planned trajectory. This was not a compute failure: it had zero
+deadline overruns and substantial timing margin.
+
+Campaign bookkeeping
+--------------------
+Nominal now has five raw-log-supported failures (runs 3-7), plus two earlier
+user-reported failures (runs 1-2). The planned five logged nominal trials are
+complete at 0/5 mission success. Across all reported nominal attempts, the
+outcome is 0/7. Only one additional MPC-CBF flight remains before all four
+methods have five raw-log-supported trials.

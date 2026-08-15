@@ -1,0 +1,101 @@
+POSTHOC LIMO — BLOCKED-GAP TWO-FAN MISSION, SUPPLEMENTAL RUN 6
+================================================================
+
+Source
+------
+Raw console log:
+  figure8_070_forced2s_blocked_gap_two_fan_posthoc_manual_abort_run6.txt
+
+Configuration
+-------------
+- Benchmark mode: 2 (posthoc LIMO)
+- Maneuver: 4 (two-lap figure-8)
+- Forced trajectory start: 2.000 s after OOT takeoff begins
+- Reference altitude target: 0.70 m
+- TinyMPC: 20 Hz, 5 ADMM iterations
+- MPC-to-PID bridge: x10
+- Common Z guard: [reference, reference + 0.20 m]
+- Posthoc infeasibility behavior: nominal fallback
+- Mission samples: 482 (24.07 s)
+
+Outcome
+-------
+FAILURE / CRASH-CLASSIFIED MANUAL SAFETY ABORT
+
+- Operator report:
+    The vehicle went far outside the test area (approximately 3 m) and was
+    manually stopped for safety.
+- The untimestamped `SUP: Locked` text appears in the console stream between
+  trajectory steps 10 and 12. Because console output is buffered and heavily
+  interleaved, its display position is not used as the abort timestamp.
+- The operator reports that the manual stop halted the vehicle immediately
+  after observing the approximately 3 m excursion.
+- The timestamped position stream first crosses a 3.0 m containment radius at
+  step 72, t=3.587 s, with displacement 3.050 m from the measured origin.
+- This first 3 m crossing is therefore the explicit analysis cutoff.
+- Mission completion at the containment abort:
+    72 / 482 = 14.94%
+- Samples after the first 3 m crossing are excluded because the manual stop
+  occurs at that boundary and the estimator subsequently diverges to
+  implausibly large positions.
+- For outcome reporting this is counted as a crash/failure. For scientific
+  traceability it is identified specifically as a manual safety abort after
+  loss of containment, not as a confirmed physical impact.
+
+Pre-abort diagnostics, trajectory start -> 3 m containment crossing
+--------------------------------------------------------------------
+Boundary-relative XY RMSE:     1.0738 m
+Peak boundary-relative error:  3.0500 m
+Lateral tracking RMSE:         1.7487 m
+Peak lateral tracking error:   3.7393 m
+Z tracking RMSE:               0.1079 m
+Maximum absolute Z error:      0.1300 m
+Tilt RMSE:                    28.010 deg
+Peak tilt:                   120.536 deg
+Peak lateral speed:            3.295 m/s
+Peak absolute vertical speed:  1.202 m/s
+
+Primary-window diagnostics, t >= 3 s -> containment crossing
+----------------------------------------------------------------
+This window contains only six decimated samples (t=3.082 to 3.587 s), so it is
+retained as a failure diagnostic rather than pooled completed-flight RMSE.
+
+Boundary-relative XY RMSE:     2.3856 m
+Peak boundary-relative error:  3.0500 m
+Lateral tracking RMSE:         3.2927 m
+Peak lateral tracking error:   3.7393 m
+Z tracking RMSE:               0.1263 m
+Maximum absolute Z error:      0.1290 m
+Tilt RMSE:                     7.547 deg
+Peak tilt:                     7.593 deg
+
+Posthoc mechanism, pre-abort
+----------------------------
+Projection attempts:           72
+Infeasible projections:        69 / 72 = 95.83%
+Feasible interventions:         3 / 72 = 4.17%
+
+Timing, pre-abort
+-----------------
+Median ADMM solve:             22.403 ms
+Median barrier evaluation:     9.844 ms
+Median complete control step: 32.719 ms
+Exact cumulative maximum:     37.889 ms
+Worst deadline use:           75.78% of the 50 ms period
+Deadline overruns:             0
+
+Interpretation
+--------------
+The posthoc projection was infeasible on 95.83% of attempts before the manual
+abort, so the controller used the nominal fallback on nearly every step. The
+vehicle crossed the approximately 3 m containment boundary and was manually
+terminated. Computation was not the cause: no deadline was missed.
+
+Campaign bookkeeping
+--------------------
+The planned first five posthoc flights were already complete before this run.
+This is retained as supplemental run 6 and is not silently substituted into
+the balanced n=5 set. Counting all logged attempts, posthoc is now 0/6 mission
+successes. If the paper reports only the planned five-flight cohort, this run
+should remain supplemental unless the exclusion/replacement rule is declared
+explicitly.

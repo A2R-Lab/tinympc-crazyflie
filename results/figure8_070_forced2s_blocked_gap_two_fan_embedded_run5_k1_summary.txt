@@ -1,0 +1,64 @@
+Figure-8 forced-2-second blocked-gap two-fan configuration: embedded run 5 (K=1)
+================================================================================
+
+Configuration
+-------------
+
+- Method: embedded/in-solver LIMO, mode 3
+- Learned safety horizon: K=1 (`activeH=1`, constraint at k=0 only)
+- Maneuver: two-pass Figure-8 from traj_fig8_12.h
+- Maneuver start: forced 2000 ms after OOT takeoff began
+- Start state and measured Z baseline: z=0.20 m, vz=+0.22 m/s
+- Controller: 20 Hz, five ADMM iterations, common Z guard enabled
+- Cohort note: embedded runs 1-4 used K=3. This fifth run uses K=1 and
+  must retain that label when pooled with the earlier engineering outcomes.
+
+Outcome
+-------
+
+- SUCCESS: 482/482 trajectory steps in 24.109 s.
+- Controlled landing completed with motors off.
+- No supervisor lock or in-flight estimator reset.
+- The estimator reset printed before `SUP: Ready to fly` is a startup event,
+  not a flight failure.
+
+Primary-window performance (trajectory t >= 3 s through TRAJ DONE)
+------------------------------------------------------------------
+
+Metric                              Embedded K=1
+Boundary-relative XY RMSE           1.0376 m
+Peak boundary-relative XY error     1.8393 m
+Lateral tracking RMSE               0.6401 m
+Peak lateral tracking error         1.0034 m
+Z tracking RMSE                     0.01682 m
+Maximum absolute Z error            0.0700 m
+Tilt RMSE                           7.830 deg
+Peak tilt                          13.584 deg
+
+Timing
+------
+
+Metric                              Embedded K=1
+Median barrier + gradient           10.294 ms
+Median authority/RL stage            0.0106 ms
+Median cache installation            0.4131 ms
+Median ADMM solve                    23.394 ms
+Median complete control step         34.528 ms
+Exact cumulative maximum             42.478 ms
+Worst 50 ms deadline use             84.96%
+Deadline overruns                    0
+
+Learned mechanism
+-----------------
+
+- Learned rows active at exactly one stage in every retained primary sample.
+- Learned row binding rate: 100%.
+- Mean applied authority w: 1.0.
+- Mean applied Qz scale: 1.4.
+- The run verifies that the K=1 embedded image completes this mission once;
+  it does not by itself establish K=1/K=3 equivalence on hardware.
+
+Raw log
+-------
+
+- figure8_070_forced2s_blocked_gap_two_fan_embedded_run5_k1.txt

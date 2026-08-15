@@ -1,0 +1,80 @@
+POSTHOC LIMO — BLOCKED-GAP TWO-FAN MISSION, RUN 5
+====================================================
+
+Source
+------
+Raw console log:
+  figure8_070_forced2s_blocked_gap_two_fan_posthoc_crash_run5.txt
+
+Configuration
+-------------
+- Benchmark mode: 2 (posthoc LIMO)
+- Maneuver: 4 (two-lap figure-8)
+- Forced trajectory start: 2.000 s after OOT takeoff begins
+- Reference altitude: 0.70 m
+- TinyMPC: 20 Hz, 5 ADMM iterations
+- MPC-to-PID bridge: x10
+- Common Z guard: [reference, reference + 0.20 m]
+- Posthoc infeasibility behavior: nominal fallback
+- Mission samples: 482 (24.07 s)
+
+Outcome
+-------
+FAILURE — SUPERVISOR CRASH
+
+- Takeoff/trajectory transition:
+    TAKEOFF COMPLETE: t=2000 ms, z=0.20 m, vz=+0.26 m/s
+    TRAJ START: z=0.20 m
+- First failure marker:
+    SUP: Crashed, recovery required
+- Last valid pre-crash sample:
+    step 32 / 482 at t=1.588 s after trajectory start
+- Mission completion:
+    32 / 482 = 6.6%
+- A later "SUP: Locked" marker at t=1.985 s and the later Kalman reset are
+  post-crash effects and are excluded from all metrics.
+- The crash occurs before t=3 s, so the standard t+3 s primary window does not
+  exist. Metrics below use trajectory start through the first crash marker.
+
+Tracking and attitude, trajectory start -> crash
+------------------------------------------------
+Boundary-relative XY RMSE:     0.5437 m
+Peak boundary-relative error:  0.9596 m
+Lateral tracking RMSE:         0.5466 m
+Peak lateral tracking error:   0.9628 m
+Z tracking RMSE:               0.1418 m
+Maximum absolute Z error:      0.5180 m
+Tilt RMSE:                    62.385 deg
+Peak tilt:                   174.655 deg
+Peak lateral speed:            3.251 m/s
+Peak absolute vertical speed:  3.893 m/s
+
+Posthoc mechanism, pre-crash
+----------------------------
+Projection attempts:           32
+Infeasible projections:        30 / 32 = 93.75%
+Feasible interventions:         2 / 32 = 6.25%
+
+Timing, pre-crash
+-----------------
+Median ADMM solve:             22.251 ms
+Median complete control step: 32.825 ms
+Exact cumulative maximum:     41.523 ms
+Worst deadline use:           83.05% of the 50 ms period
+Deadline overruns:             0
+
+Interpretation
+--------------
+This is a physical/supervisor failure, not a compute-deadline failure. The
+controller stayed within its 50 ms deadline, while the posthoc projection was
+infeasible on 93.75% of its pre-crash attempts and therefore mostly returned
+the nominal fallback. The vehicle then diverged rapidly, reaching approximately
+175 deg peak tilt before the supervisor crash declaration.
+
+Campaign bookkeeping
+--------------------
+This is posthoc logged run 5 for the blocked-gap, two-fan, forced-2-second
+mission campaign. Posthoc is now 0/5 successful logged missions. Embedded LIMO
+is 5/5 successful logged missions; its fifth run uses active horizon K=1 and
+the earlier four embedded runs use K=3, which must remain labeled in any pooled
+analysis.
