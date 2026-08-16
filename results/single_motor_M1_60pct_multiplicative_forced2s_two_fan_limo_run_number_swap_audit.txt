@@ -1,0 +1,33 @@
+EMBEDDED LIMO RUN-NUMBER SWAP AUDIT
+===================================
+
+Date: 2026-08-16
+
+Requested mapping
+-----------------
+- Newly acquired sixth flight -> Run 3
+  SHA-256: 40df0ed2b97e327ba71b568f869384a07243d37ed4255eede37d03953276fb82
+- Former Run 3 -> Run 6
+  SHA-256: c9b05d8079cffc4a0c51c7df3c69e30b1da378616470a93468248ecc7c640829
+
+Current filenames
+-----------------
+- New Run 3 raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3.txt
+- New Run 3 summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3_summary.txt
+- New Run 6 raw (former Run 3):
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6.txt
+- New Run 6 summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6_summary.txt
+
+Outcome provenance
+------------------
+The new Run 3 is a clean 6/6-cycle completion without confirmed floor contact.
+The new Run 6 (former Run 3) is a 6/6-cycle completion with confirmed floor
+contact and recovery at 2.466 cycles.
+
+The swap was requested after outcomes were observed. It changes the membership
+of the numbered Runs 1--5 set and breaks the original chronological pairing of
+Run 3 across methods. The hashes and this audit must be retained so the change
+cannot be mistaken for acquisition order or a preregistered exclusion.

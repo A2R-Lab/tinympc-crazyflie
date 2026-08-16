@@ -1,0 +1,272 @@
+FORCED-2S TWO-FAN + M1-60% CAMPAIGN TRACKER
+============================================
+
+Updated: 2026-08-16
+Target: five planned runs per method, twenty planned flights
+
+Locked setting
+--------------
+- Figure-eight: 482 MPC steps, six cycles / twelve lobes, 24.07 s
+- Figure-eight start: OOT takeoff +2.000 s, with no z/vz/settling gate
+- M1 fault: instantaneous 60% retention at trajectory +2.000 s
+- Fault placement: post-mixer, post-battery compensation
+- Model/controller bounds: unchanged
+- External disturbance: revised mission-critical two-fan configuration
+- Primary mission outcome: TRAJ DONE plus controlled landing versus
+  supervisor crash/lock, in-flight reset, or manual emergency abort
+- Confirmed floor contact: separately reported safety event
+
+Progress
+--------
+Method                 Saved   Successes   Remaining
+Embedded LIMO          5/5*    5           0
+Posthoc LIMO           5/5     0           0
+MPC-CBF                5/5     0           0
+Nominal TinyMPC        5/5     0           0
+
+Run outcomes
+------------
+Run 1
+  Embedded LIMO: success, 6.00/6 cycles
+  Posthoc LIMO:  mission failure, supervisor lock at 5.410--5.435 cycles
+  MPC-CBF:       mission failure, supervisor crash at 3.762--3.786 cycles;
+                 floor-contact safety event at 3.587 cycles
+  Nominal:       mission failure, supervisor lock at 0.891--0.917 cycles;
+                 floor-contact safety event at 0.743 cycles
+
+Run 2 complete
+  Embedded LIMO: success, 6.00/6 cycles
+  Nominal:       mission failure, operator-reported terminal crash after
+                 >=5.081 cycles; floor-contact event at 3.238 cycles
+  MPC-CBF:       mission failure, supervisor lock at 5.535--5.560 cycles;
+                 floor-contact event at 4.536 cycles
+  Posthoc LIMO:  mission failure, supervisor lock at 2.241--2.266 cycles;
+                 floor-contact event at 0.745 cycles
+
+Paired-set status
+-----------------
+- Complete paired sets: 5 / 5
+- Planned slots filled:  20 / 20
+- Additional LIMO runs:  1
+- Total raw logs:        21
+- Remaining paired sets: 0
+- Remaining planned flights: 0
+- Run 2 comparison:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_run2_comparison.txt
+
+Run 3 received so far
+  Embedded LIMO: mission success, 6.00/6 cycles and controlled landing;
+                 no confirmed floor contact (renumbered from acquisition 6)
+  Nominal:       mission failure, supervisor lock at 4.807--4.832 cycles;
+                 floor-contact safety event at 0.691 cycles
+  Posthoc LIMO:  mission failure, supervisor lock at 0.920--0.944 cycles;
+                 floor contact at 0.819 cycles, 68/74 projections infeasible
+  MPC-CBF:       mission failure, supervisor lock at 2.788--2.813 cycles;
+                 floor contact at 2.664 cycles, all 20 rows active/binding
+
+Current collection count
+------------------------
+- Planned slots filled:  20 / 20
+- Total raw logs:        21 (includes one extra LIMO run)
+- Embedded LIMO:         5 / 5 complete
+- Nominal TinyMPC:       5 / 5 complete
+- Posthoc LIMO:          5 / 5 complete
+- MPC-CBF:               5 / 5 complete
+- Remaining:             none; planned campaign complete
+
+* Embedded LIMO has six raw flights. At the operator's request, acquisition 6
+  is numbered Run 3 and the former Run 3 is numbered Run 6; see the swap audit.
+
+Embedded LIMO Runs 4 and 5
+--------------------------
+Run 4
+  Mission success, 6.00/6 cycles and controlled landing.
+  Confirmed floor contact at 3.286 cycles, followed by recovery.
+  No in-flight estimator reset, supervisor lock, or deadline overrun.
+
+Run 5
+  Mission success, 6.00/6 cycles and controlled landing.
+  No confirmed floor contact under the two-consecutive-sample rule.
+  No in-flight estimator reset, supervisor lock, or deadline overrun.
+
+Embedded LIMO five-run result
+-----------------------------
+- Primary mission success:          5 / 5
+- Confirmed floor-contact events:   1 / 5 (Run 4)
+- Success without confirmed contact: 4 / 5
+- Full cycles completed:            30 / 30
+- Deadline overruns:                0
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run4.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run4_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run5.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run5_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_5run_summary.txt
+
+Nominal Run 4
+-------------
+First safety violation at confirmed floor contact: steps 98 and 100 report
+z=0.021 m and z=0.018 m. The analysis endpoint is 4.978 s, or 1.241/6 cycles.
+The primary mission also fails when the supervisor subsequently locks between
+1.615 and 1.642 cycles, before TRAJ DONE. There were zero deadline overruns.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run4.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run4_summary.txt
+
+Nominal Run 5 and five-run result
+--------------------------------
+Run 5 first violates the floor criterion at 2.875 s (0.717/6 cycles) and the
+supervisor locks at approximately 1.065--1.091 cycles. Nominal is now complete:
+0/5 primary mission successes, 5/5 confirmed floor-contact violations, and
+zero deadline overruns before the analysis endpoints.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run5.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run5_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_5run_summary.txt
+
+Posthoc LIMO Run 4
+------------------
+Mission failure by supervisor lock between 1.118 and 1.144 cycles. There is no
+confirmed floor contact before the endpoint, but the last valid attitude is
+nearly inverted (roll=-165.23 deg). Posthoc projection is infeasible on 85/90
+attempts (94.44%); deadline overruns are zero.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run4.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run4_summary.txt
+
+Posthoc LIMO Run 5 and five-run result
+-------------------------------------
+Run 5 supervisor-locks at approximately 2.017--2.042 cycles, with no confirmed
+pre-lock floor contact. Projection is infeasible on 157/162 attempts (96.91%).
+Posthoc is now complete: 0/5 mission successes, 5/5 supervisor locks, and a
+pooled infeasibility rate of 803/820 (97.93%). Deadline overruns are zero.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run5.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run5_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_5run_summary.txt
+
+Embedded LIMO Run 3 / Run 6 number swap
+---------------------------------------
+At the operator's request, the newly acquired sixth flight is now Run 3, and
+the former Run 3 is now Run 6. Current Run 3 is a clean 6/6-cycle success with
+no confirmed floor contact. Current Run 6 completes 6/6 cycles with confirmed
+floor contact and recovery at 2.466 cycles. The swap occurred after outcomes
+were observed and is recorded in a dedicated audit file.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_run_number_swap_audit.txt
+
+MPC-CBF Run 4 / completed chronological pair 4
+------------------------------------------------
+MPC-CBF first contacts the floor at 3.737 cycles, later shows a log-visible
+collision at 4.559--4.584 cycles consistent with the operator's multiple-hit
+terminal-crash report, and supervisor-locks at 4.834--4.858 cycles. All 20
+analytic rows are active and binding throughout the valid metric window.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run4.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run4_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_run4_comparison.txt
+
+Embedded LIMO Run 3 files
+-------------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3_summary.txt
+
+Nominal Run 3 files
+-------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run3.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run3_summary.txt
+
+Posthoc LIMO Run 3 files
+------------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run3.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run3_summary.txt
+
+MPC-CBF Run 3 files
+-------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run3.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run3_summary.txt
+
+Original acquisition-3 comparison
+---------------------------------
+The chronological comparison uses the former embedded Run 3, now numbered
+LIMO Run 6, alongside baseline Run 3. It is retained as:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_acquisition3_pre_swap_comparison.txt
+
+Outcome convention clarification
+--------------------------------
+Mission success is TRAJ DONE plus controlled landing without supervisor
+crash/lock, in-flight estimator reset, or manual emergency abort. Confirmed
+floor contact is reported separately as a safety violation. Under this dual
+reporting, embedded LIMO Run 6 is a mission success with floor-contact recovery.
+
+Embedded LIMO Run 2 files
+-------------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run2.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run2_summary.txt
+
+Nominal Run 2 files
+-------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run2.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run2_summary.txt
+
+MPC-CBF Run 2 files
+-------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run2.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run2_summary.txt
+
+Posthoc LIMO Run 2 files
+------------------------
+Raw:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run2.txt
+Summary:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run2_summary.txt
+
+MPC-CBF Run 5 / campaign completion
+-----------------------------------
+Run 5 is a mission failure. The locked two-sample floor criterion is met at
+step 320, 15.996 s, corresponding to 3.987/6 cycles. The supervisor locks
+between 15.996 and 16.095 s, with no TRAJ DONE. All 20 analytic rows are
+active and binding at every valid sampled step, and deadline overruns remain
+zero.
+
+Files:
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run5.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run5_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_5run_summary.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_run5_comparison.txt
+  single_motor_M1_60pct_multiplicative_forced2s_two_fan_4method_5run_summary.txt
+
+Final campaign outcome
+----------------------
+- Embedded LIMO: 5/5 mission successes, 30/30 cycles, five controlled landings.
+- Nominal MPC:   0/5 mission successes.
+- Posthoc LIMO:  0/5 mission successes.
+- MPC-CBF:       0/5 mission successes; floor contact in all five despite
+                 all 20 analytic rows being active and binding.
+- Planned collection: 20/20 flights complete; one extra LIMO raw flight is
+  retained under the documented run-number swap, for 21 total raw logs.

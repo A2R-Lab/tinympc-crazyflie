@@ -1,0 +1,86 @@
+MPC-CBF: FORCED-2S TWO-FAN + M1-60% MISSION CRASH RUN 4
+========================================================
+
+Saved: 2026-08-16
+Raw log: single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run4.txt
+Raw-log SHA-256:
+  4e25c97b97a8480e1b5d1751d07bad7697ea8c45de8920b92aaeddd63fb65bd4
+
+Protocol
+--------
+- Method: analytic MPC-CBF (firmware mode 1).
+- All 20 linear time-varying constraint rows are always enabled; gate off.
+- Analytic floor boundary: z=0.70 m with zero margin.
+- Figure-eight starts exactly 2.000 s after OOT takeoff begins.
+- No altitude, settling, or vertical-speed start gate.
+- XYZ reference origin is measured at the forced start.
+- Trajectory: 482 controller steps, six cycles / twelve lobes, 24.07 s.
+- M1 is instantaneously multiplied by 0.60 beginning 2.000 s after
+  TRAJ START; controller/model bounds remain nominal.
+- External disturbance: locked revised mission-critical two-fan setting.
+
+First safety-violation and analysis endpoint
+--------------------------------------------
+Steps 298 and 300 report z=0.033 m and z=0.030 m, respectively, confirming
+floor contact. The locked safety-metric endpoint is therefore step 300 at
+14.990 s; later samples are excluded from tracking metrics.
+
+- Safety endpoint:                       step 300 / 482 at 14.990 s
+- Trajectory completion:                 62.28%
+- Figure-eight cycles completed:         approximately 3.737 / 6
+- Figure-eight lobes completed:          approximately 7.473 / 12
+- Post-fault endurance to contact:       approximately 12.990 s
+- Post-fault cycles to contact:          approximately 3.238
+- Safety outcome:                        FAILURE (confirmed floor contact)
+
+Operator-reported collision/crash and supervisor endpoint
+----------------------------------------------------------
+The operator reports that the vehicle hit multiple objects and ultimately
+crashed. The first clear log-visible collision signature occurs between step
+366 at 18.291 s and step 368 at 18.391 s:
+
+- z drops from 0.678 m to 0.089 m;
+- vertical speed reaches -3.548 m/s;
+- tilt jumps from 34.65 deg to 91.28 deg;
+- estimated position jumps 1.011 m between adjacent logged samples.
+
+This bounds the first reconstructable collision to 4.559--4.584 cycles.
+Repeated extreme state/attitude changes follow. `SUP: Locked` appears after
+step 388 at 19.393 s and before step 390 at 19.489 s, or approximately
+4.834--4.858 cycles. An estimator reset occurs later, after the lock.
+
+- Primary mission outcome:              FAILURE (collisions/crash; no TRAJ DONE)
+- Supervisor lock:                      4.834--4.858 cycles
+- Post-lock/reset samples:              excluded from all outcome metrics
+
+Analytic-constraint mechanism through safety endpoint
+------------------------------------------------------
+- Active rows at every valid logged step:    20 / 20
+- Binding rows at every valid logged step:   20 / 20
+- Gate:                                      disabled / always on
+
+Metrics: trajectory t >= 3 s through safety endpoint step 300
+----------------------------------------------------------------
+Lateral RMSE:                 0.489054 m
+Peak lateral error:           0.743791 m
+Z RMSE:                       0.233473 m
+Maximum absolute Z error:     0.372000 m
+Tilt RMSE:                    10.566148 deg
+Peak tilt:                    25.805705 deg
+
+On-target computation: same valid analysis window
+--------------------------------------------------
+Median MPC solve:             24.705 ms
+P99 sampled MPC solve:        28.019 ms
+Median complete step:         25.065 ms
+P99 sampled complete step:    29.141 ms
+Exact cumulative maximum:     5,123,506 cycles = 30.497 ms
+Worst deadline utilization:   60.994% of the 50 ms period
+Deadline overruns:            0
+
+Interpretation
+--------------
+MPC-CBF Run 4 is a safety and mission failure despite all 20 analytic rows
+being active and binding throughout the valid window. It first contacts the
+floor at 3.737 cycles, later undergoes multiple collisions, and supervisor-locks
+near 4.85 cycles. The failure is not attributable to a real-time deadline miss.

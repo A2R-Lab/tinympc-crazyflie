@@ -1,0 +1,31 @@
+RUN 5 FOUR-METHOD COMPARISON: FORCED-2S TWO-FAN + M1-60%
+========================================================
+
+Saved: 2026-08-16
+
+Locked protocol
+---------------
+Figure-eight starts at OOT+2 s, M1 is instantaneously derated to 60% at
+trajectory+2 s, the model is unchanged, and the revised two-fan disturbance
+is fixed. The trajectory contains six cycles over 24.07 s.
+
+Primary outcome
+---------------
+Method          Mission outcome  Cycles to endpoint       Floor contact
+Embedded LIMO   SUCCESS          6.000 / 6                no confirmed contact
+Nominal MPC     FAILURE          0.717 safety; 1.065 lock yes
+Posthoc LIMO    FAILURE          2.017--2.042 lock         no pre-lock contact
+MPC-CBF         FAILURE          3.987 safety/lock         yes
+
+Run-5 diagnostic metrics
+------------------------
+Method          Lateral RMSE  Z RMSE   Tilt RMSE  Peak tilt  Median step  Exact max
+Embedded LIMO   0.601878 m    0.072008 8.576818   14.908001  33.660 ms    43.709 ms
+Nominal MPC     no standard t>=3 s window; failed at 2.875 s
+Posthoc LIMO    0.804679 m    0.100115 33.341708  173.427086 33.616 ms    40.531 ms
+MPC-CBF         0.592835 m    0.257941 20.857297  145.656890 25.272 ms    31.327 ms
+
+The tracking windows are unequal because failed arms are censored at their
+first valid endpoint. Mission completion is therefore the primary matched
+comparison. Embedded LIMO alone completes all six cycles and lands under
+control in Run 5; all methods report zero deadline overruns.

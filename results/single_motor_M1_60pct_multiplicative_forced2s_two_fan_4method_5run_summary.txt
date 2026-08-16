@@ -1,0 +1,67 @@
+FINAL FOUR-METHOD FIVE-RUN CAMPAIGN: FORCED-2S TWO-FAN + M1-60%
+================================================================
+
+Saved: 2026-08-16
+Planned campaign: 20 flights, five planned flights per method
+Additional retained embedded-LIMO acquisition: one (see swap audit)
+
+Locked protocol
+---------------
+- Six-cycle / twelve-lobe figure-eight, 24.07 s, 482 MPC steps.
+- Forced trajectory start exactly 2.000 s after OOT takeoff begins.
+- No altitude, vertical-speed, or settling gate.
+- Instantaneous M1 multiplicative fault: 60% retained authority beginning
+  2.000 s after TRAJ START, post-mixer and post-battery compensation.
+- Controller model and input bounds remain nominal.
+- Revised blocked-gap mission-critical two-fan configuration.
+- Identical five-iteration, 20 Hz MPC baseline across methods.
+
+Primary mission outcome
+-----------------------
+Method          Successes  Failures  Full cycles completed  Controlled landings
+Embedded LIMO   5 / 5      0 / 5     30 / 30                5 / 5
+Nominal MPC     0 / 5      5 / 5      0 / 30                0 / 5
+Posthoc LIMO    0 / 5      5 / 5      0 / 30                0 / 5
+MPC-CBF         0 / 5      5 / 5      0 / 30                0 / 5
+
+Safety and mechanism outcomes
+-----------------------------
+Method          Confirmed floor contact  Supervisor lock/crash  Deadline overruns
+Embedded LIMO   1 / 5; recovered         0 / 5                  0
+Nominal MPC     5 / 5                    5 / 5                  0
+Posthoc LIMO    2 / 5 pre-lock           5 / 5                  0
+MPC-CBF         5 / 5                    5 / 5                  0
+
+- Posthoc projection was infeasible on 803 / 820 attempts = 97.93%.
+- MPC-CBF had all 20 analytic rows active and binding on 598 / 598 valid
+  sampled steps = 100.0%.
+- Embedded LIMO completed every planned mission without a deadline overrun.
+
+Cycles to first safety/failure endpoint within each failed baseline
+--------------------------------------------------------------------
+Method          Mean cycles  Median cycles  Range
+Nominal MPC     1.326        0.743          0.691--3.238
+Posthoc LIMO    2.022        1.118          0.745--5.410
+MPC-CBF         3.702        3.737          2.664--4.536
+
+For lock-censored posthoc runs, the lower bound of the lock interval is used.
+Nominal and MPC-CBF use the earlier confirmed floor-contact endpoint. Embedded
+LIMO is not included in this failed-baseline table: four flights are censored
+at successful completion, and Run 4 contacted the floor at 3.286 cycles but
+recovered and completed the mission.
+
+Interpretation
+--------------
+Under the locked combined disturbance, embedded LIMO is the only method to
+complete the mission: 5/5 planned flights versus 0/5 for each of three
+baselines. The distinction is not explained by extra compute time causing
+baseline deadline misses: every arm records zero overruns. The posthoc arm is
+mostly inert because its projection is infeasible, while the always-on
+analytic MPC-CBF remains active and binding but cannot prevent floor contact.
+
+Academic reporting note
+-----------------------
+Mission completion and contact-free safety must remain separate claims.
+Embedded LIMO completes 5/5 missions, but one flight contains confirmed floor
+contact followed by recovery, so contact-free completion is 4/5. Also disclose
+the post-outcome embedded-LIMO run-number swap documented in the swap audit.

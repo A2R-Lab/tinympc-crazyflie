@@ -1,0 +1,92 @@
+MPC-CBF: FORCED-2S TWO-FAN + M1-60% MISSION CRASH RUN 5
+========================================================
+
+Saved: 2026-08-16
+Raw log: single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run5.txt
+Raw-log SHA-256:
+  507265d20b4135f571868cd576a913d77fbe8be270bef1047f55d45ac97ad05f
+
+Protocol
+--------
+- Method: analytic MPC-CBF (firmware mode 1).
+- All 20 linear time-varying constraint rows are always enabled; gate off.
+- Analytic floor boundary: z=0.70 m with zero margin.
+- Figure-eight starts exactly 2.000 s after OOT takeoff begins.
+- No altitude, settling, or vertical-speed start gate.
+- XYZ reference origin is measured at the forced start.
+- Trajectory: 482 controller steps, six cycles / twelve lobes, 24.07 s.
+- M1 is instantaneously multiplied by 0.60 beginning 2.001 s after
+  TRAJ START; controller/model bounds remain nominal.
+- External disturbance: locked revised mission-critical two-fan setting.
+
+Formal first-failure endpoint
+-----------------------------
+The locked analysis rule stops at the first physical collision/manual
+emergency, supervisor lock, in-flight estimator reset, or z <= 0.05 m at two
+consecutive EXP samples. Steps 318 and 320 report z=0.006 m and z=-0.233 m,
+respectively, so the formal endpoint is step 320 at 15.996 s. All later
+samples are excluded from mission and metric accounting.
+
+- Formal last valid/failure step:       320 / 482
+- Formal trajectory time:               15.996 s
+- Trajectory completion at failure:     66.39%
+- Figure-eight cycles completed:        approximately 3.987 / 6
+- Figure-eight lobes completed:         approximately 7.975 / 12
+- Post-fault endurance:                 approximately 13.995 s
+- Post-fault cycles endured:            approximately 3.489
+- Safety outcome:                       FAILURE (confirmed floor contact)
+
+The cycle count uses the encoded six-cycle, 24.07 s trajectory clock:
+  15.996 / 24.07 * 6 = 3.987 cycles.
+
+Earlier low-altitude and crash evidence
+---------------------------------------
+Step 280 records an isolated z=0.025 m sample after sustained descent, followed
+by a rebound and a tilt jump from 7.65 deg to 35.04 deg. This is consistent
+with a transient floor strike, but it is not used as the formal endpoint
+because the adjacent logged samples are above 0.05 m and therefore do not
+satisfy the locked two-consecutive-sample rule.
+
+The later sequence is unambiguous: tilt reaches 73.83 deg at step 310 and
+79.24 deg at step 312, the two-sample floor criterion is met at steps 318/320,
+and `SUP: Locked` appears after step 320 at 15.996 s and before step 322 at
+16.095 s. This bounds supervisor failure to approximately 3.987--4.012 cycles.
+An estimator reset occurs later, after the lock, and is excluded.
+
+- Primary mission outcome:              FAILURE (crash/lock; no TRAJ DONE)
+- Supervisor-lock interval:             15.996--16.095 s
+- Cycles at supervisor lock:            approximately 3.987--4.012 / 6
+- Post-lock/reset samples:              excluded from all outcome metrics
+
+Analytic-constraint mechanism through formal endpoint
+------------------------------------------------------
+- Sampled t>=3 s valid steps:             130
+- Analytic constraint active:             130 / 130 = 100.0%
+- All 20 horizon rows active:             130 / 130 = 100.0%
+- All 20 rows reported binding:           130 / 130 = 100.0%
+
+Metrics: trajectory t >= 3 s through formal endpoint step 320
+---------------------------------------------------------------
+Lateral RMSE:                 0.592835 m
+Peak lateral error:           1.411017 m
+Z RMSE:                       0.257941 m
+Maximum absolute Z error:     0.623000 m
+Tilt RMSE:                    20.857297 deg
+Peak tilt:                    145.656890 deg
+
+On-target computation: same valid analysis window
+--------------------------------------------------
+Median MPC solve:             24.876 ms
+P99 sampled MPC solve:        29.439 ms
+Median complete step:         25.272 ms
+P99 sampled complete step:    30.416 ms
+Exact cumulative maximum:     5,262,921 cycles = 31.327 ms
+Worst deadline utilization:   62.654% of the 50 ms period
+Deadline overruns:            0
+
+Interpretation
+--------------
+MPC-CBF Run 5 is a safety and mission failure after approximately 3.99 cycles.
+All 20 analytic rows were active and binding at every valid sampled step, yet
+the vehicle contacted the floor, developed extreme attitude, and supervisor-
+locked. The failure was not caused by a real-time deadline miss.

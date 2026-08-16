@@ -1,0 +1,95 @@
+POSTHOC LIMO: FORCED-2S TWO-FAN + M1-60% MISSION RUN 2
+========================================================
+
+Saved: 2026-08-16
+Raw log: single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run2.txt
+Raw-log SHA-256:
+  2394c827eaee0c0dafacc59aebf821d50bdcc772d0279d163d23aa5ce4eefc05
+
+Protocol
+--------
+- Method: LIMO posthoc (firmware mode 2), corrected nominal fallback.
+- Figure-eight starts exactly 2.000 s after OOT takeoff begins.
+- No altitude, settling, or vertical-speed start gate.
+- XYZ reference origin is measured at the forced start.
+- Trajectory: 482 controller steps, six cycles / twelve lobes, 24.07 s.
+- M1 is instantaneously multiplied by 0.60 beginning 2.002 s after
+  TRAJ START; controller/model bounds remain nominal.
+- External disturbance: locked revised mission-critical two-fan setting.
+
+Formal first-failure endpoint
+-----------------------------
+The locked first-failure rule is the first physical collision/manual
+emergency, supervisor lock, in-flight estimator reset, or z <= 0.05 m at two
+consecutive EXP samples. Steps 58 and 60 report z=0.047 m and z=0.045 m,
+respectively. The formal endpoint is therefore step 60 at 2.988 s. All later
+samples are excluded from primary mission and metric accounting.
+
+- Formal last valid/failure step:       60 / 482
+- Formal trajectory time:               2.988 s
+- Trajectory completion at failure:     12.41%
+- Figure-eight cycles completed:        approximately 0.745 / 6
+- Figure-eight lobes completed:         approximately 1.490 / 12
+- Post-fault endurance:                 approximately 0.986 s
+- Post-fault cycles endured:            approximately 0.246
+- Outcome:                              FAILURE (floor-contact criterion)
+
+The cycle count uses the encoded six-cycle, 24.07 s trajectory clock:
+  2.988 / 24.07 * 6 = 0.745 cycles.
+
+Posthoc mechanism through formal endpoint
+-----------------------------------------
+- Projection attempts:                  60
+- Infeasible projections:               59 / 60 = 98.33%
+- Feasible interventions:               1 / 60 = 1.67%
+- Corrected infeasible fallback:         nominal command, delta-u=0
+
+The learned projection was therefore a no-op on 98.33% of attempts before
+failure. This is an on-target mechanism observation, not an inference from
+the later corrupted estimator trace.
+
+Post-failure lock and estimator divergence
+------------------------------------------
+The vehicle remains at or near floor height after the formal endpoint. The
+supervisor locks after step 180 at 8.990 s and before step 182 at 9.092 s,
+corresponding to approximately 2.241--2.266 cycles. Before that lock, the
+flow-based estimator reports extreme lateral departure:
+
+- Peak estimated pre-lock tracking error: 12.561 m
+- Estimated position at step 180:          (-1.343, -11.371, 0.015) m
+- In-flight estimator reset:               9.891 s
+
+Those extreme values occur after repeated floor contact and should be
+described as post-failure estimator divergence, not asserted as ground-truth
+physical displacement. They are excluded from all primary metrics.
+
+Diagnostic metrics: TRAJ START through formal endpoint
+-------------------------------------------------------
+The standard paper window begins at trajectory t=3 s, but this flight fails
+at 2.988 s. It therefore has no valid standard-window RMSE. The following
+t=0-to-failure diagnostics must not be pooled with successful-run metrics.
+
+Lateral RMSE:                 0.558156 m
+Peak lateral error:           0.989604 m
+Z RMSE:                       0.067756 m
+Maximum absolute Z error:     0.157000 m
+Tilt RMSE:                    13.801284 deg
+Peak tilt:                    27.887592 deg
+
+On-target computation: TRAJ START through formal endpoint
+----------------------------------------------------------
+Median MPC solve:             22.050 ms
+Median barrier evaluation:    10.179 ms
+Median complete step:         33.252 ms
+P99 sampled complete step:    38.445 ms
+Exact cumulative maximum:     6,553,069 cycles = 39.006 ms
+Worst deadline utilization:   78.013% of the 50 ms period
+Deadline overruns:            0
+
+Interpretation
+--------------
+Posthoc Run 2 failed 0.986 s after M1 derating began and before the standard
+tracking window opened. The 98.33% projection-infeasibility rate directly
+explains why the posthoc layer supplied almost no corrective authority. The
+later supervisor lock and estimator reset corroborate severe physical loss
+of control, but their post-failure samples are not used to inflate endurance.

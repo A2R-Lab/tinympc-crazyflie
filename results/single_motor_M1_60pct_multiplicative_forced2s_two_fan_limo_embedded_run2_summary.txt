@@ -1,0 +1,65 @@
+EMBEDDED LIMO: FORCED-2S TWO-FAN + M1-60% MISSION RUN 2
+========================================================
+
+Saved: 2026-08-16
+Raw log: single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run2.txt
+Raw-log SHA-256:
+  48c8baedf68be2f3cc69a6af383e29d31724a01f6bd0fc326139b48fb0a259e4
+
+Protocol
+--------
+- Method: embedded LIMO (firmware mode 3).
+- Figure-eight starts exactly 2.000 s after OOT takeoff begins.
+- No altitude, settling, or vertical-speed start gate.
+- XYZ reference origin is measured at the forced start.
+- Trajectory: 482 controller steps, six cycles / twelve lobes, 24.07 s.
+- M1 is instantaneously multiplied by 0.60 beginning 2.001 s after
+  TRAJ START; controller/model bounds remain nominal.
+- External disturbance: locked revised mission-critical two-fan setting.
+
+Mission outcome
+---------------
+- No first-failure event occurred during trajectory tracking.
+- TRAJ DONE reached at index 482 / 482.
+- Figure-eight cycles completed:        6.00 / 6
+- Figure-eight lobes completed:         12.00 / 12
+- Trajectory completion:                100.0%
+- Post-fault endurance:                 >=22.099 s (right-censored)
+- Post-fault cycles endured:            >=5.51 cycles (right-censored)
+- Landing completed normally with motors off.
+- Outcome:                              SUCCESS
+
+Tracking metrics: trajectory t >= 3 s through TRAJ DONE
+---------------------------------------------------------
+Lateral RMSE:                 0.584291 m
+Peak lateral error:           0.918700 m
+Z RMSE:                       0.036729 m
+Maximum absolute Z error:     0.113000 m
+Tilt RMSE:                    7.989295 deg
+Peak tilt:                    14.671946 deg
+
+On-target computation: same valid analysis window
+--------------------------------------------------
+Median MPC solve:             22.866 ms
+Median barrier/RL evaluation: 10.326 ms
+Median complete step:         34.166 ms
+P99 complete step:            39.438 ms
+Maximum sampled step:         40.433 ms
+Exact cumulative maximum:     7,321,215 cycles = 43.579 ms
+Worst deadline utilization:   87.157% of the 50 ms period
+Deadline overruns:            0
+
+Fault audit
+-----------
+- Actual fault onset:                 2.001 s after TRAJ START
+- Post-onset derated motor samples:   22,156 / 22,156 = 100.0%
+- Observed post-fault altitude range: 0.104--0.341 m
+- Fault implementation:              instantaneous 0.60 multiplier on M1
+- Placement:                         post-mixer, post-battery compensation
+- Model/controller bounds:           unchanged
+
+Interpretation
+--------------
+Embedded LIMO completed its second consecutive six-cycle mission under the
+locked setting. This advances embedded LIMO to 2/5 planned runs; it does not
+change the Run 1 records for the other methods.

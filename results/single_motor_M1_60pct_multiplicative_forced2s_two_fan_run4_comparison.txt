@@ -1,0 +1,57 @@
+FORCED-2S TWO-FAN + M1-60% CAMPAIGN: RUN 4 COMPARISON
+======================================================
+
+Saved: 2026-08-16
+Status: fourth of five chronological paired sets complete
+
+Primary mission outcome
+-----------------------
+Method                 Outcome    Mission cycles              Completion
+Embedded LIMO          SUCCESS    6.000 / 6                   100.00%
+MPC-CBF                FAILURE    collision 4.559--4.584       75.99--76.41%
+Nominal TinyMPC        FAILURE    lock 1.615--1.642            26.92--27.36%
+Posthoc LIMO           FAILURE    lock 1.118--1.144            18.63--19.07%
+
+Safety events
+-------------
+Method                 First confirmed floor contact     Later outcome
+Embedded LIMO          3.286 cycles                      recovered; 6/6 + land
+MPC-CBF                3.737 cycles                      collisions, lock/crash
+Nominal TinyMPC        1.241 cycles                      supervisor lock
+Posthoc LIMO           none before lock                  supervisor lock
+
+Valid endpoint tracking and attitude metrics
+--------------------------------------------
+Method                 Lateral RMSE   Z RMSE    Tilt RMSE   Peak tilt
+Embedded LIMO          0.597780 m     0.082223  8.587 deg   20.674 deg
+MPC-CBF                0.489054 m     0.233473 10.566 deg   25.806 deg
+Nominal TinyMPC        0.538555 m     0.081656 11.804 deg   16.993 deg
+Posthoc LIMO           0.995809 m     0.140203 77.418 deg  180.308 deg
+
+Failed methods are right-censored at their first safety violation or last valid
+pre-lock sample, so these RMSE values use unequal windows and must not replace
+mission completion/survival as the primary comparison.
+
+On-target computation
+---------------------
+Method                 Median step    Exact max    Deadline overruns
+Embedded LIMO          34.950 ms      41.557 ms   0
+MPC-CBF                25.065 ms      30.497 ms   0
+Nominal TinyMPC        23.176 ms      27.499 ms   0
+Posthoc LIMO           33.873 ms      40.570 ms   0
+
+Mechanism checks
+----------------
+- Embedded LIMO recovers from floor contact, completes all six cycles, and
+  lands under control.
+- MPC-CBF has all 20 analytic rows active and binding at every valid logged
+  step, yet contacts the floor and later crashes.
+- Posthoc projection is infeasible on 85/90 attempts (94.44%) before lock.
+- All four methods record zero deadline overruns.
+
+Run 4 conclusion
+----------------
+Embedded LIMO is the only method to complete the mission. It is not a clean
+contact-free run, but it recovers and finishes; every baseline ends in a
+mission failure. MPC-CBF's always-active/binding rows demonstrate that its
+failure is not explained by an inactive analytic constraint implementation.

@@ -1,0 +1,34 @@
+NOMINAL FIVE-RUN SUMMARY: FORCED-2S TWO-FAN + M1-60%
+=====================================================
+
+Saved: 2026-08-16
+
+Outcome summary
+---------------
+- Primary mission successes:             0 / 5 (0%)
+- Primary mission failures:              5 / 5 (100%)
+- Confirmed floor-contact violations:    5 / 5 (100%)
+- Supervisor locks:                      4 / 5
+- Operator-reported terminal crash:      1 / 5 (Run 2)
+- Deadline overruns before endpoints:    0 across all five flights
+
+Run-by-run first safety endpoint
+--------------------------------
+Run  First_contact_cycles  First_contact_time_s  Primary mission outcome
+1    0.743                 2.979                 failure: supervisor lock
+2    3.238                 12.988                failure: terminal crash
+3    0.691                 2.774                 failure: supervisor lock
+4    1.241                 4.978                 failure: supervisor lock
+5    0.717                 2.875                 failure: supervisor lock
+
+- Mean cycles to first safety violation:   1.326
+- Median cycles to first safety violation: 0.743
+- Range:                                   0.691--3.238 cycles
+
+Tracking-metric aggregation warning
+-----------------------------------
+Runs 1, 3, and 5 fail before the preregistered t >= 3 s tracking window.
+Consequently, a five-run nominal RMSE average over that window does not exist.
+The per-run t=0-to-failure diagnostics in those summaries must not be pooled
+with the t>=3 s metrics from Runs 2 and 4. Survival/cycles-to-failure is the
+appropriate common endpoint for the five-run comparison.

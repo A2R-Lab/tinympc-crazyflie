@@ -1,0 +1,41 @@
+POSTHOC LIMO FIVE-RUN SUMMARY: FORCED-2S TWO-FAN + M1-60%
+==========================================================
+
+Saved: 2026-08-16
+
+Outcome summary
+---------------
+- Primary mission successes:             0 / 5 (0%)
+- Primary mission failures:              5 / 5 (100%)
+- Supervisor locks:                      5 / 5
+- Confirmed pre-lock floor contacts:     2 / 5 (Runs 2 and 3)
+- Deadline overruns before endpoints:    0 across all five flights
+
+Run-by-run first failure endpoint
+---------------------------------
+Run  Endpoint                 Cycles at first failure       Infeasible/attempts
+1    supervisor lock          5.410--5.435                  434/434 (100.00%)
+2    floor contact            0.745                         59/60 (98.33%)
+3    floor contact            0.819                         68/74 (91.89%)
+4    supervisor lock          1.118--1.144                  85/90 (94.44%)
+5    supervisor lock          2.017--2.042                  157/162 (96.91%)
+
+Using the lower bound of each lock interval for a conservative common value:
+- Mean cycles to first failure:           2.022
+- Median cycles to first failure:         1.118
+- Range:                                  0.745--5.410 cycles
+
+Posthoc mechanism aggregate
+----------------------------
+- Total projection attempts:              820
+- Total infeasible projections:           803 / 820 = 97.93%
+- Total feasible interventions:           17 / 820 = 2.07%
+- Mean per-flight infeasibility rate:      96.32%
+- Corrected infeasible fallback:           nominal command, delta-u=0
+
+Tracking-metric aggregation warning
+-----------------------------------
+Run 2 fails before the preregistered t >= 3 s tracking window, and all runs
+are right-censored at different failure times. A simple five-run RMSE average
+would therefore mix unequal windows and is not reported. Survival/cycles to
+first failure and projection infeasibility are the common five-run endpoints.

@@ -1,0 +1,83 @@
+NOMINAL MPC: FORCED-2S TWO-FAN + M1-60% MISSION CRASH RUN 3
+================================================================
+
+Saved: 2026-08-16
+Raw log: single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run3.txt
+Raw-log SHA-256:
+  6413728480b9b85c39fbefb1153c35eca17120693d01d39a5c42a982dafeab48
+
+Protocol
+--------
+- Method: nominal TinyMPC (firmware mode 0).
+- Figure-eight starts exactly 2.000 s after OOT takeoff begins.
+- No altitude, settling, or vertical-speed start gate.
+- XYZ reference origin is measured at the forced start.
+- Trajectory: 482 controller steps, six cycles / twelve lobes, 24.07 s.
+- M1 is instantaneously multiplied by 0.60 beginning 2.000 s after
+  TRAJ START; controller/model bounds remain nominal.
+- External disturbance: locked revised mission-critical two-fan setting.
+
+Formal first-failure endpoint
+-----------------------------
+The locked first-failure rule is the first physical collision/manual
+emergency, supervisor lock, in-flight estimator reset, or z <= 0.05 m at two
+consecutive EXP samples. Steps 54 and 56 report z=0.046 m and z=0.031 m,
+respectively. The formal endpoint is therefore step 56 at 2.774 s. All later
+samples are excluded from primary mission and metric accounting.
+
+- Formal last valid/failure step:       56 / 482
+- Formal trajectory time:               2.774 s
+- Trajectory completion at failure:     11.52%
+- Figure-eight cycles completed:        approximately 0.691 / 6
+- Figure-eight lobes completed:         approximately 1.383 / 12
+- Post-fault endurance:                 approximately 0.774 s
+- Post-fault cycles endured:            approximately 0.193
+- Outcome:                              FAILURE (floor-contact criterion)
+
+The cycle count uses the encoded six-cycle, 24.07 s trajectory clock:
+  2.774 / 24.07 * 6 = 0.691 cycles.
+
+Post-failure supervisor lock
+----------------------------
+The controller continued after formal failure. Additional floor excursions
+occurred around 18.1 s and 19.0 s, and the supervisor locked after step 386
+at 19.286 s and before step 388 at 19.385 s.
+
+- Lock interval:                        (19.286 s, 19.385 s)
+- Cycles at supervisor lock:            approximately 4.807--4.832 / 6
+- Peak pre-lock lateral error:          1.613 m
+- Last valid pre-lock attitude:         roll=5.48 deg, pitch=-2.72 deg,
+                                         yaw=106.83 deg
+
+Later output is post-lock estimator/controller logging and is excluded from
+mission, tracking, and displacement claims.
+
+Diagnostic metrics: TRAJ START through formal endpoint
+-------------------------------------------------------
+The standard paper window begins at trajectory t=3 s, but this flight fails
+at 2.774 s. It therefore has no valid standard-window RMSE. The following
+t=0-to-failure diagnostics must not be pooled with successful-run metrics.
+
+Lateral RMSE:                 0.495708 m
+Peak lateral error:           0.735044 m
+Z RMSE:                       0.066197 m
+Maximum absolute Z error:     0.187000 m
+Tilt RMSE:                    11.462237 deg
+Peak tilt:                    15.244278 deg
+
+On-target computation: TRAJ START through formal endpoint
+----------------------------------------------------------
+Median MPC solve:             22.042 ms
+P99 sampled MPC solve:        25.733 ms
+Median complete step:         22.143 ms
+P99 sampled complete step:    25.887 ms
+Exact cumulative maximum:     4,683,379 cycles = 27.877 ms
+Worst deadline utilization:   55.755% of the 50 ms period
+Deadline overruns:            0
+
+Interpretation
+--------------
+Nominal Run 3 is a formal failure only 0.774 s after M1 derating began. It
+lasted less than one encoded figure-eight cycle before first floor contact
+and ultimately triggered a supervisor lock. The failure was not caused by a
+real-time deadline overrun.

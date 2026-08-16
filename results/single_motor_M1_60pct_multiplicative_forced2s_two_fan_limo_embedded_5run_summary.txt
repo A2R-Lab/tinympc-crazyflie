@@ -1,0 +1,50 @@
+EMBEDDED LIMO FIVE-RUN SUMMARY: FORCED-2S TWO-FAN + M1-60%
+===========================================================
+
+Saved: 2026-08-16
+
+Outcome summary
+---------------
+- Primary mission successes:          5 / 5 (100%)
+- Full trajectory cycles completed:   30 / 30
+- Controlled landings:                5 / 5
+- Supervisor crash/lock in flight:    0 / 5
+- Deadline overruns:                  0 across all five flights
+- Confirmed floor-contact events:     1 / 5 (Run 4)
+- Success without confirmed contact:  4 / 5 (Runs 1, 2, 3, and 5)
+
+Mission success and confirmed floor contact are deliberately separate outcomes.
+Run 4 contacted the floor, recovered, completed all six cycles, and landed
+under control; it is not described as a contact-free safety success.
+
+Run-by-run primary metrics: trajectory t >= 3 s through TRAJ DONE
+-----------------------------------------------------------------
+Run  Mission  Contact  Lateral_RMSE_m  Peak_lateral_m  Z_RMSE_m  Peak_Z_m  Tilt_RMSE_deg  Peak_tilt_deg  Median_step_ms  Exact_max_ms
+1    success  no       0.654195        1.168297        0.026936  0.095000  8.452575       22.476933      34.873          44.519
+2    success  no       0.584291        0.918700        0.036729  0.113000  7.989295       14.671946      34.166          43.579
+3    success  no       0.604238        0.893020        0.042612  0.124000  8.220883       13.418860      34.841          41.293
+4    success  yes      0.597780        1.066871        0.082223  0.231000  8.587433       20.674344      34.950          41.557
+5    success  no       0.601878        0.948612        0.072008  0.196000  8.576818       14.908001      33.660          43.709
+
+Five-run mean of per-flight metrics
+-----------------------------------
+Lateral RMSE:                 0.608477 m
+Peak lateral error:           0.999100 m
+Z RMSE:                       0.052102 m
+Maximum absolute Z error:     0.151800 m
+Tilt RMSE:                    8.365401 deg
+Peak tilt:                    17.230017 deg
+Median MPC solve:             23.307 ms
+Median barrier/RL evaluation: 10.172 ms
+Median complete step:         34.498 ms
+Exact cumulative maximum:     42.931 ms (mean of per-flight maxima)
+
+These are equal-weight means of per-flight summary statistics, not pooled-sample
+statistics. Preserve the individual raw logs for any inferential analysis.
+
+Run-number provenance
+---------------------
+The flight acquired sixth was reassigned to Run 3, and the original Run 3 was
+reassigned to Run 6, at the operator's request after observing outcomes. This
+five-run selection therefore reflects a post-outcome run-number swap; consult
+the run-number-swap audit before using it as a primary academic result.

@@ -1,0 +1,75 @@
+FORCED-2S TWO-FAN + M1-60% CAMPAIGN: RUN 2 COMPARISON
+======================================================
+
+Saved: 2026-08-16
+Status: second of five planned paired sets complete
+
+Locked protocol
+---------------
+- Figure-eight starts 2.000 s after OOT takeoff, with no z/vz/settling gate.
+- M1 retains 60% authority beginning 2.000 s after trajectory start.
+- Six-cycle / twelve-lobe / 24.07 s figure-eight.
+- Same revised mission-critical two-fan configuration.
+- Primary survival endpoint follows the locked first-failure rule.
+- Standard tracking metrics use trajectory t>=3 s through first failure or
+  TRAJ DONE. A method that fails before t=3 s has no standard-window RMSE.
+
+Primary Run 2 outcome
+---------------------
+Method                 Outcome    Formal cycles   Lobes     Completion
+Embedded LIMO          SUCCESS    6.000 / 6       12.000    100.00%
+MPC-CBF                FAILURE    4.536 / 6        9.073     75.60%
+Nominal TinyMPC        FAILURE    3.238 / 6        6.475     53.96%
+Posthoc LIMO           FAILURE    0.745 / 6        1.490     12.41%
+
+Secondary event notes
+---------------------
+- Embedded LIMO completed TRAJ DONE and landed normally.
+- MPC-CBF had repeated contacts and a supervisor lock at about 5.54 cycles;
+  its formal floor-contact endpoint remains 4.536 cycles.
+- Nominal's operator-reported terminal crash occurred after at least 5.081
+  cycles; its formal floor-contact endpoint remains 3.238 cycles.
+- Posthoc locked around 2.25 cycles after already failing at 0.745 cycles.
+  Its post-failure flow estimate diverged and is not ground-truth distance.
+
+Valid-window tracking and attitude metrics
+------------------------------------------
+Method                 Lateral RMSE   Z RMSE    Tilt RMSE   Peak tilt
+Embedded LIMO          0.584291 m     0.036729  7.989 deg   14.672 deg
+MPC-CBF                0.527508 m     0.213750 11.131 deg   21.537 deg
+Nominal TinyMPC        0.504199 m     0.064168 10.624 deg   19.113 deg
+Posthoc LIMO           N/A            N/A       N/A         N/A
+
+Posthoc fails at 2.988 s, before the standard t>=3 s tracking window. Its
+t=0-to-failure diagnostics are stored in the method summary but must not be
+pooled with the standard-window values above. Metrics for failed methods are
+also right-truncated at failure; survival/cycles is the primary comparison.
+
+On-target computation
+---------------------
+Method                 Median step    Exact max    Deadline overruns
+Embedded LIMO          34.166 ms      43.579 ms   0
+MPC-CBF                24.801 ms      31.393 ms   0
+Nominal TinyMPC        22.644 ms      29.354 ms   0
+Posthoc LIMO           33.252 ms      39.006 ms   0
+
+Mechanism checks
+----------------
+- MPC-CBF analytic rows were active and binding on 152/152 valid sampled
+  steps. Its failure cannot be dismissed as an inactive constraint.
+- Posthoc projection was infeasible on 59/60 = 98.33% of attempts through
+  formal failure. Corrected fallback returned the nominal command on those
+  attempts.
+- Embedded LIMO derated M1 on 22,156/22,156 post-onset motor samples and
+  completed with zero real-time overruns.
+
+Interim aggregate after Runs 1--2 (descriptive only; n=2)
+----------------------------------------------------------
+Method                 Successes   Mean formal cycles   Mean completion
+Embedded LIMO          2/2         6.000 / 6            100.00%
+MPC-CBF                0/2         4.062 / 6             67.69%
+Posthoc LIMO           0/2         3.077 / 6             51.29%
+Nominal TinyMPC        0/2         1.990 / 6             33.17%
+
+Three paired sets remain. These interim values are not the final campaign
+statistics and must be updated after Runs 3--5.

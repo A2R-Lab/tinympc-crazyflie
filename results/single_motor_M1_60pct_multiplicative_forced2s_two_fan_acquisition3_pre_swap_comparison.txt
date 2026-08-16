@@ -1,0 +1,72 @@
+FORCED-2S TWO-FAN + M1-60%: ORIGINAL ACQUISITION-3 COMPARISON
+================================================================
+
+Saved: 2026-08-16
+Status: chronological third paired set; embedded acquisition 3 is now Run 6
+
+Renumbering provenance
+----------------------
+The embedded-LIMO flight in this chronological pair was originally Run 3 and
+is now numbered Run 6. Baseline flights retain Run 3. This file is preserved
+for acquisition-order pairing and must not be mistaken for a current-number
+Run 3 four-method comparison.
+
+Outcome convention
+------------------
+- Mission success: TRAJ DONE plus controlled landing without supervisor
+  crash/lock, in-flight estimator reset, or manual emergency abort.
+- Confirmed floor contact: separately reported safety event.
+- Tracking metrics: trajectory t>=3 s through TRAJ DONE or the last valid
+  pre-crash/lock sample.
+
+Primary acquisition-3 mission outcome
+-------------------------------------
+Method                 Outcome    Mission cycles       Completion
+Embedded LIMO (Run 6)  SUCCESS    6.000 / 6            100.00%
+Nominal TinyMPC        FAILURE    4.807--4.832 / 6      80.12--80.53%
+MPC-CBF                FAILURE    2.788--2.813 / 6      46.47--46.88%
+Posthoc LIMO           FAILURE    0.920--0.944 / 6      15.33--15.74%
+
+Safety-event timing
+-------------------
+Method                 First confirmed floor contact     Recovery/outcome
+Embedded LIMO (Run 6)  2.466 cycles                      recovered; 6/6 + land
+Nominal TinyMPC        0.691 cycles                      later supervisor lock
+MPC-CBF                2.664 cycles                      later supervisor lock
+Posthoc LIMO           0.819 cycles                      later supervisor lock
+
+Valid mission-window tracking and attitude metrics
+----------------------------------------------------
+Method                 Lateral RMSE   Z RMSE    Tilt RMSE   Peak tilt
+Embedded LIMO (Run 6)  0.646614 m     0.083894  9.174 deg   27.223 deg
+Nominal TinyMPC        0.645761 m     0.062241 12.339 deg   44.178 deg
+MPC-CBF                0.564485 m     0.258998 17.862 deg   85.543 deg
+Posthoc LIMO           1.091066 m     0.143471 27.765 deg   55.444 deg
+
+These metrics use different endpoint lengths for failed methods and therefore
+do not replace mission completion/survival as the primary comparison.
+
+On-target computation
+---------------------
+Method                 Median step    Exact max    Deadline overruns
+Embedded LIMO (Run 6)  33.927 ms      43.306 ms   0
+Nominal TinyMPC        22.991 ms      31.437 ms   0
+MPC-CBF                28.003 ms      33.785 ms   0
+Posthoc LIMO           32.755 ms      41.477 ms   0
+
+Mechanism checks
+----------------
+- LIMO recovered from a confirmed floor-contact event, completed all six
+  cycles, and landed without supervisor lock.
+- MPC-CBF had all 20 analytic rows active and binding on 82/82 valid sampled
+  steps but still contacted the floor and locked.
+- Posthoc projection was infeasible on 68/74 = 91.89% of attempts before its
+  lock, so corrected fallback returned nominal action on most steps.
+- All four methods recorded zero control-deadline overruns.
+
+Acquisition-3 conclusion
+------------------------
+Embedded LIMO is the only method to complete the mission. It was not a clean
+no-contact run: it contacted the floor at 2.466 cycles, then recovered and
+finished. Every baseline both contacted the floor and subsequently entered a
+mission-ending crash/lock state.

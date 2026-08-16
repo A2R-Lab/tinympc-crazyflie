@@ -4,16 +4,19 @@ PAPER HARDWARE RESULTS
 Scope
 -----
 
-This file is the paper-facing ledger for the two final hardware scenarios:
+This file is the paper-facing ledger for three final hardware scenarios:
 
   1. Regulation under a 3 g asymmetric aerodynamic payload with no fan.
   2. Mission completion in the forced-start blocked-gap two-fan configuration.
+  3. Mission completion in the same forced-start two-fan geometry with an
+     unmodeled instantaneous M1 actuator fault.
 
 The paper dataset contains:
 
   Scenario 1: 3 trials x 4 methods = 12 log-supported flights.
   Scenario 2: 5 trials x 4 methods = 20 log-supported flights.
-  Total:      32 primary log-supported flights.
+  Scenario 3: 5 selected trials x 4 methods = 20 log-supported flights.
+  Total:      52 primary log-supported flights.
 
 The four methods are:
 
@@ -22,13 +25,17 @@ The four methods are:
   Mode 2  Posthoc LIMO projection with corrected nominal fallback
   Mode 3  Embedded/in-solver LIMO
 
-Supplementary evidence outside the primary 32-flight dataset:
+Supplementary evidence outside the primary 52-flight dataset:
 
   - One additional posthoc-LIMO failure in Scenario 2.
   - Two additional nominal Scenario-2 failures reported by the experimenter
     without supplied raw logs.
+  - One additional embedded-LIMO acquisition in Scenario 3. The experimenter
+    reassigned acquisition 6 to selected Run 3 and moved the former Run 3 to
+    supplemental Run 6 after observing outcomes. This post-outcome selection
+    is disclosed and must not be described as preregistered.
 
-Do not silently substitute these extras into the first-five Scenario-2 cohort.
+Do not silently substitute supplemental flights into either five-run cohort.
 
 
 COMMON HARDWARE AND CONTROLLER CONFIGURATION
@@ -56,7 +63,9 @@ Common outer-loop configuration recorded in the flight logs:
   Figure-8 source:                  traj_fig8_12.h
   Figure-8 source rate:             100 Hz
   Figure-8 duration:                approximately 24.07 s
-  Figure-8 repetitions:             two laps
+  Figure-8 content:                 two table passes; three complete
+                                    Figure-8 cycles per pass; six complete
+                                    cycles (12 individual lobes) total
   Console sampling:                 every second 20 Hz MPC step
 
 The stock inner PID consumes the common MPC position bridge in every arm.
@@ -84,7 +93,7 @@ Metric definitions:
   Deadline overrun:
     complete control step greater than 8,400,000 DWT cycles.
 
-Integrity rules applied to both scenarios:
+Integrity rules applied to all scenarios:
 
   - Metrics are computed per flight, then flight-level metrics are averaged.
   - Samples after supervisor lock or the first physical-failure estimator
@@ -340,7 +349,9 @@ Protocol
 
 Trajectory:
 
-  Two-lap Figure-8 from traj_fig8_12.h.
+  Six-cycle Figure-8 from traj_fig8_12.h. The 12.04 s, 1,205-state source
+  table contains three complete Figure-8 cycles and is traversed twice, for
+  six complete cycles (12 individual lobes) over approximately 24.07 s.
 
 Start rule:
 
@@ -439,6 +450,56 @@ Nominal run 4       Saved nominal 6    FAILURE, lock at approximately 106/482,
                                        5.276 s
 Nominal run 5       Saved nominal 7    FAILURE, multiple contacts and crash at
                                        50/482, 2.479 s
+
+Figure-8 cycle progress before termination
+-------------------------------------------
+
+The firmware boot field `laps=2` counts two passes through the complete
+traj_fig8_12.h table; it does not mean two physical Figure-8 cycles. Inspection
+of the stored XY reference shows that each 1,204-interval table pass contains
+three complete Figure-8 cycles. The full 482-step mission therefore commands
+six complete Figure-8 cycles, with complete-cycle boundaries at MPC trajectory
+indices 80, 160, 241, 321, 401, and 482.
+
+`Cycle-equivalent progress` retains the fractional final cycle. `Complete
+cycles` counts only full commanded Figure-8 cycles whose boundary was reached
+before termination.
+
+Method / run       Cutoff       Cycle-equivalent progress   Complete cycles
+-----------------  -----------  --------------------------  ---------------
+Embedded 1          482/482                6.000                    6
+Embedded 2          482/482                6.000                    6
+Embedded 3          482/482                6.000                    6
+Embedded 4          482/482                6.000                    6
+Embedded 5          482/482                6.000                    6
+Posthoc 1            22/482                0.275                    0
+Posthoc 2            44/482                0.550                    0
+Posthoc 3           324/482                4.040                    4
+Posthoc 4           434/482                5.411                    5
+Posthoc 5            32/482                0.400                    0
+MPC-CBF 1           140/482                1.750                    1
+MPC-CBF 2            64/482                0.800                    0
+MPC-CBF 3            24/482                0.300                    0
+MPC-CBF 4            20/482                0.250                    0
+MPC-CBF 5           228/482                2.842                    2
+Nominal 1             62/482                0.775                    0
+Nominal 2              0/482                0.000                    0
+Nominal 3             28/482                0.350                    0
+Nominal 4            106/482                1.325                    1
+Nominal 5             50/482                0.625                    0
+
+Method summary       Mean cycle-equivalent progress   Complete cycles / 5 runs
+-------------------  ------------------------------   ------------------------
+Embedded LIMO                     6.000                         30
+Posthoc LIMO                      2.135                          9
+MPC-CBF                           1.188                          3
+Nominal TinyMPC                   0.615                          1
+
+These values re-express the existing trajectory-completion endpoint and are
+not an independent outcome. They measure commanded-reference progress before
+termination. Because the onboard XY estimate shows substantial tracking error
+in several failed flights, they must not be described as mocap-verified
+geometric laps flown.
 
 Forced-start state audit
 ------------------------
@@ -616,10 +677,196 @@ Because several baseline failures involve physical fan or obstacle contact,
 do not present the scenario as a clean aerodynamic-force isolation study.
 
 
+SCENARIO 3: TWO-FAN MISSION WITH UNMODELED M1-60% ACTUATOR FAULT
+================================================================
+
+Protocol
+--------
+
+Scenario 3 adds a reproducible actuator-model mismatch to the forced-start
+two-fan mission:
+
+  Figure-8:                     482 MPC steps, six cycles, 24.07 s
+  Figure-8 start:               exactly 2.000 s after OOT takeoff begins
+  Start-state gate:             none; no altitude, vz, or settling requirement
+  M1 fault onset:               exactly 2.000 s after TRAJ START
+  M1 retained command:          60% of the post-mixer requested command
+  Fault transition:             instantaneous multiplicative step; no ramp
+  Fault placement:              post-mixer and post-battery compensation
+  Controller/model knowledge:   nominal input bounds; fault unmodeled
+  External disturbance:         locked revised blocked-gap two-fan setting
+  MPC rate / iterations:        20 Hz / five ADMM iterations for every method
+
+The M1 implementation is a 0.60 multiplier, not a 60%-of-full-scale ceiling.
+It therefore removes 40% of whatever command the mixer requests from M1 on
+every post-onset motor sample. The saved logs verify fault onset and applied
+motor command. No 3 g attachment is established for this scenario, so it must
+not be described as a payload experiment.
+
+Primary mission success requires all 482 trajectory steps plus controlled
+landing without supervisor lock/crash, estimator-reset failure, collision, or
+manual emergency abort. Confirmed floor contact is reported separately using
+the locked rule of two consecutive console samples at z <= 0.05 m.
+
+Five-flight selected cohort and provenance
+-------------------------------------------
+
+The paper-facing selected cohort contains five flights per method:
+
+  Embedded LIMO:  current saved Runs 1-5
+  Nominal MPC:    Runs 1-5
+  Posthoc LIMO:   Runs 1-5
+  MPC-CBF:        Runs 1-5
+
+This gives 5 selected trials x 4 methods = 20 flights. There are 21 retained
+raw logs because embedded LIMO has one extra acquisition. At the
+experimenter's request after outcomes were observed, acquisition 6 became
+selected Run 3 and the former Run 3 became supplemental Run 6. The raw logs,
+renumbered summaries, and swap audit are retained. This selected embedded
+five-run cohort is therefore post-outcome and must not be called preregistered
+or used without the disclosure.
+
+Five-flight primary mission outcome
+-----------------------------------
+
+Method             Trials   Successes   Full cycles   Controlled landings
+-----------------  -------  ----------  ------------  -------------------
+Embedded LIMO         5         5          30/30              5/5
+Nominal TinyMPC       5         0           0/30              0/5
+Posthoc LIMO          5         0           0/30              0/5
+Analytic MPC-CBF      5         0           0/30              0/5
+
+Mission completion is 5/5 for embedded LIMO and 0/5 for each baseline, an
+absolute difference of 100 percentage points. Do not report a finite relative
+percentage improvement against a zero-success baseline.
+
+Mission completion and contact-free safety are different outcomes. Embedded
+Run 4 contacts the floor at 3.286 cycles, recovers, completes all six cycles,
+and lands under control. Therefore:
+
+  Embedded mission completion:          5/5
+  Embedded contact-free completion:     4/5
+  Embedded completion after contact:    1/5
+
+Run-by-run outcome evidence
+---------------------------
+
+Method / run       Primary mission outcome                  First safety event
+-----------------  ---------------------------------------  ------------------
+Embedded 1         SUCCESS, 6.000/6, controlled landing     none confirmed
+Embedded 2         SUCCESS, 6.000/6, controlled landing     none confirmed
+Embedded 3         SUCCESS, 6.000/6, controlled landing     none confirmed
+Embedded 4         SUCCESS, 6.000/6, controlled landing     floor at 3.286 cycles;
+                                                            recovered
+Embedded 5         SUCCESS, 6.000/6, controlled landing     none confirmed
+Nominal 1          FAILURE, lock at 0.891--0.917 cycles     floor at 0.743 cycles
+Nominal 2          FAILURE, operator terminal crash         floor at 3.238 cycles
+Nominal 3          FAILURE, lock at 4.807--4.832 cycles     floor at 0.691 cycles
+Nominal 4          FAILURE, lock at 1.615--1.642 cycles     floor at 1.241 cycles
+Nominal 5          FAILURE, lock at 1.065--1.091 cycles     floor at 0.717 cycles
+Posthoc 1          FAILURE, lock at 5.410--5.435 cycles     lock endpoint
+Posthoc 2          FAILURE, lock at 2.241--2.266 cycles     floor at 0.745 cycles
+Posthoc 3          FAILURE, lock at 0.920--0.944 cycles     floor at 0.819 cycles
+Posthoc 4          FAILURE, lock at 1.118--1.144 cycles     lock endpoint
+Posthoc 5          FAILURE, lock at 2.017--2.042 cycles     lock endpoint
+MPC-CBF 1          FAILURE, crash at 3.762--3.786 cycles    floor at 3.587 cycles
+MPC-CBF 2          FAILURE, lock at 5.535--5.560 cycles     floor at 4.536 cycles
+MPC-CBF 3          FAILURE, lock at 2.788--2.813 cycles     floor at 2.664 cycles
+MPC-CBF 4          FAILURE, collisions and later lock       floor at 3.737 cycles
+MPC-CBF 5          FAILURE, lock at 3.987--4.012 cycles     floor at 3.987 cycles
+
+Cycles to first safety/failure endpoint within failed baselines
+----------------------------------------------------------------
+
+Method             Mean cycles   Median cycles   Range
+-----------------  ------------  --------------  ----------------
+Nominal TinyMPC        1.326          0.743       0.691--3.238
+Posthoc LIMO           2.022          1.118       0.745--5.410
+Analytic MPC-CBF       3.702          3.737       2.664--4.536
+
+For lock-censored posthoc flights, the conservative lower lock bound is used.
+Nominal and MPC-CBF use the earlier confirmed floor-contact endpoint. These
+cycle values are survival/progress descriptors, not mocap-verified geometric
+laps flown.
+
+Embedded completed-flight tracking and attitude metrics
+--------------------------------------------------------
+
+All entries use trajectory t >= 3 s through TRAJ DONE. Values in the final
+column are equal-weight means of flight-level metrics.
+
+Metric                    Run 1     Run 2     Run 3     Run 4     Run 5     Mean
+------------------------  --------  --------  --------  --------  --------  --------
+Lateral RMSE, m            0.65420   0.58429   0.60424   0.59778   0.60188   0.60848
+Peak lateral error, m      1.16830   0.91870   0.89302   1.06687   0.94861   0.99910
+Z RMSE, m                  0.02694   0.03673   0.04261   0.08222   0.07201   0.05210
+Peak absolute Z error, m   0.09500   0.11300   0.12400   0.23100   0.19600   0.15180
+Tilt RMSE, deg             8.45258   7.98930   8.22088   8.58743   8.57682   8.36540
+Peak tilt, deg            22.47693  14.67195  13.41886  20.67434  14.90800  17.23002
+Median complete step, ms  34.873    34.166    34.841    34.950    33.660    34.498
+Exact maximum step, ms    44.519    43.579    41.293    41.557    43.709    42.931
+
+Baseline tracking RMSE is not averaged against this table: baseline flights
+are right-censored at unequal failure times, and several fail before the
+standard t>=3 s window. The common comparison is mission completion and cycles
+to the locked safety/failure endpoint.
+
+Mechanism evidence
+------------------
+
+Posthoc LIMO:
+
+  Projection attempts before valid endpoints:       820
+  Infeasible projections:                            803/820 = 97.93%
+  Feasible action-changing interventions:             17/820 = 2.07%
+  Corrected infeasible fallback:                       nominal command, du=0
+
+Analytic MPC-CBF:
+
+  Valid sampled t>=3 s steps across five runs:        598
+  Analytic constraint active:                         598/598 = 100.0%
+  All 20 horizon rows active and binding:             598/598 = 100.0%
+  Gate:                                                disabled / always on
+
+Thus posthoc correction is unavailable on nearly 98% of attempts, while the
+analytic in-solver CBF is continuously active yet still contacts the floor in
+all five flights. The baseline failures cannot be dismissed as inactive safety
+mechanisms.
+
+On-target timing
+----------------
+
+Method             Mean flight median step   Mean flight maximum   Worst maximum
+-----------------  ------------------------  --------------------  -------------
+Embedded LIMO              34.498 ms               42.931 ms          44.519 ms
+Posthoc LIMO               33.310 ms               40.810 ms          42.464 ms
+Analytic MPC-CBF           25.477 ms               31.657 ms          33.785 ms
+Nominal TinyMPC            22.635 ms               28.138 ms          29.354 ms
+
+Every flight records zero 50 ms deadline overruns through its valid endpoint.
+The worst embedded step consumes 89.04% of the period. Scenario-3 failures are
+therefore not attributable to a missed real-time deadline.
+
+Scenario-3 paper conclusion
+---------------------------
+
+Under the locked combination of forced early mission start, two-fan/obstacle
+geometry, and an unmodeled instantaneous 40% loss of M1 command, embedded LIMO
+completes all five selected missions and all 30 commanded cycles. Nominal,
+posthoc LIMO, and continuously active analytic MPC-CBF each complete 0/5.
+Embedded contact-free completion is 4/5 because one flight contacts the floor,
+recovers, and completes the mission. This is a mission-level result for this
+specific fixed configuration, not a universal failure-probability estimate.
+
+The embedded five-run selection includes a disclosed post-outcome run swap.
+Present this scenario transparently and retain the supplemental acquisition;
+do not characterize the selected five as a preregistered cohort.
+
+
 CROSS-SCENARIO SYNTHESIS
 ========================
 
-The two scenarios support complementary claims.
+The three scenarios support complementary claims.
 
 1. Continuous regulation under model mismatch
 
@@ -640,16 +887,25 @@ The two scenarios support complementary claims.
    In Scenario 2, embedded completes 5/5 logged flights while each baseline
    completes 0/5. This turns the regulation result into a mission-level result.
 
-4. Posthoc mechanism
+4. Mission completion under combined environmental and actuator mismatch
+
+   In Scenario 3, embedded again completes 5/5 selected flights while each
+   baseline completes 0/5 after an unmodeled instantaneous 40% reduction of
+   M1 command is added. Embedded completes all 30 commanded cycles; one flight
+   contacts the floor, recovers, and lands, yielding 4/5 contact-free
+   completions. The selected embedded cohort includes the disclosed
+   post-outcome acquisition swap.
+
+5. Posthoc mechanism
 
    Corrected posthoc fallback is a no-op when infeasible. Posthoc is infeasible
-   on 61.6% of Scenario-1 attempts and 93.2% of valid Scenario-2
-   attempts.
+   on 61.6% of Scenario-1 attempts, 93.2% of valid Scenario-2 attempts, and
+   97.93% of valid Scenario-3 attempts.
    Scenario-1 vertical degradation is therefore caused by feasible
    action-changing interventions, while Scenario 2 additionally demonstrates
    the limited availability of the one-step projection under severe demand.
 
-5. Embedded cost
+6. Embedded cost
 
    Embedded LIMO has the highest or near-highest computation, but all flights
    record zero deadline overruns. In Scenario 1 the barrier MLP/gradient, not
@@ -658,13 +914,15 @@ The two scenarios support complementary claims.
 Paper claims directly supported:
 
   - Embedded learned safety runs on an STM32F405 inside a 20 Hz MPC loop.
-  - Zero control-deadline overruns occurred in both final scenarios.
+  - Zero control-deadline overruns occurred in all three final scenarios.
   - Embedded LIMO improves vertical and attitude regulation under a fixed
     asymmetric 3 g payload.
   - The improvement is not reproduced by a continuously active analytic
     in-solver MPC-CBF.
   - Embedded LIMO is the only method to complete the balanced blocked-gap
     two-fan mission.
+  - Embedded LIMO is the only method to complete the selected five-flight
+    two-fan mission after the unmodeled M1 command loss is added.
   - Posthoc learned projection is frequently infeasible on target.
 
 Claims not supported by these data:
@@ -674,16 +932,19 @@ Claims not supported by these data:
   - a pure aerodynamic explanation for Scenario-2 failures;
   - calibrated wind-force or fan-speed dose response in Scenario 2;
   - randomized or blinded trial ordering;
-  - authority-schedule adaptation in these two 0.70 m stress scenarios;
+  - preregistration of the selected Scenario-3 embedded five-run cohort;
+  - authority-schedule adaptation in these 0.70 m stress scenarios;
   - statistical population-level failure probabilities from n=5.
 
 Recommended paper framing:
 
   The no-fan payload table is the clean continuous-metric attribution result.
-  The blocked-gap two-fan table is the mission-completion result. Present them
-  together: the first shows what the learned component changes when all methods
-  finish, and the second shows why that change matters when the task becomes
-  failure-limited.
+  The blocked-gap two-fan table is the environmental mission-completion result.
+  The M1-fault table is the combined environmental/actuator-mismatch stress
+  result. Present them together: the first shows what the learned component
+  changes when all methods finish, and the latter two show why that change
+  matters when the task becomes failure-limited. Disclose the Scenario-3
+  embedded run swap wherever its selected 5/5 result is reported.
 
 
 EMBEDDED RESOURCE CONTEXT
@@ -728,7 +989,9 @@ Known remaining instrumentation limitations:
 
   - physical post-mixer motor saturation/headroom is not measured;
   - the reported early stack watermark is not a post-flight peak;
-  - fan speed/field is not calibrated in Scenario 2;
+  - fan speed/field is not calibrated in Scenarios 2 or 3;
+  - Scenario 3 verifies the exact 0.60 motor-command multiplier in firmware,
+    but the resulting physical M1 thrust reduction was not bench-calibrated;
   - the final binary map should be regenerated after any code change.
 
 
@@ -846,11 +1109,62 @@ Scenario-2 individual summaries:
   results/figure8_070_forced2s_blocked_gap_two_fan_nominal_collision_run7_summary.txt
 
 
+Scenario 3: two-fan + unmodeled M1-60% fault, 20 selected raw logs
+------------------------------------------------------------------
+
+Embedded LIMO, selected Runs 1-5:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run1.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run2.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run3.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run4.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run5.txt
+
+Nominal TinyMPC:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run1.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run2.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run3.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run4.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run5.txt
+
+Posthoc LIMO:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run1.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run2.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run3.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run4.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run5.txt
+
+Analytic MPC-CBF:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run1.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run2.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run3.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run4.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run5.txt
+
+Scenario-3 supplemental embedded acquisition and selection audit:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run6_summary.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_run_number_swap_audit.txt
+
+Scenario-3 final aggregates:
+
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_4method_5run_summary.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_campaign_tracker.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_5run_summary.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_5run_summary.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_5run_summary.txt
+  results/single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_5run_summary.txt
+
+
 FINAL PAPER TAKEAWAY
 ====================
 
 The final hardware evidence is not a single cherry-picked win. It is a
-two-part result across 32 primary, log-supported flights:
+three-part result across 52 primary, log-supported flights:
 
   - When all methods finish under an asymmetric 3 g payload, embedded LIMO
     gives the best vertical and attitude regulation and decisively outperforms
@@ -859,7 +1173,14 @@ two-part result across 32 primary, log-supported flights:
   - When the fixed mission becomes failure-limited, embedded LIMO completes
     5/5 flights while nominal, posthoc, and MPC-CBF each complete 0/5.
 
+  - When an unmodeled instantaneous 40% M1 command loss is added to the
+    two-fan mission, embedded LIMO again completes 5/5 selected flights and
+    30/30 cycles while every baseline completes 0/5. Contact-free embedded
+    completion is 4/5 because one flight contacts the floor and recovers.
+
 The learned method pays a measurable compute and lateral-tracking cost, but it
 stays inside the MCU deadline. That honest tradeoff, the analytic-baseline
 attribution, the posthoc infeasibility mechanism, and the mission-completion
-gap are the complete hardware story.
+gap are the complete hardware story. The Scenario-3 selected embedded cohort
+contains a disclosed post-outcome run swap and must not be presented as
+preregistered.

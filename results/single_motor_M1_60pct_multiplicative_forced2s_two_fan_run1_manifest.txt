@@ -1,0 +1,60 @@
+FORCED-2S TWO-FAN + M1-60% CAMPAIGN: RUN 1 MANIFEST
+===================================================
+
+Saved: 2026-08-16
+Planned replication: five runs per method
+Status after this set: Run 1 saved; four runs remain per method
+
+Locked protocol fingerprint
+---------------------------
+- Maneuver: figure-eight, 482 MPC steps, six cycles / twelve lobes, 24.07 s
+- Maneuver start: exactly 2.000 s after OOT takeoff begins
+- Start gates: no altitude, vertical-speed, or settling gate
+- Reference origin: measured XYZ at forced trajectory start
+- M1 fault onset: 2.000 s after trajectory start
+- M1 retained authority: 60%, instantaneous multiplicative step
+- Fault placement: post-mixer and post-battery compensation
+- Controller/model bounds: unchanged
+- Disturbance: revised mission-critical two-fan configuration reported by
+  the operator; physical fan geometry must remain fixed for Runs 2--5
+- Formal failure: first physical collision/manual emergency, supervisor
+  crash/lock, in-flight estimator reset, or two consecutive EXP samples with
+  z <= 0.05 m
+- Tracking metric window: trajectory t >= 3 s until TRAJ DONE or formal
+  first failure; runs failing before t=3 s have no standard-window RMSE
+- Survival/cycle clock: trajectory t=0 until formal first failure
+
+Run 1 files and outcomes
+------------------------
+Embedded LIMO (mode 3)
+  raw:     single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run1.txt
+  summary: single_motor_M1_60pct_multiplicative_forced2s_two_fan_limo_embedded_run1_summary.txt
+  outcome: SUCCESS, 6.00/6 cycles, controlled landing
+
+Posthoc LIMO (mode 2)
+  raw:     single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run1.txt
+  summary: single_motor_M1_60pct_multiplicative_forced2s_two_fan_posthoc_run1_summary.txt
+  outcome: FAILURE, supervisor lock after step 434, approximately 5.41/6 cycles
+
+MPC-CBF (mode 1)
+  raw:     single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run1.txt
+  summary: single_motor_M1_60pct_multiplicative_forced2s_two_fan_mpccbf_run1_summary.txt
+  outcome: FAILURE, formal floor endpoint at 14.390 s, approximately 3.59/6 cycles
+  secondary supervisor crash: approximately 3.76--3.79/6 cycles
+
+Nominal TinyMPC (mode 0)
+  raw:     single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run1.txt
+  summary: single_motor_M1_60pct_multiplicative_forced2s_two_fan_nominal_crash_run1_summary.txt
+  outcome: FAILURE, formal floor endpoint at 2.979 s, approximately 0.743/6 cycles
+  secondary supervisor lock: approximately 0.891--0.917/6 cycles
+
+Run 1 survival ordering
+-----------------------
+1. Embedded LIMO:  6.00 cycles, completed
+2. Posthoc LIMO:   5.41 cycles, failed
+3. MPC-CBF:        3.59 cycles, failed
+4. Nominal:        0.743 cycles, failed
+
+This is one paired setting-level replicate. Preserve all runs, including
+failures, and do not make a final success-rate claim until Runs 2--5 are
+complete.
