@@ -79,14 +79,39 @@ def _plot(
     next_y = [_f(r, "next_y") for r in rows]
 
     fig, ax = plt.subplots(figsize=(8.5, 5.0))
+    crashed = bool(summary.get("collision", False))
     ax.plot(xs, ys, color="black", linewidth=1.5, label="state")
     ax.scatter(xs[0], ys[0], color="green", s=45, zorder=3, label="start")
-    ax.scatter(next_x[-1], next_y[-1], color="red" if summary.get("collision") else "blue", s=55, zorder=3, label="end")
+    ax.scatter(
+        next_x[-1], next_y[-1],
+        marker="X" if crashed else "o",
+        color="#d62728" if crashed else "blue",
+        s=95 if crashed else 55,
+        zorder=5,
+        label="crash (obstacle/ground)" if crashed else "end",
+    )
+    if crashed:
+        ax.text(
+            0.015, 0.97, "CRASH: OBSTACLE OR GROUND",
+            transform=ax.transAxes, ha="left", va="top",
+            color="white", fontsize=10, fontweight="bold",
+            bbox={"boxstyle": "round,pad=0.35", "facecolor": "#d62728", "edgecolor": "#8b0000"},
+            zorder=10,
+        )
 
     goal = summary.get("goal") or {}
     goal_x = float(goal.get("x", 3.0))
     goal_y = float(goal.get("y", 0.0))
     ax.scatter(goal_x, goal_y, marker="*", color="#7b2cff", s=120, zorder=4, label="destination")
+
+    reference = summary.get("reference_trajectory") or []
+    if reference:
+        ax.plot(
+            [float(point["x"]) for point in reference],
+            [float(point["y"]) for point in reference],
+            color="#149c55", linestyle="--", linewidth=1.5, alpha=0.85,
+            label="reference trajectory",
+        )
 
     if plan_rows:
         _plot_full_horizon_plan(ax, plan_rows, stride)
@@ -109,30 +134,55 @@ def _plot(
         )
         ax.text(cx, cy, obstacle.get("name", "obstacle"), ha="center", va="center", fontsize=8)
 
-    active_rows = [r for r in rows if int(float(r.get("constraint_active", "0") or 0)) != 0]
-    for idx, row in enumerate(active_rows[::stride]):
-        x = _f(row, "x")
-        y = _f(row, "y")
+    detection_x, detection_y = [], []
+    for row in rows:
+        if int(float(row.get("constraint_age_frames", "0") or 0)) != 0:
+            continue
+        depth = _f(row, "depth_m")
+        axv, ayv = _f(row, "a_x"), _f(row, "a_y")
+        x, y = _f(row, "x"), _f(row, "y")
+        if all(math.isfinite(v) for v in (depth, axv, ayv, x, y)):
+            detection_x.append(x + depth * axv)
+            detection_y.append(y + depth * ayv)
+    if detection_x:
+        ax.scatter(detection_x, detection_y, s=9, color="#e83e8c", alpha=0.35,
+                   label=f"{summary.get('perception_mode', 'sector')} detections")
+    # Show only the latest plane actually supplied to an enabled controller.
+    # The plant-rate log contains its full history; drawing that history made
+    # obsolete geometry look active and created dense orange trails.
+    active_rows = [
+        r for r in rows
+        if int(float(r.get("constraint_active", "0") or 0)) != 0
+    ] if bool(summary.get("avoidance_enabled", True)) else []
+    for row in active_rows[-1:]:
         axv = _f(row, "a_x")
         ayv = _f(row, "a_y")
+        azv = _f(row, "a_z")
         b = _f(row, "b")
-        if not all(math.isfinite(v) for v in (x, y, axv, ayv, b)):
+        plane_z = _f(row, "z")
+        if not all(math.isfinite(v) for v in (axv, ayv, azv, b, plane_z)):
             continue
-        # Draw the outward normal from the current pose and a short segment of the
-        # actual half-space boundary a_x*x + a_y*y = b in top-down projection.
-        ax.arrow(x, y, 0.12 * axv, 0.12 * ayv, head_width=0.025, color="#ff8a00", alpha=0.55, length_includes_head=True)
+        # Draw only the actual top-down half-space boundary. Direction arrows
+        # used by the old diagnostic renderer were easily mistaken for data.
         denom = axv * axv + ayv * ayv
         if denom > 1e-9:
-            px = (b / denom) * axv
-            py = (b / denom) * ayv
+            # Intersect the 3D plane a_x*x + a_y*y + a_z*z = b with the
+            # horizontal slice at the drone altitude used when it was logged.
+            projected_b = b - azv * plane_z
+            px = (projected_b / denom) * axv
+            py = (projected_b / denom) * ayv
             tx = -ayv
             ty = axv
             scale = 0.35
-            ax.plot([px - scale * tx, px + scale * tx], [py - scale * ty, py + scale * ty], color="#ff8a00", alpha=0.25)
-        if idx > 80:
-            break
+            ax.plot(
+                [px - scale * tx, px + scale * tx],
+                [py - scale * ty, py + scale * ty],
+                color="#ff8a00", linewidth=1.6, alpha=0.8,
+                label="latest active constraint plane",
+            )
 
-    title = f"{out.parent.name}: collision={summary.get('collision')} clearance={summary.get('min_obstacle_clearance_m'):.3f} m"
+    result = "CRASH" if crashed else "NO CRASH"
+    title = f"{out.parent.name}: {result}, clearance={summary.get('min_obstacle_clearance_m'):.3f} m"
     ax.set_title(title)
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")

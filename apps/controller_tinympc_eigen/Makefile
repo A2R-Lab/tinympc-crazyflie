@@ -40,6 +40,22 @@ EXTRA_CFLAGS += -DNDEBUG
 EXTRA_CFLAGS += -Wno-unused-result
 # The capture-time state channel uses a dedicated UART1 DMA sender task.
 EXTRA_CFLAGS += -DENABLE_UART1_DMA
+
+# Select the compiled stored reference.  The default remains the conservative
+# circle; the two acrobatic choices enable reference-centered quaternion-error
+# TinyMPC and include per-motor feedforward in the trajectory header.
+TINYMPC_TRAJECTORY ?= circle
+ifeq ($(TINYMPC_TRAJECTORY),roll_flip_360)
+EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_ROLL_FLIP_360=1
+else ifeq ($(TINYMPC_TRAJECTORY),front_flip_360)
+EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_FRONT_FLIP_360=1
+else ifeq ($(TINYMPC_TRAJECTORY),backflip_360)
+EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_BACKFLIP_360=1
+else ifeq ($(TINYMPC_TRAJECTORY),barrel_roll_forward_360)
+EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1
+else ifneq ($(TINYMPC_TRAJECTORY),circle)
+$(error Unsupported TINYMPC_TRAJECTORY '$(TINYMPC_TRAJECTORY)')
+endif
 #
 # We override the default OOT_CONFIG here, we could also name our config
 # to oot-config and that would be the default.

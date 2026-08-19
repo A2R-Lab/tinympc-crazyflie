@@ -14,6 +14,7 @@ typedef struct {
   int8_t pass_side;
   float lateral_offset_m;
   uint8_t clear_samples;
+  uint8_t blocked_samples;
   bool sector_active[TINYRACER_CLEARANCE_SECTORS];
 } TinyRacerRaceState;
 
@@ -29,6 +30,8 @@ typedef struct {
   float release_clearance_m;
   float maximum_bypass_offset_m;
   uint8_t clear_samples_required;
+  float hard_clearance_threshold_m;
+  uint8_t blocked_samples_required;
 } TinyRacerRaceConfig;
 
 void tinyRacerRaceReset(TinyRacerRaceState *state);
@@ -39,6 +42,8 @@ void tinyRacerRaceUpdate(
     float dt_s,
     bool release_ready,
     bool hold_offset,
+    bool allow_activation,
+    uint8_t relevant_sector_mask,
     TinyRacerRaceIntent *intent);
 
 #ifdef __cplusplus

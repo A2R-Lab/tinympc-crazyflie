@@ -25,9 +25,9 @@ class CompileTimeProblem:
     max_active_state_halfspaces: int = 1
     constrained_horizon_knots: int = 20
     crazyflie: str = "brushless"
-    deck: str = "aideck"
+    deck: str = "both"
     propeller_guards: bool = True
-    admm_rho: float = 63.0
+    admm_rho: float = 250.0
 
 
 PROBLEM = CompileTimeProblem()

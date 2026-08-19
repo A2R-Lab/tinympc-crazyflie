@@ -20,11 +20,10 @@ PathFunction = Callable[[float, float], tuple[Vector3, Vector3, Vector3]]
 class TrajectorySettings:
     height_m: float = 0.4
     yaw_deg: float = 0.0
-    takeoff_duration_s: float = 2.0
     hover_duration_s: float = 0.5
     straight_length_m: float = 2.0
     straight_duration_s: float = 8.0
-    circle_radius_m: float = 1.0
+    circle_radius_m: float = 0.75
     circle_period_s: float = 15.0
     circle_laps: int = 1
     figure8_x_amplitude_m: float = 0.5
@@ -40,8 +39,6 @@ class Trajectory:
     duration_s: float
     loops: bool
     tangent_heading: bool
-    takeoff_duration_s: float
-    hover_prefix_s: float
     references: tuple[tuple[float, ...], ...]
 
 
@@ -64,9 +61,6 @@ def prompt_settings(defaults: TrajectorySettings) -> TrajectorySettings:
     return TrajectorySettings(
         height_m=prompt_number("flight_height_m", defaults.height_m, float),
         yaw_deg=prompt_number("yaw_deg", defaults.yaw_deg, float),
-        takeoff_duration_s=prompt_number(
-            "takeoff_duration_s", defaults.takeoff_duration_s, float
-        ),
         hover_duration_s=prompt_number(
             "hover_duration_s", defaults.hover_duration_s, float
         ),
@@ -118,7 +112,6 @@ def read_solve_rate(generated_header: Path) -> int:
 def validate_settings(settings: TrajectorySettings) -> None:
     positive_values = {
         "flight_height_m": settings.height_m,
-        "takeoff_duration_s": settings.takeoff_duration_s,
         "hover_duration_s": settings.hover_duration_s,
         "straight_length_m": settings.straight_length_m,
         "straight_duration_s": settings.straight_duration_s,
@@ -261,12 +254,18 @@ def straight_path(length_m: float) -> PathFunction:
 
 def circle_path(radius_m: float, laps: int) -> PathFunction:
     def path(time_s: float, duration_s: float):
-        angular_rate = 2.0 * math.pi * laps / duration_s
-        angle = angular_rate * time_s
+        tau = min(max(time_s / duration_s, 0.0), 1.0)
+        blend = 10.0 * tau**3 - 15.0 * tau**4 + 6.0 * tau**5
+        blend_dot = (30.0 * tau**2 - 60.0 * tau**3 + 30.0 * tau**4) / duration_s
+        blend_ddot = (60.0 * tau - 180.0 * tau**2 + 120.0 * tau**3) / duration_s**2
+        angle = 2.0 * math.pi * laps * blend
+        angular_rate = 2.0 * math.pi * laps * blend_dot
+        angular_acceleration = 2.0 * math.pi * laps * blend_ddot
         return (
             (radius_m * math.sin(angle), radius_m * (1.0 - math.cos(angle)), 0.0),
             (radius_m * angular_rate * math.cos(angle), radius_m * angular_rate * math.sin(angle), 0.0),
-            (-radius_m * angular_rate**2 * math.sin(angle), radius_m * angular_rate**2 * math.cos(angle), 0.0),
+            (radius_m * (angular_acceleration * math.cos(angle) - angular_rate**2 * math.sin(angle)),
+             radius_m * (angular_acceleration * math.sin(angle) + angular_rate**2 * math.cos(angle)), 0.0),
         )
 
     return path
@@ -302,31 +301,15 @@ def generate_trajectory(
     loops: bool,
     tangent_heading: bool,
     path: PathFunction,
-    takeoff_duration_s: float = 0.0,
-    hover_prefix_s: float = 0.0,
 ) -> Trajectory:
     motion_duration_s = max(1, round(requested_duration_s * sample_rate_hz)) / sample_rate_hz
-    takeoff_duration_s = round(takeoff_duration_s * sample_rate_hz) / sample_rate_hz
-    hover_prefix_s = round(hover_prefix_s * sample_rate_hz) / sample_rate_hz
-    prefix_duration_s = takeoff_duration_s + hover_prefix_s
-    duration_s = prefix_duration_s + motion_duration_s
+    duration_s = motion_duration_s
     interval_count = round(duration_s * sample_rate_hz)
     dt = 1.0 / sample_rate_hz
     samples = []
     for index in range(interval_count + 1):
         time_s = index * dt
-        if time_s < takeoff_duration_s:
-            tau = time_s / takeoff_duration_s
-            blend = 10.0 * tau**3 - 15.0 * tau**4 + 6.0 * tau**5
-            blend_dot = (30.0 * tau**2 - 60.0 * tau**3 + 30.0 * tau**4) / takeoff_duration_s
-            blend_ddot = (60.0 * tau - 180.0 * tau**2 + 120.0 * tau**3) / takeoff_duration_s**2
-            samples.append(((0.0, 0.0, height_m * (blend - 1.0)),
-                            (0.0, 0.0, height_m * blend_dot),
-                            (0.0, 0.0, height_m * blend_ddot)))
-        elif time_s < prefix_duration_s:
-            samples.append(hover_path(0.0, hover_prefix_s))
-        else:
-            samples.append(path(time_s - prefix_duration_s, motion_duration_s))
+        samples.append(path(time_s, motion_duration_s))
     rotations = [
         desired_rotation(
             acceleration,
@@ -350,7 +333,7 @@ def generate_trajectory(
         references.append(position + quaternion + velocity + angular_velocity)
     return Trajectory(
         name, sample_rate_hz, duration_s, loops, tangent_heading,
-        takeoff_duration_s, prefix_duration_s, tuple(references)
+        tuple(references)
     )
 
 
@@ -381,8 +364,6 @@ def validate_trajectory(trajectory: Trajectory) -> None:
     )
     maximum_error = 0.0
     for index in range(1, len(trajectory.references) - 1):
-        if abs(index * dt - trajectory.hover_prefix_s) <= dt:
-            continue
         for axis in range(3):
             numerical_velocity = (
                 trajectory.references[index + 1][axis]
@@ -430,8 +411,6 @@ def render_header(trajectory: Trajectory) -> str:
             f"#define TRAJECTORY_REFERENCE_DIM {REFERENCE_DIM}",
             f"#define TRAJECTORY_LOOPS {1 if trajectory.loops else 0}",
             f"#define TRAJECTORY_TANGENT_HEADING {1 if trajectory.tangent_heading else 0}",
-            f"#define TRAJECTORY_TAKEOFF_DURATION_S ({float_literal(trajectory.takeoff_duration_s)})",
-            f"#define TRAJECTORY_MOTION_START_S ({float_literal(trajectory.hover_prefix_s)})",
             "",
             "// [p_W(3), q_WB(wxyz), v_W(3), omega_B(3)]",
             "static const float trajectory_reference_data[TRAJECTORY_SAMPLE_COUNT][TRAJECTORY_REFERENCE_DIM] = {",
@@ -488,8 +467,6 @@ def main() -> int:
         trajectory = generate_trajectory(
             name, solve_rate_hz, duration_s, settings.height_m, yaw_rad,
             loops, tangent_heading, path,
-            settings.takeoff_duration_s,
-            0.0 if name == "hover" else settings.hover_duration_s,
         )
         validate_trajectory(trajectory)
         output_path = output_directory / f"traj_{name}_{solve_rate_hz}hz.h"

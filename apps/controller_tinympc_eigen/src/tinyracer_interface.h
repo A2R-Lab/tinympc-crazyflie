@@ -37,7 +37,6 @@ typedef struct {
   bool gate_valid;
   bool constraint_active;
   bool constraint_changed;
-  bool pause_reference;
   int8_t pass_side;
   float lateral_offset_m;
   float stop_boundary_distance_m;

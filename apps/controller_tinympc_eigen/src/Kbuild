@@ -1,4 +1,5 @@
 obj-y += controller_tinympc.o
 obj-y += sequential_obstacle_link.o
 obj-y += tinyracer_racing.o
+obj-y += tinyracer_debug.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/

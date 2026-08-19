@@ -3,10 +3,8 @@
 #include <stdexcept>
 
 #include "tinympc/tinympc.h"
-extern "C" {
-#include "gotf/dare.h"
-#include "gotf/tinympc_model.h"
-}
+#include "../../src/tinympc_generated_params.h"
+#include "../../src/tinympc_banked_model_bank.h"
 
 namespace {
 
@@ -14,11 +12,14 @@ static Eigen::MatrixNf A;
 static Eigen::MatrixNMf B;
 static Eigen::MatrixNf A_model[NHORIZON - 1];
 static Eigen::MatrixNMf B_model[NHORIZON - 1];
+static Eigen::VectorNf f_model[NHORIZON - 1];
 static Eigen::MatrixMNf Kinf;
 static Eigen::MatrixNf Pinf;
 static Eigen::MatrixMf Quu_inv;
 static Eigen::MatrixNf AmBKt;
 static Eigen::MatrixNMf coeff_d2p;
+static Eigen::VectorNf APf;
+static Eigen::VectorMf BPf;
 static Eigen::MatrixNf Q;
 static Eigen::MatrixMf R;
 
@@ -54,7 +55,8 @@ static tiny_AdmmSolution soln;
 static tiny_AdmmWorkspace work;
 
 static bool initialized = false;
-static const float u_hover[4] = {0.7f, 0.663f, 0.7373f, 0.633f};
+static int selected_model = 0;
+static const float max_motor_thrust = 3.72e-8f * 2900.0f * 2900.0f;
 
 bool inverse4(const Eigen::MatrixMf& input, Eigen::MatrixMf* output) {
   float augmented[NINPUTS][2 * NINPUTS];
@@ -98,30 +100,17 @@ void rebuild_lqr_cache(float rho) {
   for (int i = 0; i < NSTATES; ++i) q_lqr(i, i) += rho;
   Eigen::MatrixMf r_lqr = R;
   for (int i = 0; i < NINPUTS; ++i) r_lqr(i, i) += rho;
-  gotf_float a_data[NSTATES * NSTATES], b_data[NSTATES * NINPUTS];
-  gotf_float q_data[NSTATES * NSTATES], r_data[NINPUTS * NINPUTS];
-  gotf_float p_data[NSTATES * NSTATES], k_data[NINPUTS * NSTATES];
-  for (int row = 0; row < NSTATES; ++row) {
-    for (int col = 0; col < NSTATES; ++col) {
-      a_data[row * NSTATES + col] = static_cast<gotf_float>(A(row, col));
-      q_data[row * NSTATES + col] = static_cast<gotf_float>(q_lqr(row, col));
-    }
-    for (int col = 0; col < NINPUTS; ++col)
-      b_data[row * NINPUTS + col] = static_cast<gotf_float>(B(row, col));
+  Pinf = q_lqr;
+  for (int iteration = 0; iteration < 50000; ++iteration) {
+    Eigen::MatrixMf hessian = r_lqr + B.transpose() * Pinf * B;
+    Eigen::MatrixMf inverse;
+    if (!inverse4(hessian, &inverse)) throw std::runtime_error("DARE input Hessian is singular");
+    Eigen::MatrixMNf gain = inverse * B.transpose() * Pinf * A;
+    Eigen::MatrixNf next = q_lqr + A.transpose() * Pinf * (A - B * gain);
+    const float delta = (next - Pinf).cwiseAbs().maxCoeff();
+    Pinf = next;
+    if (delta < 1.0e-4f) break;
   }
-  for (int row = 0; row < NINPUTS; ++row)
-    for (int col = 0; col < NINPUTS; ++col)
-      r_data[row * NINPUTS + col] = static_cast<gotf_float>(r_lqr(row, col));
-  if (gotf_dare_solve(a_data, b_data, q_data, r_data, NSTATES, NINPUTS, p_data, k_data) != 0)
-    throw std::runtime_error("DARE regeneration failed");
-  for (int row = 0; row < NSTATES; ++row)
-    for (int col = 0; col < NSTATES; ++col)
-      Pinf(row, col) = static_cast<float>(p_data[row * NSTATES + col]);
-  // gotf_dare_solve returns the conventional negative feedback gain u=Kx;
-  // this TinyMPC fork stores the positive gain and applies U -= Kinf*X.
-  for (int row = 0; row < NINPUTS; ++row)
-    for (int col = 0; col < NSTATES; ++col)
-      Kinf(row, col) = -static_cast<float>(k_data[row * NSTATES + col]);
   Eigen::MatrixMf s = r_lqr;
   Eigen::MatrixMNf btp;
   for (int row = 0; row < NINPUTS; ++row)
@@ -162,39 +151,142 @@ void rebuild_lqr_cache(float rho) {
     }
 }
 
-bool load_params(float model_dt_s, float rho) {
-#include "../src/params_100hz.h"
-  if (!(model_dt_s > 0.0f) || !std::isfinite(model_dt_s)) {
-    return false;
-  }
-  // This is the continuous nonlinear Crazyflie model used to create the
-  // deployed params_100hz header.  It integrates RK4 at model_dt_s and
-  // linearizes the discrete transition about hover.  In other words, A/B are
-  // regenerated for this experiment rather than composed from the 20 ms
-  // header.  The implementation currently uses symmetric finite differences;
-  // it is the C equivalent of the automatic-differentiation workflow in the
-  // TinyMPC model documentation.
-  gotf_tinympc_model physical_model = gotf_tinympc_model_cf1();
-  physical_model.dt = static_cast<gotf_float>(model_dt_s);
-  gotf_float a_generated[GOTF_NX * GOTF_NX];
-  gotf_float b_generated[GOTF_NX * GOTF_NU];
-  gotf_tinympc_hover_linearize(&physical_model, a_generated, b_generated);
+void install_model(
+    const float* a, const float* b, const float* affine,
+    const float* kinf, const float* pinf, const float* quu_inv,
+    const float* ambkt, const float* coeff, const float* apf,
+    const float* bpf) {
   for (int row = 0; row < NSTATES; ++row) {
     for (int col = 0; col < NSTATES; ++col) {
-      A(row, col) = static_cast<float>(a_generated[row * NSTATES + col]);
+      A(row, col) = a[row * NSTATES + col];
+      Pinf(row, col) = pinf[row * NSTATES + col];
+      AmBKt(row, col) = ambkt[row * NSTATES + col];
     }
+    APf(row) = apf[row];
     for (int col = 0; col < NINPUTS; ++col) {
-      B(row, col) = static_cast<float>(b_generated[row * NINPUTS + col]);
+      B(row, col) = b[row * NINPUTS + col];
+      coeff_d2p(row, col) = coeff[row * NINPUTS + col];
     }
   }
-  // Preserve the same continuous-time penalty over this new discrete knot.
-  const float cost_scale = model_dt_s / 0.020f;
-  Q *= cost_scale;
-  R *= cost_scale;
-  rebuild_lqr_cache(rho);
+  for (int row = 0; row < NINPUTS; ++row) {
+    for (int col = 0; col < NSTATES; ++col)
+      Kinf(row, col) = kinf[row * NSTATES + col];
+    for (int col = 0; col < NINPUTS; ++col)
+      Quu_inv(row, col) = quu_inv[row * NINPUTS + col];
+    BPf(row) = bpf[row];
+  }
   for (int k = 0; k < NHORIZON - 1; ++k) {
     A_model[k] = A;
     B_model[k] = B;
+    for (int state = 0; state < NSTATES; ++state) f_model[k](state) = affine[state];
+  }
+}
+
+bool select_stored_model(int model_id) {
+  switch (model_id) {
+    case 0:
+      install_model(
+          tinympc_generated_A, tinympc_generated_B, tinympc_generated_f,
+          tinympc_generated_Kinf, tinympc_generated_Pinf,
+          tinympc_generated_Quu_inv, tinympc_generated_AmBKt,
+          tinympc_generated_coeff_d2p, tinympc_generated_APf,
+          tinympc_generated_BPf);
+      break;
+    case 1:
+      install_model(
+          tinympc_bank_left_15_A, tinympc_bank_left_15_B,
+          tinympc_bank_left_15_f, tinympc_bank_left_15_Kinf,
+          tinympc_bank_left_15_Pinf, tinympc_bank_left_15_Quu_inv,
+          tinympc_bank_left_15_AmBKt, tinympc_bank_left_15_coeff_d2p,
+          tinympc_bank_left_15_APf, tinympc_bank_left_15_BPf);
+      break;
+    case 2:
+      install_model(
+          tinympc_bank_right_15_A, tinympc_bank_right_15_B,
+          tinympc_bank_right_15_f, tinympc_bank_right_15_Kinf,
+          tinympc_bank_right_15_Pinf, tinympc_bank_right_15_Quu_inv,
+          tinympc_bank_right_15_AmBKt, tinympc_bank_right_15_coeff_d2p,
+          tinympc_bank_right_15_APf, tinympc_bank_right_15_BPf);
+      break;
+    case 3:
+      install_model(
+          tinympc_bank_left_30_A, tinympc_bank_left_30_B,
+          tinympc_bank_left_30_f, tinympc_bank_left_30_Kinf,
+          tinympc_bank_left_30_Pinf, tinympc_bank_left_30_Quu_inv,
+          tinympc_bank_left_30_AmBKt, tinympc_bank_left_30_coeff_d2p,
+          tinympc_bank_left_30_APf, tinympc_bank_left_30_BPf);
+      break;
+    case 4:
+      install_model(
+          tinympc_bank_right_30_A, tinympc_bank_right_30_B,
+          tinympc_bank_right_30_f, tinympc_bank_right_30_Kinf,
+          tinympc_bank_right_30_Pinf, tinympc_bank_right_30_Quu_inv,
+          tinympc_bank_right_30_AmBKt, tinympc_bank_right_30_coeff_d2p,
+          tinympc_bank_right_30_APf, tinympc_bank_right_30_BPf);
+      break;
+    case 5:
+      install_model(
+          tinympc_bank_left_60_A, tinympc_bank_left_60_B,
+          tinympc_bank_left_60_f, tinympc_bank_left_60_Kinf,
+          tinympc_bank_left_60_Pinf, tinympc_bank_left_60_Quu_inv,
+          tinympc_bank_left_60_AmBKt, tinympc_bank_left_60_coeff_d2p,
+          tinympc_bank_left_60_APf, tinympc_bank_left_60_BPf);
+      break;
+    case 6:
+      install_model(
+          tinympc_bank_right_60_A, tinympc_bank_right_60_B,
+          tinympc_bank_right_60_f, tinympc_bank_right_60_Kinf,
+          tinympc_bank_right_60_Pinf, tinympc_bank_right_60_Quu_inv,
+          tinympc_bank_right_60_AmBKt, tinympc_bank_right_60_coeff_d2p,
+          tinympc_bank_right_60_APf, tinympc_bank_right_60_BPf);
+      break;
+    default:
+      return false;
+  }
+  selected_model = model_id;
+  return true;
+}
+
+bool load_params(float model_dt_s, float rho) {
+  if (!(model_dt_s > 0.0f) || !std::isfinite(model_dt_s)) {
+    return false;
+  }
+  Q.setZero();
+  R.setZero();
+  for (int state = 0; state < NSTATES; ++state)
+    Q(state, state) = tinympc_generated_Q_diagonal[state];
+  for (int input = 0; input < NINPUTS; ++input)
+    R(input, input) = tinympc_generated_R_diagonal[input];
+  // params_100hz.h is the same generated dynamics/cost source used by the
+  // firmware.  Compose its 20 ms discrete transition for integer multiples;
+  // this keeps the host build entirely within this repository.
+  const float base_dt_s = TINYMPC_GENERATED_MODEL_DT_S;
+  const int compositions = static_cast<int>(std::lround(model_dt_s / base_dt_s));
+  if (compositions < 1 || std::fabs(model_dt_s - compositions * base_dt_s) > 1.0e-6f) return false;
+  if (!select_stored_model(0)) return false;
+  const Eigen::MatrixNf base_a = A;
+  const Eigen::MatrixNMf base_b = B;
+  Eigen::MatrixNf composed_a = Eigen::MatrixNf::Identity();
+  Eigen::MatrixNMf composed_b = Eigen::MatrixNMf::Zero();
+  for (int i = 0; i < compositions; ++i) {
+    composed_b = base_a * composed_b + base_b;
+    composed_a = base_a * composed_a;
+  }
+  A = composed_a;
+  B = composed_b;
+  // Preserve the same continuous-time penalty over this new discrete knot.
+  const float cost_scale = model_dt_s / base_dt_s;
+  Q *= cost_scale;
+  R *= cost_scale;
+  if (compositions != 1 || std::fabs(rho - TINYMPC_GENERATED_ADMM_RHO) > 1.0e-5f) {
+    rebuild_lqr_cache(rho);
+    APf.setZero();
+    BPf.setZero();
+    for (int k = 0; k < NHORIZON - 1; ++k) {
+      A_model[k] = A;
+      B_model[k] = B;
+      f_model[k].setZero();
+    }
   }
   return true;
 }
@@ -238,20 +330,24 @@ bool tinympc_admm_host_init(int max_iter, float rho, bool enable_state_constrain
   }
   reset_vectors();
 
-  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 0, 0.002f, A_model, B_model, 0);
+  tiny_InitModel(&model, NSTATES, NINPUTS, NHORIZON, 0, 1, model_dt_s, A_model, B_model, f_model);
   tiny_InitSettings(&stgs);
   stgs.rho_init = rho;
   tiny_InitWorkspace(&work, &info, &model, &data, &soln, &stgs);
   tiny_InitWorkspaceTemp(&work, &Qu, ZU, ZU_new, ZX, ZX_new);
-  tiny_InitPrimalCache(&work, &Quu_inv, &AmBKt, &coeff_d2p);
+  tiny_InitPrimalCacheAffine(
+      &work, &Quu_inv, &AmBKt, &coeff_d2p, &APf, &BPf);
   tiny_InitSolution(&work, Xhrz, Uhrz, YX, YU, 0, &Kinf, d, &Pinf, p);
   tiny_SetInitialState(&work, &x0);
   tiny_SetStateReference(&work, Xref);
   tiny_SetInputReference(&work, Uref);
   tiny_InitDataCost(&work, &Q, q, &R, r, r_tilde);
 
-  ucu << 1.0f - u_hover[0], 1.0f - u_hover[1], 1.0f - u_hover[2], 1.0f - u_hover[3];
-  lcu << -u_hover[0], -u_hover[1], -u_hover[2], -u_hover[3];
+  for (int motor = 0; motor < NINPUTS; ++motor) {
+    const float hover = tinympc_generated_physical_hover_thrust[motor];
+    ucu(motor) = max_motor_thrust - hover;
+    lcu(motor) = -hover;
+  }
   tiny_SetInputBound(&work, &Acu, &lcu, &ucu);
 
   ucx.setConstant(1.0e6f);
@@ -284,6 +380,30 @@ void tinympc_admm_host_reset_duals() {
     ZU_new[k].setZero();
   }
   work.first_run = 1;
+}
+
+bool tinympc_admm_host_select_model(int model_id) {
+  if (!initialized || !select_stored_model(model_id)) return false;
+  tinympc_admm_host_reset_duals();
+  return true;
+}
+
+int tinympc_admm_host_selected_model() { return selected_model; }
+
+bool tinympc_admm_host_set_input_baseline(const float* physical_motor_thrust) {
+  if (!initialized || physical_motor_thrust == 0) return false;
+  for (int motor = 0; motor < NINPUTS; ++motor) {
+    const float baseline = physical_motor_thrust[motor];
+    if (!std::isfinite(baseline) || baseline < 0.0f || baseline > max_motor_thrust) {
+      return false;
+    }
+    // TinyMPC's decision variable is a correction about this baseline.  Keep
+    // the complete physical command inside the same actuator envelope used by
+    // firmware and the PyBullet plant, instead of relying on post-solve clips.
+    lcu(motor) = -baseline;
+    ucu(motor) = max_motor_thrust - baseline;
+  }
+  return true;
 }
 
 bool tinympc_admm_host_solve(

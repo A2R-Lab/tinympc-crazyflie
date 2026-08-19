@@ -12,6 +12,8 @@ This runner keeps the first closed-loop experiment deliberately small:
   state references between slower MPC replans.
 * ``--control-mode projection`` keeps the earlier velocity-lookahead projection
   experiment for comparison.
+* ``--control-mode geometric`` uses a quaternion/SO(3) attitude error and is
+  the simulation-only Tier-3 path for references that cross 180 degrees.
 
 This is a firmware-shadow experiment for the ADMM half-space path, not a full
 Crazyflie motor/controller replica.
@@ -22,25 +24,24 @@ from __future__ import annotations
 import argparse
 import ctypes
 import csv
+import hashlib
 import json
 import math
+import os
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 import numpy as np
 
 
-VISION_ROOT = Path(__file__).resolve().parents[5] / "tinympc-vision"
 APP_ROOT = Path(__file__).resolve().parents[2]
-if str(VISION_ROOT) not in sys.path:
-    sys.path.insert(0, str(VISION_ROOT))
-
-from closed_loop.gym_pybullet_gate_env import GymPybulletGateEnv, GymPybulletGateEnvConfig  # noqa: E402
-from closed_loop.packets import GateGeometry  # noqa: E402
+from firmware_pybullet_env import GateGeometry, GymPybulletGateEnv, GymPybulletGateEnvConfig  # noqa: E402
 
 
 R_CB = np.asarray(
@@ -94,6 +95,9 @@ class ReferenceTrajectory:
     t: np.ndarray
     pos: np.ndarray
     vel: np.ndarray
+    quat_wxyz: np.ndarray
+    omega_body: np.ndarray
+    input_delta_n: np.ndarray
 
     def sample(self, query_t: float) -> tuple[np.ndarray, np.ndarray]:
         tt = np.asarray(self.t, dtype=np.float64)
@@ -102,9 +106,138 @@ class ReferenceTrajectory:
         vel = np.asarray([np.interp(q, tt, self.vel[:, axis]) for axis in range(3)], dtype=np.float64)
         return pos, vel
 
+    def sample_full(self, query_t: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        tt = np.asarray(self.t, dtype=np.float64)
+        qtime = float(np.clip(float(query_t), float(tt[0]), float(tt[-1])))
+        pos, vel = self.sample(qtime)
+        upper = int(np.searchsorted(tt, qtime, side="right"))
+        upper = min(max(1, upper), len(tt) - 1)
+        lower = upper - 1
+        alpha = (qtime - tt[lower]) / max(1e-12, tt[upper] - tt[lower])
+        # Match firmware sampleTrajectoryReference(): interpolate quaternion
+        # components linearly, then normalize.  Do not use SLERP here—the
+        # purpose of this runner is firmware data-path parity.
+        quat = (1.0 - alpha) * self.quat_wxyz[lower] + alpha * self.quat_wxyz[upper]
+        quat /= np.linalg.norm(quat)
+        omega = (1.0 - alpha) * self.omega_body[lower] + alpha * self.omega_body[upper]
+        input_delta = (1.0 - alpha) * self.input_delta_n[lower] + alpha * self.input_delta_n[upper]
+        return pos, vel, quat, omega, input_delta
+
     @property
     def final_position(self) -> np.ndarray:
         return np.asarray(self.pos[-1], dtype=np.float64)
+
+
+class FlowDeckAltitudeEstimator:
+    """Model downward range validity and bridge invalid attitudes inertially."""
+
+    def __init__(self, mode: str, max_tilt_deg: float, reacquire_tau_s: float) -> None:
+        self.mode = str(mode)
+        self.minimum_cosine = math.cos(math.radians(float(max_tilt_deg)))
+        self.reacquire_tau_s = max(0.0, float(reacquire_tau_s))
+        self.estimated_z: float | None = None
+        self.last_t: float | None = None
+        self.records: list[list[object]] = []
+        self.invalid_samples = 0
+        self.maximum_error_m = 0.0
+
+    def apply(
+        self, world: np.ndarray, quaternion_xyzw: np.ndarray, timestamp: float
+    ) -> None:
+        rotation = _quat_xyzw_to_rot(quaternion_xyzw)
+        cosine = float(rotation[2, 2])
+        valid = bool(cosine >= self.minimum_cosine)
+        delayed_z = float(world[2])
+        delayed_vz = float(world[8])
+        dt = 0.0 if self.last_t is None else max(0.0, float(timestamp) - self.last_t)
+        raw_range = delayed_z / cosine if cosine > 1.0e-3 else 4.0
+        raw_range = float(np.clip(raw_range, 0.0, 4.0))
+        if self.estimated_z is None:
+            self.estimated_z = delayed_z
+        if self.mode == "raw-range":
+            self.estimated_z = raw_range
+        elif self.mode == "freeze":
+            if valid:
+                self.estimated_z = delayed_z
+        elif self.mode == "inertial":
+            predicted = self.estimated_z + delayed_vz * dt
+            if valid:
+                alpha = 1.0 if self.reacquire_tau_s <= 0.0 else 1.0 - math.exp(
+                    -dt / self.reacquire_tau_s
+                )
+                self.estimated_z = predicted + alpha * (delayed_z - predicted)
+            else:
+                self.estimated_z = predicted
+        else:
+            self.estimated_z = delayed_z
+        if not valid:
+            self.invalid_samples += 1
+        world[2] = self.estimated_z
+        self.maximum_error_m = max(
+            self.maximum_error_m, abs(float(self.estimated_z) - delayed_z)
+        )
+        self.records.append([
+            f"{float(timestamp):.9f}", f"{delayed_z:.9f}",
+            f"{float(self.estimated_z):.9f}", f"{raw_range:.9f}",
+            f"{cosine:.9f}", int(valid), self.mode,
+        ])
+        self.last_t = float(timestamp)
+
+class NeuralSectorPerception:
+    """Adapter from the deployed GAP8 ONNX output to firmware-style sector hits."""
+
+    ANGLES_DEG = (-40.0, -13.333333, 13.333333, 40.0)
+
+    def __init__(self, model_path: Path | None) -> None:
+        if model_path is None:
+            raise SystemExit("--onnx-model is required with --perception-mode neural")
+        try:
+            import onnxruntime as ort
+        except ImportError as exc:
+            raise SystemExit("neural perception requires onnxruntime") from exc
+        self.model_path = model_path.resolve()
+        if not self.model_path.is_file():
+            raise SystemExit(f"ONNX model not found: {self.model_path}")
+        self.session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        manifest_path = self.model_path.with_name("quantization_manifest.json")
+        if not manifest_path.is_file():
+            raise SystemExit(f"neural model requires adjacent {manifest_path.name}")
+        manifest = json.loads(manifest_path.read_text())
+        self.scale = float(manifest["scale"])
+        self.last_clearance_m = np.full(4, math.nan, dtype=np.float64)
+        self.last_confidence_score = np.full(4, math.nan, dtype=np.float64)
+        self.last_dangerous = np.zeros(4, dtype=bool)
+
+    def sample(self, frame: np.ndarray, position: np.ndarray, rot_wb: np.ndarray,
+               args: argparse.Namespace) -> tuple[list[SectorHit], str]:
+        if frame.shape != (160, 160):
+            raise RuntimeError(f"neural camera contract requires 160x160, got {frame.shape}")
+        tensor = frame[20:140, :].astype(np.float32)[None, None]
+        raw = np.asarray(self.session.run(None, {self.input_name: tensor})[0])
+        if raw.shape != (1, 12, 15, 20):
+            raise RuntimeError(f"unexpected ONNX output shape {raw.shape}")
+        logical = raw.astype(np.float32)[0] * self.scale - 6.0
+        clearance = (np.clip(logical[4:8].mean(axis=(1, 2)), -6.0, 6.0) + 6.0) * 0.5
+        confidence = logical[8:12].mean(axis=(1, 2))
+        dangerous = clearance < float(args.neural_danger_clearance)
+        self.last_clearance_m = np.asarray(clearance, dtype=np.float64)
+        self.last_confidence_score = np.asarray(confidence, dtype=np.float64)
+        self.last_dangerous = np.asarray(dangerous, dtype=bool)
+        if int(np.count_nonzero(dangerous)) < 2:
+            return [], "neural_fewer_than_two_dangerous"
+
+        # Match the requested simple policy: a single plane normal to the
+        # vehicle's forward axis. Use the closest region conservatively.
+        depth = float(np.min(clearance))
+        forward_world = _normalized(rot_wb @ np.asarray([1.0, 0.0, 0.0]))
+        mean_score = float(np.mean(confidence))
+        normalized_confidence = min(1.0, max(0.0, (mean_score + 6.0) / 12.0))
+        return [SectorHit(
+            -2, 0.0, depth, normalized_confidence, "neural_two_or_more_dangerous",
+            np.asarray(position, dtype=np.float64) + depth * forward_world,
+            forward_world,
+        )], "neural_two_or_more_dangerous"
 
 
 class AdmmHostSolver:
@@ -131,6 +264,12 @@ class AdmmHostSolver:
         self._lib.tinympc_admm_host_init.restype = ctypes.c_bool
         self._lib.tinympc_admm_host_reset_duals.argtypes = []
         self._lib.tinympc_admm_host_reset_duals.restype = None
+        self._lib.tinympc_admm_host_select_model.argtypes = [ctypes.c_int]
+        self._lib.tinympc_admm_host_select_model.restype = ctypes.c_bool
+        self._lib.tinympc_admm_host_selected_model.argtypes = []
+        self._lib.tinympc_admm_host_selected_model.restype = ctypes.c_int
+        self._lib.tinympc_admm_host_set_input_baseline.argtypes = [f32p]
+        self._lib.tinympc_admm_host_set_input_baseline.restype = ctypes.c_bool
         self._lib.tinympc_admm_host_solve.argtypes = [
             f32p,
             f32p,
@@ -156,10 +295,25 @@ class AdmmHostSolver:
         start_k: int,
         end_k: int,
         enable_constraints: bool,
+        u_ref: np.ndarray | None = None,
+        input_baseline_n: np.ndarray | None = None,
     ) -> dict[str, Any]:
         x0_f = np.ascontiguousarray(np.asarray(x0, dtype=np.float32).reshape(self.NSTATES))
         xref_f = np.ascontiguousarray(np.asarray(x_ref, dtype=np.float32).reshape(self.horizon, self.NSTATES))
-        uref_f = np.zeros((self.horizon - 1, self.NINPUTS), dtype=np.float32)
+        uref_f = np.ascontiguousarray(
+            np.zeros((self.horizon - 1, self.NINPUTS), dtype=np.float32)
+            if u_ref is None else np.asarray(u_ref, dtype=np.float32).reshape(self.horizon - 1, self.NINPUTS)
+        )
+        baseline_f = np.ascontiguousarray(
+            GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N
+            if input_baseline_n is None
+            else np.asarray(input_baseline_n, dtype=np.float32).reshape(self.NINPUTS),
+            dtype=np.float32,
+        )
+        if not self._lib.tinympc_admm_host_set_input_baseline(
+            baseline_f.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        ):
+            raise RuntimeError(f"invalid TinyMPC motor-thrust baseline: {baseline_f.tolist()}")
         a_hs = np.zeros((self.horizon, self.MAX_HS, 3), dtype=np.float32)
         b_hs = np.zeros((self.horizon, self.MAX_HS), dtype=np.float32)
         en_hs = np.zeros((self.horizon, self.MAX_HS), dtype=np.int32)
@@ -199,29 +353,99 @@ class AdmmHostSolver:
             "iterations": int(iters.value),
             "pri_res": float(pri.value),
             "dua_res": float(dua.value),
+            "model_id": int(self._lib.tinympc_admm_host_selected_model()),
         }
 
+    def select_model(self, model_id: int) -> None:
+        if int(self._lib.tinympc_admm_host_selected_model()) == int(model_id):
+            return
+        if not self._lib.tinympc_admm_host_select_model(int(model_id)):
+            raise RuntimeError(f"failed to select stored TinyMPC model {model_id}")
 
-def parse_args() -> argparse.Namespace:
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=Path("flow_sim_dataset/depth_constraint_closed_loop"))
     ap.add_argument("--duration", type=float, default=7.0)
     ap.add_argument("--plant-dt", "--dt", dest="plant_dt", type=float, default=0.002,
                     help="PyBullet integration and acceleration-shim step [s]")
-    ap.add_argument("--model-dt", type=float, default=0.04,
+    ap.add_argument("--model-dt", type=float, default=0.02,
                     help="MPC discrete-model knot interval [s]; regenerated from the continuous hover model")
-    ap.add_argument("--mpc-rate-hz", type=float, default=5.0,
-                    help="receding-horizon solve rate; five 0.04 s plan knots are executed at the 5 Hz default")
+    ap.add_argument("--mpc-rate-hz", type=float, default=50.0,
+                    help="receding-horizon solve rate; default matches generated firmware")
     ap.add_argument("--gui", action="store_true")
+    ap.add_argument("--realtime", action=argparse.BooleanOptionalAction, default=None,
+                    help="pace simulation to wall time (defaults on with --gui, off headlessly)")
+    ap.add_argument("--progress-interval-s", type=float, default=1.0,
+                    help="print progress this often in simulated seconds; <=0 disables")
+    ap.add_argument("--plot", action="store_true",
+                    help="write trajectory_topdown.png after the run")
     ap.add_argument("--image-size", type=int, default=160)
     ap.add_argument("--fov-deg", type=float, default=70.0)
     ap.add_argument("--sectors", type=int, default=7)
-    ap.add_argument("--control-mode", choices=["admm", "projection"], default="admm")
+    ap.add_argument("--perception-mode", choices=["none", "geometry", "neural"], default="none",
+                    help="none for maneuver simulation; geometry/neural are isolated legacy obstacle experiments")
+    ap.add_argument("--onnx-model", type=Path, default=None,
+                    help="sequential_int.onnx; required for --perception-mode neural")
+    ap.add_argument("--neural-danger-clearance", type=float, default=0.25,
+                    help="at least two neural clearances must be below this to place the plane [m]")
+    ap.add_argument("--neural-plane-margin", type=float, default=0.10,
+                    help="stand-off subtracted from the closest neural clearance [m]")
+    ap.add_argument(
+        "--control-mode", choices=["admm", "tinympc-acro", "geometric", "projection"], default="admm",
+        help="tinympc-acro uses reference-centered quaternion-error TinyMPC; geometric is a control experiment",
+    )
     ap.add_argument("--max-active-halfspaces", type=int, default=1,
                     help="number of sector half-spaces to pass to ADMM; capped by host MAX_HS=3")
-    ap.add_argument("--tinympc-max-iter", type=int, default=2,
+    ap.add_argument("--tinympc-max-iter", type=int, default=5,
                     help="ADMM iterations per MPC tick; default matches src/controller_tinympc.cpp")
-    ap.add_argument("--tinympc-rho", type=float, default=250.0)
+    ap.add_argument("--tinympc-rho", type=float, default=250.0,
+                    help="ADMM rho; 250 matches src/tinympc_generated_params.h and firmware")
+    ap.add_argument("--model-schedule", choices=["level", "bank15", "bank30", "bank60"], default="level",
+                    help="level matches current firmware; bank schedules are host-only experimental bundles")
+    ap.add_argument("--controller-frame", choices=["firmware-local", "world"], default="firmware-local",
+                    help="firmware-local resets origin/removes yaw per solve; world reproduces the old global-state controller")
+    ap.add_argument("--motor-time-constant-ms", type=float, default=0.0,
+                    help="first-order motor-thrust time constant [ms]; 0 applies thrust instantaneously")
+    ap.add_argument("--motor-command-delay-ms", type=float, default=0.0,
+                    help="pure motor-command delay [ms]; must be an integer multiple of plant dt")
+    ap.add_argument("--controller-compute-delay-ms", type=float, default=0.0,
+                    help="state-sample to solved-command latency [ms]; multiple of plant dt")
+    ap.add_argument("--trajectory-handoff-hold-s", type=float, default=0.0,
+                    help="hold the first reference state before advancing, as firmware does on activation")
+    ap.add_argument("--plant-mass-scale", type=float, default=1.0,
+                    help="actual plant mass divided by the firmware-model mass")
+    ap.add_argument("--plant-inertia-scale", type=float, default=1.0,
+                    help="actual diagonal inertia divided by the firmware-model inertia")
+    ap.add_argument("--plant-thrust-scale", type=float, default=1.0,
+                    help="actual thrust effectiveness divided by commanded-model effectiveness")
+    ap.add_argument("--plant-motor-thrust-scales", default="1,1,1,1",
+                    help="four comma-separated per-motor thrust effectiveness scales")
+    ap.add_argument("--rotor-drag-scale", type=float, default=0.0,
+                    help="scale for gym-pybullet-drones' identified rotor drag; 0 disables drag")
+    ap.add_argument("--state-estimate-delay-ms", type=float, default=0.0,
+                    help="delay applied to the state seen by TinyMPC [ms]; multiple of plant dt")
+    ap.add_argument("--position-noise-std-m", type=float, default=0.0)
+    ap.add_argument("--velocity-noise-std-mps", type=float, default=0.0)
+    ap.add_argument("--attitude-noise-std-deg", type=float, default=0.0)
+    ap.add_argument("--gyro-noise-std-deg-s", type=float, default=0.0)
+    ap.add_argument(
+        "--flow-z-mode", choices=("ideal", "raw-range", "freeze", "inertial"),
+        default="ideal",
+        help="altitude handling when the downward rangefinder is tilted away from the floor",
+    )
+    ap.add_argument("--flow-z-max-tilt-deg", type=float, default=35.0,
+                    help="largest tilt that accepts a downward range update")
+    ap.add_argument("--flow-z-reacquire-tau-ms", type=float, default=120.0,
+                    help="range re-acquisition blend time for inertial altitude mode")
+    ap.add_argument("--geometric-position-kp", default="8,8,12",
+                    help="three comma-separated SE(3) position gains [1/s^2]")
+    ap.add_argument("--geometric-velocity-kd", default="5,5,7",
+                    help="three comma-separated SE(3) velocity gains [1/s]")
+    ap.add_argument("--geometric-attitude-kp", type=float, default=0.008,
+                    help="SO(3) attitude-error moment gain [N m]")
+    ap.add_argument("--geometric-rate-kd", type=float, default=0.0008,
+                    help="body-rate-error moment gain [N m s/rad]")
     ap.add_argument("--target-speed", type=float, default=0.18)
     ap.add_argument("--lookahead-s", type=float, default=0.75)
     ap.add_argument("--velocity-tau-s", type=float, default=0.35)
@@ -255,10 +479,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--sector-switch-ratio", type=float, default=1.0,
                     help="while a sector is active, switch sectors only if new depth is below ratio*held_depth; >=1 disables")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--start-k", type=int, default=1,
+    ap.add_argument("--start-k", type=int, default=0,
                     help="first horizon knot with an enabled obstacle half-space")
-    ap.add_argument("--constraint-end-k", type=int, default=11,
-                    help="exclusive final constrained knot; default constrains ten future knots of a 20-knot horizon")
+    ap.add_argument("--constraint-end-k", type=int, default=20,
+                    help="exclusive final constrained knot; default matches all 20 firmware horizon knots")
     ap.add_argument("--horizon", type=int, default=20)
     ap.add_argument("--max-accel", type=float, default=0.8)
     ap.add_argument("--max-forward-speed", type=float, default=0.6)
@@ -289,12 +513,26 @@ def parse_args() -> argparse.Namespace:
                     help="log constraints but do not alter the nominal command")
     ap.add_argument("--force-rebuild-solver", action="store_true")
     ap.add_argument("--overwrite", action="store_true")
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     _validate_timing(args)
+    motor_thrust_scales = _parse_motor_thrust_scales(args.plant_motor_thrust_scales)
+    geometric_position_kp = _parse_positive_vector3(
+        args.geometric_position_kp, "--geometric-position-kp"
+    )
+    geometric_velocity_kd = _parse_positive_vector3(
+        args.geometric_velocity_kd, "--geometric-velocity-kd"
+    )
+    if str(args.model_schedule) != "level":
+        print(
+            "WARNING: stored bank-model scheduling is an experimental host path; "
+            "the current onboard controller still installs only the level generated model.",
+            file=sys.stderr,
+            flush=True,
+        )
     if args.out.exists() and not args.overwrite:
         raise SystemExit(f"{args.out} exists; use --overwrite or choose --out")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -329,9 +567,16 @@ def main() -> int:
         target_z_min=0.45,
         target_z_max=2.0,
         gate_collision=False,
+        motor_time_constant_s=1.0e-3 * float(args.motor_time_constant_ms),
+        motor_command_delay_s=1.0e-3 * float(args.motor_command_delay_ms),
+        mass_scale=float(args.plant_mass_scale),
+        inertia_scale=float(args.plant_inertia_scale),
+        thrust_scale=float(args.plant_thrust_scale),
+        motor_thrust_scales=motor_thrust_scales,
+        rotor_drag_scale=float(args.rotor_drag_scale),
     )
     env = GymPybulletGateEnv(geometry=geometry, config=env_config)
-    obstacles = _parse_obstacles(args.obstacle)
+    obstacles = [] if args.perception_mode == "none" and not args.obstacle else _parse_obstacles(args.obstacle)
     admm_solver = (
         AdmmHostSolver(
             args.tinympc_max_iter,
@@ -340,20 +585,30 @@ def main() -> int:
             model_dt_s=float(args.model_dt),
             force_rebuild=bool(args.force_rebuild_solver),
         )
-        if str(args.control_mode) == "admm"
+        if str(args.control_mode) in ("admm", "tinympc-acro")
         else None
     )
     rows: list[list[object]] = []
     horizon_rows: list[list[object]] = []
     plan_rows: list[list[object]] = []
+    neural_rows: list[list[object]] = []
     summary: dict[str, Any] = {}
     rng = np.random.default_rng(int(args.seed))
+    flow_altitude = FlowDeckAltitudeEstimator(
+        str(args.flow_z_mode), float(args.flow_z_max_tilt_deg),
+        1.0e-3 * float(args.flow_z_reacquire_tau_ms),
+    )
+    neural = NeuralSectorPerception(args.onnx_model) if args.perception_mode == "neural" else None
 
     try:
         env.reset()
         _add_obstacles(env, obstacles)
-        steps = int(round(float(args.duration) / float(args.plant_dt)))
-        camera_period_steps = _period_steps(1.0 / max(1e-6, float(args.camera_rate_hz)), args.plant_dt, "camera")
+        run_duration_s = float(args.duration) + float(args.trajectory_handoff_hold_s)
+        steps = int(round(run_duration_s / float(args.plant_dt)))
+        camera_period_steps = (
+            _period_steps(1.0 / max(1e-6, float(args.camera_rate_hz)), args.plant_dt, "camera")
+            if args.perception_mode != "none" else steps + 1
+        )
         mpc_period_steps = _period_steps(1.0 / float(args.mpc_rate_hz), args.plant_dt, "MPC")
         model_period_steps = _period_steps(float(args.model_dt), args.plant_dt, "model")
         max_constraint_age_steps = max(0, int(round(float(args.constraint_max_age_s) / float(args.plant_dt))))
@@ -375,21 +630,74 @@ def main() -> int:
         stale_disabled_count = 0
         switch_suppressed_count = 0
         mpc_solve_count = 0
+        controller_update_count = 0
+        geometric_clip_steps = 0
+        geometric_max_attitude_error_rad = 0.0
+        geometric_max_rate_error_rad_s = 0.0
+        model_switch_count = 0
+        scheduled_model_id = 0
         held_plan: np.ndarray | None = None
         held_solver_info: dict[str, Any] = {}
         plan_k = 0
+        realtime = bool(args.gui) if args.realtime is None else bool(args.realtime)
+        wall_start = time.monotonic()
+        next_progress_t = 0.0
+        estimate_delay_steps = _nonnegative_delay_steps(
+            1.0e-3 * float(args.state_estimate_delay_ms), float(args.plant_dt), "state estimate"
+        )
+        controller_delay_steps = _nonnegative_delay_steps(
+            1.0e-3 * float(args.controller_compute_delay_ms), float(args.plant_dt), "controller compute"
+        )
+        pending_motor_controls: deque[tuple[int, np.ndarray]] = deque()
+        active_motor_control = np.zeros(AdmmHostSolver.NINPUTS, dtype=np.float64)
+        initial_state = env.get_state()
+        initial_quat = _env_quat(env)
+        initial_controller_state = _solver_state(env, initial_state)
+        state_history: deque[tuple[np.ndarray, np.ndarray]] = deque(
+            [(initial_controller_state.copy(), initial_quat.copy()) for _ in range(estimate_delay_steps + 1)],
+            maxlen=estimate_delay_steps + 1,
+        )
         for step in range(steps):
             t = step * float(args.plant_dt)
+            handoff_active = t < float(args.trajectory_handoff_hold_s) - 1.0e-12
+            trajectory_t = max(0.0, t - float(args.trajectory_handoff_hold_s))
+            if float(args.progress_interval_s) > 0.0 and t + 1.0e-12 >= next_progress_t:
+                print(f"sim {t:6.2f}/{run_duration_s:.2f} s  ({100.0 * step / max(1, steps):5.1f}%)", flush=True)
+                next_progress_t += float(args.progress_interval_s)
             state = env.get_state()
             quat = _env_quat(env)
             rot_wb = _quat_xyzw_to_rot(quat)
-            if step % camera_period_steps == 0:
-                hits, hit_source = _sample_sector_hits(state[:3], rot_wb, obstacles, args, rng)
+            state_history.append((_solver_state(env, state), quat.copy()))
+            if args.perception_mode != "none" and step % camera_period_steps == 0:
+                if neural is None:
+                    hits, hit_source = _sample_sector_hits(state[:3], rot_wb, obstacles, args, rng)
+                else:
+                    hits, hit_source = neural.sample(env.render_camera(), state[:3], rot_wb, args)
+                    neural_rows.append([
+                        step, f"{t:.9f}",
+                        *[f"{float(value):.9f}" for value in neural.last_clearance_m],
+                        *[f"{float(value):.9f}" for value in neural.last_confidence_score],
+                        *[int(value) for value in neural.last_dangerous],
+                        int(len(hits) > 0), hit_source,
+                    ])
                 if hit_source == "dropout":
                     dropout_count += 1
                 elif hit_source == "false_hit":
                     false_hit_count += 1
-                if hits:
+                if neural is not None:
+                    if hits:
+                        # A neural obstacle plane is a world-fixed observation.
+                        # Refresh its age while danger persists, but do not move
+                        # it forward with every new camera frame.
+                        if held_constraints[0].obstacle_name != "neural_two_or_more_dangerous":
+                            held_constraints = [_constraint_from_hit(state[:3], rot_wb, hits[0], args)]
+                        held_age_steps = 0
+                    else:
+                        # This simple policy releases immediately when fewer
+                        # than two regions remain below threshold.
+                        held_constraints = [_inactive_constraint(hit_source)]
+                        held_age_steps = max_constraint_age_steps + 1
+                elif hits:
                     should_switch = _should_switch_sector(held_constraints[0], hits[0], args)
                     if should_switch or int(args.max_active_halfspaces) > 1:
                         held_constraints = [_constraint_from_hit(state[:3], rot_wb, hit, args) for hit in hits[: max(1, int(args.max_active_halfspaces))]]
@@ -401,23 +709,80 @@ def main() -> int:
                 constraints = [_inactive_constraint("stale_depth")]
                 stale_disabled_count += 1
             constraint = constraints[0] if constraints else _inactive_constraint("no_depth")
-            nominal_velocity = _nominal_velocity(state, t, trajectory, args)
+            nominal_velocity = _nominal_velocity(state, trajectory_t, trajectory, args)
             solver_info: dict[str, Any] = {}
             mpc_solved = False
             if admm_solver is not None:
                 if step % mpc_period_steps == 0:
-                    x0_solver = _solver_state(env, state)
-                    x_ref = _reference_trajectory(x0_solver, t, trajectory, constraint, args, admm_solver.horizon)
+                    estimate_world, estimate_quat = _noisy_state_estimate(
+                        state_history[0][0], state_history[0][1], args, rng,
+                        flow_altitude, t,
+                    )
+                    reference_time = 0.0 if handoff_active else trajectory_t
+                    if str(args.control_mode) == "tinympc-acro":
+                        x0_solver, feedforward_input_delta = _tinympc_reference_error_state(
+                            estimate_world, estimate_quat, trajectory, reference_time
+                        )
+                        frame_origin, frame_yaw = None, 0.0
+                        x_ref = np.zeros(
+                            (admm_solver.horizon, AdmmHostSolver.NSTATES), dtype=np.float64
+                        )
+                        u_ref = np.zeros(
+                            (admm_solver.horizon - 1, AdmmHostSolver.NINPUTS), dtype=np.float64
+                        )
+                    elif str(args.perception_mode) == "none" and str(args.controller_frame) == "firmware-local":
+                        x0_solver, frame_origin, frame_yaw = _firmware_local_state_from_world(
+                            estimate_world, estimate_quat
+                        )
+                    else:
+                        x0_solver = estimate_world
+                        frame_origin, frame_yaw = None, 0.0
+                    if str(args.control_mode) != "tinympc-acro":
+                        x_ref, u_ref = _reference_trajectory(
+                            x0_solver, trajectory_t, trajectory, constraint, args, admm_solver.horizon,
+                            frame_origin=frame_origin, frame_yaw=frame_yaw,
+                            hold_reference=handoff_active,
+                        )
+                    next_model_id = 0 if str(args.control_mode) == "tinympc-acro" else _scheduled_model_id(
+                        trajectory, trajectory_t, args, scheduled_model_id,
+                        hold_reference=handoff_active,
+                    )
+                    if next_model_id != scheduled_model_id:
+                        admm_solver.select_model(next_model_id)
+                        scheduled_model_id = next_model_id
+                        model_switch_count += 1
                     held_solver_info = admm_solver.solve(
                         x0=x0_solver,
                         x_ref=x_ref,
                         constraints=constraints,
                         start_k=int(args.start_k),
                         end_k=int(args.constraint_end_k),
-                        enable_constraints=not bool(args.no_avoidance),
+                        enable_constraints=(
+                            str(args.control_mode) != "tinympc-acro" and not bool(args.no_avoidance)
+                        ),
+                        u_ref=u_ref,
+                        input_baseline_n=(
+                            GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N
+                            + feedforward_input_delta
+                            if str(args.control_mode) == "tinympc-acro" else None
+                        ),
                     )
                     held_plan = np.asarray(held_solver_info["states"], dtype=np.float64)
                     plan_k = 0
+                    solved_controls = np.asarray(held_solver_info["controls"], dtype=np.float64)
+                    motor_control = solved_controls[0].copy()
+                    if str(args.control_mode) == "tinympc-acro":
+                        physical_baseline = (
+                            GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N
+                            + feedforward_input_delta
+                        )
+                        held_solver_info["input_baseline_n"] = physical_baseline.copy()
+                        held_solver_info["first_control_correction_n"] = motor_control.copy()
+                        motor_control += feedforward_input_delta
+                        held_solver_info["commanded_physical_motor_thrust_n"] = (
+                            GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N + motor_control
+                        )
+                    pending_motor_controls.append((step + controller_delay_steps, motor_control))
                     mpc_solved = True
                     mpc_solve_count += 1
                 elif held_plan is not None:
@@ -425,11 +790,49 @@ def main() -> int:
                 if held_plan is None:
                     raise RuntimeError("ADMM plan was not initialized")
                 solver_info = held_solver_info
-                command_velocity, violation = _velocity_from_admm_plan(
-                    state, held_plan, constraint, args, plan_k=plan_k
+                if str(args.control_mode) == "tinympc-acro":
+                    _, command_velocity = trajectory.sample(
+                        0.0 if handoff_active else trajectory_t
+                    )
+                    violation = 0.0
+                else:
+                    command_velocity, violation = _velocity_from_admm_plan(
+                        state, held_plan, constraint, args, plan_k=plan_k
+                    )
+                    if bool(args.admm_safety_filter):
+                        command_velocity, violation = _project_velocity(command_velocity, state[:3], constraint, args)
+            elif str(args.control_mode) == "geometric":
+                estimate_world, estimate_quat = _noisy_state_estimate(
+                    state_history[0][0], state_history[0][1], args, rng,
+                    flow_altitude, t,
                 )
-                if bool(args.admm_safety_filter):
-                    command_velocity, violation = _project_velocity(command_velocity, state[:3], constraint, args)
+                reference_time = 0.0 if handoff_active else trajectory_t
+                motor_control, geometric_info = _geometric_motor_control(
+                    position=estimate_world[0:3],
+                    velocity=estimate_world[6:9],
+                    quaternion_xyzw=estimate_quat,
+                    omega_body=estimate_world[9:12],
+                    trajectory=trajectory,
+                    query_t=reference_time,
+                    args=args,
+                    position_kp=geometric_position_kp,
+                    velocity_kd=geometric_velocity_kd,
+                )
+                pending_motor_controls.append(
+                    (step + controller_delay_steps, motor_control.copy())
+                )
+                controller_update_count += 1
+                geometric_clip_steps += int(geometric_info["motor_clipped"] > 0.5)
+                geometric_max_attitude_error_rad = max(
+                    geometric_max_attitude_error_rad,
+                    float(geometric_info["attitude_error_rad"]),
+                )
+                geometric_max_rate_error_rad_s = max(
+                    geometric_max_rate_error_rad_s,
+                    float(geometric_info["rate_error_rad_s"]),
+                )
+                _, command_velocity = trajectory.sample(reference_time)
+                violation = 0.0
             else:
                 command_velocity, violation = _project_velocity(nominal_velocity, state[:3], constraint, args)
             if args.no_avoidance:
@@ -447,8 +850,14 @@ def main() -> int:
                 prev_terminal = terminal.copy()
             accel = (command_velocity - state[3:6]) / max(1e-3, float(args.velocity_tau_s))
             accel = np.clip(accel, -float(args.max_accel), float(args.max_accel))
-            _, _, done, info = env.step(accel)
+            if str(args.control_mode) in ("admm", "tinympc-acro", "geometric"):
+                while pending_motor_controls and pending_motor_controls[0][0] <= step:
+                    _, active_motor_control = pending_motor_controls.popleft()
+                _, _, done, info = env.step_motor_thrust(active_motor_control)
+            else:
+                _, _, done, info = env.step_velocity(command_velocity)
             next_state = env.get_state()
+            next_controller_state = _solver_state(env, next_state)
             clearance = _clearance_to_obstacles(next_state[:3], obstacles, float(args.drone_clearance_radius))
             min_clearance = min(min_clearance, clearance)
             min_z = min(min_z, float(next_state[2]))
@@ -456,19 +865,30 @@ def main() -> int:
             env_collision = bool(env_collision or info.get("collision", False))
             collision = bool(obstacle_collision or env_collision)
             goal_error = float(np.linalg.norm(next_state[:3] - trajectory.final_position))
-            reached_goal = bool(reached_goal or (t >= float(trajectory.t[-1]) and goal_error <= float(args.goal_tolerance)))
+            reached_goal = bool(reached_goal or (
+                trajectory_t >= float(trajectory.t[-1])
+                and goal_error <= float(args.goal_tolerance)
+            ))
             if constraint.active:
                 active_count += 1
             rows.append(_log_row(
                 step, t, state, next_state, nominal_velocity, command_velocity, accel,
                 constraint, violation, clearance, info, solver_info, mpc_solved, plan_k,
+                next_controller_state, quat,
             ))
             if mpc_solved:
                 _append_horizon_rows(horizon_rows, step, t, constraint, args)
-                _append_plan_rows(plan_rows, step, t, solver_info)
+                _append_plan_rows(
+                    plan_rows, step, t, solver_info,
+                    frame_origin=frame_origin, frame_yaw=frame_yaw,
+                )
             if collision or reached_goal:
                 break
             held_age_steps += 1
+            if realtime:
+                delay = wall_start + (step + 1) * float(args.plant_dt) - time.monotonic()
+                if delay > 0.0:
+                    time.sleep(delay)
 
         final_state = env.get_state()
         summary = {
@@ -481,12 +901,56 @@ def main() -> int:
             "constraint_start_k": int(args.start_k),
             "constraint_end_k": int(args.constraint_end_k),
             "mpc_solve_count": int(mpc_solve_count),
+            "controller_update_count": int(controller_update_count),
+            "model_schedule": str(args.model_schedule),
+            "current_firmware_model_parity": (
+                str(args.control_mode) == "admm" and str(args.model_schedule) == "level"
+            ),
+            "controller_frame": str(args.controller_frame),
+            "motor_time_constant_ms": float(args.motor_time_constant_ms),
+            "motor_command_delay_ms": float(args.motor_command_delay_ms),
+            "controller_compute_delay_ms": float(args.controller_compute_delay_ms),
+            "trajectory_handoff_hold_s": float(args.trajectory_handoff_hold_s),
+            "plant_mass_scale": float(args.plant_mass_scale),
+            "plant_inertia_scale": float(args.plant_inertia_scale),
+            "plant_thrust_scale": float(args.plant_thrust_scale),
+            "plant_motor_thrust_scales": list(motor_thrust_scales),
+            "rotor_drag_scale": float(args.rotor_drag_scale),
+            "state_estimate_delay_ms": float(args.state_estimate_delay_ms),
+            "position_noise_std_m": float(args.position_noise_std_m),
+            "velocity_noise_std_mps": float(args.velocity_noise_std_mps),
+            "attitude_noise_std_deg": float(args.attitude_noise_std_deg),
+            "gyro_noise_std_deg_s": float(args.gyro_noise_std_deg_s),
+            "flow_z_mode": str(args.flow_z_mode),
+            "flow_z_max_tilt_deg": float(args.flow_z_max_tilt_deg),
+            "flow_z_reacquire_tau_ms": float(args.flow_z_reacquire_tau_ms),
+            "flow_z_invalid_fraction": (
+                flow_altitude.invalid_samples / max(1, len(flow_altitude.records))
+            ),
+            "flow_z_maximum_estimation_error_m": float(flow_altitude.maximum_error_m),
+            "model_switch_count": int(model_switch_count),
+            "final_model_id": int(scheduled_model_id),
             "control_mode": str(args.control_mode),
+            "trajectory_file": str(args.trajectory_file) if args.trajectory_file else None,
+            "geometric_controller": {
+                "position_kp": geometric_position_kp.astype(float).tolist(),
+                "velocity_kd": geometric_velocity_kd.astype(float).tolist(),
+                "attitude_kp_nm": float(args.geometric_attitude_kp),
+                "rate_kd_nms_per_rad": float(args.geometric_rate_kd),
+                "motor_clip_fraction": geometric_clip_steps / max(1, controller_update_count),
+                "maximum_attitude_error_deg": math.degrees(geometric_max_attitude_error_rad),
+                "maximum_rate_error_deg_s": math.degrees(geometric_max_rate_error_rad_s),
+            },
+            "plant_backend": "gym-pybullet-drones/CF2X-four-motor",
             "avoidance_enabled": not bool(args.no_avoidance),
             "constraint_active_steps": active_count,
             "constraint_active_fraction": active_count / max(1, len(rows)),
             "max_active_halfspaces": int(args.max_active_halfspaces),
             "camera_rate_hz": float(args.camera_rate_hz),
+            "perception_mode": str(args.perception_mode),
+            "onnx_model": str(args.onnx_model) if args.onnx_model else None,
+            "neural_danger_clearance_m": float(args.neural_danger_clearance),
+            "neural_plane_margin_m": float(args.neural_plane_margin),
             "depth_noise_std": float(args.depth_noise_std),
             "depth_bias": float(args.depth_bias),
             "sector_dropout_prob": float(args.sector_dropout_prob),
@@ -507,6 +971,10 @@ def main() -> int:
                 "y": float(trajectory.final_position[1]),
                 "z": float(trajectory.final_position[2]),
             },
+            "reference_trajectory": [
+                {"t": float(tt), "x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
+                for tt, pos in zip(trajectory.t, trajectory.pos)
+            ],
             "min_obstacle_clearance_m": float(min_clearance),
             "min_z_m": float(min_z),
             "final_state": final_state.astype(float).tolist(),
@@ -525,9 +993,21 @@ def main() -> int:
     _write_log(args.out / "closed_loop.csv", rows)
     _write_horizon(args.out / "constraints.csv", horizon_rows)
     _write_plan(args.out / "planned_horizon.csv", plan_rows)
+    with (args.out / "flow_altitude.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow([
+            "t", "delayed_true_z_m", "estimated_z_m", "raw_slant_range_m",
+            "body_z_world_z_cosine", "range_valid", "mode",
+        ])
+        writer.writerows(flow_altitude.records)
+    if neural is not None:
+        _write_neural_perception(args.out / "neural_perception.csv", neural_rows)
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
     print(f"wrote logs to {args.out}")
+    if bool(args.plot):
+        plotter = Path(__file__).with_name("plot_depth_constraint_run.py")
+        subprocess.run([sys.executable, str(plotter), str(args.out)], check=True)
     return 0
 
 
@@ -572,6 +1052,9 @@ def _load_reference_trajectory(args: argparse.Namespace, geometry: GateGeometry)
                 ],
                 dtype=np.float64,
             ),
+            quat_wxyz=np.asarray([[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]),
+            omega_body=np.zeros((2, 3), dtype=np.float64),
+            input_delta_n=np.zeros((2, 4), dtype=np.float64),
         )
 
     with args.trajectory_file.open(newline="") as f:
@@ -597,13 +1080,34 @@ def _load_reference_trajectory(args: argparse.Namespace, geometry: GateGeometry)
             vel[:, axis] = np.gradient(pos[:, axis], t)
     if np.any(~np.isfinite(vel)):
         raise SystemExit(f"trajectory file {args.trajectory_file} contains non-finite velocity")
-    return ReferenceTrajectory(t=t, pos=pos, vel=vel)
+    if all(col in rows[0] for col in ("qw", "qx", "qy", "qz")):
+        quat = np.asarray([[float(row[key]) for key in ("qw", "qx", "qy", "qz")] for row in rows], dtype=np.float64)
+        norms = np.linalg.norm(quat, axis=1)
+        if np.any(norms < 1e-9):
+            raise SystemExit(f"trajectory file {args.trajectory_file} contains a zero quaternion")
+        quat /= norms[:, None]
+        for index in range(1, len(quat)):
+            if float(np.dot(quat[index - 1], quat[index])) < 0.0:
+                quat[index] *= -1.0
+    else:
+        quat = np.tile(np.asarray([1.0, 0.0, 0.0, 0.0]), (len(t), 1))
+    if all(col in rows[0] for col in ("wx", "wy", "wz")):
+        omega = np.asarray([[float(row[key]) for key in ("wx", "wy", "wz")] for row in rows], dtype=np.float64)
+    else:
+        omega = np.zeros((len(t), 3), dtype=np.float64)
+    thrust_columns = tuple(f"motor_{motor}_thrust_n" for motor in range(4))
+    hover = GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N
+    if all(col in rows[0] for col in thrust_columns):
+        physical = np.asarray([[float(row[key]) for key in thrust_columns] for row in rows], dtype=np.float64)
+        input_delta = physical - hover[None, :]
+    else:
+        input_delta = np.zeros((len(t), 4), dtype=np.float64)
+    return ReferenceTrajectory(t=t, pos=pos, vel=vel, quat_wxyz=quat,
+                               omega_body=omega, input_delta_n=input_delta)
 
 
 def _build_admm_host_library(horizon: int, force: bool = False) -> Path:
-    game_root = APP_ROOT.parents[2] / "game-on-the-flat"
     build_dir = Path(tempfile.gettempdir()) / "tinympc_admm_host"
-    output = build_dir / f"libtinympc_admm_host_n{int(horizon)}.so"
     sources = [
         APP_ROOT / "tools" / "pybullet_simulation" / "tinympc_admm_host.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "model.cpp",
@@ -614,36 +1118,41 @@ def _build_admm_host_library(horizon: int, force: bool = False) -> Path:
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "admm.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "rho_benchmark.cpp",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "utils.cpp",
-        game_root / "src" / "tinympc_model.c",
-        game_root / "src" / "dare.c",
-        game_root / "src" / "quat.c",
-        game_root / "src" / "linalg.c",
     ]
     headers = [
-        APP_ROOT / "src" / "params_100hz.h",
+        APP_ROOT / "src" / "tinympc_generated_params.h",
+        APP_ROOT / "src" / "tinympc_banked_model_bank.h",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "types.h",
         APP_ROOT / "TinyMPC-ADMM" / "src" / "tinympc" / "admm.h",
-        game_root / "include" / "gotf" / "tinympc_model.h",
     ]
-    newest_input = max(path.stat().st_mtime for path in [*sources, *headers])
-    if output.exists() and not force and output.stat().st_mtime >= newest_input:
+    fingerprint = hashlib.sha256(f"horizon={int(horizon)};cxx14;o2".encode())
+    for path in [*sources, *headers]:
+        fingerprint.update(str(path.relative_to(APP_ROOT)).encode())
+        fingerprint.update(path.read_bytes())
+    build_id = fingerprint.hexdigest()[:16]
+    if force:
+        build_id += f"-{os.getpid()}-{time.time_ns()}"
+    output = build_dir / f"libtinympc_admm_host_n{int(horizon)}-{build_id}.so"
+    if output.exists():
         return output
     build_dir.mkdir(parents=True, exist_ok=True)
+    staging = build_dir / f".{output.name}.{os.getpid()}.{time.time_ns()}.tmp"
     command = [
         "g++",
         "-std=c++14",
         "-O2",
         "-shared",
         "-fPIC",
+        "-DEIGEN_DONT_VECTORIZE",
         f"-DNHORIZON={int(horizon)}",
         f"-I{APP_ROOT / 'TinyMPC-ADMM' / 'src'}",
         f"-I{APP_ROOT / 'TinyMPC-ADMM' / 'ext' / 'Eigen'}",
-        f"-I{game_root / 'include'}",
         *[str(path) for path in sources],
         "-o",
-        str(output),
+        str(staging),
     ]
     subprocess.run(command, cwd=APP_ROOT, check=True)
+    staging.replace(output)
     return output
 
 
@@ -653,6 +1162,36 @@ def _period_steps(period_s: float, plant_dt_s: float, label: str) -> int:
     if rounded < 1 or not math.isclose(ratio, rounded, rel_tol=0.0, abs_tol=1e-8):
         raise SystemExit(f"{label} period {period_s:g}s is not an integer multiple of plant dt {plant_dt_s:g}s")
     return rounded
+
+
+def _nonnegative_delay_steps(delay_s: float, plant_dt_s: float, label: str) -> int:
+    if float(delay_s) < 0.0:
+        raise SystemExit(f"{label} delay must be nonnegative")
+    ratio = float(delay_s) / float(plant_dt_s)
+    rounded = int(round(ratio))
+    if not math.isclose(ratio, rounded, rel_tol=0.0, abs_tol=1.0e-8):
+        raise SystemExit(f"{label} delay {delay_s:g}s is not an integer multiple of plant dt {plant_dt_s:g}s")
+    return rounded
+
+
+def _parse_motor_thrust_scales(value: str) -> tuple[float, float, float, float]:
+    try:
+        scales = tuple(float(item.strip()) for item in str(value).split(","))
+    except ValueError as exc:
+        raise SystemExit("--plant-motor-thrust-scales must contain four numbers") from exc
+    if len(scales) != 4 or min(scales) <= 0.0 or not all(math.isfinite(item) for item in scales):
+        raise SystemExit("--plant-motor-thrust-scales must contain four positive finite numbers")
+    return scales  # type: ignore[return-value]
+
+
+def _parse_positive_vector3(value: str, label: str) -> np.ndarray:
+    try:
+        values = np.asarray([float(item.strip()) for item in str(value).split(",")])
+    except ValueError as exc:
+        raise SystemExit(f"{label} must contain three numbers") from exc
+    if values.shape != (3,) or np.any(values <= 0.0) or not np.all(np.isfinite(values)):
+        raise SystemExit(f"{label} must contain three positive finite numbers")
+    return values
 
 
 def _validate_timing(args: argparse.Namespace) -> None:
@@ -666,8 +1205,27 @@ def _validate_timing(args: argparse.Namespace) -> None:
         raise SystemExit("MPC period must contain an integer number of model knots")
     if int(args.horizon) < 2:
         raise SystemExit("--horizon must be at least 2")
+    _nonnegative_delay_steps(
+        1.0e-3 * float(args.state_estimate_delay_ms), float(args.plant_dt), "state estimate"
+    )
+    _nonnegative_delay_steps(
+        1.0e-3 * float(args.controller_compute_delay_ms), float(args.plant_dt), "controller compute"
+    )
+    if float(args.trajectory_handoff_hold_s) < 0.0:
+        raise SystemExit("--trajectory-handoff-hold-s must be nonnegative")
+    for name in (
+        "position_noise_std_m", "velocity_noise_std_mps",
+        "attitude_noise_std_deg", "gyro_noise_std_deg_s", "rotor_drag_scale",
+    ):
+        if float(getattr(args, name)) < 0.0:
+            raise SystemExit(f"--{name.replace('_', '-')} must be nonnegative")
     if not 0 <= int(args.start_k) < int(args.constraint_end_k) <= int(args.horizon):
         raise SystemExit("need 0 <= --start-k < --constraint-end-k <= --horizon")
+    if str(args.model_schedule) in ("bank15", "bank30", "bank60") and (
+        not math.isclose(float(args.model_dt), 0.02, abs_tol=1e-9)
+        or not math.isclose(float(args.tinympc_rho), 250.0, abs_tol=1e-6)
+    ):
+        raise SystemExit("bank model schedules require offline-cache settings --model-dt 0.02 --tinympc-rho 250")
 
 
 def _add_obstacles(env: GymPybulletGateEnv, obstacles: list[BoxObstacle]) -> None:
@@ -832,7 +1390,6 @@ def _aged_constraint(constraint: HalfspaceConstraint, age_frames: int, position:
     active = bool(constraint.active)
     if constraint.active and math.isfinite(constraint.b):
         slack = float(constraint.b - np.dot(constraint.a, np.asarray(position, dtype=np.float64)))
-        active = bool(slack > 0.02)
     return HalfspaceConstraint(
         active=active,
         a=constraint.a.copy(),
@@ -858,7 +1415,10 @@ def _constraint_from_hit(
 ) -> HalfspaceConstraint:
     if hit is None:
         return _inactive_constraint("no_depth")
-    margin = float(args.margin_min) + (1.0 - hit.confidence) * float(args.margin_slack)
+    if hit.obstacle_name == "neural_two_or_more_dangerous":
+        margin = float(args.neural_plane_margin)
+    else:
+        margin = float(args.margin_min) + (1.0 - hit.confidence) * float(args.margin_slack)
     margin = min(margin, 0.8 * hit.depth_m)
     a = _normalized(hit.ray_world)
     p_obst = np.asarray(position, dtype=np.float64) + hit.depth_m * a
@@ -914,6 +1474,286 @@ def _solver_state(env: GymPybulletGateEnv, state: np.ndarray) -> np.ndarray:
         return x
 
 
+def _hat(vector: np.ndarray) -> np.ndarray:
+    x, y, z = np.asarray(vector, dtype=np.float64)
+    return np.asarray([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+
+
+def _vee(skew: np.ndarray) -> np.ndarray:
+    matrix = np.asarray(skew, dtype=np.float64)
+    return np.asarray([matrix[2, 1], matrix[0, 2], matrix[1, 0]])
+
+
+def _reference_derivatives(
+    trajectory: ReferenceTrajectory, query_t: float, derivative_dt_s: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    position, velocity, quaternion, omega, input_delta = trajectory.sample_full(query_t)
+    dt = max(1.0e-5, float(derivative_dt_s))
+    before_t = max(float(trajectory.t[0]), float(query_t) - dt)
+    after_t = min(float(trajectory.t[-1]), float(query_t) + dt)
+    denominator = max(1.0e-9, after_t - before_t)
+    _, velocity_before, _, omega_before, _ = trajectory.sample_full(before_t)
+    _, velocity_after, _, omega_after, _ = trajectory.sample_full(after_t)
+    acceleration = (velocity_after - velocity_before) / denominator
+    omega_dot = (omega_after - omega_before) / denominator
+    return position, velocity, quaternion, omega, acceleration, omega_dot
+
+
+def _quaternion_product_wxyz(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    aw, ax, ay, az = np.asarray(left, dtype=np.float64)
+    bw, bx, by, bz = np.asarray(right, dtype=np.float64)
+    return np.asarray([
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    ])
+
+
+def _tinympc_reference_error_state(
+    estimated_world_state: np.ndarray,
+    estimated_quaternion_xyzw: np.ndarray,
+    trajectory: ReferenceTrajectory,
+    query_t: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Put the physical state in a nonsingular chart centered on the reference."""
+    ref_position, ref_velocity, ref_quaternion, ref_omega, ref_input_delta = (
+        trajectory.sample_full(query_t)
+    )
+    ref_rotation = _quat_xyzw_to_rot(
+        np.asarray([ref_quaternion[1], ref_quaternion[2], ref_quaternion[3], ref_quaternion[0]])
+    )
+    actual_quaternion = np.asarray([
+        estimated_quaternion_xyzw[3], estimated_quaternion_xyzw[0],
+        estimated_quaternion_xyzw[1], estimated_quaternion_xyzw[2],
+    ])
+    actual_quaternion /= np.linalg.norm(actual_quaternion)
+    ref_conjugate = ref_quaternion * np.asarray([1.0, -1.0, -1.0, -1.0])
+    error_quaternion = _quaternion_product_wxyz(ref_conjugate, actual_quaternion)
+    if error_quaternion[0] < 0.0:
+        error_quaternion *= -1.0
+    error_quaternion /= np.linalg.norm(error_quaternion)
+    denominator = max(1.0e-8, float(error_quaternion[0]))
+    actual_rotation = _quat_xyzw_to_rot(estimated_quaternion_xyzw)
+    reference_omega_in_actual_body = actual_rotation.T @ ref_rotation @ ref_omega
+    error_state = np.zeros(AdmmHostSolver.NSTATES, dtype=np.float64)
+    error_state[0:3] = ref_rotation.T @ (
+        np.asarray(estimated_world_state[0:3]) - ref_position
+    )
+    error_state[3:6] = error_quaternion[1:4] / denominator
+    error_state[6:9] = ref_rotation.T @ (
+        np.asarray(estimated_world_state[6:9]) - ref_velocity
+    )
+    error_state[9:12] = np.asarray(estimated_world_state[9:12]) - reference_omega_in_actual_body
+    return error_state, np.asarray(ref_input_delta, dtype=np.float64)
+
+
+def _geometric_motor_control(
+    position: np.ndarray,
+    velocity: np.ndarray,
+    quaternion_xyzw: np.ndarray,
+    omega_body: np.ndarray,
+    trajectory: ReferenceTrajectory,
+    query_t: float,
+    args: argparse.Namespace,
+    position_kp: np.ndarray,
+    velocity_kd: np.ndarray,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Chart-safe SE(3) tracking control returning firmware motor-thrust deltas."""
+    ref_position, ref_velocity, ref_quaternion, ref_omega, ref_acceleration, ref_omega_dot = (
+        _reference_derivatives(trajectory, query_t, float(args.model_dt))
+    )
+    rotation = _quat_xyzw_to_rot(np.asarray(quaternion_xyzw, dtype=np.float64))
+    ref_rotation = _quat_xyzw_to_rot(
+        np.asarray([ref_quaternion[1], ref_quaternion[2], ref_quaternion[3], ref_quaternion[0]])
+    )
+    mass = float(np.sum(GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N)) / GymPybulletGateEnv.GRAVITY_MPS2
+    inertia = np.diag(GymPybulletGateEnv.FIRMWARE_INERTIA_KGM2)
+    desired_force_world = mass * (
+        ref_acceleration
+        + position_kp * (ref_position - np.asarray(position, dtype=np.float64))
+        + velocity_kd * (ref_velocity - np.asarray(velocity, dtype=np.float64))
+        + np.asarray([0.0, 0.0, GymPybulletGateEnv.GRAVITY_MPS2])
+    )
+    # During the chart-crossing portion the explicit quaternion is authoritative.
+    # Once the reference is upright and no longer rotating, recover ordinary
+    # SE(3) position authority by tilting body-z into the requested force.
+    if float(np.linalg.norm(ref_omega)) < 0.05 and float(ref_rotation[2, 2]) > 0.95:
+        force_norm = float(np.linalg.norm(desired_force_world))
+        if force_norm > 1.0e-9:
+            desired_z = desired_force_world / force_norm
+            heading = ref_rotation[:, 0]
+            desired_y = np.cross(desired_z, heading)
+            desired_y_norm = float(np.linalg.norm(desired_y))
+            if desired_y_norm > 1.0e-9:
+                desired_y /= desired_y_norm
+                desired_x = np.cross(desired_y, desired_z)
+                ref_rotation = np.column_stack((desired_x, desired_y, desired_z))
+                ref_omega = np.zeros(3, dtype=np.float64)
+                ref_omega_dot = np.zeros(3, dtype=np.float64)
+    collective = float(np.dot(desired_force_world, rotation[:, 2]))
+
+    rotation_error = 0.5 * _vee(ref_rotation.T @ rotation - rotation.T @ ref_rotation)
+    desired_omega_in_body = rotation.T @ ref_rotation @ ref_omega
+    omega_error = np.asarray(omega_body, dtype=np.float64) - desired_omega_in_body
+    transport = (
+        _hat(np.asarray(omega_body, dtype=np.float64)) @ desired_omega_in_body
+        - rotation.T @ ref_rotation @ ref_omega_dot
+    )
+    moment = (
+        -float(args.geometric_attitude_kp) * rotation_error
+        -float(args.geometric_rate_kd) * omega_error
+        + np.cross(omega_body, inertia @ omega_body)
+        - inertia @ transport
+    )
+    arm = GymPybulletGateEnv.FIRMWARE_ARM_OFFSET_M
+    yaw_ratio = GymPybulletGateEnv.FIRMWARE_THRUST_TO_YAW_TORQUE_M
+    allocation = np.asarray([
+        [1.0, 1.0, 1.0, 1.0],
+        [-arm, -arm, arm, arm],
+        [-arm, arm, arm, -arm],
+        [-yaw_ratio, yaw_ratio, -yaw_ratio, yaw_ratio],
+    ])
+    physical_motor_thrust = np.linalg.solve(allocation, np.r_[collective, moment])
+    maximum = GymPybulletGateEnv.FIRMWARE_MAX_MOTOR_THRUST_N
+    clipped = np.clip(physical_motor_thrust, 0.0, maximum)
+    return clipped - GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N, {
+        "collective_thrust_n": collective,
+        "attitude_error_rad": float(np.linalg.norm(rotation_error)),
+        "rate_error_rad_s": float(np.linalg.norm(omega_error)),
+        "unclipped_min_motor_thrust_n": float(np.min(physical_motor_thrust)),
+        "unclipped_max_motor_thrust_n": float(np.max(physical_motor_thrust)),
+        "motor_clipped": float(np.any(np.abs(clipped - physical_motor_thrust) > 1.0e-10)),
+    }
+
+
+def _rodrigues_to_rpy(rodrigues: np.ndarray) -> np.ndarray:
+    quat = np.concatenate(([1.0], np.asarray(rodrigues, dtype=np.float64)))
+    quat /= np.linalg.norm(quat)
+    qw, qx, qy, qz = quat
+    return np.asarray([
+        math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy)),
+        math.asin(float(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))),
+        math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz)),
+    ])
+
+
+def _noisy_state_estimate(
+    world_state: np.ndarray, quat_xyzw: np.ndarray, args: argparse.Namespace,
+    rng: np.random.Generator,
+    flow_altitude: FlowDeckAltitudeEstimator | None = None,
+    timestamp: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply estimator-like white noise to a delayed ground-truth snapshot."""
+    world = np.asarray(world_state, dtype=np.float64).copy()
+    quat_true = np.asarray(
+        [quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], dtype=np.float64
+    )
+    quat_true /= np.linalg.norm(quat_true)
+    world[0:3] += rng.normal(0.0, float(args.position_noise_std_m), 3)
+    world[6:9] += rng.normal(0.0, float(args.velocity_noise_std_mps), 3)
+    world[9:12] += rng.normal(0.0, math.radians(float(args.gyro_noise_std_deg_s)), 3)
+    rotation_error = rng.normal(0.0, math.radians(float(args.attitude_noise_std_deg)), 3)
+    angle = float(np.linalg.norm(rotation_error))
+    if angle > 1.0e-12:
+        error_quat = np.r_[math.cos(0.5 * angle), math.sin(0.5 * angle) * rotation_error / angle]
+        aw, ax, ay, az = quat_true
+        bw, bx, by, bz = error_quat
+        quat_estimate = np.asarray([
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        ])
+    else:
+        quat_estimate = quat_true
+    quat_estimate /= np.linalg.norm(quat_estimate)
+    quat_estimate_xyzw = np.asarray(
+        [quat_estimate[1], quat_estimate[2], quat_estimate[3], quat_estimate[0]],
+        dtype=np.float64,
+    )
+    if flow_altitude is not None:
+        flow_altitude.apply(world, quat_estimate_xyzw, float(timestamp))
+    world[3:6] = quat_estimate[1:4] / math.copysign(
+        max(1.0e-9, abs(float(quat_estimate[0]))), float(quat_estimate[0])
+    )
+    return world, quat_estimate_xyzw
+
+
+def _firmware_local_state_from_world(
+    world_state: np.ndarray, quat_xyzw: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Mirror firmware updateInitialState() from a possibly delayed/noisy estimate."""
+    world = np.asarray(world_state, dtype=np.float64).copy()
+    quat = np.asarray([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]], dtype=np.float64)
+    quat /= np.linalg.norm(quat)
+    qw, qx, qy, qz = quat
+    yaw = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    half = 0.5 * yaw
+    yaw_inverse = np.asarray([math.cos(half), 0.0, 0.0, -math.sin(half)])
+    aw, ax, ay, az = yaw_inverse
+    bw, bx, by, bz = quat
+    local_quat = np.asarray([
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    ])
+    c, s = math.cos(yaw), math.sin(yaw)
+    local = world.copy()
+    local[0:3] = 0.0
+    local[3:6] = local_quat[1:4] / math.copysign(max(1e-8, abs(local_quat[0])), local_quat[0])
+    local[6:9] = np.asarray([c * world[6] + s * world[7], -s * world[6] + c * world[7], world[8]])
+    return local, world[0:3].copy(), yaw
+
+
+def _firmware_local_state(env: GymPybulletGateEnv, state: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    """Backward-compatible exact-state firmware-local conversion."""
+    return _firmware_local_state_from_world(_solver_state(env, state), _env_quat(env))
+
+
+def _scheduled_model_id(
+    trajectory: ReferenceTrajectory, t: float, args: argparse.Namespace, current: int,
+    hold_reference: bool = False,
+) -> int:
+    schedule = str(args.model_schedule)
+    if schedule not in ("bank15", "bank30", "bank60"):
+        return 0
+    query_t = 0.0 if hold_reference else (
+        float(t) + 0.5 * (int(args.horizon) - 1) * float(args.model_dt)
+    )
+    _, _, quat, _, _ = trajectory.sample_full(query_t)
+    qw, qx, qy, qz = quat
+    roll = math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+    if schedule == "bank60":
+        # Do not jump directly from hover to the 60-degree operating point.
+        # Select the closest stored chart as the reference traverses the bank;
+        # all matrices and Riccati caches are still generated offline.
+        magnitude = abs(math.degrees(roll))
+        if magnitude >= 45.0:
+            return 5 if roll < 0.0 else 6
+        if magnitude >= 22.5:
+            return 3 if roll < 0.0 else 4
+        if magnitude >= 7.5:
+            return 1 if roll < 0.0 else 2
+        return 0
+    if schedule == "bank15":
+        bank_angle, left_id, right_id = 15.0, 1, 2
+    else:
+        bank_angle, left_id, right_id = 30.0, 3, 4
+    enter = math.radians(0.5 * bank_angle)
+    exit_angle = math.radians(bank_angle / 3.0)
+    if current == left_id and roll < -exit_angle:
+        return left_id
+    if current == right_id and roll > exit_angle:
+        return right_id
+    if roll <= -enter:
+        return left_id
+    if roll >= enter:
+        return right_id
+    return 0
+
+
 def _reference_trajectory(
     x0: np.ndarray,
     t: float,
@@ -921,18 +1761,65 @@ def _reference_trajectory(
     constraint: HalfspaceConstraint,
     args: argparse.Namespace,
     horizon: int,
-) -> np.ndarray:
+    frame_origin: np.ndarray | None = None,
+    frame_yaw: float = 0.0,
+    hold_reference: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
     x_ref = np.zeros((int(horizon), AdmmHostSolver.NSTATES), dtype=np.float64)
+    u_ref = np.zeros((int(horizon) - 1, AdmmHostSolver.NINPUTS), dtype=np.float64)
     for k in range(int(horizon)):
-        ref_pos, ref_vel = trajectory.sample(float(t) + k * float(args.model_dt))
+        query_t = 0.0 if hold_reference else float(t) + k * float(args.model_dt)
+        ref_pos, ref_vel, ref_quat, ref_omega, ref_input = trajectory.sample_full(
+            query_t
+        )
         if constraint.active and float(args.admm_reference_sidestep) > 0.0:
             obstacle_side = float(constraint.obstacle_center[1] - x0[1])
             side = -math.copysign(1.0, obstacle_side) if abs(obstacle_side) > 1e-3 else -1.0
             ref_pos = ref_pos.copy()
             ref_pos[1] += side * float(args.admm_reference_sidestep)
+        # Mirror firmware applyRaceIntent(): project every reference knot onto
+        # the feasible side before installing the same position half-space.
+        if constraint.active:
+            violation = float(np.dot(constraint.a, ref_pos) - constraint.b)
+            if violation > 0.0:
+                ref_pos = ref_pos.copy() - violation * constraint.a
+        if frame_origin is not None:
+            c, s = math.cos(frame_yaw), math.sin(frame_yaw)
+            delta = ref_pos - frame_origin
+            ref_pos = np.asarray([c * delta[0] + s * delta[1], -s * delta[0] + c * delta[1], delta[2]])
+            ref_vel = np.asarray([c * ref_vel[0] + s * ref_vel[1], -s * ref_vel[0] + c * ref_vel[1], ref_vel[2]])
+            half = -0.5 * frame_yaw
+            aw, ax, ay, az = math.cos(half), 0.0, 0.0, math.sin(half)
+            bw, bx, by, bz = ref_quat
+            ref_quat = np.asarray([
+                aw * bw - ax * bx - ay * by - az * bz,
+                aw * bx + ax * bw + ay * bz - az * by,
+                aw * by - ax * bz + ay * bw + az * bx,
+                aw * bz + ax * by - ay * bx + az * bw,
+            ])
         x_ref[k, 0:3] = ref_pos
+        denominator = math.copysign(max(1e-8, abs(float(ref_quat[0]))), float(ref_quat[0]))
+        x_ref[k, 3:6] = ref_quat[1:4] / denominator
         x_ref[k, 6:9] = ref_vel
-    return x_ref
+        x_ref[k, 9:12] = ref_omega
+        if k < int(horizon) - 1:
+            # Match firmware updateHorizonReference(): infer collective
+            # specific force from adjacent velocity samples and give every
+            # motor the same hover-scaled reference.  Any per-motor thrust
+            # columns in a simulation CSV are intentionally ignored.
+            _, next_vel, _, _, _ = trajectory.sample_full(
+                query_t + float(args.model_dt)
+            )
+            specific_force = (next_vel - ref_vel) / float(args.model_dt)
+            specific_force[2] += GymPybulletGateEnv.GRAVITY_MPS2
+            thrust_scale = np.linalg.norm(specific_force) / GymPybulletGateEnv.GRAVITY_MPS2 - 1.0
+            collective_delta = float(GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N[0]) * thrust_scale
+            lower = -float(GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N[0])
+            upper = float(GymPybulletGateEnv.FIRMWARE_MAX_MOTOR_THRUST_N) - float(
+                GymPybulletGateEnv.FIRMWARE_HOVER_THRUST_N[0]
+            )
+            u_ref[k].fill(float(np.clip(collective_delta, lower, upper)))
+    return x_ref, u_ref
 
 
 def _velocity_from_admm_plan(
@@ -951,9 +1838,10 @@ def _velocity_from_admm_plan(
     target[2] = float(np.clip(target[2], float(args.admm_min_target_z), float(args.admm_max_target_z)))
     pos = np.asarray(state[:3], dtype=np.float64)
     velocity = (target - pos) / max(1e-3, float(args.model_dt))
-    velocity[0] = float(np.clip(velocity[0], 0.05, float(args.max_forward_speed)))
+    minimum_forward = 0.0 if constraint.obstacle_name == "neural_two_or_more_dangerous" else 0.05
+    velocity[0] = float(np.clip(velocity[0], minimum_forward, float(args.max_forward_speed)))
     if constraint.active and float(args.admm_forward_slack_scale) > 0.0:
-        forward_cap = max(0.05, float(args.admm_forward_slack_scale) * max(0.0, constraint.current_slack_m) / max(1e-3, float(args.lookahead_s)))
+        forward_cap = max(minimum_forward, float(args.admm_forward_slack_scale) * max(0.0, constraint.current_slack_m) / max(1e-3, float(args.lookahead_s)))
         velocity[0] = min(float(velocity[0]), forward_cap)
     velocity[1] = float(np.clip(velocity[1], -float(args.max_lateral_speed), float(args.max_lateral_speed)))
     velocity[2] = float(np.clip(velocity[2], -0.7, 0.7))
@@ -978,9 +1866,10 @@ def _project_velocity(
     obstacle_side = float(constraint.obstacle_center[1] - position[1])
     side = -math.copysign(1.0, obstacle_side) if abs(obstacle_side) > 1e-3 else -1.0
     adjusted[1] += side * float(args.sidestep_gain) * min(1.0, violation / max(0.05, constraint.current_slack_m))
-    forward_cap = max(0.05, 0.75 * max(0.0, constraint.current_slack_m) / max(1e-3, lookahead))
+    minimum_forward = 0.0 if constraint.obstacle_name == "neural_two_or_more_dangerous" else 0.05
+    forward_cap = max(minimum_forward, 0.75 * max(0.0, constraint.current_slack_m) / max(1e-3, lookahead))
     adjusted[0] = min(float(adjusted[0]), forward_cap)
-    adjusted[0] = float(np.clip(adjusted[0], 0.05, float(args.max_forward_speed)))
+    adjusted[0] = float(np.clip(adjusted[0], minimum_forward, float(args.max_forward_speed)))
     adjusted[1] = float(np.clip(adjusted[1], -float(args.max_lateral_speed), float(args.max_lateral_speed)))
     adjusted[2] = float(np.clip(adjusted[2], -0.7, 0.7))
     return adjusted, violation
@@ -1029,22 +1918,38 @@ def _append_plan_rows(
     step: int,
     t: float,
     solver_info: dict[str, Any],
+    frame_origin: np.ndarray | None = None,
+    frame_yaw: float = 0.0,
 ) -> None:
     if solver_info.get("states") is None:
         return
     states = np.asarray(solver_info["states"], dtype=np.float64).reshape(-1, AdmmHostSolver.NSTATES)
     for k, state in enumerate(states):
+        position = state[0:3].copy()
+        velocity = state[6:9].copy()
+        if frame_origin is not None:
+            c, s = math.cos(frame_yaw), math.sin(frame_yaw)
+            position = frame_origin + np.asarray([
+                c * position[0] - s * position[1],
+                s * position[0] + c * position[1],
+                position[2],
+            ])
+            velocity = np.asarray([
+                c * velocity[0] - s * velocity[1],
+                s * velocity[0] + c * velocity[1],
+                velocity[2],
+            ])
         rows.append(
             [
                 step,
                 f"{t:.9f}",
                 k,
-                f"{float(state[0]):.9f}",
-                f"{float(state[1]):.9f}",
-                f"{float(state[2]):.9f}",
-                f"{float(state[6]):.9f}",
-                f"{float(state[7]):.9f}",
-                f"{float(state[8]):.9f}",
+                f"{float(position[0]):.9f}",
+                f"{float(position[1]):.9f}",
+                f"{float(position[2]):.9f}",
+                f"{float(velocity[0]):.9f}",
+                f"{float(velocity[1]):.9f}",
+                f"{float(velocity[2]):.9f}",
             ]
         )
 
@@ -1064,15 +1969,36 @@ def _log_row(
     solver_info: dict[str, Any],
     mpc_solved: bool,
     plan_k: int,
+    controller_state: np.ndarray,
+    quaternion_xyzw: np.ndarray,
 ) -> list[object]:
     terminal = np.full(3, math.nan, dtype=np.float64)
     if solver_info.get("states") is not None:
         terminal = np.asarray(solver_info["states"], dtype=np.float64)[-1, 0:3]
+    motor_thrust = list(info.get("motor_thrust_n", [math.nan] * 4))
+    motor_rpm = list(info.get("motor_rpm", [math.nan] * 4))
+    input_baseline = list(solver_info.get("input_baseline_n", [math.nan] * 4))
+    control_correction = list(
+        solver_info.get("first_control_correction_n", [math.nan] * 4)
+    )
+    commanded_motor_thrust = list(
+        solver_info.get("commanded_physical_motor_thrust_n", [math.nan] * 4)
+    )
+    controller_state = np.asarray(controller_state, dtype=np.float64).reshape(12)
+    quaternion_xyzw = np.asarray(quaternion_xyzw, dtype=np.float64).reshape(4)
+    rpy = _rodrigues_to_rpy(controller_state[3:6])
     return [
         step,
         f"{t:.9f}",
         *[f"{float(v):.9f}" for v in state[:6]],
         *[f"{float(v):.9f}" for v in next_state[:6]],
+        *[f"{float(v):.9f}" for v in controller_state[3:6]],
+        f"{float(quaternion_xyzw[3]):.9f}",
+        f"{float(quaternion_xyzw[0]):.9f}",
+        f"{float(quaternion_xyzw[1]):.9f}",
+        f"{float(quaternion_xyzw[2]):.9f}",
+        *[f"{float(v):.9f}" for v in rpy],
+        *[f"{float(v):.9f}" for v in controller_state[9:12]],
         *[f"{float(v):.9f}" for v in nominal_velocity],
         *[f"{float(v):.9f}" for v in command_velocity],
         *[f"{float(v):.9f}" for v in accel],
@@ -1096,11 +2022,17 @@ def _log_row(
         int(plan_k),
         solver_info.get("status", ""),
         solver_info.get("iterations", ""),
+        solver_info.get("model_id", ""),
         "" if not solver_info else f"{float(solver_info.get('pri_res', math.nan)):.9f}",
         "" if not solver_info else f"{float(solver_info.get('dua_res', math.nan)):.9f}",
         "" if not math.isfinite(float(terminal[0])) else f"{float(terminal[0]):.9f}",
         "" if not math.isfinite(float(terminal[1])) else f"{float(terminal[1]):.9f}",
         "" if not math.isfinite(float(terminal[2])) else f"{float(terminal[2]):.9f}",
+        *["" if not math.isfinite(float(v)) else f"{float(v):.9f}" for v in motor_thrust],
+        *["" if not math.isfinite(float(v)) else f"{float(v):.3f}" for v in motor_rpm],
+        *["" if not math.isfinite(float(v)) else f"{float(v):.9f}" for v in input_baseline],
+        *["" if not math.isfinite(float(v)) else f"{float(v):.9f}" for v in control_correction],
+        *["" if not math.isfinite(float(v)) else f"{float(v):.9f}" for v in commanded_motor_thrust],
     ]
 
 
@@ -1123,6 +2055,19 @@ def _write_log(path: Path, rows: list[list[object]]) -> None:
                 "next_vx",
                 "next_vy",
                 "next_vz",
+                "rod_x",
+                "rod_y",
+                "rod_z",
+                "quat_w",
+                "quat_x",
+                "quat_y",
+                "quat_z",
+                "roll_rad",
+                "pitch_rad",
+                "yaw_rad",
+                "body_wx_rad_s",
+                "body_wy_rad_s",
+                "body_wz_rad_s",
                 "nominal_vx",
                 "nominal_vy",
                 "nominal_vz",
@@ -1152,11 +2097,32 @@ def _write_log(path: Path, rows: list[list[object]]) -> None:
                 "executed_plan_k",
                 "admm_status",
                 "admm_iterations",
+                "tinympc_model_id",
                 "admm_pri_res",
                 "admm_dua_res",
                 "admm_terminal_x",
                 "admm_terminal_y",
                 "admm_terminal_z",
+                "motor_0_thrust_n",
+                "motor_1_thrust_n",
+                "motor_2_thrust_n",
+                "motor_3_thrust_n",
+                "motor_0_rpm",
+                "motor_1_rpm",
+                "motor_2_rpm",
+                "motor_3_rpm",
+                "tinympc_baseline_motor_0_thrust_n",
+                "tinympc_baseline_motor_1_thrust_n",
+                "tinympc_baseline_motor_2_thrust_n",
+                "tinympc_baseline_motor_3_thrust_n",
+                "tinympc_correction_motor_0_thrust_n",
+                "tinympc_correction_motor_1_thrust_n",
+                "tinympc_correction_motor_2_thrust_n",
+                "tinympc_correction_motor_3_thrust_n",
+                "commanded_motor_0_thrust_n",
+                "commanded_motor_1_thrust_n",
+                "commanded_motor_2_thrust_n",
+                "commanded_motor_3_thrust_n",
             ]
         )
         writer.writerows(rows)
@@ -1191,6 +2157,20 @@ def _write_plan(path: Path, rows: list[list[object]]) -> None:
     with path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["step", "t", "k", "x", "y", "z", "vx", "vy", "vz"])
+        writer.writerows(rows)
+
+
+def _write_neural_perception(path: Path, rows: list[list[object]]) -> None:
+    """Write the unfiltered ONNX values at the camera rate, not plant rate."""
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "step", "t",
+            "clearance_0_m", "clearance_1_m", "clearance_2_m", "clearance_3_m",
+            "confidence_0", "confidence_1", "confidence_2", "confidence_3",
+            "dangerous_0", "dangerous_1", "dangerous_2", "dangerous_3",
+            "plane_activated", "decision",
+        ])
         writer.writerows(rows)
 
 

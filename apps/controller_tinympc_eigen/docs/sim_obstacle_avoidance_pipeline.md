@@ -12,8 +12,20 @@ avoidance.
 5. Run the closed-loop sim.
 6. Plot the actual trajectory, destination, obstacles, half-spaces, and planned ADMM path.
 
-The current closed-loop sim uses ground-truth ray depth from obstacle geometry, with optional
-noise/dropout/bias. It does not yet use optical-flow-estimated depth.
+The simulator is self-contained in this repository. It uses the checked-in TinyMPC-ADMM
+sources and firmware-generated dynamics, and does not import `tinympc-vision` or another
+sibling checkout. `gym-pybullet-drones` supplies the four-motor CF2X rigid-body plant.
+The adapter replaces the stock 27 g mass and inertia with the generated 45 g AI-deck +
+Flow-deck model, and maps motor thrusts so the total force and roll/pitch/yaw torques agree
+with the generated firmware model. The default perception path uses ground-truth ray depth with optional
+noise/dropout/bias. An optional image-level path renders the onboard 160x160 grayscale
+camera in PyBullet and runs a supplied GAP8-compatible ONNX model.
+
+Install the Python dependencies with:
+
+```bash
+python3 -m pip install -r tools/pybullet_simulation/requirements-vision.txt
+```
 
 ## Trajectory Format
 
@@ -47,48 +59,55 @@ tools/pybullet_simulation/run_depth_constraint_sim.py \
   --overwrite
 ```
 
-## 5 Hz multirate experiment
+## Firmware-fidelity execution path
 
-The following is the first experiment for the proposed slow-replanning
-architecture. PyBullet integrates the plant at 500 Hz, the MPC model has 40 ms
-knots, and the solver replans every 200 ms. Between replans the acceleration/PID
-shim follows five consecutive predicted state targets; it does not repeatedly
-command the terminal state.
+The defaults match the generated controller: PyBullet integrates the plant at
+500 Hz, TinyMPC has 20 ms knots, replans at 50 Hz, and runs five ADMM iterations.
+The first four TinyMPC control values are physical per-motor thrust deviations
+from hover and are applied directly to the Gym plant. There is no acceleration
+or geometric-PID shim in `--control-mode admm`.
 
 ```bash
 tools/pybullet_simulation/run_depth_constraint_sim.py \
-  --out sim_runs/multirate_5hz \
+  --out sim_runs/firmware_fidelity \
   --duration 8 \
   --plant-dt 0.002 \
-  --model-dt 0.04 \
-  --mpc-rate-hz 5 \
+  --model-dt 0.02 \
+  --mpc-rate-hz 50 \
   --horizon 20 \
-  --start-k 1 \
-  --constraint-end-k 11 \
-  --camera-rate-hz 25 \
-  --target-speed 0.4 \
+  --start-k 0 \
+  --constraint-end-k 20 \
+  --camera-rate-hz 20 \
   --control-mode admm \
   --obstacle center_box,1.55,0.18,1.10,0.16,0.22,0.28 \
   --overwrite
 ```
 
-The host solver regenerates its `A/B` at the requested model timestep from the
-continuous Crazyflie hover model using RK4 plus a discrete-transition
-linearization. It then recomputes `Pinf`, `Kinf`, and the ADMM primal-cache
-matrices. This follows TinyMPC's documented model workflow: discretize first,
-then linearize the discrete transition. It is host-simulation-only; it does not
-change the firmware's generated 20 ms data.
+The host ABI compiles the repository's TinyMPC-ADMM C++ sources and loads the
+same generated 20 ms `A/B/Q/R`, costs, hover thrust, bounds, horizon, and ADMM
+settings used by the firmware. For a model interval that is an integer multiple
+of 20 ms it composes the discrete transition, then recomputes `Pinf`, `Kinf`,
+and the ADMM primal cache. It is host-simulation-only and does not change
+firmware parameters.
 
-`--constraint-end-k 11` is exclusive, so with `--horizon 20` the half-space is
-active at the ten future knots 1 through 10. The remainder of the horizon is intentionally
-unconstrained, leaving the optimizer a route to the nominal destination.
+The Crazyflie project's stock Python firmware binding (`cffirmware`, also
+packaged by some simulators as `pycffirmware`) does not contain this out-of-tree
+TinyMPC app controller. Consequently, routing control through that stock binding
+would silently run PID or Mellinger instead. This simulator instead calls the
+actual checked-in TinyMPC solver through its small host ABI; Gym handles only
+the plant. This is the closest executable boundary without adding the complete
+app and its FreeRTOS task dependencies to the upstream SWIG binding.
 
 Outputs:
 
 - `summary.json`: run result and obstacle/goal metadata.
-- `closed_loop.csv`: state, commands, active constraint, clearance, ADMM terminal point.
+- `closed_loop.csv`: state, commands, active constraint, clearance, ADMM terminal point,
+  physical motor thrusts, and Gym motor RPMs.
 - `constraints.csv`: horizon half-space rows.
 - `planned_horizon.csv`: full ADMM planned horizon for each control step.
+- `neural_perception.csv` (neural mode): raw ONNX clearances and confidence
+  outputs for all four directions at each camera frame, plus danger flags and
+  whether the planar policy activated.
 
 Plot:
 
@@ -101,6 +120,63 @@ This writes:
 ```text
 sim_runs/single/trajectory_topdown.png
 ```
+
+## Neural camera mode
+
+The neural adapter implements the deployed contract directly: a 160x160
+monochrome sensor frame, center crop to 120x160, NCHW input, and a
+`1x12x15x20` quantized output. The model and its adjacent
+`quantization_manifest.json` are runtime artifacts, so a newly trained model
+can be tested without changing simulator code:
+
+```bash
+tools/pybullet_simulation/run_depth_constraint_sim.py \
+  --out sim_runs/neural \
+  --perception-mode neural \
+  --onnx-model path/to/sequential_int.onnx \
+  --control-mode admm \
+  --plot \
+  --overwrite
+```
+
+The simple neural policy declares each output at -40, -13.3, +13.3, and +40
+degrees dangerous when its clearance is below `--neural-danger-clearance`
+(0.25 m by default). Confidence does not gate this experimental policy.
+When at least two regions are dangerous it places one plane normal to the
+drone's forward axis. The boundary uses the closest reported clearance minus
+`--neural-plane-margin` (0.10 m by default). Otherwise no vision constraint is
+sent to TinyMPC.
+This provides an end-to-end integration point, but model accuracy on the simple
+PyBullet renderer must be validated before treating the result as flight evidence.
+The plot distinguishes the reference path, flown path, ground-truth obstacle
+footprints, neural detection points, active constraint planes, and MPC horizons.
+
+## Neural clearance benchmark
+
+The standalone benchmark moves the rendered camera through straight, lateral,
+diagonal, slalom, and altitude-changing trajectories against walls, thin posts,
+blocks, bars, and gate frames. It compares all four ONNX outputs with geometric
+first-surface distance along the model's fixed directions (-40, -13.3, +13.3,
+and +40 degrees):
+
+```bash
+python3 tools/pybullet_simulation/benchmark_neural_clearance.py \
+  --onnx-model ../../../tinympc-perception/releases/gap8-sequential-bothflights-qat-dory-v1/sequential_int.onnx \
+  --out sim_runs/neural_clearance_benchmark \
+  --frames-per-case 80 \
+  --danger-threshold 0.25 \
+  --overwrite
+```
+
+It writes `samples.csv`, `report.json`, `clearance_accuracy.png`, and
+`confidence_reliability.png`. The report includes distance errors, per-scene
+and per-direction results, a prediction threshold sweep at a fixed geometric
+danger definition, confidence/error correlation, confidence ranking AUCs,
+decile bins, and selective-coverage metrics. Confidence values are raw logical
+scores rather than calibrated probabilities. These are synthetic
+domain-transfer results, not a substitute for scoring synchronized real HM01B0
+frames against measured clearance; poor results can come from the network, the
+renderer-to-camera domain gap, or both.
 
 ## Batch Run
 

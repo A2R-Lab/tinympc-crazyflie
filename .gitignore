@@ -3,3 +3,9 @@ build/
 *.tmp
 *.o
 *:Zone.Identifier
+.DS_Store
+__pycache__/
+*.py[cod]
+.cf_cache/
+apps/controller_tinympc_eigen/sim_runs/
+apps/controller_tinympc_eigen/tools/debug_runs/

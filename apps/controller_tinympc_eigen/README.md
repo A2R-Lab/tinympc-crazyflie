@@ -55,7 +55,9 @@ CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
 
 - The controller uses the Crazyflie out-of-tree app/controller build flow.
 - `en_traj` in `src/controller_tinympc.cpp` is a compile-time flag, not a runtime Crazyflie parameter.
-- On `main`, `en_traj` defaults to `false`, so the controller follows commander/setpoints unless you explicitly turn the baked trajectory back on in source.
+- On `main`, `en_traj` currently defaults to `true`, so the compiled trajectory
+  is active after the controller handoff. Set it to `false` in source when the
+  controller should follow commander/setpoints instead.
 
 ### Local MPC frame
 
@@ -76,3 +78,30 @@ Regenerate the headers with:
 ```bash
 python3 tools/firmware_codegen/generate_crazyflie_trajectory.py
 ```
+
+### Acrobatic TinyMPC build
+
+The roll and front-flip trajectories use a reference-centered quaternion-error
+chart plus stored per-motor feedforward. TinyMPC supplies the constrained motor
+correction; this is not a separate geometric controller.
+
+```bash
+python3 tools/pybullet_simulation/generate_acrobatic_trajectories.py \
+  --firmware-header-dir src/trajectories/50hz
+make TINYMPC_TRAJECTORY=roll_flip_360
+# or: make TINYMPC_TRAJECTORY=front_flip_360
+# or: make TINYMPC_TRAJECTORY=backflip_360
+# or: make TINYMPC_TRAJECTORY=barrel_roll_forward_360
+```
+
+Run the stressed headless validation before producing firmware:
+
+```bash
+python3 tools/pybullet_simulation/run_acrobatic_suite.py \
+  --out sim_runs/tier3_tinympc_suite --controller tinympc-acro \
+  --profile realistic-v1 --overwrite
+```
+
+Plain `make` still selects the conservative circle trajectory. The acrobatic
+build is experimental and must be validated on a restrained test stand before
+free flight.
