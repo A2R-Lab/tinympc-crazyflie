@@ -45,6 +45,7 @@ EXTRA_CFLAGS += -DENABLE_UART1_DMA
 # circle; the two acrobatic choices enable reference-centered quaternion-error
 # TinyMPC and include per-motor feedforward in the trajectory header.
 TINYMPC_TRAJECTORY ?= circle
+TINYMPC_STORED_LTV ?= 0
 ifeq ($(TINYMPC_TRAJECTORY),roll_flip_360)
 EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_ROLL_FLIP_360=1
 else ifeq ($(TINYMPC_TRAJECTORY),front_flip_360)
@@ -55,6 +56,14 @@ else ifeq ($(TINYMPC_TRAJECTORY),barrel_roll_forward_360)
 EXTRA_CFLAGS += -DTINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1
 else ifneq ($(TINYMPC_TRAJECTORY),circle)
 $(error Unsupported TINYMPC_TRAJECTORY '$(TINYMPC_TRAJECTORY)')
+endif
+ifeq ($(TINYMPC_STORED_LTV),1)
+ifeq ($(TINYMPC_TRAJECTORY),circle)
+$(error TINYMPC_STORED_LTV=1 requires an acrobatic TINYMPC_TRAJECTORY)
+endif
+EXTRA_CFLAGS += -DTINYMPC_USE_STORED_LTV=1
+else ifneq ($(TINYMPC_STORED_LTV),0)
+$(error TINYMPC_STORED_LTV must be 0 or 1)
 endif
 #
 # We override the default OOT_CONFIG here, we could also name our config

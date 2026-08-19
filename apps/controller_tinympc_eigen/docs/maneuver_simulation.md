@@ -254,6 +254,51 @@ make TINYMPC_TRAJECTORY=roll_flip_360
 # or: make TINYMPC_TRAJECTORY=barrel_roll_forward_360
 ```
 
+### Fully offline stored LTV path
+
+The optional stored-LTV path addresses the changing error dynamics without
+online relinearization or an online Riccati recursion. For every stored
+trajectory interval, `generate_stored_ltv.py` numerically differentiates the
+nonlinear rigid-body transition in the reference-centered error chart:
+
+```text
+delta_x[k+1] = A[k] delta_x[k] + B[k] delta_u[k] + d[k]
+```
+
+It performs one time-varying Riccati pass offline and stores `P[k]`, `K[k]`,
+and the four-by-four input-Hessian inverse alongside `A[k]`, `B[k]`, and
+`d[k]`. At runtime, the five ADMM iterations only index these arrays, perform
+matrix-vector products, and project each correction around that knot's stored
+physical motor feedforward.
+
+```bash
+python3 tools/pybullet_simulation/generate_stored_ltv.py \
+  sim/trajectories/acrobatics/roll_flip_360.csv \
+  --out sim_runs/stored_ltv_models/roll_flip_360.npz \
+  --firmware-header src/trajectories/50hz/ltv/stored_ltv_roll_flip_360_50hz.h
+
+python3 tools/pybullet_simulation/run_acrobatic_suite.py \
+  --out sim_runs/stored_ltv_comparison --controller tinympc-ltv \
+  --profile realistic-v1 --overwrite
+
+make TINYMPC_TRAJECTORY=roll_flip_360 TINYMPC_STORED_LTV=1
+```
+
+The stored float data occupies 272,496 bytes for each stationary flip and
+424,112 bytes for the longer forward barrel roll. Measured firmware flash is
+approximately 564 kB for a stationary-flip selection and 722 kB for the
+barrel-roll selection. RAM remains approximately 111 kB because the full
+sequence stays in flash.
+
+In the ideal profile, stored LTV reaches roughly 2--3 mm position RMSE and 2.6
+degrees peak attitude error, compared with about 5 mm and 2.0 degrees for the
+fixed model. Under `realistic-v1`, it improves position RMSE from 4--9 cm to
+2--3 cm, but increases saturation and peak attitude error; the roll reaches
+52.1 degrees versus 17.6 degrees for the fixed model. The nominal LTV schedule
+is therefore more aggressive and currently less robust to motor lag and thrust
+mismatch. It is an experimental comparison path, not the default or a
+recommendation for free flight.
+
 The default `make` continues to compile the circle. Acrobatic builds detach the
 vision/racing halfspaces because those planes are expressed in the ordinary
 local-position chart. Power loops, split-S turns, Matty flips, and a deliberate

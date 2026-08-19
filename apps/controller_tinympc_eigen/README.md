@@ -94,6 +94,21 @@ make TINYMPC_TRAJECTORY=roll_flip_360
 # or: make TINYMPC_TRAJECTORY=barrel_roll_forward_360
 ```
 
+To compile the fully offline, trajectory-linearized model sequence instead of
+the fixed hover matrices, add `TINYMPC_STORED_LTV=1`:
+
+```bash
+python3 tools/pybullet_simulation/generate_stored_ltv.py \
+  sim/trajectories/acrobatics/roll_flip_360.csv \
+  --out sim_runs/stored_ltv_models/roll_flip_360.npz \
+  --firmware-header src/trajectories/50hz/ltv/stored_ltv_roll_flip_360_50hz.h
+make TINYMPC_TRAJECTORY=roll_flip_360 TINYMPC_STORED_LTV=1
+```
+
+The generator performs nonlinear differentiation and the time-varying Riccati
+pass on the host. Firmware only indexes stored `A/B/affine/P/K/Hinv` data; it
+never relinearizes, factors a Hessian, or runs a Riccati recursion onboard.
+
 Run the stressed headless validation before producing firmware:
 
 ```bash

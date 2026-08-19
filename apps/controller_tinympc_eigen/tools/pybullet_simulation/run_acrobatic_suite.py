@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from generate_acrobatic_trajectories import MANEUVERS, generate
+from stored_ltv_controller import generate_artifact
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -223,9 +224,10 @@ def main() -> int:
     parser.add_argument("--trajectory-dir", type=Path, default=Path("sim/trajectories/acrobatics"))
     parser.add_argument("--profile", choices=("ideal", "realistic-v1"), default="realistic-v1")
     parser.add_argument(
-        "--controller", choices=("tinympc-acro", "admm", "geometric"), default="tinympc-acro",
+        "--controller", choices=("tinympc-acro", "tinympc-ltv", "admm", "geometric"), default="tinympc-acro",
         help=("tinympc-acro is the new firmware solver path; admm is the unmodified "
-              "TinyMPC negative control; geometric is a comparison controller"),
+              "TinyMPC negative control; tinympc-ltv consumes fully offline stored "
+              "linearizations/caches; geometric is a comparison controller"),
     )
     parser.add_argument("--maneuver", action="append", choices=[item.name for item in MANEUVERS])
     parser.add_argument("--native-retries", type=int, default=3)
@@ -250,6 +252,10 @@ def main() -> int:
             "--control-mode", args.controller, "--trajectory-file", str(trajectory_path),
             "--progress-interval-s", "0", "--plot", "--overwrite",
         ]
+        if args.controller == "tinympc-ltv":
+            artifact = args.out / "stored_ltv_models" / f"{maneuver.name}.npz"
+            generate_artifact(trajectory_path, artifact)
+            command.extend(("--stored-ltv-model", str(artifact)))
         if args.profile == "realistic-v1":
             command.extend(REALISTIC_V1)
         if args.flow_z_mode is not None:
