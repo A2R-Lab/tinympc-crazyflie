@@ -42,7 +42,7 @@ EXTRA_CFLAGS += -Wno-unused-result
 EXTRA_CFLAGS += -DENABLE_UART1_DMA
 
 # Select the compiled stored reference.  The default remains the conservative
-# circle; the two acrobatic choices enable reference-centered quaternion-error
+# circle; the four acrobatic choices enable reference-centered quaternion-error
 # TinyMPC and include per-motor feedforward in the trajectory header.
 TINYMPC_TRAJECTORY ?= circle
 TINYMPC_STORED_LTV ?= 0

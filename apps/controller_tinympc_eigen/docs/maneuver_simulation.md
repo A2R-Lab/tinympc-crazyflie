@@ -217,30 +217,29 @@ At each solve, position and velocity error are expressed in the current
 reference frame. Attitude is the shortest-sign quaternion error
 `q_ref^-1 * q_actual`, converted to the model's Rodrigues coordinates only
 after recentering. Body-rate error is likewise referenced in the actual body
-frame. TinyMPC therefore remains close to its zero-error hover chart even while
-the absolute vehicle attitude crosses 180 degrees. The fixed offline hover
-matrices and Riccati caches remain unchanged; no runtime relinearization or
-Riccati solve is introduced.
+frame. TinyMPC therefore remains close to its zero-error chart even while the
+absolute vehicle attitude crosses 180 degrees. The stored-LTV build switches
+among offline matrices by trajectory index; no runtime relinearization or
+Riccati solve is introduced. The original fixed hover matrices remain
+available only as a comparison path.
 
-The stored trajectory supplies feasible physical per-motor feedforward.
-TinyMPC optimizes a feedback correction around that operating input, and its
-input constraint is shifted each solve so `feedforward + correction` remains
-within physical motor limits. The simulator still passes the result through
-the shared saturation, delay, lag, mismatch, and PyBullet plant. The optional
-`--controller geometric` path remains only as a comparison controller.
+The stored trajectory supplies actuator-feasible per-motor command
+feedforward. TinyMPC optimizes all four differential and collective corrections
+around that input, and its input constraint is shifted each solve so
+`feedforward + correction` remains within physical motor limits. No separate
+attitude/rate cascade modifies the optimized command.
 
-The generated primitives use a boost, low-thrust 0.8 s rotation, recovery, and
-settle sequence. Peak reference rate is about 842 deg/s. The suite reports
+The generated primitives use a boost, low-thrust 1.2 s rotation, recovery, and
+settle sequence. Peak reference rate is about 562 deg/s, and the feedforward
+is capped below the independently measured 0.20 N CF21B motor limit. The suite reports
 integrated body rotation, quaternion error, position error, altitude, motor
 clipping, recovery speed, and collision. Its `acrobatics.png` marks the old
 180-degree chart singularity explicitly.
 
-The current ideal and `realistic-v1` TinyMPC results both pass for the
-360-degree roll and front flip. In the stressed profile they achieve 360.9 and
-360.2 degrees, with 18.4 and 21.2 degree peak quaternion error, 0.049 and
-0.074 m position RMSE, and 1.092 m minimum altitude. These are simulation
-results, not authorization to fly the primitive without restrained test-stand
-and flight-envelope validation.
+Current CrazySim validation passes a stationary roll and backflip with the
+direct-motor stored-LTV path. These are simulation results, not authorization
+to fly the primitive without restrained test-stand and flight-envelope
+validation.
 
 The same error-state path is compiled onboard by selecting an acrobatic stored
 trajectory:
@@ -256,20 +255,23 @@ make TINYMPC_TRAJECTORY=roll_flip_360
 
 ### Fully offline stored LTV path
 
-The optional stored-LTV path addresses the changing error dynamics without
+The stored-LTV path addresses the changing error dynamics and rotor bandwidth without
 online relinearization or an online Riccati recursion. For every stored
 trajectory interval, `generate_stored_ltv.py` numerically differentiates the
-nonlinear rigid-body transition in the reference-centered error chart:
+nonlinear 16-state transition in the reference-centered error chart. The last
+four states are normalized rotor RPM, with the cf21B-500 RPM-to-thrust/torque
+curves and 64.9 ms rotor response:
 
 ```text
 delta_x[k+1] = A[k] delta_x[k] + B[k] delta_u[k] + d[k]
 ```
 
-It performs one time-varying Riccati pass offline and stores `P[k]`, `K[k]`,
-and the four-by-four input-Hessian inverse alongside `A[k]`, `B[k]`, and
-`d[k]`. At runtime, the five ADMM iterations only index these arrays, perform
-matrix-vector products, and project each correction around that knot's stored
-physical motor feedforward.
+It performs one time-varying Riccati pass offline and stores `K[k]`, the
+precomputed `P[k+1] d[k]` product, and the four-by-four input-Hessian inverse
+alongside `A[k]`, `B[k]`, and `d[k]`. Avoiding the full `P[k]` archive keeps
+the 16-state implementation within flash. At runtime, the five ADMM iterations
+only index these arrays, perform matrix-vector products, and project each
+correction around that knot's stored motor command.
 
 ```bash
 python3 tools/pybullet_simulation/generate_stored_ltv.py \
@@ -284,20 +286,17 @@ python3 tools/pybullet_simulation/run_acrobatic_suite.py \
 make TINYMPC_TRAJECTORY=roll_flip_360 TINYMPC_STORED_LTV=1
 ```
 
-The stored float data occupies 272,496 bytes for each stationary flip and
-424,112 bytes for the longer forward barrel roll. Measured firmware flash is
-approximately 564 kB for a stationary-flip selection and 722 kB for the
-barrel-roll selection. RAM remains approximately 111 kB because the full
-sequence stays in flash.
+The generated stored float data is about 431 kB for a stationary flip and
+672 kB for the longer forward barrel roll. A backflip hardware build currently
+uses 71% flash, 87% RAM, and 85% CCM. The barrel artifact leaves substantially
+less flash headroom.
 
-In the ideal profile, stored LTV reaches roughly 2--3 mm position RMSE and 2.6
-degrees peak attitude error, compared with about 5 mm and 2.0 degrees for the
-fixed model. Under `realistic-v1`, it improves position RMSE from 4--9 cm to
-2--3 cm, but increases saturation and peak attitude error; the roll reaches
-52.1 degrees versus 17.6 degrees for the fixed model. The nominal LTV schedule
-is therefore more aggressive and currently less robust to motor lag and thrust
-mismatch. It is an experimental comparison path, not the default or a
-recommendation for free flight.
+In CrazySim, the direct-motor stored-LTV backflip and stationary roll complete
+their full rotations without contact. The same backflip with the original
+12-state fixed matrices is an intentional negative control and crashes. The
+forward barrel roll remains more sensitive to simultaneous translation and is
+still experimental; a no-contact result alone is not sufficient unless the
+integrated rotation also reaches the reference.
 
 The default `make` continues to compile the circle. Acrobatic builds detach the
 vision/racing halfspaces because those planes are expressed in the ordinary

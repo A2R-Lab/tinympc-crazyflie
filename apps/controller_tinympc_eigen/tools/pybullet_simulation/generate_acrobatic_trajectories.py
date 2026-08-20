@@ -11,8 +11,18 @@ from pathlib import Path
 
 import numpy as np
 
-from firmware_pybullet_env import GymPybulletGateEnv
-from generate_banked_turn_trajectory import ARM, DT, G, INERTIA, MASS, YAW_RATIO, smooth
+from generate_banked_turn_trajectory import ARM, DT, G, MASS, YAW_RATIO, smooth
+
+
+# The CF21B-500 motor/propeller measurements used by CrazySim top out at
+# approximately 0.20 N per motor. Keeping the stored maneuver inside this
+# independently measured envelope preserves differential torque authority for
+# attitude feedback instead of asking the optimizer to recover from an
+# infeasible collective-thrust reference.
+ACRO_MAX_MOTOR_THRUST_N = 0.20
+ACRO_REFERENCE_CEILING_N = 0.195
+ACTUATOR_TRANSITION_S = 0.35
+ACRO_INERTIA = np.diag([2.3951e-5, 2.3951e-5, 3.2347e-5])
 
 
 @dataclass(frozen=True)
@@ -21,7 +31,10 @@ class AcrobaticManeuver:
     description: str
     axis: tuple[float, float, float]
     rotation_deg: float = 360.0
-    rotation_s: float = 0.80
+    rotation_s: float = 0.60
+    boost_s: float = 0.60
+    recovery_s: float = 0.60
+    boost_weight_multiplier: float = 1.412
     forward_barrel: bool = False
 
 
@@ -41,7 +54,8 @@ MANEUVERS = (
     AcrobaticManeuver(
         "barrel_roll_forward_360",
         "full roll while carrying forward velocity, with powered entry and braking exit",
-        (1.0, 0.0, 0.0), forward_barrel=True,
+        (1.0, 0.0, 0.0), rotation_s=1.20, boost_s=0.75,
+        recovery_s=0.75, boost_weight_multiplier=1.63, forward_barrel=True,
     ),
 )
 
@@ -84,6 +98,14 @@ def _pulse(times: np.ndarray, start: float, end: float, amplitude: float) -> np.
     return amplitude * np.sin(math.pi * phase) ** 2
 
 
+def _transition(
+    times: np.ndarray, start: float, end: float, before: float, after: float
+) -> np.ndarray:
+    phase = np.clip((times - start) / max(1.0e-9, end - start), 0.0, 1.0)
+    blend = phase * phase * (3.0 - 2.0 * phase)
+    return before + (after - before) * blend
+
+
 def _float_literal(value: float) -> str:
     if abs(float(value)) < 5.0e-9:
         value = 0.0
@@ -102,6 +124,7 @@ def _write_firmware_header(
     velocity: np.ndarray,
     omega: np.ndarray,
     motors: np.ndarray,
+    recovery_end_s: float,
 ) -> None:
     guard = f"TRAJ_{maneuver.name.upper()}_50HZ_H"
     samples = np.column_stack((position, quaternions, velocity, omega, motors))
@@ -118,6 +141,7 @@ def _write_firmware_header(
         f"#define TRAJECTORY_SAMPLE_DT_S ({_float_literal(DT)})",
         f"#define TRAJECTORY_DURATION_S ({_float_literal(times[-1])})",
         f"#define TRAJECTORY_SAMPLE_COUNT {len(times)}",
+        f"#define TRAJECTORY_RECOVERY_END_INDEX {int(round(recovery_end_s / DT))}",
         "#define TRAJECTORY_REFERENCE_DIM 17",
         "#define TRAJECTORY_LOOPS 0",
         "#define TRAJECTORY_TANGENT_HEADING 0",
@@ -136,13 +160,19 @@ def generate(
     firmware_header: Path | None = None,
 ) -> dict[str, float | str]:
     pre_s = 1.35 if maneuver.forward_barrel else 0.50
-    boost_s = 0.50 * maneuver.rotation_s
-    recovery_s = boost_s
+    boost_s = maneuver.boost_s
+    recovery_s = maneuver.recovery_s
     settle_s = 2.20 if maneuver.forward_barrel else 1.20
-    rotation_start = pre_s + boost_s
+    boost_ramp_start = pre_s
+    boost_start = boost_ramp_start + ACTUATOR_TRANSITION_S
+    boost_end = boost_start + boost_s
+    rotation_ramp_start = boost_end
+    rotation_start = rotation_ramp_start + ACTUATOR_TRANSITION_S
     rotation_end = rotation_start + maneuver.rotation_s
-    recovery_end = rotation_end + recovery_s
-    duration = recovery_end + settle_s
+    recovery_start = rotation_end + ACTUATOR_TRANSITION_S
+    recovery_end = recovery_start + recovery_s
+    settle_start = recovery_end + ACTUATOR_TRANSITION_S
+    duration = settle_start + settle_s
     times = np.arange(0.0, duration + 0.5 * DT, DT)
     axis = np.asarray(maneuver.axis, dtype=np.float64)
     axis /= np.linalg.norm(axis)
@@ -158,10 +188,10 @@ def generate(
     angle_rate = np.gradient(angle, DT, edge_order=2)
     angle_acceleration = np.gradient(angle_rate, DT, edge_order=2)
     if maneuver.forward_barrel:
-        entry_pitch = _pulse(times, 0.20, 1.05, math.radians(18.0))
+        entry_pitch = _pulse(times, 0.20, 1.05, math.radians(10.0))
         brake_start = recovery_end + 0.20
         brake_pitch = _pulse(
-            times, brake_start, brake_start + 0.85, math.radians(-18.0)
+            times, brake_start, brake_start + 0.85, math.radians(-10.0)
         )
         pitch = entry_pitch + brake_pitch
         quaternions = np.asarray([
@@ -196,12 +226,35 @@ def generate(
     omega_dot = np.gradient(omega, DT, axis=0, edge_order=2)
 
     hover_total = MASS * G
-    collective = np.full(len(times), hover_total)
-    if maneuver.forward_barrel:
-        collective /= np.maximum(0.25, np.cos(pitch))
-    collective[(times >= pre_s) & (times < rotation_start)] = 2.0 * hover_total
-    collective[(times >= rotation_start) & (times < rotation_end)] = 0.28 * hover_total
-    recovery_mask = (times >= rotation_end) & (times < recovery_end)
+    boost_total = maneuver.boost_weight_multiplier * hover_total
+    coast_total = 0.28 * hover_total
+
+    def collective_profile(recovery_total: float) -> np.ndarray:
+        result = np.full(len(times), hover_total)
+        ramp = (times >= boost_ramp_start) & (times < boost_start)
+        result[ramp] = _transition(
+            times[ramp], boost_ramp_start, boost_start, hover_total, boost_total
+        )
+        result[(times >= boost_start) & (times < boost_end)] = boost_total
+        ramp = (times >= rotation_ramp_start) & (times < rotation_start)
+        result[ramp] = _transition(
+            times[ramp], rotation_ramp_start, rotation_start, boost_total, coast_total
+        )
+        result[(times >= rotation_start) & (times < rotation_end)] = coast_total
+        ramp = (times >= rotation_end) & (times < recovery_start)
+        result[ramp] = _transition(
+            times[ramp], rotation_end, recovery_start, coast_total, recovery_total
+        )
+        result[(times >= recovery_start) & (times < recovery_end)] = recovery_total
+        ramp = (times >= recovery_end) & (times < settle_start)
+        result[ramp] = _transition(
+            times[ramp], recovery_end, settle_start, recovery_total, hover_total
+        )
+        if maneuver.forward_barrel:
+            result /= np.maximum(0.25, np.cos(pitch))
+        return result
+
+    collective = collective_profile(hover_total)
 
     def propagate(candidate: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         candidate_acceleration = np.asarray([
@@ -224,28 +277,28 @@ def generate(
     # Choose the level recovery collective so the ballistic maneuver exits
     # with zero vertical speed instead of hiding a discontinuity in the
     # reference's final hover segment.
-    recovery_end_index = int(np.searchsorted(times, recovery_end, side="left"))
-    lower, upper = hover_total, 4.0 * GymPybulletGateEnv.FIRMWARE_MAX_MOTOR_THRUST_N
+    recovery_end_index = int(np.searchsorted(times, settle_start, side="left"))
+    lower, upper = hover_total, 4.0 * ACRO_REFERENCE_CEILING_N
     for _ in range(50):
         candidate_value = 0.5 * (lower + upper)
-        collective[recovery_mask] = candidate_value
+        collective = collective_profile(candidate_value)
         _, candidate_velocity, _ = propagate(collective)
         if candidate_velocity[recovery_end_index, 2] < 0.0:
             lower = candidate_value
         else:
             upper = candidate_value
-    collective[recovery_mask] = 0.5 * (lower + upper)
+    collective = collective_profile(0.5 * (lower + upper))
 
     moments = np.zeros((len(times), 3), dtype=np.float64)
     for index in range(len(times)):
-        moments[index] = INERTIA @ omega_dot[index]
-        moments[index] += np.cross(omega[index], INERTIA @ omega[index])
+        moments[index] = ACRO_INERTIA @ omega_dot[index]
+        moments[index] += np.cross(omega[index], ACRO_INERTIA @ omega[index])
     mixer = _allocation()
     motors = np.asarray([
         np.linalg.solve(mixer, np.r_[collective[index], moments[index]])
         for index in range(len(times))
     ])
-    maximum = GymPybulletGateEnv.FIRMWARE_MAX_MOTOR_THRUST_N
+    maximum = ACRO_MAX_MOTOR_THRUST_N
     if float(np.min(motors)) < -1.0e-8 or float(np.max(motors)) > maximum + 1.0e-8:
         raise RuntimeError(
             f"{maneuver.name} feedforward is infeasible: {motors.min():.4f}.."
@@ -260,7 +313,7 @@ def generate(
         "wx", "wy", "wz", *[f"motor_{index}_thrust_n" for index in range(4)],
     ]
     with out.open("w", newline="") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         writer.writerow(fields)
         for index, timestamp in enumerate(times):
             writer.writerow([
@@ -270,7 +323,7 @@ def generate(
     if firmware_header is not None:
         _write_firmware_header(
             firmware_header, maneuver, times, position, quaternions,
-            velocity, omega, motors,
+            velocity, omega, motors, recovery_end,
         )
     return {
         "name": maneuver.name,

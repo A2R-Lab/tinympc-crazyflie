@@ -170,6 +170,8 @@ static_assert(TINYMPC_STORED_LTV_DT_S == TINYMPC_GENERATED_MODEL_DT_S,
               "stored LTV and firmware model periods differ");
 static_assert(TINYMPC_STORED_LTV_RHO == TINYMPC_GENERATED_ADMM_RHO,
               "stored LTV and firmware ADMM rho differ");
+static_assert(TINYMPC_STORED_LTV_STATE_DIM == NSTATES + NINPUTS,
+              "stored LTV must add one actuator state per motor");
 #endif
 #ifndef TRAJECTORY_HAS_MOTOR_FEEDFORWARD
 #define TRAJECTORY_HAS_MOTOR_FEEDFORWARD 0
@@ -296,6 +298,9 @@ static VectorMf acro_motor_baseline_n;
 static float acro_altitude_estimate_m = 0.0f;
 static bool acro_altitude_initialized = false;
 static uint16_t acro_reference_index = 0;
+static float motor_rotor_state_estimate[NINPUTS] = {0.0f};
+static float planner_motor_rotor_state_estimate[NINPUTS] = {0.0f};
+static VectorMf acro_motor_rotor_state_estimate;
 #endif
 
 static bool mpc_has_run = false;
@@ -313,6 +318,10 @@ static uint32_t planner_tick = 0;
 static bool planner_reset_requested = false;
 static void tinympcControllerTask(void *parameters);
 STATIC_MEM_TASK_ALLOC(tinympcControllerTask, TINYMPC_TASK_STACKSIZE);
+
+#ifndef TINYMPC_ACRO_MAX_MOTOR_THRUST_N
+#define TINYMPC_ACRO_MAX_MOTOR_THRUST_N 0.20f
+#endif
 
 static void loadGeneratedSolverData(void) {
   for (int row = 0; row < NSTATES; ++row) {
@@ -389,10 +398,9 @@ void updateInitialState(const sensorData_t *sensors, const state_t *state) {
   active_local_frame.sin_yaw = sinf(active_local_frame.yaw_world);
 
 #if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
-  // The hover model now governs tracking error, not the absolute attitude.
-  // Recenter its Rodrigues chart on the current reference every solve.  This
-  // prevents the q_xyz/q_w state from becoming singular when a flip crosses
-  // 180 degrees, while retaining TinyMPC's fixed offline A/B and Riccati cache.
+  // Express the measured rigid-body state in the stored maneuver's local
+  // tracking-error chart. Recentring the Rodrigues chart on the reference at
+  // every solve avoids a singularity when an absolute flip crosses 180 deg.
   const float current_time_s = trajectory_handoff_hold_steps > 0
       ? 0.0f : (float)step / (float)MPC_RATE;
   acro_reference_index = (uint16_t)T_MIN(
@@ -773,9 +781,7 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
     }
     for (int motor = 0; motor < NINPUTS; ++motor) {
       lcu(motor) = -acro_motor_baseline_n(motor);
-      const float maximum_motor_thrust =
-          tinympc_generated_physical_hover_thrust[motor]
-          + tinympc_generated_input_upper[motor * (NHORIZON - 1)];
+      const float maximum_motor_thrust = TINYMPC_ACRO_MAX_MOTOR_THRUST_N;
       ucu(motor) = maximum_motor_thrust - acro_motor_baseline_n(motor);
     }
 #else
@@ -1043,6 +1049,19 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
 }
 
 #if defined(TINYMPC_USE_STORED_LTV)
+typedef Eigen::Matrix<float, TINYMPC_STORED_LTV_STATE_DIM, 1> StoredLtvState;
+static StoredLtvState stored_ltv_Xhrz[NHORIZON];
+static StoredLtvState stored_ltv_p[NHORIZON];
+
+static float thrustToStoredRotorState(float thrust_n) {
+  const float linear = TINYMPC_STORED_LTV_RPM_TO_THRUST_LINEAR;
+  const float quadratic = TINYMPC_STORED_LTV_RPM_TO_THRUST_QUADRATIC;
+  const float discriminant = T_MAX(
+      linear * linear + 4.0f * quadratic * T_MAX(thrust_n, 0.0f), 0.0f);
+  const float rpm = (-linear + sqrtf(discriminant)) / (2.0f * quadratic);
+  return rpm / TINYMPC_STORED_LTV_ROTOR_STATE_SCALE_RPM;
+}
+
 static int storedLtvInterval(int horizon_knot) {
   const int requested = (int)acro_reference_index + horizon_knot;
   return requested < TINYMPC_STORED_LTV_INTERVALS
@@ -1058,31 +1077,27 @@ static void resetStoredLtvDuals(void) {
 }
 
 static void solveStoredLtv(void) {
-  p[NHORIZON - 1].setZero();
+  stored_ltv_p[NHORIZON - 1].setZero();
   info.pri_res = 0.0f;
   info.dua_res = 0.0f;
   for (int iteration = 0; iteration < 5; ++iteration) {
     for (int k = NHORIZON - 2; k >= 0; --k) {
       const int interval = storedLtvInterval(k);
-      const int p_offset = (interval + 1) * NSTATES * NSTATES;
-      const int a_offset = interval * NSTATES * NSTATES;
-      const int b_offset = interval * NSTATES * NINPUTS;
-      const int f_offset = interval * NSTATES;
-      const int k_offset = interval * NINPUTS * NSTATES;
+      const int a_offset = interval * TINYMPC_STORED_LTV_STATE_DIM
+          * TINYMPC_STORED_LTV_STATE_DIM;
+      const int b_offset = interval * TINYMPC_STORED_LTV_STATE_DIM * NINPUTS;
+      const int f_offset = interval * TINYMPC_STORED_LTV_STATE_DIM;
+      const int k_offset = interval * NINPUTS * TINYMPC_STORED_LTV_STATE_DIM;
       const int h_offset = interval * NINPUTS * NINPUTS;
-      VectorNf value_gradient;
+      StoredLtvState value_gradient;
       VectorMf rhs;
-      for (int row = 0; row < NSTATES; ++row) {
-        float value = p[k + 1](row);
-        for (int column = 0; column < NSTATES; ++column) {
-          value += tinympc_stored_ltv_P[p_offset + row * NSTATES + column]
-              * tinympc_stored_ltv_affine[f_offset + column];
-        }
-        value_gradient(row) = value;
+      for (int row = 0; row < TINYMPC_STORED_LTV_STATE_DIM; ++row) {
+        value_gradient(row) = stored_ltv_p[k + 1](row)
+            + tinympc_stored_ltv_P_affine[f_offset + row];
       }
       for (int motor = 0; motor < NINPUTS; ++motor) {
         float value = -TINYMPC_STORED_LTV_RHO * (ZU_new[k](motor) - YU[k](motor));
-        for (int state = 0; state < NSTATES; ++state) {
+        for (int state = 0; state < TINYMPC_STORED_LTV_STATE_DIM; ++state) {
           value += tinympc_stored_ltv_B[b_offset + state * NINPUTS + motor]
               * value_gradient(state);
         }
@@ -1096,52 +1111,66 @@ static void solveStoredLtv(void) {
         }
         d[k](motor) = value;
       }
-      for (int state = 0; state < NSTATES; ++state) {
+      for (int state = 0; state < TINYMPC_STORED_LTV_STATE_DIM; ++state) {
         float value = 0.0f;
-        for (int row = 0; row < NSTATES; ++row) {
-          value += tinympc_stored_ltv_A[a_offset + row * NSTATES + state]
+        for (int row = 0; row < TINYMPC_STORED_LTV_STATE_DIM; ++row) {
+          value += tinympc_stored_ltv_A[
+                  a_offset + row * TINYMPC_STORED_LTV_STATE_DIM + state]
               * value_gradient(row);
         }
         for (int motor = 0; motor < NINPUTS; ++motor) {
-          value -= tinympc_stored_ltv_K[k_offset + motor * NSTATES + state]
+          value -= tinympc_stored_ltv_K[
+                  k_offset + motor * TINYMPC_STORED_LTV_STATE_DIM + state]
               * rhs(motor);
         }
-        p[k](state) = value;
+        stored_ltv_p[k](state) = value;
       }
     }
 
-    Xhrz[0] = x0;
+    for (int state = 0; state < NSTATES; ++state) {
+      stored_ltv_Xhrz[0](state) = x0(state);
+    }
+    const int initial_interval = storedLtvInterval(0);
+    for (int motor = 0; motor < NINPUTS; ++motor) {
+      stored_ltv_Xhrz[0](NSTATES + motor) =
+          acro_motor_rotor_state_estimate(motor)
+          - tinympc_stored_ltv_motor_state_reference[
+              initial_interval * NINPUTS + motor];
+    }
     for (int k = 0; k < NHORIZON - 1; ++k) {
       const int interval = storedLtvInterval(k);
-      const int a_offset = interval * NSTATES * NSTATES;
-      const int b_offset = interval * NSTATES * NINPUTS;
-      const int f_offset = interval * NSTATES;
-      const int k_offset = interval * NINPUTS * NSTATES;
+      const int a_offset = interval * TINYMPC_STORED_LTV_STATE_DIM
+          * TINYMPC_STORED_LTV_STATE_DIM;
+      const int b_offset = interval * TINYMPC_STORED_LTV_STATE_DIM * NINPUTS;
+      const int f_offset = interval * TINYMPC_STORED_LTV_STATE_DIM;
+      const int k_offset = interval * NINPUTS * TINYMPC_STORED_LTV_STATE_DIM;
       for (int motor = 0; motor < NINPUTS; ++motor) {
         float value = -d[k](motor);
-        for (int state = 0; state < NSTATES; ++state) {
-          value -= tinympc_stored_ltv_K[k_offset + motor * NSTATES + state]
-              * Xhrz[k](state);
+        for (int state = 0; state < TINYMPC_STORED_LTV_STATE_DIM; ++state) {
+          value -= tinympc_stored_ltv_K[
+                  k_offset + motor * TINYMPC_STORED_LTV_STATE_DIM + state]
+              * stored_ltv_Xhrz[k](state);
         }
         Uhrz[k](motor) = value;
       }
-      for (int state = 0; state < NSTATES; ++state) {
+      for (int state = 0; state < TINYMPC_STORED_LTV_STATE_DIM; ++state) {
         float value = tinympc_stored_ltv_affine[f_offset + state];
-        for (int column = 0; column < NSTATES; ++column) {
-          value += tinympc_stored_ltv_A[a_offset + state * NSTATES + column]
-              * Xhrz[k](column);
+        for (int column = 0; column < TINYMPC_STORED_LTV_STATE_DIM; ++column) {
+          value += tinympc_stored_ltv_A[
+                  a_offset + state * TINYMPC_STORED_LTV_STATE_DIM + column]
+              * stored_ltv_Xhrz[k](column);
         }
         for (int motor = 0; motor < NINPUTS; ++motor) {
           value += tinympc_stored_ltv_B[b_offset + state * NINPUTS + motor]
               * Uhrz[k](motor);
         }
-        Xhrz[k + 1](state) = value;
+        stored_ltv_Xhrz[k + 1](state) = value;
       }
       for (int motor = 0; motor < NINPUTS; ++motor) {
-        const float baseline = trajectory_reference_data[interval][13 + motor];
+        const float baseline = tinympc_stored_ltv_motor_command_reference[
+            interval * NINPUTS + motor];
         const float lower = -baseline;
-        const float upper = tinympc_generated_physical_hover_thrust[motor]
-            + tinympc_generated_input_upper[motor * (NHORIZON - 1)] - baseline;
+        const float upper = TINYMPC_ACRO_MAX_MOTOR_THRUST_N - baseline;
         const float projected = T_MIN(T_MAX(YU[k](motor) + Uhrz[k](motor), lower), upper);
         YU[k](motor) += Uhrz[k](motor) - projected;
         ZU_new[k](motor) = projected;
@@ -1169,12 +1198,19 @@ static void tinympcControllerTask(void *parameters) {
     state_t state_task;
     uint32_t solve_tick;
     bool reset_requested;
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+    float motor_rotor_state_estimate_task[NINPUTS];
+#endif
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     memcpy(&setpoint_task, &planner_setpoint, sizeof(setpoint_task));
     memcpy(&sensors_task, &planner_sensors, sizeof(sensors_task));
     memcpy(&state_task, &planner_state, sizeof(state_task));
     solve_tick = planner_tick;
     reset_requested = planner_reset_requested;
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+    memcpy(motor_rotor_state_estimate_task, planner_motor_rotor_state_estimate,
+           sizeof(motor_rotor_state_estimate_task));
+#endif
     planner_reset_requested = false;
     xSemaphoreGive(dataMutex);
 
@@ -1218,6 +1254,11 @@ static void tinympcControllerTask(void *parameters) {
     }
 
     updateInitialState(&sensors_task, &state_task);
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+    for (int motor = 0; motor < NINPUTS; ++motor) {
+      acro_motor_rotor_state_estimate(motor) = motor_rotor_state_estimate_task[motor];
+    }
+#endif
     // Intentionally preserve TinyMPC's state auxiliaries and duals.
     updateHorizonReference(
         &setpoint_task,
@@ -1242,19 +1283,49 @@ static void tinympcControllerTask(void *parameters) {
     const uint32_t solve_us = (uint32_t)(usecTimestamp() - solve_start_us);
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     for (int motor = 0; motor < NINPUTS; ++motor) {
-      const float motor_thrust_newtons =
-#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
-          acro_motor_baseline_n(motor) + Uhrz[0](motor);
+      const float correction_now =
+#if defined(TINYMPC_USE_STORED_LTV)
+          ZU_new[0](motor);
 #else
-          tinympc_generated_physical_hover_thrust[motor] + Uhrz[0](motor);
+          Uhrz[0](motor);
 #endif
-      active_motor_commands[motor] =
+      const float motor_thrust_now =
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+  #if defined(TINYMPC_USE_STORED_LTV)
+          tinympc_stored_ltv_motor_command_reference[
+              storedLtvInterval(0) * NINPUTS + motor] + correction_now;
+  #else
+          trajectory_reference_data[acro_reference_index][13 + motor]
+              + correction_now;
+  #endif
+#else
+          tinympc_generated_physical_hover_thrust[motor] + correction_now;
+#endif
+      float command =
           tinympc_generated_thrust_to_normalized_command(
-              motor_thrust_newtons);
+              motor_thrust_now);
+      active_motor_commands[motor] = T_MIN(T_MAX(command, 0.0f), 1.0f);
     }
     plan_start_tick = solve_tick;
     mpc_has_run = true;
     xSemaphoreGive(dataMutex);
+
+#if defined(CONFIG_PLATFORM_SITL) && TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+    static uint16_t last_acro_trace_index = UINT16_MAX;
+    if (acro_reference_index >= 45U && acro_reference_index <= 125U &&
+        (acro_reference_index % 5U) == 0U &&
+        acro_reference_index != last_acro_trace_index) {
+      last_acro_trace_index = acro_reference_index;
+      DEBUG_PRINT(
+          "ACRO: idx=%u err_ry=%.4f err_wy=%.3f gyro_y=%.1f "
+          "base=(%.3f,%.3f) corr=(%.3f,%.3f) cmd=(%.3f,%.3f)\n",
+          (unsigned int)acro_reference_index,
+          (double)x0(4), (double)x0(10), (double)sensors_task.gyro.y,
+          (double)acro_motor_baseline_n(0), (double)acro_motor_baseline_n(1),
+          (double)ZU_new[0](0), (double)ZU_new[0](1),
+          (double)active_motor_commands[0], (double)active_motor_commands[1]);
+    }
+#endif
 
     {
       float max_primal_violation = 0.0f;
@@ -1314,13 +1385,15 @@ static void tinympcControllerTask(void *parameters) {
       tinyRacerDebug.mode = (uint8_t)race_intent.mode;
       tinyRacerDebug.cylinder_active = perception_halfspace_active ? 1 : 0;
       tinyRacerDebug.pass_side = race_intent.pass_side;
-      DEBUG_PRINT(
-          "MPC: iterations=%d solve_us=%lu ref_local=(%.2f,%.2f,%.2f) plane_violation=%.3f consensus_error=%.3f slack=%.3f\n",
-          info.iter, (unsigned long)solve_us,
-          (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2),
-          (double)max_primal_violation,
-          (double)max_primal_aux_gap,
-          (double)max_halfspace_slack);
+      if ((log_counter % MPC_RATE) == 0U) {
+        DEBUG_PRINT(
+            "MPC: iterations=%d solve_us=%lu ref_local=(%.2f,%.2f,%.2f) plane_violation=%.3f consensus_error=%.3f slack=%.3f\n",
+            info.iter, (unsigned long)solve_us,
+            (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2),
+            (double)max_primal_violation,
+            (double)max_primal_aux_gap,
+            (double)max_halfspace_slack);
+      }
     }
     if (log_counter == 0) {
       DEBUG_PRINT("MPC task stack free=%lu words\n",
@@ -1430,7 +1503,18 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   const bool controller_reactivated =
       last_controller_tick == 0 || tick - last_controller_tick > M2T(200);
   last_controller_tick = tick;
+  // CrazySim's SITL stabilizer intentionally bypasses the hardware supervisor
+  // and always permits motor output. Mirror that contract here; hardware still
+  // uses the real arming/supervisor state.
+#ifdef CONFIG_PLATFORM_SITL
+  #ifndef TINYMPC_SITL_START_DELAY_MS
+  #define TINYMPC_SITL_START_DELAY_MS 0U
+  #endif
+  const bool motors_allowed =
+      xTaskGetTickCount() >= M2T(TINYMPC_SITL_START_DELAY_MS);
+#else
   const bool motors_allowed = supervisorAreMotorsAllowedToRun();
+#endif
   bool has_run_snapshot = false;
   uint32_t plan_start_tick_snapshot = 0;
   float motor_command_snapshot[NINPUTS] = {0.0f};
@@ -1438,11 +1522,20 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     if (controller_reactivated || (!motors_allowed && motors_were_allowed)) {
       mpc_has_run = false;
       planner_reset_requested = true;
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+      for (int motor = 0; motor < NINPUTS; ++motor) {
+        motor_rotor_state_estimate[motor] = 0.0f;
+      }
+#endif
     }
     if (motors_allowed && RATE_DO_EXECUTE(MPC_RATE, tick)) {
       memcpy(&planner_setpoint, setpoint, sizeof(planner_setpoint));
       memcpy(&planner_sensors, sensors, sizeof(planner_sensors));
       memcpy(&planner_state, state, sizeof(planner_state));
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
+      memcpy(planner_motor_rotor_state_estimate, motor_rotor_state_estimate,
+             sizeof(planner_motor_rotor_state_estimate));
+#endif
       planner_tick = tick;
       xSemaphoreGive(runTaskSemaphore);
     }
@@ -1463,8 +1556,15 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     const float hover_command =
         tinympc_generated_thrust_to_normalized_command(
             tinympc_generated_physical_hover_thrust[motor]);
-    float command = command_is_fresh
-        ? motor_command_snapshot[motor] : hover_command;
+    float command = command_is_fresh ? motor_command_snapshot[motor]
+                                     : hover_command;
+#ifdef CONFIG_PLATFORM_SITL
+    // The CrazySim stabilizer bypasses the firmware motor supervisor. Restore
+    // the gate here so the calibration/handoff delay cannot spin the plant.
+    if (!motors_allowed) {
+      command = 0.0f;
+    }
+#endif
     if (!std::isfinite(command)) {
       command = hover_command;
     }
@@ -1474,6 +1574,15 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       command = 1.0f;
     }
     control->normalizedForces[motor] = command;
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD && defined(TINYMPC_USE_STORED_LTV)
+    const float target_thrust_n = motors_allowed
+        ? tinympc_generated_normalized_command_to_thrust(command) : 0.0f;
+    const float target_rotor_state = thrustToStoredRotorState(target_thrust_n);
+    const float estimator_alpha = 1.0f - expf(
+        -(1.0f / (float)LQR_RATE) / TINYMPC_STORED_LTV_MOTOR_TIME_CONSTANT_S);
+    motor_rotor_state_estimate[motor] += estimator_alpha
+        * (target_rotor_state - motor_rotor_state_estimate[motor]);
+#endif
   }
 }
 

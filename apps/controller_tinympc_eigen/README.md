@@ -63,8 +63,9 @@ CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" make cload
 
 Each solve uses a local NWU frame anchored at the current position and yaw.
 States, references, and obstacle planes are transformed into this frame. The
-controller sends TinyMPC's first optimized input directly to the motors; there
-is no cascaded PID controller path.
+ordinary racing path sends TinyMPC's first optimized input directly to the
+motors. Acrobatic stored-LTV builds do the same; there is no secondary
+attitude, rate, or position controller.
 Trajectory headers store:
 
 ```text
@@ -81,21 +82,23 @@ python3 tools/firmware_codegen/generate_crazyflie_trajectory.py
 
 ### Acrobatic TinyMPC build
 
-The roll and front-flip trajectories use a reference-centered quaternion-error
-chart plus stored per-motor feedforward. TinyMPC supplies the constrained motor
-correction; this is not a separate geometric controller.
+The roll and flip trajectories use a reference-centered quaternion-error chart,
+stored per-motor command feedforward, and horizon-wise offline LTV matrices.
+The LTV state is the 12-state tracking error plus four normalized rotor-RPM
+errors. It includes the measured 64.9 ms rotor response, RPM-to-thrust/torque
+curves, and the firmware's nominal Crazyflie inertia. TinyMPC runs at
+50 Hz with the usual 20-knot horizon and five ADMM iterations, then sends all
+four optimized motor commands directly to PWM. No online relinearization,
+Riccati pass, or high-rate corrective cascade is used.
 
 ```bash
 python3 tools/pybullet_simulation/generate_acrobatic_trajectories.py \
   --firmware-header-dir src/trajectories/50hz
-make TINYMPC_TRAJECTORY=roll_flip_360
-# or: make TINYMPC_TRAJECTORY=front_flip_360
-# or: make TINYMPC_TRAJECTORY=backflip_360
-# or: make TINYMPC_TRAJECTORY=barrel_roll_forward_360
+make TINYMPC_TRAJECTORY=roll_flip_360 TINYMPC_STORED_LTV=1
+# Substitute front_flip_360, backflip_360, or barrel_roll_forward_360.
 ```
 
-To compile the fully offline, trajectory-linearized model sequence instead of
-the fixed hover matrices, add `TINYMPC_STORED_LTV=1`:
+Regenerate one fully offline trajectory-linearized model sequence with:
 
 ```bash
 python3 tools/pybullet_simulation/generate_stored_ltv.py \
@@ -105,8 +108,11 @@ python3 tools/pybullet_simulation/generate_stored_ltv.py \
 make TINYMPC_TRAJECTORY=roll_flip_360 TINYMPC_STORED_LTV=1
 ```
 
+Omitting `TINYMPC_STORED_LTV=1` deliberately selects the original 12-state
+fixed hover matrices and is retained as a negative-control build.
+
 The generator performs nonlinear differentiation and the time-varying Riccati
-pass on the host. Firmware only indexes stored `A/B/affine/P/K/Hinv` data; it
+pass on the host. Firmware only indexes stored `A/B/affine/P_affine/K/Hinv` data; it
 never relinearizes, factors a Hessian, or runs a Riccati recursion onboard.
 
 Run the stressed headless validation before producing firmware:
@@ -119,4 +125,30 @@ python3 tools/pybullet_simulation/run_acrobatic_suite.py \
 
 Plain `make` still selects the conservative circle trajectory. The acrobatic
 build is experimental and must be validated on a restrained test stand before
-free flight.
+free flight. A current stationary-flip image uses about 79% flash, 87% RAM,
+and 85% CCM; the longer barrel-roll image is close to the flash limit.
+
+### Independent CrazySim/MuJoCo validation
+
+For a second physics implementation that executes this controller inside the
+Crazyflie firmware SITL, use the repository-local CrazySim harness:
+
+```bash
+tools/crazysim_mujoco/run.sh \
+  --trajectory backflip_360 \
+  --stored-ltv 1 \
+  --out apps/controller_tinympc_eigen/sim_runs/crazysim/backflip_ltv \
+  --overwrite
+```
+
+It pins and patches its dependency under `tools/crazysim_mujoco/.deps`, builds
+in Docker, and writes MuJoCo ground truth, controller logs, crash metrics, and a
+four-panel validation plot. The harness couples the POSIX firmware tick to the
+measured physics rate and rejects timing-invalid runs. The revised backflip
+passed three clock-valid clean repetitions plus individual sensor-noise and
+Flow-deck trials. A severe combined plant/estimator/weather stress completes
+without contact from 2.0 m, although its lateral drift remains too large for
+racing. The fixed hover-matrix negative control crashes without completing the
+rotation. See
+`docs/crazysim_direct_motor_robustness_2026-08-19.md` for the results and
+`tools/crazysim_mujoco/README.md` for the fidelity boundary.

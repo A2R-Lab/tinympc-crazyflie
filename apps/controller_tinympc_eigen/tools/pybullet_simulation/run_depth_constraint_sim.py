@@ -739,6 +739,10 @@ def main(argv: list[str] | None = None) -> int:
                         x0_solver, _ = _tinympc_reference_error_state(
                             estimate_world, estimate_quat, trajectory, reference_time
                         )
+                        # Stored direct-motor LTV adds four normalized rotor-RPM
+                        # error states. This legacy PyBullet path has no rotor
+                        # telemetry, so initialize them on the nominal schedule.
+                        x0_solver = np.r_[x0_solver, np.zeros(4, dtype=np.float64)]
                         held_solver_info = ltv_solver.solve(x0_solver, reference_time)
                         held_plan = np.asarray(held_solver_info["states"], dtype=np.float64)
                         plan_k = 0
@@ -1969,7 +1973,9 @@ def _append_plan_rows(
 ) -> None:
     if solver_info.get("states") is None:
         return
-    states = np.asarray(solver_info["states"], dtype=np.float64).reshape(-1, AdmmHostSolver.NSTATES)
+    states = np.asarray(solver_info["states"], dtype=np.float64)
+    if states.ndim == 1:
+        states = states.reshape(-1, int(solver_info.get("state_dim", AdmmHostSolver.NSTATES)))
     for k, state in enumerate(states):
         position = state[0:3].copy()
         velocity = state[6:9].copy()

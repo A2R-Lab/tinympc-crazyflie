@@ -178,7 +178,7 @@ def generate(maneuver: RacingManeuver, out: Path) -> dict[str, float | str]:
         "wx", "wy", "wz", *[f"motor_{index}_thrust_n" for index in range(4)],
     ]
     with out.open("w", newline="") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         writer.writerow(fields)
         for index, timestamp in enumerate(times):
             writer.writerow([

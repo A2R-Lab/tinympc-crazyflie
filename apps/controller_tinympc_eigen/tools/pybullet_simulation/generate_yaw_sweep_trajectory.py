@@ -35,7 +35,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fields = ["t", "x", "y", "z", "vx", "vy", "vz", "qw", "qx", "qy", "qz", "wx", "wy", "wz"]
     with args.out.open("w", newline="") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         writer.writerow(fields)
         for index, stamp in enumerate(time):
             half = 0.5 * yaw[index]

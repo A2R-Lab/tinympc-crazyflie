@@ -1,0 +1,178 @@
+diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
+index 834317c6..6f66a2d5 100644
+--- a/sitl_make/CMakeLists.txt
++++ b/sitl_make/CMakeLists.txt
+@@ -244,6 +244,78 @@ set(SRCS
+ # Create an executable
+ add_executable(cf2 ${SRCS})
+ 
++# Optional out-of-tree TinyMPC controller. The source stays in the parent
++# tinympc-crazyflie checkout so SITL and hardware compile the same files.
++set(TINYMPC_APP_DIR "" CACHE PATH "Path to controller_tinympc_eigen")
++set(TINYMPC_SITL_SUPPORT_DIR "" CACHE PATH "Path to TinyMPC CrazySim support sources")
++set(TINYMPC_TRAJECTORY "circle" CACHE STRING "TinyMPC stored trajectory")
++set(TINYMPC_SITL_START_DELAY_MS "0" CACHE STRING "Delay TinyMPC planning after SITL boot")
++set(TINYMPC_SITL_TICK_US "1000" CACHE STRING "Wall-clock microseconds per simulated 1 ms RTOS tick")
++option(TINYMPC_STORED_LTV "Use offline horizon-wise stored LTV matrices" OFF)
++
++if(TINYMPC_APP_DIR)
++  if(NOT EXISTS "${TINYMPC_APP_DIR}/src/controller_tinympc.cpp")
++    message(FATAL_ERROR "TINYMPC_APP_DIR does not contain controller_tinympc.cpp")
++  endif()
++  if(NOT EXISTS "${TINYMPC_SITL_SUPPORT_DIR}/sequential_obstacle_link_sitl.c")
++    message(FATAL_ERROR "TINYMPC_SITL_SUPPORT_DIR is invalid")
++  endif()
++
++  enable_language(CXX)
++  set(TINYMPC_CORE_DIR "${TINYMPC_APP_DIR}/TinyMPC-ADMM/src/tinympc")
++  target_sources(cf2 PRIVATE
++    ${TINYMPC_APP_DIR}/src/controller_tinympc.cpp
++    ${TINYMPC_APP_DIR}/src/tinyracer_racing.c
++    ${TINYMPC_APP_DIR}/src/tinyracer_debug.c
++    ${TINYMPC_SITL_SUPPORT_DIR}/sequential_obstacle_link_sitl.c
++    ${TINYMPC_CORE_DIR}/utils.cpp
++    ${TINYMPC_CORE_DIR}/model.cpp
++    ${TINYMPC_CORE_DIR}/auxil.cpp
++    ${TINYMPC_CORE_DIR}/cost_lqr.cpp
++    ${TINYMPC_CORE_DIR}/lqr.cpp
++    ${TINYMPC_CORE_DIR}/constraint_linear.cpp
++    ${TINYMPC_CORE_DIR}/admm.cpp
++    ${TINYMPC_CORE_DIR}/rho_benchmark.cpp
++  )
++  target_include_directories(cf2 PRIVATE
++    ${TINYMPC_APP_DIR}/src
++    ${TINYMPC_APP_DIR}/TinyMPC-ADMM/src
++    ${TINYMPC_APP_DIR}/TinyMPC-ADMM/ext/Eigen
++  )
++  target_compile_definitions(cf2 PRIVATE
++    CONFIG_CONTROLLER_OOT
++    EIGEN_INITIALIZE_MATRICES_BY_ZERO
++    EIGEN_NO_MALLOC
++    NDEBUG
++    TINYMPC_SITL_SKIP_CALIBRATION=1
++    TINYMPC_SITL_START_DELAY_MS=${TINYMPC_SITL_START_DELAY_MS}
++    TINYMPC_SITL_TICK_US=${TINYMPC_SITL_TICK_US}
++  )
++  target_compile_options(cf2 PRIVATE
++    $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>
++    $<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-result>
++  )
++
++  if(TINYMPC_TRAJECTORY STREQUAL "roll_flip_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_ROLL_FLIP_360=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "front_flip_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_FRONT_FLIP_360=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "backflip_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BACKFLIP_360=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "barrel_roll_forward_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1)
++  elseif(NOT TINYMPC_TRAJECTORY STREQUAL "circle")
++    message(FATAL_ERROR "Unsupported TINYMPC_TRAJECTORY=${TINYMPC_TRAJECTORY}")
++  endif()
++
++  if(TINYMPC_STORED_LTV)
++    if(TINYMPC_TRAJECTORY STREQUAL "circle")
++      message(FATAL_ERROR "TINYMPC_STORED_LTV requires an acrobatic trajectory")
++    endif()
++    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_STORED_LTV=1)
++  endif()
++endif()
++
+ target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
+ 
+ target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
+@@ -267,4 +339,4 @@ set_target_properties(
+   cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
+ )
+ 
+-include(cmake/sitl_gazebo.cmake)
+\ No newline at end of file
++include(cmake/sitl_gazebo.cmake)
+diff --git a/src/hal/src/sensors_sitl.c b/src/hal/src/sensors_sitl.c
+index 68bb3a9c..76dfd0ab 100644
+--- a/src/hal/src/sensors_sitl.c
++++ b/src/hal/src/sensors_sitl.c
+@@ -183,7 +183,11 @@ void sensorsSimAcquire(sensorData_t *sensors)
+ }
+ 
+ bool sensorsSimAreCalibrated() {
++#ifdef TINYMPC_SITL_SKIP_CALIBRATION
++  return true;
++#else
+   return gyroBiasFound;
++#endif
+ }
+ 
+ static void sensorsTask(void *param)
+@@ -709,4 +713,4 @@ PARAM_GROUP_START(imu_tests)
+ PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, MPU6500_SIM, &isMpu6500TestPassed)
+ PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, HMC5883L_SIM, &isAK8963TestPassed)
+ PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, MS5611_SIM, &isLPS25HTestPassed) // TODO: Rename MS5611 to LPS25H. Client needs to be updated at the same time.
+-PARAM_GROUP_STOP(imu_tests)
+\ No newline at end of file
++PARAM_GROUP_STOP(imu_tests)
+diff --git a/src/modules/interface/stabilizer_types.h b/src/modules/interface/stabilizer_types.h
+index d49f852b..b24678bc 100644
+--- a/src/modules/interface/stabilizer_types.h
++++ b/src/modules/interface/stabilizer_types.h
+@@ -187,6 +187,7 @@ typedef enum control_mode_e {
+   controlModeLegacy      = 0, // legacy mode with int16_t roll, pitch, yaw and float thrust
+   controlModeForceTorque = 1,
+   controlModeForce       = 2,
++  controlModePWM         = 4,
+ } control_mode_t;
+ 
+ typedef struct control_s {
+diff --git a/src/modules/src/controller/controller.c b/src/modules/src/controller/controller.c
+index ca32f506..617dbc3e 100644
+--- a/src/modules/src/controller/controller.c
++++ b/src/modules/src/controller/controller.c
+@@ -55,6 +55,8 @@ void controllerInit(ControllerType controller) {
+     #define CONTROLLER ControllerTypeMellinger
+   #elif defined(CONFIG_CONTROLLER_BRESCIANINI)
+     #define CONTROLLER ControllerTypeBrescianini
++  #elif defined(CONFIG_CONTROLLER_OOT)
++    #define CONTROLLER ControllerTypeOot
+   #else
+     #define CONTROLLER ControllerTypeAutoSelect
+   #endif
+diff --git a/src/modules/src/power_distribution_sitl.c b/src/modules/src/power_distribution_sitl.c
+index f9fe7e88..4d16fdb3 100644
+--- a/src/modules/src/power_distribution_sitl.c
++++ b/src/modules/src/power_distribution_sitl.c
+@@ -138,7 +138,17 @@ static void powerDistributionForceTorque(const control_t *control, motors_thrust
+ }
+ 
+ static void powerDistributionForce(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped) {
+-  // Not implemented yet
++  for (int motorIndex = 0; motorIndex < STABILIZER_NR_OF_MOTORS; motorIndex++) {
++    const float normalizedForce = constrain(control->normalizedForces[motorIndex], 0.0f, 1.0f);
++    motorThrustUncapped->list[motorIndex] = normalizedForce * UINT16_MAX;
++  }
++}
++
++static void powerDistributionPWM(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped) {
++  for (int motorIndex = 0; motorIndex < STABILIZER_NR_OF_MOTORS; motorIndex++) {
++    const float normalizedPwm = constrain(control->normalizedForces[motorIndex], 0.0f, 1.0f);
++    motorThrustUncapped->list[motorIndex] = normalizedPwm * UINT16_MAX;
++  }
+ }
+ 
+ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped)
+@@ -153,6 +163,9 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
+     case controlModeForce:
+       powerDistributionForce(control, motorThrustUncapped);
+       break;
++    case controlModePWM:
++      powerDistributionPWM(control, motorThrustUncapped);
++      break;
+     default:
+       // Nothing here
+       break;
+@@ -269,4 +282,4 @@ LOG_ADD_CORE(LOG_UINT16, m3, &motorPower.m3)
+  * @brief Motor power (PWM value) for M4 [0 - UINT16_MAX]
+  */
+ LOG_ADD_CORE(LOG_UINT16, m4, &motorPower.m4)
+-LOG_GROUP_STOP(motor)
+\ No newline at end of file
++LOG_GROUP_STOP(motor)

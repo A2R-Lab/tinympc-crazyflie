@@ -1,0 +1,21 @@
+diff --git a/portable/ThirdParty/GCC/Posix/port.c b/portable/ThirdParty/GCC/Posix/port.c
+index 086ad487a..f95d189ea 100644
+--- a/portable/ThirdParty/GCC/Posix/port.c
++++ b/portable/ThirdParty/GCC/Posix/port.c
+@@ -335,11 +335,15 @@ int iRet;
+ 
+ 	/* Set the interval between timer events. */
+ 	itimer.it_interval.tv_sec = 0;
++#ifdef TINYMPC_SITL_TICK_US
++	itimer.it_interval.tv_usec = TINYMPC_SITL_TICK_US;
++#else
+ 	itimer.it_interval.tv_usec = portTICK_RATE_MICROSECONDS;
++#endif
+ 
+ 	/* Set the current count-down. */
+ 	itimer.it_value.tv_sec = 0;
+-	itimer.it_value.tv_usec = portTICK_RATE_MICROSECONDS;
++	itimer.it_value.tv_usec = itimer.it_interval.tv_usec;
+ 
+ 	/* Set-up the timer interrupt. */
+ 	iRet = setitimer( ITIMER_REAL, &itimer, NULL );

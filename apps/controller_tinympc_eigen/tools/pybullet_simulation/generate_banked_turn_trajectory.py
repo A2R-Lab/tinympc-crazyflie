@@ -98,7 +98,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True,exist_ok=True)
     fields=["t","x","y","z","vx","vy","vz","qw","qx","qy","qz","wx","wy","wz",*[f"motor_{i}_thrust_n" for i in range(4)]]
     with args.out.open("w",newline="") as f:
-        w=csv.writer(f); w.writerow(fields)
+        w=csv.writer(f,lineterminator="\n"); w.writerow(fields)
         for i,t in enumerate(times): w.writerow([f"{t:.9f}",*position[i],*velocity[i],*quats[i],*omega[i],*motors[i]])
     print(f"wrote {args.out}: bank={args.bank_deg:g} deg, yaw={math.degrees(yaw[-1]):.1f} deg, motor={motors.min():.3f}..{motors.max():.3f} N")
     return 0

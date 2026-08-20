@@ -1,3 +1,8 @@
+#pragma once
+
+// The embedded C++ link needs newlib syscall stubs. A POSIX SITL executable
+// must retain libc's implementations instead.
+#ifndef CONFIG_PLATFORM_SITL
 #define nop()  __asm__("nop")
 int _sbrk() { return -1; }
 int _close() { return -1; }
@@ -11,3 +16,4 @@ int _write(int file, char* ptr, int len)
    nop();
    return len;
 }
+#endif

@@ -1,0 +1,325 @@
+diff --git a/simulator_files/mujoco/crazysim.py b/simulator_files/mujoco/crazysim.py
+index d4a7eb9..5371db7 100644
+--- a/simulator_files/mujoco/crazysim.py
++++ b/simulator_files/mujoco/crazysim.py
+@@ -56,6 +56,7 @@ Multi-agent usage:
+ """
+ 
+ import argparse
++import csv
+ import math
+ import os
+ import queue
+@@ -668,7 +669,8 @@ class DroneAgent:
+                  wind_model: WindModel | None = None,
+                  ground_effect: bool = False,
+                  camera_renderer: CameraRenderer | None = None,
+-                 flowdeck: bool = False):
++                 flowdeck: bool = False,
++                 thrust_scale: float = 1.0):
+         self.agent_id = agent_id
+         self.model = model
+         self.data = data
+@@ -761,16 +763,20 @@ class DroneAgent:
+         self._noise_model = noise_model
+         self._wind_model = wind_model
+         self._ground_effect = ground_effect
++        self._thrust_scale = thrust_scale
+         self._camera = camera_renderer
+ 
+         print(f'[crazysim] Agent {agent_id}: fw_port={fw_port}  cflib_port={cflib_port}')
+ 
+     def _pwm_to_rpm(self, pwm: int) -> float:
+         """16-bit PWM → rotor RPM via crazyflow model.
+-        PWM maps linearly to thrust, then invert the rpm2thrust polynomial."""
++        TinyMPC sends normalized rotor speed, so thrust is quadratic in the
++        transmitted command. Invert the independent crazyflow thrust curve to
++        obtain the corresponding rotor speed."""
+         if pwm < 7000:
+             return 0.0
+-        thrust = (pwm / 65535.0) * self._params.pwm_thrust_full
++        normalized_speed = pwm / 65535.0
++        thrust = normalized_speed * normalized_speed * self._params.pwm_thrust_full
+         a, b, c = self._params.rpm2thrust
+         # Solve c*rpm² + b*rpm + (a - thrust) = 0
+         disc = b * b - 4.0 * c * (a - thrust)
+@@ -914,7 +920,7 @@ class DroneAgent:
+ 
+             rpm = self._rpm[i]
+             thrust = a_t + b_t * rpm + c_t * rpm * rpm
+-            thrust = max(thrust, 0.0) * ge_factor
++            thrust = max(thrust, 0.0) * ge_factor * self._thrust_scale
+             drag_torque = MOTOR_DIR[i] * (a_q + b_q * rpm + c_q * rpm * rpm)
+ 
+             self.data.ctrl[self._act_force[i]] = thrust
+@@ -1191,13 +1197,31 @@ class CrazySimMuJoCo:
+                  camera_enabled: bool = False,
+                  cam_width: int = 324, cam_height: int = 244,
+                  cam_fps: float = 20.0,
+-                 cam_port: int | None = None):
++                 cam_port: int | None = None,
++                 duration: float | None = None,
++                 state_log: str | None = None,
++                 spawn_z: float = 0.0,
++                 launch_time: float = 0.0,
++                 launch_on_motor_command: bool = False,
++                 launch_prespin: bool = False,
++                 thrust_scale: float = 1.0,
++                 realtime_factor: float = 1.0):
+         self.host = host
+         self.visualize = visualize
+         self.dt = timestep
+         self.num_agents = len(spawn_positions)
+         self._downwash = downwash
+         self._flowdeck = flowdeck
++        self._duration = duration
++        self._state_log = state_log
++        self._spawn_z = spawn_z
++        self._launch_time = launch_time
++        self._launch_on_motor_command = launch_on_motor_command
++        self._launch_prespin = launch_prespin
++        self._launch_applied = spawn_z == 0.0
++        if realtime_factor <= 0.0 or realtime_factor > 1.0:
++            raise ValueError('realtime_factor must be in (0, 1]')
++        self._realtime_factor = realtime_factor
+ 
+         if model_type not in MOTOR_PARAMS:
+             raise ValueError(f'Unknown model_type {model_type!r}. '
+@@ -1212,6 +1236,7 @@ class CrazySimMuJoCo:
+ 
+         print(f'[crazysim] mass       : {params.mass:.4f} kg')
+         print(f'[crazysim] diaginertia: {params.diaginertia}')
++        print(f'[crazysim] thrust scale: {thrust_scale:.4f}')
+ 
+         # Print enabled features
+         features = []
+@@ -1233,6 +1258,15 @@ class CrazySimMuJoCo:
+         self.model.opt.timestep = self.dt
+         self.data = mujoco.MjData(self.model)
+ 
++        # The stock scenes start on the floor. Aggressive maneuver references
++        # are relative to their handoff pose, so validation needs an airborne
++        # initial condition without running a different takeoff controller.
++        if (spawn_z != 0.0 and launch_time <= 0.0 and
++                not launch_on_motor_command):
++            self._apply_airborne_handoff()
++        elif spawn_z != 0.0 and launch_on_motor_command:
++            self._hold_airborne_pose()
++
+         # Create per-drone agents
+         self.agents: list[DroneAgent] = []
+         for i in range(self.num_agents):
+@@ -1261,11 +1295,40 @@ class CrazySimMuJoCo:
+                 ground_effect=ground_effect,
+                 camera_renderer=agent_camera,
+                 flowdeck=flowdeck,
++                thrust_scale=thrust_scale,
+             )
+             self.agents.append(agent)
+ 
+         self._running = False
+ 
++    def _hold_airborne_pose(self):
++        for i in range(self.num_agents):
++            body_id = self.model.body(f'cf{i}_drone').id
++            joint_id = self.model.body_jntadr[body_id]
++            qpos_adr = self.model.jnt_qposadr[joint_id]
++            dof_adr = self.model.jnt_dofadr[joint_id]
++            self.data.qpos[qpos_adr + 2] = self._spawn_z
++            self.data.qvel[dof_adr:dof_adr + 6] = 0.0
++        mujoco.mj_forward(self.model, self.data)
++
++    def _apply_airborne_handoff(self, prespin: bool = False):
++        self._hold_airborne_pose()
++        for i in range(self.num_agents):
++            body_id = self.model.body(f'cf{i}_drone').id
++            self.data.xfrc_applied[body_id] = 0.0
++        if prespin:
++            for agent in self.agents:
++                with agent._motor_lock:
++                    agent._rpm[:] = agent._rpm_ref
++        self._launch_applied = True
++
++    def _apply_staging_support(self):
++        for i in range(self.num_agents):
++            body_id = self.model.body(f'cf{i}_drone').id
++            self.data.xfrc_applied[body_id] = 0.0
++            self.data.xfrc_applied[body_id, 2] = (
++                self.model.body_mass[body_id] * abs(self.model.opt.gravity[2]))
++
+     def _apply_downwash(self):
+         """Apply downwash force perturbations between drones."""
+         for i, agent_below in enumerate(self.agents):
+@@ -1306,8 +1369,34 @@ class CrazySimMuJoCo:
+         for agent in self.agents:
+             agent.start_threads()
+ 
++        state_file = None
++        state_writer = None
++        if self._state_log:
++            state_dir = os.path.dirname(os.path.abspath(self._state_log))
++            os.makedirs(state_dir, exist_ok=True)
++            state_file = open(self._state_log, 'w', newline='')
++            state_writer = csv.writer(state_file)
++            state_writer.writerow([
++                'time_s', 'x_m', 'y_m', 'z_m',
++                'qw', 'qx', 'qy', 'qz',
++                'vx_mps', 'vy_mps', 'vz_mps',
++                'wx_radps', 'wy_radps', 'wz_radps',
++                'rpm_1', 'rpm_2', 'rpm_3', 'rpm_4', 'contacts', 'airborne',
++            ])
++
+         def _step_and_send():
+             """One physics step + CRTP packet dispatch for all agents."""
++            if not self._launch_applied:
++                motor_handoff = self._launch_on_motor_command and any(
++                    np.max(agent._rpm_ref) > 1.0 for agent in self.agents)
++                timed_handoff = (not self._launch_on_motor_command and
++                                  self.data.time >= self._launch_time)
++                if motor_handoff:
++                    self._apply_airborne_handoff(prespin=self._launch_prespin)
++                elif timed_handoff:
++                    self._apply_airborne_handoff()
++                elif self._launch_on_motor_command:
++                    self._apply_staging_support()
+             for agent in self.agents:
+                 agent.update_motors()
+                 agent.apply_aero_effects()
+@@ -1317,6 +1406,21 @@ class CrazySimMuJoCo:
+             mujoco.mj_step(self.model, self.data)
+             for agent in self.agents:
+                 agent.send_sensor_data()
++            if state_writer is not None:
++                agent = self.agents[0]
++                bid = agent._body_id
++                qvel = self.data.qvel[agent._qvel_adr:agent._qvel_adr + 6]
++                state_writer.writerow([
++                    self.data.time,
++                    *self.data.xpos[bid],
++                    *self.data.xquat[bid],
++                    *qvel,
++                    *agent._rpm,
++                    self.data.ncon,
++                    int(self._launch_applied),
++                ])
++            if self._duration is not None and self.data.time >= self._duration:
++                self._running = False
+ 
+         # Real-time factor tracking
+         _rtf_interval = 1.0  # seconds between RTF updates
+@@ -1364,7 +1468,7 @@ class CrazySimMuJoCo:
+                         v.sync()
+                         _last_render = t0
+                     elapsed = time.perf_counter() - t0
+-                    sleep_t = self.dt - elapsed
++                    sleep_t = self.dt / self._realtime_factor - elapsed
+                     if sleep_t > 0:
+                         time.sleep(sleep_t)
+             self._running = False
+@@ -1375,7 +1479,7 @@ class CrazySimMuJoCo:
+                     _step_and_send()
+                     _update_rtf()
+                     elapsed = time.perf_counter() - t0
+-                    sleep_t = self.dt - elapsed
++                    sleep_t = self.dt / self._realtime_factor - elapsed
+                     if sleep_t > 0:
+                         time.sleep(sleep_t)
+             except KeyboardInterrupt:
+@@ -1384,6 +1488,8 @@ class CrazySimMuJoCo:
+         self._running = False
+         for agent in self.agents:
+             agent.stop()
++        if state_file is not None:
++            state_file.close()
+         print('[crazysim] Done.')
+ 
+ 
+@@ -1443,12 +1549,36 @@ def main():
+                    help=f'Drone variant (default: inferred from --model, else {DEFAULT_MODEL_TYPE})')
+     p.add_argument('--vis', action='store_true', help='Launch passive viewer')
+     p.add_argument('--dt', type=float, default=0.001, help='Physics timestep [s]')
++    p.add_argument('--duration', type=float, default=None,
++                   help='Stop after this many simulated seconds')
++    p.add_argument('--state-log', default=None,
++                   help='Write first-agent MuJoCo ground truth to CSV')
++    p.add_argument('--spawn-z', type=float, default=0.0,
++                   help='Initial free-joint altitude [m]')
++    p.add_argument('--launch-time', type=float, default=0.0,
++                   help='Teleport to --spawn-z after on-ground IMU calibration [s]')
++    p.add_argument('--launch-on-motor-command', action='store_true',
++                   help='Apply the airborne handoff on the first nonzero PWM command')
++    p.add_argument('--launch-prespin', action='store_true',
++                   help='Initialize rotor RPM to the first command at airborne handoff')
++    p.add_argument('--realtime-factor', type=float, default=1.0,
++                   help='Maximum simulation/wall-clock rate in (0, 1]')
+     p.add_argument('agents', nargs='*', metavar='X,Y',
+                    help='Spawn positions as X,Y pairs (e.g., 0,0 1,0 0,1)')
+     p.add_argument('--spawn-file', default=None,
+                    help='CSV file with spawn positions (one X,Y per line)')
+     p.add_argument('--mass', type=float, default=None,
+                    help='Override drone mass [kg]')
++    p.add_argument('--pwm-thrust-full', type=float, default=None,
++                   help='Thrust represented by full-scale firmware PWM before RPM clamping [N]')
++    p.add_argument('--inertia-scale', type=float, default=1.0,
++                   help='Scale all diagonal inertia entries for robustness testing')
++    p.add_argument('--motor-tau-scale', type=float, default=1.0,
++                   help='Scale motor rise/fall time constants for robustness testing')
++    p.add_argument('--thrust-scale', type=float, default=1.0,
++                   help='Scale realized motor thrust after command conversion')
++    p.add_argument('--random-seed', type=int, default=1,
++                   help='Seed sensor-noise and turbulence randomness')
+     p.add_argument('--scene', default=None,
+                    help='Path to scene MJCF XML (default: scene.xml)')
+     # --- Feature flags ---
+@@ -1499,10 +1629,23 @@ def main():
+     if model_type is None:
+         model_type = DEFAULT_MODEL_TYPE
+ 
+-    # Apply mass override if provided
++    if args.inertia_scale <= 0.0 or args.motor_tau_scale <= 0.0 or args.thrust_scale <= 0.0:
++        p.error('plant scale factors must be positive')
++
++    # Apply explicit plant perturbations only when requested.
++    from dataclasses import replace
++    params = MOTOR_PARAMS[model_type]
+     if args.mass is not None:
+-        from dataclasses import replace
+-        MOTOR_PARAMS[model_type] = replace(MOTOR_PARAMS[model_type], mass=args.mass)
++        params = replace(params, mass=args.mass)
++    if args.pwm_thrust_full is not None:
++        params = replace(params, pwm_thrust_full=args.pwm_thrust_full)
++    params = replace(
++        params,
++        diaginertia=tuple(value * args.inertia_scale for value in params.diaginertia),
++        tau_up=params.tau_up * args.motor_tau_scale,
++        tau_down=params.tau_down * args.motor_tau_scale,
++    )
++    MOTOR_PARAMS[model_type] = params
+ 
+     # Resolve model path (default paths are relative to this script)
+     model_path = args.model
+@@ -1518,6 +1661,9 @@ def main():
+     # Parse spawn positions
+     spawn_positions = _parse_spawn_positions(args.agents, args.spawn_file)
+ 
++    # Make stochastic validation cases reproducible.
++    np.random.seed(args.random_seed)
++
+     # Build optional feature models
+     noise_model = SensorNoiseModel(
+         dt=args.dt,
+@@ -1549,6 +1695,14 @@ def main():
+         cam_height=args.cam_height,
+         cam_fps=args.cam_fps,
+         cam_port=args.cam_port,
++        duration=args.duration,
++        state_log=args.state_log,
++        spawn_z=args.spawn_z,
++        launch_time=args.launch_time,
++        launch_on_motor_command=args.launch_on_motor_command,
++        launch_prespin=args.launch_prespin,
++        thrust_scale=args.thrust_scale,
++        realtime_factor=args.realtime_factor,
+     ).run()
+ 
+ 
