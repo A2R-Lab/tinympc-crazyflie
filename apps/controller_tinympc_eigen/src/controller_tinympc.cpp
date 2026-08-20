@@ -150,6 +150,10 @@ static_assert(NINPUTS == TINYMPC_GENERATED_INPUT_DIM, "generated input dimension
 #include "trajectories/50hz/traj_backflip_360_50hz.h"
 #elif defined(TINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360)
 #include "trajectories/50hz/traj_barrel_roll_forward_360_50hz.h"
+#elif defined(TINYMPC_TRAJECTORY_STRAIGHT)
+#include "trajectories/50hz/traj_straight_50hz.h"
+#elif defined(TINYMPC_TRAJECTORY_FIGURE8)
+#include "trajectories/50hz/traj_figure8_50hz.h"
 #else
 #include "trajectories/50hz/traj_circle_50hz.h"
 #endif
@@ -239,7 +243,7 @@ static const float perception_sector_bearing_rad[TINYRACER_CLEARANCE_SECTORS] = 
 };
 static const TinyRacerRaceConfig race_config = {
   0.30f, -1.0986123f, 0.10f, 0.05f, 0.35f, 0.35f, 0.25f, 250,
-  0.28f, 0.70f, 2, 0.18f, 2
+  0.28f, 0.70f, 2, 0.18f, 2, 0.25f, 2
 };
 typedef struct {
   Eigen::Vector3f normal_world;
@@ -248,6 +252,7 @@ typedef struct {
 static PerceptionPlane perception_stop_plane;
 static bool perception_obstacle_active = false;
 static bool perception_halfspace_active = false;
+static bool perception_binary_constraint = false;
 static Eigen::Vector3f perception_obstacle_center_world = Eigen::Vector3f::Zero();
 static float perception_obstacle_radius_m = 0.0f;
 static bool perception_recovery_active = false;
@@ -262,6 +267,14 @@ static TinyRacerRaceIntent race_intent;
 static float perception_clearance_history[TINYRACER_CLEARANCE_SECTORS][5];
 static uint8_t perception_filter_index = 0;
 static uint32_t perception_filter_sample = UINT32_MAX;
+static uint32_t gate_filter_sample = UINT32_MAX;
+static float gate_lateral_offset_m = 0.0f;
+static float gate_vertical_offset_m = 0.0f;
+static uint32_t navigation_filter_sample = UINT32_MAX;
+static float navigation_steering = 0.0f;
+static float navigation_collision_probability = 0.0f;
+static float perception_trajectory_speed_scale = 1.0f;
+static float trajectory_advance_fraction = 0.0f;
 
 // Create TinyMPC struct
 static tiny_Model model;
@@ -590,6 +603,9 @@ static float perceptionConfidence(float score) {
 static bool estimateObstacleGeometry(
     const TinyRacerPerceptionObservation& observation,
     ObstacleGeometry& geometry) {
+  if (!observation.has_metric_clearance) {
+    return false;
+  }
   Eigen::Vector3f direction_sum = Eigen::Vector3f::Zero();
   float weighted_depth = 0.0f;
   float weight_sum = 0.0f;
@@ -690,6 +706,9 @@ static int8_t trajectorySideOfCylinder() {
 
 static void filterPerceptionClearances(
     TinyRacerPerceptionObservation& observation) {
+  if (!observation.has_metric_clearance) {
+    return;
+  }
   if (observation.valid &&
       observation.received_age_ms <= race_config.maximum_age_ms &&
       observation.sample != perception_filter_sample) {
@@ -727,6 +746,148 @@ static void resetPerceptionFilter() {
   }
   perception_filter_index = 0;
   perception_filter_sample = UINT32_MAX;
+  gate_filter_sample = UINT32_MAX;
+  gate_lateral_offset_m = 0.0f;
+  gate_vertical_offset_m = 0.0f;
+  navigation_filter_sample = UINT32_MAX;
+  navigation_steering = 0.0f;
+  navigation_collision_probability = 0.0f;
+  perception_trajectory_speed_scale = 1.0f;
+  trajectory_advance_fraction = 0.0f;
+}
+
+static void applyVisionNavigation(
+    const TinyRacerPerceptionObservation& observation) {
+  const bool fresh = observation.valid &&
+      observation.has_navigation_command &&
+      observation.received_age_ms <= race_config.maximum_age_ms;
+  if (!fresh || race_intent.mode != TINYRACER_RACE_TRACK ||
+      perception_halfspace_active || perception_recovery_active) {
+    return;
+  }
+  if (observation.sample != navigation_filter_sample) {
+    /* DroNet used beta=0.5 for steering and alpha=0.7 for collision speed. */
+    navigation_steering +=
+        0.5f * (observation.steering_command - navigation_steering);
+    navigation_collision_probability += 0.7f *
+        (observation.collision_probability -
+         navigation_collision_probability);
+    navigation_filter_sample = observation.sample;
+  }
+  Eigen::Vector3f path = Xref[NHORIZON - 1].head(3) - Xref[0].head(3);
+  path.z() = 0.0f;
+  if (path.head(2).norm() < 0.01f) {
+    return;
+  }
+  path.normalize();
+  const Eigen::Vector3f left(-path.y(), path.x(), 0.0f);
+  /* Match DroNet's critical-probability stop instead of creeping forward. */
+  const float speed_scale = navigation_collision_probability >= 0.70f
+      ? 0.0f : T_MAX(1.0f - navigation_collision_probability, 0.0f);
+  perception_trajectory_speed_scale = speed_scale;
+  const Eigen::Vector3f anchor = Xref[0].head(3);
+  for (int k = 1; k < NHORIZON; ++k) {
+    const float ramp = (float)k / (float)(NHORIZON - 1);
+    Eigen::Vector3f delta = Xref[k].head(3) - anchor;
+    delta.x() *= speed_scale;
+    delta.y() *= speed_scale;
+    Xref[k].head(3) = anchor + delta +
+        left * (0.12f * navigation_steering * ramp);
+    Xref[k](6) *= speed_scale;
+    Xref[k](7) *= speed_scale;
+  }
+}
+
+static void applyGateVisualServo(
+    const TinyRacerPerceptionObservation& observation) {
+  const bool fresh_gate = observation.valid && observation.gate_valid &&
+      observation.received_age_ms <= race_config.maximum_age_ms &&
+      observation.gate_confidence >= 0.25f;
+  if (!fresh_gate || race_intent.mode != TINYRACER_RACE_TRACK ||
+      perception_halfspace_active || perception_recovery_active) {
+    return;
+  }
+
+  const float *corner = observation.gate_corners_xy;
+  const float width = 0.5f * ((corner[2] - corner[0]) +
+                              (corner[4] - corner[6]));
+  const float height = 0.5f * ((corner[7] - corner[1]) +
+                               (corner[5] - corner[3]));
+  if (width < 0.05f || height < 0.05f || width * height < 0.01f) {
+    return;
+  }
+  if (observation.sample != gate_filter_sample) {
+    const float center_x = 0.25f *
+        (corner[0] + corner[2] + corner[4] + corner[6]);
+    const float center_y = 0.25f *
+        (corner[1] + corner[3] + corner[5] + corner[7]);
+    /* HM01B0 calibration normalized for the network's 160 x 120 crop. */
+    const float fx_normalized = 89.15584f / 160.0f;
+    const float fy_normalized = 89.46082f / 120.0f;
+    const float gate_opening_width_m = 0.80f;
+    const float estimated_depth_m = T_MIN(T_MAX(
+        gate_opening_width_m * fx_normalized / width, 0.4f), 4.0f);
+    const float requested_lateral_m = T_MIN(T_MAX(
+        -(center_x - 0.5f) * estimated_depth_m / fx_normalized,
+        -0.35f), 0.35f);
+    const float requested_vertical_m = T_MIN(T_MAX(
+        -(center_y - 0.5f) * estimated_depth_m / fy_normalized,
+        -0.25f), 0.25f);
+    gate_lateral_offset_m +=
+        0.25f * (requested_lateral_m - gate_lateral_offset_m);
+    gate_vertical_offset_m +=
+        0.25f * (requested_vertical_m - gate_vertical_offset_m);
+    gate_filter_sample = observation.sample;
+    if ((observation.sample % 10u) == 0u) {
+      DEBUG_PRINT("Vision gate confidence=%.2f offset=(%.2f,%.2f) depth=%.2f\n",
+                  (double)observation.gate_confidence,
+                  (double)gate_lateral_offset_m,
+                  (double)gate_vertical_offset_m,
+                  (double)estimated_depth_m);
+    }
+  }
+  for (int k = 0; k < NHORIZON; ++k) {
+    const float ramp = (float)k / (float)(NHORIZON - 1);
+    Xref[k](1) += ramp * gate_lateral_offset_m;
+    Xref[k](2) += ramp * gate_vertical_offset_m;
+  }
+}
+
+static void createDangerStopPlane(
+    const Eigen::Vector3f& position_world,
+    const Eigen::Vector3f& velocity_world,
+    const TinyRacerPerceptionObservation& observation) {
+  const float forward_speed_mps = T_MAX(
+      avoidance_forward_world.dot(velocity_world), 0.0f);
+  const float stopping_distance_m = T_MIN(T_MAX(
+      0.20f + 0.25f * forward_speed_mps +
+          forward_speed_mps * forward_speed_mps / 3.0f,
+      0.25f), 0.75f);
+  perception_stop_plane.normal_world = avoidance_forward_world;
+  perception_stop_plane.boundary_world =
+      avoidance_forward_world.dot(position_world) + stopping_distance_m;
+  perception_binary_constraint = true;
+  perception_obstacle_active = false;
+  perception_halfspace_active = true;
+
+  float bearing_sum = 0.0f;
+  float weight_sum = 0.0f;
+  for (int sector = 0; sector < TINYRACER_CLEARANCE_SECTORS; ++sector) {
+    const float excess = T_MAX(observation.danger_probability[sector] -
+                                   race_config.danger_probability_threshold,
+                               0.0f);
+    bearing_sum += excess * perception_sector_bearing_rad[sector];
+    weight_sum += excess;
+  }
+  race_state.pass_side = weight_sum > 1e-4f && bearing_sum < 0.0f ? 1 : -1;
+  race_intent.pass_side = race_state.pass_side;
+  DEBUG_PRINT("Vision danger plane distance=%.2f action=%s probabilities=(%.2f,%.2f,%.2f,%.2f)\n",
+              (double)stopping_distance_m,
+              race_intent.pass_side > 0 ? "left" : "right",
+              (double)observation.danger_probability[0],
+              (double)observation.danger_probability[1],
+              (double)observation.danger_probability[2],
+              (double)observation.danger_probability[3]);
 }
 
 static bool horizonApproachesObstacle() {
@@ -862,7 +1023,14 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
     if (trajectory_handoff_hold_steps > 0) {
       --trajectory_handoff_hold_steps;
     } else {
+#if TRAJECTORY_HAS_MOTOR_FEEDFORWARD
       step += 1;
+#else
+      trajectory_advance_fraction += perception_trajectory_speed_scale;
+      const uint32_t whole_steps = (uint32_t)trajectory_advance_fraction;
+      step += whole_steps;
+      trajectory_advance_fraction -= (float)whole_steps;
+#endif
     }
   }
 }
@@ -920,6 +1088,10 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
   TinyRacerPerceptionObservation observation = {};
   sequentialObstacleLinkGetLatest(&observation);
   filterPerceptionClearances(observation);
+  if (!observation.valid || !observation.has_navigation_command ||
+      observation.received_age_ms > race_config.maximum_age_ms) {
+    perception_trajectory_speed_scale = 1.0f;
+  }
   const bool was_active = race_intent.constraint_active;
   const bool continuing_encounter = race_intent.mode == TINYRACER_RACE_RECOVER;
   const Eigen::Vector3f position_world(
@@ -927,12 +1099,15 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
   const Eigen::Vector3f velocity_world(
       state->velocity.x, state->velocity.y, state->velocity.z);
   if (perception_halfspace_active) {
-    if ((race_intent.constraint_active || perception_recovery_active) &&
+    if (!perception_binary_constraint &&
+        (race_intent.constraint_active || perception_recovery_active) &&
         observation.valid &&
         observation.received_age_ms <= race_config.maximum_age_ms) {
       expandObstacleCylinder(position_world, observation);
     }
-    updateObstacleTangent(position_world);
+    if (!perception_binary_constraint) {
+      updateObstacleTangent(position_world);
+    }
   }
   if (perception_recovery_active) {
     Eigen::Vector3f travel = position_world - perception_recovery_last_world;
@@ -984,6 +1159,8 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
       perception_recovery_active,
       !perception_recovery_active && race_intent.mode == TINYRACER_RACE_TRACK,
       relevant_sector_mask, &race_intent);
+  applyVisionNavigation(observation);
+  applyGateVisualServo(observation);
   if (perception_recovery_active && !race_intent.constraint_active &&
       race_state.clear_samples >= race_config.clear_samples_required &&
       perception_recovery_distance_m >= perception_pass_distance_m) {
@@ -992,8 +1169,9 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
         cosf(rpy.z), sinf(rpy.z), 0.0f));
     perception_recovery_active = false;
     perception_halfspace_active = false;
+    perception_binary_constraint = false;
     tiny_ClearPositionHalfspaces(&work);
-    DEBUG_PRINT("Vision cylinder retained; tangent disabled\n");
+    DEBUG_PRINT("Vision avoidance complete; constraint disabled\n");
     return;
   }
   if (perception_obstacle_active && !perception_halfspace_active &&
@@ -1020,7 +1198,9 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
   perception_recovery_active = false;
   perception_recovery_distance_m = 0.0f;
   if (continuing_encounter) {
-    updateObstacleTangent(position_world);
+    if (!perception_binary_constraint) {
+      updateObstacleTangent(position_world);
+    }
     DEBUG_PRINT("Vision blocked again; continuing pass=%s\n",
                 race_intent.pass_side > 0 ? "left" : "right");
     return;
@@ -1031,14 +1211,19 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
       -avoidance_forward_world.y(), avoidance_forward_world.x(), 0.0f);
   avoidance_start_world = position_world;
   perception_motion_target_world = position_world;
-  if (!createObstacleCylinder(position_world, observation)) {
+  if (observation.has_metric_clearance &&
+      createObstacleCylinder(position_world, observation)) {
+    perception_binary_constraint = false;
+    race_state.pass_side = trajectorySideOfCylinder();
+    race_intent.pass_side = race_state.pass_side;
+  } else if (observation.has_sector_danger) {
+    createDangerStopPlane(position_world, velocity_world, observation);
+  } else {
     race_state.obstacle_constraint_active = false;
     race_intent.constraint_active = false;
     race_intent.mode = TINYRACER_RACE_TRACK;
     return;
   }
-  race_state.pass_side = trajectorySideOfCylinder();
-  race_intent.pass_side = race_state.pass_side;
   DEBUG_PRINT("Vision blocked action=%s path=%.0fdeg sectors=0x%x clearances=(%.2f,%.2f,%.2f,%.2f)\n",
               race_intent.pass_side > 0 ? "left" : "right",
               (double)(path_bearing * 57.2957795f), relevant_sector_mask,
@@ -1248,6 +1433,7 @@ static void tinympcControllerTask(void *parameters) {
       perception_recovery_active = false;
       perception_obstacle_active = false;
       perception_halfspace_active = false;
+      perception_binary_constraint = false;
       perception_recovery_distance_m = 0.0f;
       resetPerceptionFilter();
       tiny_ClearPositionHalfspaces(&work);
@@ -1462,6 +1648,7 @@ void controllerOutOfTreeInit(void) {
   perception_recovery_active = false;
   perception_obstacle_active = false;
   perception_halfspace_active = false;
+  perception_binary_constraint = false;
   perception_recovery_distance_m = 0.0f;
   resetPerceptionFilter();
   mpc_has_run = false;

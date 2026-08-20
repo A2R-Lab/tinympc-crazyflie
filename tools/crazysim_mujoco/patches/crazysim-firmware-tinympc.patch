@@ -2,7 +2,7 @@ diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
 index 834317c6..6f66a2d5 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,78 @@ set(SRCS
+@@ -244,6 +244,84 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -66,12 +66,18 @@ index 834317c6..6f66a2d5 100644
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BACKFLIP_360=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "barrel_roll_forward_360")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "straight")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "figure8")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_FIGURE8=1)
 +  elseif(NOT TINYMPC_TRAJECTORY STREQUAL "circle")
 +    message(FATAL_ERROR "Unsupported TINYMPC_TRAJECTORY=${TINYMPC_TRAJECTORY}")
 +  endif()
 +
 +  if(TINYMPC_STORED_LTV)
-+    if(TINYMPC_TRAJECTORY STREQUAL "circle")
++    if(TINYMPC_TRAJECTORY STREQUAL "circle" OR
++       TINYMPC_TRAJECTORY STREQUAL "straight" OR
++       TINYMPC_TRAJECTORY STREQUAL "figure8")
 +      message(FATAL_ERROR "TINYMPC_STORED_LTV requires an acrobatic trajectory")
 +    endif()
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_STORED_LTV=1)
@@ -81,7 +87,7 @@ index 834317c6..6f66a2d5 100644
  target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
  
  target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
-@@ -267,4 +339,4 @@ set_target_properties(
+@@ -267,4 +345,4 @@ set_target_properties(
    cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
  )
  

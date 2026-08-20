@@ -48,19 +48,34 @@ void tinyRacerRaceUpdate(
     for (int sector = 0; sector < TINYRACER_CLEARANCE_SECTORS; ++sector) {
       const bool confident =
           observation->confidence[sector] >= config->confidence_threshold;
-      dangerous[sector] = (relevant_sector_mask & (1u << sector)) &&
+      const bool metric_danger = observation->has_metric_clearance &&
           confident && observation->clearance_m[sector] <
               config->clearance_threshold_m;
+      const bool probability_danger = observation->has_sector_danger &&
+          observation->danger_probability[sector] >=
+              config->danger_probability_threshold;
+      dangerous[sector] = (relevant_sector_mask & (1u << sector)) &&
+          (metric_danger || probability_danger);
       dangerous_sector_count += dangerous[sector] ? 1 : 0;
-      dangerous_confidence_sum += dangerous[sector]
-          ? confidenceWeight(observation->confidence[sector]) : 0.0f;
-      path_hard_blocked |= dangerous[sector] &&
+      dangerous_confidence_sum += probability_danger
+          ? observation->danger_probability[sector]
+          : (dangerous[sector] ? confidenceWeight(observation->confidence[sector])
+                               : 0.0f);
+      path_hard_blocked |= metric_danger && dangerous[sector] &&
           observation->clearance_m[sector] <=
               config->hard_clearance_threshold_m;
-      all_safe &= confident && observation->clearance_m[sector] >=
-          config->release_clearance_m;
+      const bool sector_safe = observation->has_metric_clearance
+          ? confident && observation->clearance_m[sector] >=
+                config->release_clearance_m
+          : (!observation->has_sector_danger ||
+             observation->danger_probability[sector] <
+                0.8f * config->danger_probability_threshold);
+      all_safe &= sector_safe;
     }
-    const bool path_blocked = dangerous_sector_count >= 1 || path_hard_blocked;
+    const int required_sectors = observation->has_metric_clearance
+        ? 1 : config->danger_sectors_required;
+    const bool path_blocked = dangerous_sector_count >= required_sectors ||
+        path_hard_blocked;
     const float mean_confidence = dangerous_sector_count > 0
         ? dangerous_confidence_sum / dangerous_sector_count : 0.0f;
     const uint8_t evidence_required = config->blocked_samples_required +
@@ -127,7 +142,9 @@ void tinyRacerRaceUpdate(
     intent->constraint_changed |= intent->sector[sector].changed;
     intent->sector[sector].body_bearing_rad = body_bearing_rad[sector];
     intent->sector[sector].boundary_distance_m = fmaxf(
-        observation->clearance_m[sector] - config->safety_margin_m,
+        (observation->has_metric_clearance
+             ? observation->clearance_m[sector]
+             : config->clearance_threshold_m) - config->safety_margin_m,
         config->minimum_boundary_distance_m);
     if (intent->sector[sector].active &&
         intent->sector[sector].boundary_distance_m <

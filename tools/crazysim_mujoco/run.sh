@@ -21,13 +21,16 @@ REALTIME_FACTOR="0.1"
 FIRMWARE_TIME_FACTOR="0.07"
 OUT=""
 OVERWRITE=0
+VISION_MODEL=""
+VISION_ADAPTER="auto"
+VISION_SCENE="obstacle"
 EXTRA_SIM_ARGS=(__none__)
 
 usage() {
   cat <<'EOF'
 Usage: tools/crazysim_mujoco/run.sh [options]
-  --trajectory NAME       backflip_360, front_flip_360, roll_flip_360,
-                          or barrel_roll_forward_360
+  --trajectory NAME       straight, figure8, circle, backflip_360,
+                          front_flip_360, roll_flip_360, or barrel_roll_forward_360
   --stored-ltv 0|1        Use horizon-wise stored matrices (default: 1)
   --duration SECONDS      Simulation duration (default: 10)
   --launch-time SECONDS   Airborne handoff/controller start (default: 4)
@@ -43,6 +46,9 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --realtime-factor RATE  Simulator/wall rate cap (default: 0.1)
   --firmware-time-factor RATE  Measured simulator/wall rate (default: 0.07)
   --out DIRECTORY         Output directory
+  --vision-model PATH     ONNX/STDC path, or "dronet" for the bundled baseline
+  --vision-adapter NAME   auto, sequential, stdc, or dronet (default: auto)
+  --vision-scene NAME     obstacle, gate, or none (default: obstacle)
   --sensor-noise          Enable CrazySim IMU/barometer noise
   --flowdeck              Use simulated Flow deck instead of pose
   --ground-effect         Enable ground effect
@@ -70,6 +76,9 @@ while [[ $# -gt 0 ]]; do
     --realtime-factor) REALTIME_FACTOR="$2"; shift 2 ;;
     --firmware-time-factor) FIRMWARE_TIME_FACTOR="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
+    --vision-model) VISION_MODEL="$2"; shift 2 ;;
+    --vision-adapter) VISION_ADAPTER="$2"; shift 2 ;;
+    --vision-scene) VISION_SCENE="$2"; shift 2 ;;
     --sensor-noise|--flowdeck|--ground-effect)
       [[ "${EXTRA_SIM_ARGS[0]}" == __none__ ]] && EXTRA_SIM_ARGS=()
       EXTRA_SIM_ARGS+=("$1"); shift ;;
@@ -83,12 +92,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$TRAJECTORY" in
-  backflip_360|front_flip_360|roll_flip_360|barrel_roll_forward_360) ;;
+  straight|figure8|circle|backflip_360|front_flip_360|roll_flip_360|barrel_roll_forward_360) ;;
   *) echo "Unsupported trajectory: $TRAJECTORY" >&2; exit 2 ;;
 esac
 if [[ "$STORED_LTV" != 0 && "$STORED_LTV" != 1 ]]; then
   echo "--stored-ltv must be 0 or 1" >&2
   exit 2
+fi
+case "$VISION_ADAPTER" in auto|sequential|stdc|dronet) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
+case "$VISION_SCENE" in obstacle|gate|none) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+VISION_ENABLED=0
+VISION_MODEL_CONTAINER=__none__
+if [[ -n "$VISION_MODEL" ]]; then
+  VISION_ENABLED=1
+  if [[ "$VISION_MODEL" == dronet ]]; then
+    VISION_MODEL="$SCRIPT_DIR/models/dronet/dronet.onnx"
+    VISION_ADAPTER=dronet
+  fi
+  VISION_MODEL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$VISION_MODEL")"
+  [[ -e "$VISION_MODEL" ]] || { echo "Vision model not found: $VISION_MODEL" >&2; exit 2; }
+  case "$TRAJECTORY" in
+    straight|figure8|circle) ;;
+    *) echo "Vision is intentionally disabled for flip/roll trajectories; use an ordinary approach trajectory." >&2; exit 2 ;;
+  esac
+  [[ "$STORED_LTV" == 0 ]] || { echo "Vision trajectories require --stored-ltv 0" >&2; exit 2; }
+  VISION_MODEL_CONTAINER=/vision_model
 fi
 if [[ "$LAUNCH_PRESPIN" != 0 && "$LAUNCH_PRESPIN" != 1 ]]; then
   echo "--launch-prespin must be 0 or 1" >&2
@@ -124,15 +152,21 @@ docker build -q -t "$IMAGE" "$SCRIPT_DIR" >/dev/null
 
 repo_rel_out="${OUT#"$REPO_DIR"/}"
 
-docker run --rm --interactive \
+docker_args=(--rm --interactive \
   --volume "$REPO_DIR:/workspace" \
-  --workdir /workspace \
+  --workdir /workspace)
+if [[ "$VISION_ENABLED" == 1 ]]; then
+  docker_args+=(--volume "$VISION_MODEL:$VISION_MODEL_CONTAINER:ro")
+fi
+
+docker run "${docker_args[@]}" \
   "$IMAGE" \
   bash -s -- \
     "$TRAJECTORY" "$STORED_LTV" "$DURATION" "$LAUNCH_TIME" "$SPAWN_Z" \
     "$MODEL" "$MASS" "$PWM_THRUST_FULL" "/workspace/$repo_rel_out" \
     "$LAUNCH_PRESPIN" "$RANDOM_SEED" "$INERTIA_SCALE" \
     "$MOTOR_TAU_SCALE" "$THRUST_SCALE" "$TICK_US" \
+    "$VISION_ENABLED" "$VISION_MODEL_CONTAINER" "$VISION_ADAPTER" "$VISION_SCENE" \
     --realtime-factor "$REALTIME_FACTOR" \
     "${EXTRA_SIM_ARGS[@]}" <<'CONTAINER_SCRIPT'
 set -euo pipefail
@@ -141,7 +175,9 @@ spawn_z="$5"; model="$6"; mass="$7"; pwm_thrust_full="$8"
 out="$9"; launch_prespin="${10}"; random_seed="${11}"
 inertia_scale="${12}"; motor_tau_scale="${13}"; thrust_scale="${14}"
 tick_us="${15}"
-shift 15
+vision_enabled="${16}"; vision_model="${17}"; vision_adapter="${18}"
+vision_scene="${19}"
+shift 19
 
 crazysim=/workspace/tools/crazysim_mujoco/.deps/CrazySim
 firmware="$crazysim/crazyflie-firmware"
@@ -164,6 +200,10 @@ cmake -S "$firmware/sitl_make" -B "$build" \
 cmake --build "$build" --target cf2 -j2 >"$out/build.log" 2>&1
 
 cleanup() {
+  if [[ -n "${vision_pid:-}" ]]; then
+    kill "$vision_pid" 2>/dev/null || true
+    wait "$vision_pid" 2>/dev/null || true
+  fi
   if [[ -n "${firmware_pid:-}" ]]; then
     kill "$firmware_pid" 2>/dev/null || true
     wait "$firmware_pid" 2>/dev/null || true
@@ -189,6 +229,35 @@ sim_command=(python3 -u "$simulator" \
   --motor-tau-scale "$motor_tau_scale" \
   --thrust-scale "$thrust_scale" \
   --state-log "$out/state.csv")
+if [[ "$vision_enabled" == 1 ]]; then
+  scene=/workspace/tools/crazysim_mujoco/scenes/vision_${vision_scene}.xml
+  camera_width=160; camera_height=120
+  if [[ "$vision_adapter" == dronet ]]; then
+    camera_width=200; camera_height=200
+  fi
+  sim_command+=(--camera --cam-width "$camera_width" --cam-height "$camera_height" --cam-fps 20 --cam-port 5200)
+  [[ "$vision_scene" == none ]] || sim_command+=(--scene "$scene")
+  python3 -u /workspace/tools/crazysim_mujoco/vision_bridge.py \
+    --model "$vision_model" --adapter "$vision_adapter" \
+    --camera-port 5200 --camera-fps 20 --firmware-port 19960 --log "$out/vision.csv" \
+    >"$out/vision_bridge.log" 2>&1 &
+  vision_pid=$!
+  vision_ready=0
+  for _ in $(seq 1 100); do
+    if grep -q "vision bridge ready" "$out/vision_bridge.log" 2>/dev/null; then
+      vision_ready=1
+      break
+    fi
+    if ! kill -0 "$vision_pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.05
+  done
+  if [[ "$vision_ready" != 1 ]]; then
+    echo "Vision bridge did not start; see $out/vision_bridge.log" >&2
+    exit 1
+  fi
+fi
 [[ "$mass" == stock ]] || sim_command+=(--mass "$mass")
 [[ "$launch_prespin" == 0 ]] || sim_command+=(--launch-prespin)
 for sim_arg in "$@"; do
@@ -220,10 +289,20 @@ simulator_pid=""
 cleanup
 firmware_pid=""
 
-reference="$app/sim/trajectories/acrobatics/${trajectory}.csv"
+case "$trajectory" in
+  backflip_360|front_flip_360|roll_flip_360|barrel_roll_forward_360)
+    reference="$app/sim/trajectories/acrobatics/${trajectory}.csv" ;;
+  straight) reference="$app/sim/trajectories/straight.csv" ;;
+  *) reference="" ;;
+esac
+reference_args=()
+[[ -z "$reference" ]] || reference_args=(--reference "$reference")
+vision_args=()
+[[ "$vision_enabled" == 0 ]] || vision_args=(--vision-csv "$out/vision.csv" --scene-kind "$vision_scene")
 python3 /workspace/tools/crazysim_mujoco/analyze_run.py \
   --csv "$out/state.csv" \
-  --reference "$reference" \
+  "${reference_args[@]}" \
+  "${vision_args[@]}" \
   --launch-time "$launch_time" \
   --out "$out" | tee "$out/summary.txt"
 python3 - "$out/summary.json" "$launch_time" <<'PY'

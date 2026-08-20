@@ -2,8 +2,9 @@
 
 This integration runs the repository's actual out-of-tree Crazyflie controller
 and TinyMPC solver inside CrazySim SITL. MuJoCo supplies rigid-body dynamics,
-the CrazySim brushless motor model, contacts, and simulated sensors. Vision is
-deliberately detached: the SITL obstacle-link stub supplies no observations.
+the CrazySim brushless motor model, contacts, and simulated sensors. An optional
+offscreen FPV camera feeds a repository-local ONNX bridge, which sends the same
+versioned perception observation consumed by the firmware controller.
 The PWM bridge applies the firmware's quadratic normalized-speed law
 (`thrust = command^2 * 0.312852 N`), then CrazySim independently converts that
 thrust target through its measured RPM polynomial, 65 ms rotor dynamics, and
@@ -63,6 +64,49 @@ Each run produces `state.csv` (MuJoCo ground truth), `firmware.log`,
 top-down path, altitude/crash marker, attitude, and all four motor speeds. The
 summary also reports integrated maneuver-axis rotation, final horizontal error
 and speed, saturation, and contact/crash status.
+
+## Vision and DroNet baseline
+
+The bundled DroNet baseline uses the exact weights published with *DroNet:
+Learning to Fly by Driving*, converted once from Keras 2.0.2 to ONNX. It is
+self-contained under `models/dronet/` and does not download code or models at
+run time:
+
+```sh
+tools/crazysim_mujoco/run.sh \
+  --trajectory straight --stored-ltv 0 \
+  --launch-prespin 1 --vision-model dronet --vision-scene obstacle \
+  --out apps/controller_tinympc_eigen/sim_runs/crazysim/dronet_obstacle \
+  --overwrite
+```
+
+`--launch-prespin 1` models entry from an existing hover, which is the correct
+initial condition for mid-flight obstacle avoidance. The zero-RPM handoff is
+retained for deliberate motor-start stress tests. Camera rendering changes the
+simulator/wall-time ratio; calibrate `--firmware-time-factor` if the run's
+automatic launch-time check fails.
+
+DroNet provides only steering and one collision score. It therefore exercises
+continuous navigation and critical-probability stopping, but it does **not**
+claim metric clearance, spatial sectors, or gate corners. The bridge adapters
+preserve that distinction:
+
+- `sequential`: four metric clearances/confidences plus gate heatmaps;
+- `stdc`: four spatial danger regions plus gate corners;
+- `dronet`: steering and collision probability only.
+
+Pass a new model with `--vision-model PATH --vision-adapter NAME`. The model may
+live outside the checkout; it is mounted read-only into the container, while
+all adapter/runtime dependencies remain inside this repository and Docker
+image. Vision is rejected for stored flip/roll runs. It is active only on
+ordinary approach trajectories, and an acrobatic handoff must latch vision out
+until the primitive has completed and the altitude/attitude estimator has
+recovered.
+
+Vision runs additionally produce `vision.csv` and `vision.png`.
+`validation.png` overlays neural-risk samples and the physical obstacle/gate on
+the top-down path. Purple points mean reported collision risk at or above 0.25;
+they do not falsely imply that a half-plane was activated.
 
 ## Fidelity boundary
 

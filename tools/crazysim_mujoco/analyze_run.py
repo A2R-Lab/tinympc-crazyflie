@@ -47,7 +47,7 @@ def build_summary(
     attitude_geodesic = np.rad2deg(2.0 * np.arccos(q_abs_w))
     rpm = np.column_stack([data[f"rpm_{i}"] for i in range(1, 5)])
     after_launch = t >= launch_time + 0.05
-    crash_mask = after_launch & (data["contacts"] > 0.0) & (z < 0.15)
+    crash_mask = after_launch & (data["contacts"] > 0.0)
     crash_indices = np.flatnonzero(crash_mask)
     first_crash = float(t[crash_indices[0]]) if crash_indices.size else None
     max_rpm = float(np.max(rpm))
@@ -77,7 +77,7 @@ def build_summary(
         "motor_saturation_fraction": float(np.mean(rpm >= saturation_threshold)),
         "contact_count_max": int(np.max(data["contacts"])),
     }
-    if reference is not None:
+    if reference is not None and all(f"w{axis}" in reference for axis in ("x", "y", "z")):
         axes = ("x", "y", "z")
         reference_rates = np.column_stack(
             [reference[f"w{axis}"] for axis in axes]
@@ -97,7 +97,8 @@ def build_summary(
     return summary
 
 
-def plot_run(data, reference, launch_time: float, summary, output: Path):
+def plot_run(data, reference, launch_time: float, summary, output: Path,
+             vision=None, scene_kind: str = "none"):
     t = data["time_s"]
     roll, pitch, yaw = quaternion_to_euler_deg(
         data["qw"], data["qx"], data["qy"], data["qz"]
@@ -122,11 +123,26 @@ def plot_run(data, reference, launch_time: float, summary, output: Path):
         ax.plot(anchored_reference["x"], anchored_reference["y"], "--",
                 color="0.55", label="anchored reference")
     ax.plot(data["x_m"], data["y_m"], color="#1565c0", label="MuJoCo ground truth")
+    if scene_kind == "obstacle":
+        from matplotlib.patches import Rectangle
+        ax.add_patch(Rectangle((1.01, -0.34), 0.28, 0.68,
+                               color="#d84315", alpha=0.40, label="obstacle"))
+    elif scene_kind == "gate":
+        ax.plot([1.55, 1.55], [-0.32, 0.68], color="#ef6c00", linewidth=5,
+                alpha=0.7, label="gate plane")
+    if vision is not None:
+        triggered = vision["collision"] >= 0.25
+        if np.any(triggered):
+            event_t = vision["time_s"][triggered]
+            event_x = np.interp(event_t, t, data["x_m"])
+            event_y = np.interp(event_t, t, data["y_m"])
+            ax.scatter(event_x, event_y, s=14, color="#7b1fa2", alpha=0.65,
+                       label="neural risk >= 0.25")
     ax.scatter(data["x_m"][0], data["y_m"][0], marker="o", color="#2e7d32", label="start")
     if crash_time is not None:
         idx = int(np.searchsorted(t, crash_time))
         ax.scatter(data["x_m"][idx], data["y_m"][idx], marker="X", s=100,
-                   color="#c62828", label="ground contact")
+                   color="#c62828", label="collision/contact")
     ax.set(title="Top-down path", xlabel="x [m]", ylabel="y [m]")
     ax.axis("equal")
     ax.grid(alpha=0.25)
@@ -166,8 +182,59 @@ def plot_run(data, reference, launch_time: float, summary, output: Path):
     ax.grid(alpha=0.25)
     ax.legend(loc="best", ncol=2)
 
-    status = "CRASH" if summary["crashed"] else "NO GROUND CONTACT"
+    status = "CRASH/CONTACT" if summary["crashed"] else "NO CONTACT"
     fig.suptitle(f"CrazySim/MuJoCo exact-firmware validation — {status}", fontsize=15)
+    fig.savefig(output, dpi=160)
+    plt.close(fig)
+
+
+def load_vision_csv(path: Path) -> dict[str, np.ndarray]:
+    with path.open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    numeric = ["time_s", "inference_ms", "steering", "collision", "metric",
+               "spatial_danger", "gate_valid", "gate_confidence"] + [
+               f"clearance_{i}_m" for i in range(4)] + [
+               f"confidence_{i}" for i in range(4)] + [f"danger_{i}" for i in range(4)]
+    return {name: np.asarray([float(row.get(name, 0.0)) for row in rows], dtype=float)
+            for name in numeric}
+
+
+def plot_vision(vision: dict[str, np.ndarray], output: Path) -> None:
+    t = vision["time_s"]
+    fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True,
+                             constrained_layout=True)
+    if np.any(vision["spatial_danger"] > 0.5):
+        for sector in range(4):
+            axes[0].plot(t, vision[f"danger_{sector}"], label=f"sector {sector}")
+        axes[0].axhline(0.25, color="#c62828", linestyle="--", label="activation threshold")
+        axes[0].set(title="Neural spatial danger")
+        axes[0].legend(ncol=5, fontsize=8)
+    else:
+        axes[0].plot(t, vision["collision"], color="#d32f2f",
+                     label="non-spatial collision probability")
+        axes[0].set(title="Collision head (no sector geometry)")
+        axes[0].legend()
+    axes[0].set(ylabel="probability")
+    axes[0].grid(alpha=0.25)
+    metric = vision["metric"] > 0.5
+    if np.any(metric):
+        for sector in range(4):
+            values = np.where(metric, vision[f"clearance_{sector}_m"], np.nan)
+            axes[1].plot(t, values, label=f"sector {sector}")
+        axes[1].axhline(0.30, color="#c62828", linestyle="--")
+        axes[1].set(ylabel="clearance [m]", title="Metric clearance head")
+    else:
+        axes[1].text(0.5, 0.5, "This model does not claim metric clearance",
+                     transform=axes[1].transAxes, ha="center", va="center")
+        axes[1].set(title="Metric clearance head")
+    axes[1].grid(alpha=0.25)
+    axes[2].plot(t, vision["steering"], label="steering (left +)")
+    axes[2].plot(t, vision["collision"], label="collision probability")
+    axes[2].plot(t, vision["gate_valid"], linestyle=":", label="gate valid")
+    axes[2].set(xlabel="simulation time [s]", ylabel="normalized",
+                title="DroNet-style navigation and gate lock", ylim=(-1.05, 1.05))
+    axes[2].grid(alpha=0.25)
+    axes[2].legend()
     fig.savefig(output, dpi=160)
     plt.close(fig)
 
@@ -178,11 +245,14 @@ def main() -> int:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--launch-time", type=float, default=4.0)
+    parser.add_argument("--vision-csv", type=Path)
+    parser.add_argument("--scene-kind", choices=("none", "obstacle", "gate"), default="none")
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
     data = load_numeric_csv(args.csv)
     reference = load_numeric_csv(args.reference) if args.reference else None
+    vision = load_vision_csv(args.vision_csv) if args.vision_csv else None
     launch_time = args.launch_time
     if "airborne" in data:
         airborne_indices = np.flatnonzero(data["airborne"] > 0.5)
@@ -190,7 +260,10 @@ def main() -> int:
             launch_time = float(data["time_s"][airborne_indices[0]])
     summary = build_summary(data, launch_time, reference)
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    plot_run(data, reference, launch_time, summary, args.out / "validation.png")
+    plot_run(data, reference, launch_time, summary, args.out / "validation.png",
+             vision, args.scene_kind)
+    if vision is not None:
+        plot_vision(vision, args.out / "vision.png")
     print(json.dumps(summary, indent=2))
     return 0
 

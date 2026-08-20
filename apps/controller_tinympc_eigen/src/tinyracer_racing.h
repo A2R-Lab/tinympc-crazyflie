@@ -32,6 +32,8 @@ typedef struct {
   uint8_t clear_samples_required;
   float hard_clearance_threshold_m;
   uint8_t blocked_samples_required;
+  float danger_probability_threshold;
+  uint8_t danger_sectors_required;
 } TinyRacerRaceConfig;
 
 void tinyRacerRaceReset(TinyRacerRaceState *state);

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define TINYRACER_CLEARANCE_SECTORS 4
+#define TINYRACER_GATE_CORNERS 4
 
 typedef struct {
   bool valid;
@@ -13,9 +14,19 @@ typedef struct {
   uint32_t received_age_ms;
   uint32_t sample;
   uint16_t sequence;
+  bool has_metric_clearance;
+  bool has_sector_danger;
+  bool has_navigation_command;
   bool gate_valid;
   float clearance_m[TINYRACER_CLEARANCE_SECTORS];
   float confidence[TINYRACER_CLEARANCE_SECTORS];
+  float danger_probability[TINYRACER_CLEARANCE_SECTORS];
+  /* DroNet-style high-level outputs: left-positive steering in [-1, 1]. */
+  float steering_command;
+  float collision_probability;
+  /* Normalized image coordinates, ordered TL, TR, BR, BL. */
+  float gate_corners_xy[TINYRACER_GATE_CORNERS * 2];
+  float gate_confidence;
 } TinyRacerPerceptionObservation;
 
 typedef enum {

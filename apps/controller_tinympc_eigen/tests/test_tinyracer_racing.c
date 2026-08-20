@@ -13,7 +13,7 @@ static void setAllClearances(
 int main(void) {
   const TinyRacerRaceConfig config = {
     0.25f, 0.0f, 0.10f, 0.05f, 0.35f, 0.35f, 0.25f, 250,
-    0.25f, 0.70f, 3, 0.20f, 2
+    0.25f, 0.70f, 3, 0.20f, 2, 0.25f, 2
   };
   TinyRacerRaceState state;
   TinyRacerRaceIntent intent;
@@ -25,6 +25,7 @@ int main(void) {
   assert(!intent.perception_fresh && !intent.constraint_active);
 
   observation.valid = true;
+  observation.has_metric_clearance = true;
   observation.gate_valid = true;
   observation.sample = 1;
   setAllClearances(&observation, 0.30f);
@@ -131,6 +132,31 @@ int main(void) {
   }
   observation.sample++;
   tinyRacerRaceUpdate(&state, &observation, &config, 0.02f, false, false, true, 1u << 2, &intent);
+  assert(intent.constraint_active);
+
+  /* A danger-only head must provide two spatial sectors; a DroNet-style
+   * non-spatial collision score never sets has_sector_danger. */
+  tinyRacerRaceReset(&state);
+  memset(&observation, 0, sizeof(observation));
+  observation.valid = true;
+  observation.has_sector_danger = true;
+  observation.danger_probability[1] = 0.60f;
+  for (int sample = 0; sample < 6; ++sample) {
+    observation.sample++;
+    tinyRacerRaceUpdate(&state, &observation, &config, 0.02f, false, false,
+                        true, 0x06, &intent);
+  }
+  assert(!intent.constraint_active);
+  observation.danger_probability[2] = 0.60f;
+  for (int sample = 0; sample < 3; ++sample) {
+    observation.sample++;
+    tinyRacerRaceUpdate(&state, &observation, &config, 0.02f, false, false,
+                        true, 0x06, &intent);
+    assert(!intent.constraint_active);
+  }
+  observation.sample++;
+  tinyRacerRaceUpdate(&state, &observation, &config, 0.02f, false, false,
+                      true, 0x06, &intent);
   assert(intent.constraint_active);
   return 0;
 }
