@@ -1,0 +1,18 @@
+<mujoco model="TinyRacer canonical_corridor">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="2.5 1.5 1.5" extent="7.5"/>
+  <visual><headlight diffuse="0.58 0.58 0.58" ambient="0.38 0.38 0.38" specular="0 0 0"/><global azimuth="20" elevation="-25" ellipsoidinertia="true"/></visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.62 0.67 0.70" rgb2="0.24 0.28 0.31" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.22 0.30 0.38" rgb2="0.11 0.18 0.25" markrgb="0.8 0.8 0.8" width="512" height="512"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="3 3" reflectance="0.15"/>
+  </asset>
+  <worldbody>
+    <light pos="1 0 5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="offset_box" type="box" pos="1.8 -0.24 1.5" size="0.12 0.27 0.36" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="wall_left" type="box" pos="2.0 1.35 1.5" size="3.5 0.05 1.5" rgba="0.48 0.47 0.44 1" contype="1" conaffinity="1"/>
+    <geom name="wall_right" type="box" pos="2.0 -1.35 1.5" size="3.5 0.05 1.5" rgba="0.48 0.47 0.44 1" contype="1" conaffinity="1"/>
+  </worldbody>
+</mujoco>

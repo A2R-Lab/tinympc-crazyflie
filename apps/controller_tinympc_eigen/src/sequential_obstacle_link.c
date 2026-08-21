@@ -15,6 +15,8 @@
 #define SEQUENTIAL_OBSTACLE_MSG_HEADER "\x90\x19\x8\x38"
 #define SEQUENTIAL_OBSTACLE_HEADER_LEN 4
 #define SEQUENTIAL_OBSTACLE_BAUD 115200
+#define LEGACY_GATE_FX_NORMALIZED (89.15584f / 160.0f)
+#define LEGACY_GATE_FY_NORMALIZED (89.46082f / 120.0f)
 
 typedef struct __attribute__((packed)) {
   uint32_t stm32_timestamp;
@@ -83,6 +85,10 @@ static bool acceptPacket(const sequential_obstacle_packet_t *packet) {
   latest_observation.has_metric_clearance = true;
   latest_observation.has_sector_danger = false;
   latest_observation.gate_valid = packet->payload.gate_valid != 0;
+  latest_observation.gate_fx_normalized = LEGACY_GATE_FX_NORMALIZED;
+  latest_observation.gate_fy_normalized = LEGACY_GATE_FY_NORMALIZED;
+  latest_observation.gate_cx_normalized = 0.5f;
+  latest_observation.gate_cy_normalized = 0.5f;
   memcpy(latest_observation.clearance_m, packet->payload.clearance_m,
          sizeof(latest_observation.clearance_m));
   memcpy(latest_observation.confidence, packet->payload.confidence,
@@ -95,8 +101,10 @@ static bool acceptPacket(const sequential_obstacle_packet_t *packet) {
   return true;
 }
 
-static bool acceptV2Packet(const TinyRacerVisionV2Packet *packet) {
-  const TinyRacerVisionV2Payload *payload = &packet->payload;
+static bool acceptVisionPayload(
+    const TinyRacerVisionV2Payload *payload,
+    float gate_fx_normalized, float gate_fy_normalized,
+    float gate_cx_normalized, float gate_cy_normalized) {
   const uint16_t known_flags = TINYRACER_VISION_HAS_METRIC_CLEARANCE |
       TINYRACER_VISION_HAS_SECTOR_DANGER | TINYRACER_VISION_GATE_VALID |
       TINYRACER_VISION_HAS_NAVIGATION_COMMAND;
@@ -131,7 +139,13 @@ static bool acceptV2Packet(const TinyRacerVisionV2Packet *packet) {
       payload->steering_command > 1.0f ||
       !isfinite(payload->collision_probability) ||
       payload->collision_probability < 0.0f ||
-      payload->collision_probability > 1.0f) {
+      payload->collision_probability > 1.0f ||
+      !isfinite(gate_fx_normalized) || gate_fx_normalized < 0.05f ||
+      !isfinite(gate_fy_normalized) || gate_fy_normalized < 0.05f ||
+      !isfinite(gate_cx_normalized) || gate_cx_normalized < 0.0f ||
+      gate_cx_normalized > 1.0f ||
+      !isfinite(gate_cy_normalized) || gate_cy_normalized < 0.0f ||
+      gate_cy_normalized > 1.0f) {
     invalid_packets++;
     return false;
   }
@@ -164,6 +178,10 @@ static bool acceptV2Packet(const TinyRacerVisionV2Packet *packet) {
   memcpy(latest_observation.gate_corners_xy, payload->gate_corners_xy,
          sizeof(latest_observation.gate_corners_xy));
   latest_observation.gate_confidence = payload->gate_confidence;
+  latest_observation.gate_fx_normalized = gate_fx_normalized;
+  latest_observation.gate_fy_normalized = gate_fy_normalized;
+  latest_observation.gate_cx_normalized = gate_cx_normalized;
+  latest_observation.gate_cy_normalized = gate_cy_normalized;
   latest_rx_tick = xTaskGetTickCount();
   latest_sequence = payload->sequence;
   COMPILER_BARRIER();
@@ -172,10 +190,26 @@ static bool acceptV2Packet(const TinyRacerVisionV2Packet *packet) {
   return true;
 }
 
+static bool acceptV2Packet(const TinyRacerVisionV2Packet *packet) {
+  return acceptVisionPayload(
+      &packet->payload, LEGACY_GATE_FX_NORMALIZED,
+      LEGACY_GATE_FY_NORMALIZED, 0.5f, 0.5f);
+}
+
+static bool acceptV3Packet(const TinyRacerVisionV3Packet *packet) {
+  return acceptVisionPayload(
+      &packet->payload.base,
+      packet->payload.gate_fx_normalized,
+      packet->payload.gate_fy_normalized,
+      packet->payload.gate_cx_normalized,
+      packet->payload.gate_cy_normalized);
+}
+
 static void sequentialObstacleRxTask(void *parameters) {
   (void)parameters;
   sequential_obstacle_packet_t packet;
   TinyRacerVisionV2Packet packet_v2;
+  TinyRacerVisionV3Packet packet_v3;
   uint8_t header_window[SEQUENTIAL_OBSTACLE_HEADER_LEN] = {0};
 
   systemWaitStart();
@@ -197,13 +231,20 @@ static void sequentialObstacleRxTask(void *parameters) {
                               SEQUENTIAL_OBSTACLE_HEADER_LEN) == 0;
     const bool is_v2 = memcmp(header_window, TINYRACER_VISION_V2_HEADER,
                               TINYRACER_VISION_HEADER_LEN) == 0;
-    if (!is_v1 && !is_v2) {
+    const bool is_v3 = memcmp(header_window, TINYRACER_VISION_V3_HEADER,
+                              TINYRACER_VISION_HEADER_LEN) == 0;
+    if (!is_v1 && !is_v2 && !is_v3) {
       continue;
     }
 
     uint8_t *remainder;
     size_t remainder_size;
-    if (is_v2) {
+    if (is_v3) {
+      memcpy(packet_v3.header, TINYRACER_VISION_V3_HEADER,
+             TINYRACER_VISION_HEADER_LEN);
+      remainder = (uint8_t *)&packet_v3.payload;
+      remainder_size = sizeof(packet_v3.payload) + sizeof(packet_v3.checksum);
+    } else if (is_v2) {
       memcpy(packet_v2.header, TINYRACER_VISION_V2_HEADER,
              TINYRACER_VISION_HEADER_LEN);
       remainder = (uint8_t *)&packet_v2.payload;
@@ -219,18 +260,24 @@ static void sequentialObstacleRxTask(void *parameters) {
       memset(header_window, 0, sizeof(header_window));
       continue;
     }
-    const uint32_t checksum = is_v2
+    const uint32_t checksum = is_v3
+        ? crc32CalculateBuffer(&packet_v3,
+              TINYRACER_VISION_HEADER_LEN + sizeof(packet_v3.payload))
+        : is_v2
         ? crc32CalculateBuffer(&packet_v2,
               TINYRACER_VISION_HEADER_LEN + sizeof(packet_v2.payload))
         : crc32CalculateBuffer(&packet,
               SEQUENTIAL_OBSTACLE_HEADER_LEN + sizeof(packet.payload));
-    const uint32_t expected = is_v2 ? packet_v2.checksum : packet.checksum;
+    const uint32_t expected = is_v3 ? packet_v3.checksum
+        : (is_v2 ? packet_v2.checksum : packet.checksum);
     if (checksum != expected) {
       crc_errors++;
       memset(header_window, 0, sizeof(header_window));
       continue;
     }
-    if (is_v2) {
+    if (is_v3) {
+      acceptV3Packet(&packet_v3);
+    } else if (is_v2) {
       acceptV2Packet(&packet_v2);
     } else {
       acceptPacket(&packet);

@@ -21,7 +21,8 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
         matplotlib==3.10.5 \
         mujoco==3.3.5 \
         numpy==2.3.2 \
-        onnxruntime==1.22.1
+        onnxruntime==1.22.1 \
+        pillow==11.3.0
 
 ENV MPLBACKEND=Agg
 ENV MUJOCO_GL=egl

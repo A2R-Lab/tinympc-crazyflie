@@ -1,0 +1,2 @@
+requested_speed_mps,status,passed,calibrated_launch,firmware_max_progress,firmware_complete_750_of_750,inferred_progress_fraction,completion_time_s,contact_or_crash,envelope_violation,nonfinite_state,yaw_error_rmse_deg,yaw_rate_error_rmse_radps,cross_track_rmse_m,altitude_rmse_m,tilt_max_deg,rate_norm_max_radps,rpm_saturation_fraction
+0.1,passed,True,True,750.0,True,1.0,37.48899999999892,False,False,False,7.671079704723702,0.2516934971315885,0.06845762990414558,0.05792340572988685,21.183009247875034,2.5819414811152956,0.0

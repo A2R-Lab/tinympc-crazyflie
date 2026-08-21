@@ -37,9 +37,161 @@ def quaternion_to_euler_deg(qw, qx, qy, qz):
     return np.rad2deg(roll), np.rad2deg(pitch), np.rad2deg(yaw)
 
 
+def point_to_polyline_distance(points: np.ndarray, line: np.ndarray) -> np.ndarray:
+    result = np.full(len(points), np.inf, dtype=float)
+    for first, second in zip(line[:-1], line[1:]):
+        segment = second - first
+        denominator = float(np.dot(segment, segment))
+        if denominator <= 0.0:
+            continue
+        alpha = np.clip(((points - first) @ segment) / denominator, 0.0, 1.0)
+        projected = first + alpha[:, None] * segment
+        result = np.minimum(result, np.linalg.norm(points - projected, axis=1))
+    return result
+
+
+def clearance_to_obstacle(points: np.ndarray, obstacle: dict, radius: float) -> np.ndarray:
+    center = np.asarray(obstacle["center"], dtype=float)
+    relative = points - center
+    if obstacle["shape"] == "circle":
+        return np.linalg.norm(relative, axis=1) - float(obstacle["radius"]) - radius
+    if obstacle["shape"] != "box":
+        raise ValueError(f"unsupported obstacle shape {obstacle['shape']}")
+    half = np.asarray(obstacle["half_size"], dtype=float)
+    outside_vector = np.maximum(np.abs(relative) - half, 0.0)
+    outside = np.linalg.norm(outside_vector, axis=1)
+    inside = np.all(np.abs(relative) <= half, axis=1)
+    signed = outside
+    signed[inside] = -np.min(half - np.abs(relative[inside]), axis=1)
+    return signed - radius
+
+
+def ordered_gate_crossings(
+    data: dict[str, np.ndarray], gates: list[dict], launch_time: float,
+    vehicle_radius: float,
+) -> tuple[list[dict], bool]:
+    """Find physically valid forward crossings, preserving declared gate order."""
+    points = np.column_stack((data["x_m"], data["y_m"]))
+    z = data["z_m"]
+    t = data["time_s"]
+    search_from = max(0, int(np.searchsorted(t, launch_time)))
+    results = []
+    for gate in gates:
+        center = np.asarray(gate["center"][:2], dtype=float)
+        normal = np.asarray(gate["normal"], dtype=float)
+        normal /= np.linalg.norm(normal)
+        lateral_axis = np.asarray([-normal[1], normal[0]])
+        signed = (points - center) @ normal
+        crossings = np.flatnonzero(
+            (signed[:-1] <= 0.0) & (signed[1:] > 0.0)
+            & (np.arange(len(signed) - 1) >= search_from)
+        )
+        best = None
+        for index in crossings:
+            denominator = signed[index + 1] - signed[index]
+            alpha = -signed[index] / denominator if denominator else 0.0
+            crossing_xy = points[index] + alpha * (points[index + 1] - points[index])
+            crossing_z = z[index] + alpha * (z[index + 1] - z[index])
+            lateral_error = abs(float((crossing_xy - center) @ lateral_axis))
+            vertical_error = abs(float(crossing_z - float(gate["center"][2])))
+            half_width = 0.5 * float(gate["opening"][0]) - vehicle_radius
+            half_height = 0.5 * float(gate["opening"][1]) - vehicle_radius
+            valid = lateral_error <= half_width and vertical_error <= half_height
+            candidate = {
+                "name": gate["name"],
+                "crossed": bool(valid),
+                "time_s": float(t[index] + alpha * (t[index + 1] - t[index])),
+                "lateral_error_m": lateral_error,
+                "vertical_error_m": vertical_error,
+                "clearance_margin_m": float(min(
+                    half_width - lateral_error, half_height - vertical_error
+                )),
+            }
+            if best is None or candidate["clearance_margin_m"] > best["clearance_margin_m"]:
+                best = candidate
+            if valid:
+                search_from = int(index + 1)
+                best = candidate
+                break
+        if best is None:
+            best = {
+                "name": gate["name"], "crossed": False, "time_s": None,
+                "lateral_error_m": None, "vertical_error_m": None,
+                "clearance_margin_m": None,
+            }
+        results.append(best)
+        if not best["crossed"]:
+            # A later gate cannot count if an earlier one was missed.
+            search_from = len(t)
+    return results, bool(all(item["crossed"] for item in results))
+
+
+def detect_course_acrobatics(
+    data: dict[str, np.ndarray], course: dict, launch_time: float,
+) -> dict[str, object]:
+    axis_name = str(course["acro_axis"])
+    axis_key = {"roll": "wx_radps", "pitch": "wy_radps", "yaw": "wz_radps"}[axis_name]
+    t = data["time_s"]
+    rate = data[axis_key]
+    eligible = t >= launch_time + 0.5
+    fast = eligible & (np.abs(rate) >= 2.0)
+    indices = np.flatnonzero(fast)
+    if not indices.size:
+        return {
+            "course_acro_maneuver": course["acro_maneuver"],
+            "course_acro_axis": axis_name,
+            "course_acro_detected": False,
+            "course_acro_rotation_deg": 0.0,
+            "course_acro_success": False,
+            "course_acro_start_time_s": None,
+            "course_acro_end_time_s": None,
+        }
+    # Merge brief rate dips, then select the segment with the most rotation.
+    breaks = np.flatnonzero(np.diff(t[indices]) > 0.30)
+    groups = np.split(indices, breaks + 1)
+    candidates = []
+    for group in groups:
+        begin, end = int(group[0]), int(group[-1])
+        while begin > 0 and eligible[begin - 1] and abs(rate[begin - 1]) >= 0.25:
+            begin -= 1
+        while end + 1 < len(t) and abs(rate[end + 1]) >= 0.25:
+            end += 1
+        rotation = float(np.rad2deg(np.trapezoid(rate[begin:end + 1], t[begin:end + 1])))
+        candidates.append((abs(rotation), rotation, begin, end))
+    _, signed_rotation, begin, end = max(candidates)
+    before_q = np.asarray([data[key][begin] for key in ("qw", "qx", "qy", "qz")])
+    recovery_index = min(len(t) - 1, int(np.searchsorted(t, t[end] + 1.0)))
+    recovery_q = np.asarray([
+        data[key][recovery_index] for key in ("qw", "qx", "qy", "qz")
+    ])
+    attitude_dot = float(np.clip(abs(np.dot(before_q, recovery_q)), 0.0, 1.0))
+    recovery_attitude_error = math.degrees(2.0 * math.acos(attitude_dot))
+    minimum_rotation = float(course.get("minimum_acro_rotation_deg", 315.0))
+    success = bool(
+        abs(signed_rotation) >= minimum_rotation
+        and abs(signed_rotation) <= 430.0
+        and recovery_attitude_error <= 25.0
+        and data["z_m"][recovery_index] >= 0.50
+    )
+    return {
+        "course_acro_maneuver": course["acro_maneuver"],
+        "course_acro_axis": axis_name,
+        "course_acro_detected": True,
+        "course_acro_rotation_deg": signed_rotation,
+        "course_acro_minimum_rotation_deg": minimum_rotation,
+        "course_acro_start_time_s": float(t[begin]),
+        "course_acro_end_time_s": float(t[end]),
+        "course_acro_recovery_attitude_error_deg": recovery_attitude_error,
+        "course_acro_recovery_altitude_m": float(data["z_m"][recovery_index]),
+        "course_acro_success": success,
+    }
+
+
 def build_summary(
     data: dict[str, np.ndarray], launch_time: float,
     reference: dict[str, np.ndarray] | None = None,
+    scene_kind: str = "none",
+    course: dict | None = None,
 ) -> dict[str, object]:
     t = data["time_s"]
     x, y, z = data["x_m"], data["y_m"], data["z_m"]
@@ -85,20 +237,184 @@ def build_summary(
         axis_index = int(np.argmax(np.max(np.abs(reference_rates), axis=0)))
         actual_rate = data[f"w{axes[axis_index]}_radps"]
         launched = t >= launch_time
+        integrated_rotation_deg = float(np.rad2deg(np.trapezoid(
+            actual_rate[launched], t[launched]
+        )))
+        reference_rotation_deg = float(np.rad2deg(np.trapezoid(
+            reference_rates[:, axis_index], reference["t"]
+        )))
         summary.update({
             "maneuver_axis": axes[axis_index],
-            "integrated_rotation_deg": float(np.rad2deg(np.trapezoid(
-                actual_rate[launched], t[launched]
-            ))),
-            "reference_integrated_rotation_deg": float(np.rad2deg(np.trapezoid(
-                reference_rates[:, axis_index], reference["t"]
-            ))),
+            "integrated_rotation_deg": integrated_rotation_deg,
+            "reference_integrated_rotation_deg": reference_rotation_deg,
+            "rotation_error_deg": integrated_rotation_deg - reference_rotation_deg,
         })
+        # Acrobatic references finish in the same physical attitude as they
+        # start (q and -q are equivalent).  Check recovery relative to the
+        # measured handoff attitude, and rotate the stored terminal displacement
+        # through the measured handoff yaw just as firmware does.
+        launch_index = min(int(np.searchsorted(t, launch_time)), len(t) - 1)
+        launch_quaternion = np.asarray([
+            data[name][launch_index] for name in ("qw", "qx", "qy", "qz")
+        ])
+        final_quaternion = np.asarray([
+            data[name][-1] for name in ("qw", "qx", "qy", "qz")
+        ])
+        attitude_dot = float(np.clip(
+            abs(np.dot(launch_quaternion, final_quaternion)), 0.0, 1.0
+        ))
+        final_attitude_error_deg = math.degrees(2.0 * math.acos(attitude_dot))
+        _, _, launch_yaw_deg = quaternion_to_euler_deg(
+            *[data[name][launch_index] for name in ("qw", "qx", "qy", "qz")]
+        )
+        launch_yaw = math.radians(float(launch_yaw_deg))
+        reference_delta = np.asarray([
+            reference[axis][-1] - reference[axis][0]
+            for axis in ("x", "y", "z")
+        ])
+        expected_delta = np.asarray([
+            math.cos(launch_yaw) * reference_delta[0]
+                - math.sin(launch_yaw) * reference_delta[1],
+            math.sin(launch_yaw) * reference_delta[0]
+                + math.cos(launch_yaw) * reference_delta[1],
+            reference_delta[2],
+        ])
+        actual_delta = np.asarray([
+            data[name][-1] - data[name][launch_index]
+            for name in ("x_m", "y_m", "z_m")
+        ])
+        final_position_error_m = float(np.linalg.norm(
+            actual_delta - expected_delta
+        ))
+        full_rotation_reference = abs(reference_rotation_deg) >= 300.0
+        if full_rotation_reference:
+            acrobatics_success = bool(
+                not crash_indices.size
+                and float(np.max(attitude_geodesic[launched])) >= 150.0
+                and abs(integrated_rotation_deg - reference_rotation_deg) <= 45.0
+                and final_attitude_error_deg <= 20.0
+                and final_position_error_m <= 0.50
+            )
+            summary.update({
+                "final_attitude_error_deg": final_attitude_error_deg,
+                "final_position_error_m": final_position_error_m,
+                "acrobatics_success": acrobatics_success,
+            })
+    if scene_kind == "obstacle":
+        # Exact obstacle footprint from vision_obstacle.xml. Report clearance
+        # for a conservative 0.10 m Crazyflie footprint, not merely whether
+        # MuJoCo happened to register contact at a sampled instant.
+        xmin, xmax, ymin, ymax = 1.41, 1.69, -0.34, 0.34
+        radius = 0.10
+        dx = np.maximum(np.maximum(xmin - x, 0.0), x - xmax)
+        dy = np.maximum(np.maximum(ymin - y, 0.0), y - ymax)
+        outside = np.hypot(dx, dy)
+        inside = (x >= xmin) & (x <= xmax) & (y >= ymin) & (y <= ymax)
+        signed_center_distance = outside
+        signed_center_distance[inside] = -np.minimum.reduce([
+            x[inside] - xmin, xmax - x[inside],
+            y[inside] - ymin, ymax - y[inside],
+        ])
+        obstacle_clearance = signed_center_distance - radius
+        wall_clearance = 1.30 - np.abs(y) - radius
+        passed_far_face = bool(np.max(x) >= xmax + radius)
+        summary.update({
+            "obstacle_clearance_min_m": float(np.min(obstacle_clearance)),
+            "corridor_wall_clearance_min_m": float(np.min(wall_clearance)),
+            "obstacle_far_face_passed": passed_far_face,
+            "track_lateral_final_m": float(y[-1]),
+            "avoidance_success": bool(
+                passed_far_face
+                and np.min(obstacle_clearance) >= 0.0
+                and np.min(wall_clearance) >= 0.0
+                and not crash_indices.size
+            ),
+        })
+    if course is not None:
+        points = np.column_stack((x, y))
+        vehicle_radius = 0.10
+        per_obstacle = {
+            obstacle["name"]: float(np.min(clearance_to_obstacle(
+                points, obstacle, vehicle_radius
+            )))
+            for obstacle in course.get("obstacles", [])
+        }
+        minimum_obstacle_clearance = min(per_obstacle.values(), default=math.inf)
+        centerline = np.asarray(course["centerline"], dtype=float)
+        cross_track = point_to_polyline_distance(points, centerline)
+        pass_point = np.asarray(course["pass_point"], dtype=float)
+        pass_distance = np.linalg.norm(points - pass_point, axis=1)
+        pass_reached = bool(np.min(pass_distance) <= float(course["pass_radius_m"]))
+        _, _, yaw_deg = quaternion_to_euler_deg(
+            data["qw"], data["qx"], data["qy"], data["qz"]
+        )
+        yaw_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(yaw_deg)))
+        launched_indices = np.flatnonzero(t >= launch_time)
+        heading_change = 0.0
+        if launched_indices.size:
+            heading_change = float(np.max(np.abs(
+                yaw_unwrapped[launched_indices] - yaw_unwrapped[launched_indices[0]]
+            )))
+        required_heading = float(course.get("required_heading_change_deg", 0.0))
+        heading_requirement_met = heading_change >= 0.75 * required_heading
+        maximum_final_cross_track = float(
+            course.get("maximum_final_cross_track_m", np.inf)
+        )
+        final_cross_track = float(cross_track[-1])
+        final_cross_track_met = final_cross_track <= maximum_final_cross_track
+        wall_clearance = None
+        wall_clearance_safe = True
+        if "corridor_y" in course:
+            lower, upper = map(float, course["corridor_y"])
+            wall_clearance = float(np.min(np.minimum(
+                y - lower - vehicle_radius, upper - y - vehicle_radius
+            )))
+            wall_clearance_safe = wall_clearance >= 0.0
+        gate_results, gates_passed = ordered_gate_crossings(
+            data, course.get("gates", []), launch_time, vehicle_radius
+        )
+        acro_result = None
+        acro_requirement_met = True
+        if course.get("acro_maneuver"):
+            acro_result = detect_course_acrobatics(data, course, launch_time)
+            acro_requirement_met = bool(acro_result["course_acro_success"])
+        course_success = bool(
+            pass_reached
+            and minimum_obstacle_clearance >= 0.0
+            and wall_clearance_safe
+            and gates_passed
+            and acro_requirement_met
+            and heading_requirement_met
+            and final_cross_track_met
+            and not crash_indices.size
+        )
+        summary.update({
+            "course": course["name"],
+            "course_description": course["description"],
+            "course_pass_point_reached": pass_reached,
+            "course_pass_point_min_distance_m": float(np.min(pass_distance)),
+            "course_obstacle_clearance_min_m": minimum_obstacle_clearance,
+            "course_obstacle_clearance_by_name_m": per_obstacle,
+            "course_wall_clearance_min_m": wall_clearance,
+            "course_cross_track_error_max_m": float(np.max(cross_track)),
+            "course_cross_track_error_final_m": final_cross_track,
+            "course_cross_track_error_final_limit_m": maximum_final_cross_track,
+            "course_final_cross_track_requirement_met": final_cross_track_met,
+            "course_heading_change_max_deg": heading_change,
+            "course_required_heading_change_deg": required_heading,
+            "course_heading_requirement_met": heading_requirement_met,
+            "course_gate_results": gate_results,
+            "course_gates_passed_in_order": gates_passed,
+            "course_acro_requirement_met": acro_requirement_met,
+            "course_success": course_success,
+        })
+        if acro_result is not None:
+            summary.update(acro_result)
     return summary
 
 
 def plot_run(data, reference, launch_time: float, summary, output: Path,
-             vision=None, scene_kind: str = "none"):
+             vision=None, scene_kind: str = "none", course: dict | None = None):
     t = data["time_s"]
     roll, pitch, yaw = quaternion_to_euler_deg(
         data["qw"], data["qx"], data["qy"], data["qz"]
@@ -125,19 +441,66 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
     ax.plot(data["x_m"], data["y_m"], color="#1565c0", label="MuJoCo ground truth")
     if scene_kind == "obstacle":
         from matplotlib.patches import Rectangle
-        ax.add_patch(Rectangle((1.01, -0.34), 0.28, 0.68,
+        ax.add_patch(Rectangle((1.41, -0.34), 0.28, 0.68,
                                color="#d84315", alpha=0.40, label="obstacle"))
+        ax.add_patch(Rectangle((1.31, -0.44), 0.48, 0.88, fill=False,
+                               edgecolor="#d84315", linestyle=":",
+                               label="0.10 m vehicle envelope"))
+        ax.axhline(1.20, color="0.65", linestyle=":", label="wall-safe centerline")
+        ax.axhline(-1.20, color="0.65", linestyle=":")
     elif scene_kind == "gate":
-        ax.plot([1.55, 1.55], [-0.32, 0.68], color="#ef6c00", linewidth=5,
+        ax.plot([1.55, 1.55], [-0.33, 0.33], color="#ef6c00", linewidth=5,
                 alpha=0.7, label="gate plane")
+    if course is not None:
+        from matplotlib.patches import Circle, Rectangle
+        centerline = np.asarray(course["centerline"], dtype=float)
+        ax.plot(centerline[:, 0], centerline[:, 1], "--", color="0.45",
+                label="course centerline")
+        for index, obstacle in enumerate(course.get("obstacles", [])):
+            label = "physical obstacles" if index == 0 else None
+            center = obstacle["center"]
+            if obstacle["shape"] == "circle":
+                patch = Circle(center, obstacle["radius"], color="#d84315",
+                               alpha=0.40, label=label)
+            else:
+                half = obstacle["half_size"]
+                patch = Rectangle((center[0] - half[0], center[1] - half[1]),
+                                  2 * half[0], 2 * half[1], color="#d84315",
+                                  alpha=0.40, label=label)
+            ax.add_patch(patch)
+        for index, gate in enumerate(course.get("gates", [])):
+            center = np.asarray(gate["center"][:2], dtype=float)
+            normal = np.asarray(gate["normal"], dtype=float)
+            normal /= np.linalg.norm(normal)
+            tangent = np.asarray([-normal[1], normal[0]])
+            half_width = 0.5 * float(gate["opening"][0])
+            endpoints = np.vstack((center - half_width * tangent,
+                                   center + half_width * tangent))
+            ax.plot(endpoints[:, 0], endpoints[:, 1], color="#ef6c00",
+                    linewidth=4, alpha=0.8,
+                    label="ordered gates" if index == 0 else None)
+            ax.annotate(str(index + 1), center, color="#e65100", weight="bold")
+        ax.add_patch(Circle(course["pass_point"], course["pass_radius_m"],
+                            fill=False, edgecolor="#2e7d32", linestyle=":",
+                            label="course pass region"))
+        acro_start = summary.get("course_acro_start_time_s")
+        acro_end = summary.get("course_acro_end_time_s")
+        if acro_start is not None and acro_end is not None:
+            maneuver = (t >= float(acro_start)) & (t <= float(acro_end))
+            ax.plot(data["x_m"][maneuver], data["y_m"][maneuver],
+                    color="#00838f", linewidth=3, label="acro maneuver")
     if vision is not None:
-        triggered = vision["collision"] >= 0.25
+        # Purple is reserved for the DroNet-style collision head so it has one
+        # unambiguous meaning across adapters. Raw clearances and sector scores
+        # remain available in vision.csv and the dedicated vision panels.
+        triggered = vision["collision"] > 0.77
+        trigger_label = "DroNet risk > 0.77"
         if np.any(triggered):
             event_t = vision["time_s"][triggered]
             event_x = np.interp(event_t, t, data["x_m"])
             event_y = np.interp(event_t, t, data["y_m"])
             ax.scatter(event_x, event_y, s=14, color="#7b1fa2", alpha=0.65,
-                       label="neural risk >= 0.25")
+                       label=trigger_label)
     ax.scatter(data["x_m"][0], data["y_m"][0], marker="o", color="#2e7d32", label="start")
     if crash_time is not None:
         idx = int(np.searchsorted(t, crash_time))
@@ -182,7 +545,13 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
     ax.grid(alpha=0.25)
     ax.legend(loc="best", ncol=2)
 
-    status = "CRASH/CONTACT" if summary["crashed"] else "NO CONTACT"
+    if "course_success" in summary:
+        status = "COURSE PASS" if summary["course_success"] else "COURSE FAIL"
+    elif "acrobatics_success" in summary:
+        status = ("ACROBATICS PASS" if summary["acrobatics_success"]
+                  else "ACROBATICS FAIL")
+    else:
+        status = "CRASH/CONTACT" if summary["crashed"] else "NO CONTACT"
     fig.suptitle(f"CrazySim/MuJoCo exact-firmware validation — {status}", fontsize=15)
     fig.savefig(output, dpi=160)
     plt.close(fig)
@@ -192,9 +561,12 @@ def load_vision_csv(path: Path) -> dict[str, np.ndarray]:
     with path.open(newline="") as stream:
         rows = list(csv.DictReader(stream))
     numeric = ["time_s", "inference_ms", "steering", "collision", "metric",
-               "spatial_danger", "gate_valid", "gate_confidence"] + [
+               "spatial_danger", "navigation", "gate_valid", "gate_confidence"] + [
+               "danger_threshold"] + [
                f"clearance_{i}_m" for i in range(4)] + [
-               f"confidence_{i}" for i in range(4)] + [f"danger_{i}" for i in range(4)]
+               f"confidence_{i}" for i in range(4)] + [
+               f"danger_{i}" for i in range(4)] + [
+               f"raw_danger_{i}" for i in range(4)]
     return {name: np.asarray([float(row.get(name, 0.0)) for row in rows], dtype=float)
             for name in numeric}
 
@@ -203,11 +575,38 @@ def plot_vision(vision: dict[str, np.ndarray], output: Path) -> None:
     t = vision["time_s"]
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True,
                              constrained_layout=True)
+    metric = vision["metric"] > 0.5
     if np.any(vision["spatial_danger"] > 0.5):
+        raw = np.column_stack([
+            vision[f"raw_danger_{sector}"] for sector in range(4)
+        ])
+        sent = np.column_stack([
+            vision[f"danger_{sector}"] for sector in range(4)
+        ])
+        if not np.any(raw) and np.any(sent):
+            # Backward compatibility for runs recorded before raw model
+            # scores were logged separately from controller-domain sectors.
+            raw = sent
         for sector in range(4):
-            axes[0].plot(t, vision[f"danger_{sector}"], label=f"sector {sector}")
-        axes[0].axhline(0.25, color="#c62828", linestyle="--", label="activation threshold")
-        axes[0].set(title="Neural spatial danger")
+            axes[0].plot(t, raw[:, sector], label=f"raw sector {sector}")
+        thresholds = vision["danger_threshold"]
+        thresholds = thresholds[np.isfinite(thresholds) & (thresholds > 0.0)]
+        model_threshold = float(np.median(thresholds)) if thresholds.size else 0.25
+        axes[0].axhline(model_threshold, color="#c62828", linestyle="--",
+                        label=f"model threshold {model_threshold:.2f}")
+        if not np.allclose(raw, sent, equal_nan=True):
+            activated = np.sum(sent >= 0.25, axis=1)
+            axes[0].step(t, activated / 4.0, where="post", color="black",
+                         alpha=0.55, label="active sectors / 4")
+        axes[0].set(title="Neural spatial danger (before control thresholding)")
+        axes[0].legend(ncol=3, fontsize=8)
+    elif np.any(metric):
+        for sector in range(4):
+            axes[0].plot(t, vision[f"confidence_{sector}"],
+                         label=f"sector {sector}")
+        axes[0].axhline(-1.0986123, color="#c62828", linestyle="--",
+                        label="firmware confidence threshold")
+        axes[0].set(title="Sequential clearance confidence logits")
         axes[0].legend(ncol=5, fontsize=8)
     else:
         axes[0].plot(t, vision["collision"], color="#d32f2f",
@@ -216,7 +615,6 @@ def plot_vision(vision: dict[str, np.ndarray], output: Path) -> None:
         axes[0].legend()
     axes[0].set(ylabel="probability")
     axes[0].grid(alpha=0.25)
-    metric = vision["metric"] > 0.5
     if np.any(metric):
         for sector in range(4):
             values = np.where(metric, vision[f"clearance_{sector}_m"], np.nan)
@@ -228,11 +626,18 @@ def plot_vision(vision: dict[str, np.ndarray], output: Path) -> None:
                      transform=axes[1].transAxes, ha="center", va="center")
         axes[1].set(title="Metric clearance head")
     axes[1].grid(alpha=0.25)
-    axes[2].plot(t, vision["steering"], label="steering (left +)")
-    axes[2].plot(t, vision["collision"], label="collision probability")
+    has_navigation = np.any(vision["navigation"] > 0.5)
+    steering_label = ("steering (left +)" if has_navigation else
+                      "derived steering diagnostic (not sent)")
+    collision_label = ("collision risk" if has_navigation else
+                       "derived activation score")
+    axes[2].plot(t, vision["steering"], label=steering_label)
+    axes[2].plot(t, vision["collision"], label=collision_label)
     axes[2].plot(t, vision["gate_valid"], linestyle=":", label="gate valid")
     axes[2].set(xlabel="simulation time [s]", ylabel="normalized",
-                title="DroNet-style navigation and gate lock", ylim=(-1.05, 1.05))
+                title=("Navigation and gate lock" if has_navigation else
+                       "Perception diagnostics and gate lock"),
+                ylim=(-1.05, 1.05))
     axes[2].grid(alpha=0.25)
     axes[2].legend()
     fig.savefig(output, dpi=160)
@@ -247,21 +652,28 @@ def main() -> int:
     parser.add_argument("--launch-time", type=float, default=4.0)
     parser.add_argument("--vision-csv", type=Path)
     parser.add_argument("--scene-kind", choices=("none", "obstacle", "gate"), default="none")
+    parser.add_argument("--course", type=Path,
+                        help="Course geometry and acceptance manifest")
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
     data = load_numeric_csv(args.csv)
     reference = load_numeric_csv(args.reference) if args.reference else None
     vision = load_vision_csv(args.vision_csv) if args.vision_csv else None
+    course = json.loads(args.course.read_text()) if args.course else None
+    if course is not None and course.get("format") not in (
+        "tinympc-crazysim-course-v1", "tinympc-crazysim-course-v2"
+    ):
+        raise ValueError("unsupported course manifest")
     launch_time = args.launch_time
     if "airborne" in data:
         airborne_indices = np.flatnonzero(data["airborne"] > 0.5)
         if airborne_indices.size:
             launch_time = float(data["time_s"][airborne_indices[0]])
-    summary = build_summary(data, launch_time, reference)
+    summary = build_summary(data, launch_time, reference, args.scene_kind, course)
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     plot_run(data, reference, launch_time, summary, args.out / "validation.png",
-             vision, args.scene_kind)
+             vision, args.scene_kind, course)
     if vision is not None:
         plot_vision(vision, args.out / "vision.png")
     print(json.dumps(summary, indent=2))

@@ -66,6 +66,75 @@ States, references, and obstacle planes are transformed into this frame. The
 ordinary racing path sends TinyMPC's first optimized input directly to the
 motors. Acrobatic stored-LTV builds do the same; there is no secondary
 attitude, rate, or position controller.
+
+For ordinary generated routes, `TINYMPC_REFERENCE_MODE` selects `waypoint`
+(default), `progress`, or `trajectory`. Waypoint mode is discrete, progress
+mode is spatially indexed, and trajectory mode is indexed by elapsed time.
+This compile-time choice is also exposed as `run.sh --reference-mode` in
+CrazySim.
+
+### Discrete waypoint navigation
+
+Level-flight routes use `TinyMpcWaypointNavigator` to hold one route waypoint
+until the vehicle enters its 0.10 m controller sphere. Route points are selected
+at approximately 0.30 m spacing and carry the outbound chord's tangent yaw.
+The solver-facing positional deviation is capped at 0.18 m, but the route
+destination remains latched; this is receding local-waypoint control rather
+than clock-driven trajectory interpolation. External acceptance remains the
+original 0.25 m three-dimensional sphere.
+
+Yaw is also local and bounded. The reference can move at most 15 degrees away
+from measured yaw and slews at 90 degrees/second. Waypoint release waits until
+the stored tangent is within 25 degrees. Transitions whose shortest turn would
+cross the +/-180-degree chart seam deliberately take the longer turn through
+zero. During motion, measured local velocity bearing closes the yaw loop so the
+heading follows the actual flight tangent. The bounded yaw reference is part of
+the TinyMPC attitude state, so yaw and position share the solver's motor
+authority; there is no post-solve outer yaw correction. The navigator is
+independent of the figure-eight route and can be initialized with another
+`TinyMpcWaypoint` array for general navigation.
+
+### Progress-indexed path following
+
+`TinyMpcProgressPath` projects measured position onto a bounded local window of
+the dense route and maintains a monotonic fractional route coordinate. It caps
+projection advance by physical distance, slows from 0.15 m/s toward 0.05 m/s
+as curvature increases, and walks forward by arc length to build each MPC
+horizon. References include interpolated position, tangent velocity, bounded
+tangent yaw and yaw rate, and curvature-derived roll/pitch and collective
+feed-forward. Because advancement is spatial rather than clock-driven, a slow
+or disturbed vehicle never receives a catch-up command. Completion is enabled
+only near the terminal path window, so a closed route's colocated start and end
+cannot finish immediately.
+
+This mode intentionally does not change `TinyMpcWaypointNavigator`. Future
+general navigation can provide another dense path to `TinyMpcProgressPath`
+while retaining waypoint mode for stop-and-go route semantics.
+
+Run and validate the Crazysim figure eight with three independent seeds:
+
+```bash
+for seed in 1 2 3; do
+  tools/crazysim_mujoco/run.sh \
+    --trajectory figure8 --stored-ltv 0 --actuator-lti 1 \
+    --duration 130 --launch-time 2 --vision-scene none \
+    --realtime-factor 1.0 --firmware-time-factor 0.7 \
+    --random-seed "$seed" \
+    --out "apps/controller_tinympc_eigen/sim_runs/crazysim/waypoint_figure8_tangent_yaw_seed${seed}" \
+    --overwrite
+done
+
+python3 tools/crazysim_mujoco/verify_waypoint_figure8.py \
+  apps/controller_tinympc_eigen/sim_runs/crazysim/waypoint_figure8_tangent_yaw_seed{1,2,3} \
+  --out apps/controller_tinympc_eigen/sim_runs/crazysim/waypoint_figure8_tangent_yaw_acceptance.json
+```
+
+The verifier requires all 26 waypoint events in order, right-center-left-center
+geometry within 0.25 m, no crash/contact or solver-failure signature, and yaw
+alignment over the flight interval from launch through terminal-center entry.
+For samples above 0.15 m/s, every seed must have median absolute yaw-to-course
+error at most 35 degrees and 90th percentile at most 75 degrees.
+
 Trajectory headers store:
 
 ```text

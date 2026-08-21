@@ -1,0 +1,185 @@
+{
+  "format": "tinympc-baseline-circle-diagnostics-v1",
+  "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/baseline_circle_slow_yaw_20260821_seed1",
+  "reference_quantities": "inferred from circle header, firmware origin, and measured state; state.csv has no MPC reference fields",
+  "projection_method": "controller-like 50 Hz local projection: 4 segments back, 60 forward, 0.02 m max advance; interpolated to 1 kHz",
+  "diagnostic_schedule_note": "schedule lag is against curvature-speed integration only; progress mode is spatial and has no wall-clock progress error",
+  "frame": "yaw-only local frame verified in current controller source",
+  "launch_time_s": 1.9349999999998977,
+  "contact": false,
+  "route_length_m": 4.71235800933248,
+  "inferred_completion_time_after_launch_s": 69.73999999997828,
+  "firmware_progress_max": "750.00/750",
+  "threshold_definitions": "first crossing sustained for 0.5 s",
+  "first_threshold_crossings": {
+    "cross_track_over_0p10m": {
+      "time_after_launch_s": 126.69400000025023,
+      "world_time_s": 128.62900000025013,
+      "unwrapped_yaw_deg": 364.10937274727365,
+      "value": 0.10000574368072168,
+      "threshold": 0.1,
+      "sustained_s": 0.5
+    },
+    "schedule_lag_over_0p25m": {
+      "time_after_launch_s": 18.12200000000163,
+      "world_time_s": 20.05700000000153,
+      "unwrapped_yaw_deg": 83.88294987597354,
+      "value": 0.25000791856861393,
+      "threshold": 0.25,
+      "sustained_s": 0.5
+    },
+    "abs_normal_speed_over_0p10mps": {
+      "time_after_launch_s": 67.87399999996937,
+      "world_time_s": 69.80899999996927,
+      "unwrapped_yaw_deg": 353.5286581984209,
+      "value": -0.10054884419455902,
+      "threshold": 0.1,
+      "sustained_s": 0.5
+    },
+    "abs_tangent_speed_error_over_0p05mps": {
+      "time_after_launch_s": 11.352999999998177,
+      "world_time_s": 13.287999999998075,
+      "unwrapped_yaw_deg": 57.27964121091867,
+      "value": -0.050342339178739606,
+      "threshold": 0.05,
+      "sustained_s": 0.5
+    },
+    "world_velocity_mismatch_over_0p10mps": {
+      "time_after_launch_s": 67.0619999999655,
+      "world_time_s": 68.9969999999654,
+      "unwrapped_yaw_deg": 357.49074672268495,
+      "value": 0.10001990528331922,
+      "threshold": 0.1,
+      "sustained_s": 0.5
+    },
+    "abs_vz_over_0p15mps": null,
+    "abs_yaw_error_over_10deg": null,
+    "abs_yaw_rate_mismatch_over_0p20radps": {
+      "time_after_launch_s": 101.36500000012929,
+      "world_time_s": 103.30000000012919,
+      "unwrapped_yaw_deg": 370.3549790739483,
+      "value": -0.20084422239178576,
+      "threshold": 0.2,
+      "sustained_s": 0.5
+    },
+    "abs_altitude_error_over_0p10m": null,
+    "tilt_over_20deg": null,
+    "tilt_over_5deg": null,
+    "local_rodrigues_norm_over_0p05": null,
+    "rate_norm_over_2p5radps": null,
+    "rate_norm_over_1p5radps": null,
+    "yaw_rpm_modal_fraction_over_0p001": null
+  },
+  "whole_flight": {
+    "cross_track_rmse_m": 0.045646093308862976,
+    "cross_track_max_m": 0.1154816984532375,
+    "schedule_lag_max_m": 0.42978183087020394,
+    "altitude_error_rmse_m": 0.05542460512524528,
+    "vz_max_abs_mps": 0.4831686652088888,
+    "tangent_speed_error_rmse_mps": 0.11018864745755845,
+    "normal_speed_rmse_mps": 0.04441101799362582,
+    "velocity_mismatch_rmse_mps": 0.13706360574059792,
+    "yaw_error_mae_deg": 2.6980183365410806,
+    "yaw_error_rmse_deg": 3.3623787395355715,
+    "yaw_rate_mismatch_rmse_radps": 0.21074512276910096,
+    "tilt_max_deg": 8.600796216087502,
+    "local_rodrigues_norm_max": 0.0752371937598571,
+    "rate_norm_max_radps": 3.164246453928711,
+    "rpm_max": 19314.845052276076,
+    "rpm_saturation_proxy_fraction": 2.342542126715912e-05,
+    "yaw_rpm_modal_fraction_mean": 0.003696935987757446,
+    "yaw_rpm_modal_fraction_max": 0.06464775287933604
+  },
+  "active_route_through_inferred_completion": {
+    "duration_after_launch_s": 69.73999999997828,
+    "cross_track_rmse_m": 0.03200961416058619,
+    "cross_track_max_m": 0.08778291421330488,
+    "schedule_lag_max_m": 0.42978183087020394,
+    "altitude_error_rmse_m": 0.05505162301979074,
+    "tangent_speed_error_rmse_mps": 0.04500489558985268,
+    "normal_speed_rmse_mps": 0.04699503100251849,
+    "velocity_mismatch_rmse_mps": 0.09675269031058586,
+    "yaw_error_mae_deg": 3.0192453298099706,
+    "yaw_error_rmse_deg": 3.693703929348181,
+    "yaw_rate_mismatch_rmse_radps": 0.19935400655395352,
+    "tilt_max_deg": 8.600796216087502,
+    "local_rodrigues_norm_max": 0.0752371937598571,
+    "rate_norm_max_radps": 3.164246453928711,
+    "rpm_max": 19314.845052276076,
+    "rpm_saturation_proxy_fraction": 4.30163031789048e-05,
+    "position_envelope_m": {
+      "x_min": -0.8021987530159186,
+      "x_max": 0.7655306349145091,
+      "y_min": -0.08112659115492273,
+      "y_max": 1.562905287631634,
+      "z_min": 1.4111128733876086,
+      "z_max": 1.4999950950017502
+    },
+    "rpm_per_motor_max": [
+      19314.845052276076,
+      19107.22387266698,
+      18806.186845167595,
+      19091.51173213745
+    ],
+    "rpm_modal_fraction_mean": {
+      "collective": 0.9891323371904986,
+      "roll": 0.0038741914577308336,
+      "pitch": 0.0034802128165776157,
+      "yaw": 0.003513258535193047
+    },
+    "rpm_modal_fraction_max": {
+      "collective": 1.0,
+      "roll": 0.09060779368867737,
+      "pitch": 0.08638850995390195,
+      "yaw": 0.06464775287933604
+    }
+  },
+  "near_unwrapped_yaw_180deg": {
+    "time_range_after_launch_s": [
+      31.039000000013953,
+      36.17500000000199
+    ],
+    "cross_track_m": {
+      "mean": 0.02986624266090528,
+      "rms": 0.03517598663701012,
+      "max_abs": 0.06297091766472397,
+      "p95_abs": 0.05899893863603845
+    },
+    "schedule_lag_m": {
+      "mean": 0.18543201214182617,
+      "rms": 0.18637952462121693,
+      "max_abs": 0.20746358125995545,
+      "p95_abs": 0.20594808582803906
+    },
+    "yaw_error_deg": {
+      "mean": -1.1133234317245735,
+      "rms": 2.9502617483385434,
+      "max_abs": 5.146962966995066,
+      "p95_abs": 4.640960105144238
+    },
+    "yaw_rate_mismatch_radps": {
+      "mean": -0.015873367294339535,
+      "rms": 0.2237001549544607,
+      "max_abs": 0.6244811477471865,
+      "p95_abs": 0.48473735740510354
+    },
+    "tilt_deg": {
+      "mean": 2.273406424814353,
+      "rms": 2.7592636574915264,
+      "max_abs": 7.729410225839167,
+      "p95_abs": 5.782352336899073
+    },
+    "local_rodrigues_norm": {
+      "mean": 0.019848148673536837,
+      "rms": 0.02409611025096946,
+      "max_abs": 0.06756431018254222,
+      "p95_abs": 0.0505141670412263
+    },
+    "rate_norm_radps": {
+      "mean": 0.6505852368966452,
+      "rms": 0.7790322775652385,
+      "max_abs": 3.164246453928711,
+      "p95_abs": 1.409603421911544
+    }
+  }
+}

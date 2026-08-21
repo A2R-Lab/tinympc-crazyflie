@@ -1,0 +1,16 @@
+{
+  "format": "tinympc-crazysim-course-v1",
+  "name": "turn_left",
+  "trajectory": "circle",
+  "scene": "vision_turn_left.xml",
+  "description": "Obstacle on a tangent-heading left turn; the camera and vehicle must rotate through the corner",
+  "centerline": [[0.0, 0.0], [0.287, 0.057], [0.530, 0.220], [0.693, 0.463], [0.750, 0.750], [0.693, 1.037], [0.530, 1.280], [0.287, 1.443], [0.0, 1.500], [-0.287, 1.443], [-0.530, 1.280], [-0.693, 1.037], [-0.750, 0.750], [-0.693, 0.463], [-0.530, 0.220], [-0.287, 0.057], [0.0, 0.0]],
+  "obstacles": [
+    {"name": "turn_cylinder", "shape": "circle", "center": [0.75, 0.75], "radius": 0.22}
+  ],
+  "pass_point": [0.0, 1.5],
+  "pass_radius_m": 0.40,
+  "minimum_dodge_encounters": 1,
+  "maximum_final_cross_track_m": 0.15,
+  "required_heading_change_deg": 90.0
+}

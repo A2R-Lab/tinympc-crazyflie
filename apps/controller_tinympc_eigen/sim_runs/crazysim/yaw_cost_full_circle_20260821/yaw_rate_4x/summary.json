@@ -1,0 +1,19 @@
+{
+  "samples": 40271,
+  "duration_s": 40.26999999999685,
+  "launch_time_s": 1.932999999999898,
+  "crashed": true,
+  "first_crash_time_s": 40.25599999999688,
+  "first_crash_after_launch_s": 38.32299999999698,
+  "altitude_min_m": -0.009372380017679746,
+  "altitude_max_m": 1.5,
+  "altitude_final_m": -0.009372380017679746,
+  "horizontal_displacement_max_m": 4.714760600558293,
+  "horizontal_displacement_final_m": 4.714760600558293,
+  "horizontal_speed_final_mps": 1.1241615565262504,
+  "attitude_geodesic_max_deg": 179.92417491172327,
+  "angular_rate_max_rad_s": 57.50342000628522,
+  "rpm_max": 20962.991325925374,
+  "motor_saturation_fraction": 7.449529438057163e-05,
+  "contact_count_max": 4
+}

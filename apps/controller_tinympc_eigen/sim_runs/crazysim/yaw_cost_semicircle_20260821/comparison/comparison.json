@@ -1,0 +1,202 @@
+{
+  "format": "tinympc-yaw-cost-semicircle-comparison-v1",
+  "trajectory_header": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/src/trajectories/50hz/traj_circle_50hz.h",
+  "methodology": {
+    "window": "from measured airborne handoff through first 99% geometric semicircle completion, first contact, or final sample",
+    "semicircle": "first 50% of circle header cumulative horizontal arc length",
+    "progress": "global nearest polyline projection followed by cumulative maximum; inferred because state.csv does not log controller progress",
+    "yaw_reference": "horizontal tangent at inferred monotonic progress",
+    "yaw_rate_reference": "polyline curvature * clip(0.15/(1+0.75*abs(curvature)), 0.05, 0.15)",
+    "promising_rule": "yaw MAE or yaw-rate RMSE improves >=15%; no contact; cross-track and altitude RMSE degradation each <=20%",
+    "launch_validity": "airborne sample exists and summary launch is within 0.5 s of run_config request"
+  },
+  "results": [
+    {
+      "mode": "baseline",
+      "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/yaw_cost_semicircle_20260821/baseline",
+      "cost_metadata": {
+        "mode": "baseline",
+        "run_config_fields": {
+          "level_cost_mode": "baseline"
+        }
+      },
+      "valid_launch": true,
+      "requested_launch_time_s": 2.0,
+      "actual_launch_time_s": 1.9289999999998984,
+      "contact": false,
+      "first_contact_time_s": null,
+      "first_contact_position_m": null,
+      "semicircle_complete": false,
+      "semicircle_completion_time_after_launch_s": null,
+      "geometric_progress_fraction": 0.9823821801101423,
+      "firmware_full_circle_progress_fraction": 1.0,
+      "evaluation_samples": 58073,
+      "evaluation_end_time_s": 60.000999999950864,
+      "tangent_yaw_mae_deg": 2.2840796565505244,
+      "tangent_yaw_rmse_deg": 2.929114955761251,
+      "yaw_rate_rmse_rad_s": 0.19647027655307456,
+      "cross_track_rmse_m": 0.05500190903418613,
+      "altitude_error_rmse_m": 0.05584268695335811,
+      "anchor": {
+        "source": "firmware Trajectory origin log",
+        "origin_world_m": [
+          -0.0,
+          -0.0,
+          1.1
+        ],
+        "yaw_world_deg": 0.0
+      },
+      "comparison_to_baseline": null,
+      "promising": null
+    },
+    {
+      "mode": "yaw_angle",
+      "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/yaw_cost_semicircle_20260821/yaw_angle_4x",
+      "cost_metadata": {
+        "mode": "yaw_angle",
+        "run_config_fields": {
+          "level_cost_mode": "yaw_angle_4x"
+        }
+      },
+      "valid_launch": true,
+      "requested_launch_time_s": 2.0,
+      "actual_launch_time_s": 1.931999999999898,
+      "contact": false,
+      "first_contact_time_s": null,
+      "first_contact_position_m": null,
+      "semicircle_complete": false,
+      "semicircle_completion_time_after_launch_s": null,
+      "geometric_progress_fraction": 0.5504888790991674,
+      "firmware_full_circle_progress_fraction": 0.6666666666666666,
+      "evaluation_samples": 58070,
+      "evaluation_end_time_s": 60.000999999950864,
+      "tangent_yaw_mae_deg": 1.668184383079126,
+      "tangent_yaw_rmse_deg": 2.0562708744614717,
+      "yaw_rate_rmse_rad_s": 0.20109058086267648,
+      "cross_track_rmse_m": 0.04609432566493356,
+      "altitude_error_rmse_m": 0.05732916341285936,
+      "anchor": {
+        "source": "firmware Trajectory origin log",
+        "origin_world_m": [
+          -0.0,
+          -0.0,
+          1.1
+        ],
+        "yaw_world_deg": 0.0
+      },
+      "comparison_to_baseline": {
+        "yaw_mae_improvement_fraction": 0.26964702028016796,
+        "yaw_rate_rmse_improvement_fraction": -0.02351655624790546,
+        "cross_track_degradation_fraction": -0.1619504400059298,
+        "altitude_degradation_fraction": 0.02661899956108506,
+        "improvement_at_least_15_percent": true,
+        "no_contact": true,
+        "cross_track_degradation_at_most_20_percent": true,
+        "altitude_degradation_at_most_20_percent": true
+      },
+      "promising": true
+    },
+    {
+      "mode": "yaw_rate",
+      "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/yaw_cost_semicircle_20260821/yaw_rate_4x",
+      "cost_metadata": {
+        "mode": "yaw_rate",
+        "run_config_fields": {
+          "level_cost_mode": "yaw_rate_4x"
+        }
+      },
+      "valid_launch": true,
+      "requested_launch_time_s": 2.0,
+      "actual_launch_time_s": 1.9539999999998956,
+      "contact": true,
+      "first_contact_time_s": 56.636999999958704,
+      "first_contact_position_m": [
+        -1.772850280108998,
+        3.5254412820906893,
+        0.07879381923673896
+      ],
+      "semicircle_complete": true,
+      "semicircle_completion_time_after_launch_s": 27.388000000012983,
+      "geometric_progress_fraction": 0.9900002260857803,
+      "firmware_full_circle_progress_fraction": 1.0,
+      "evaluation_samples": 27389,
+      "evaluation_end_time_s": 29.342000000012877,
+      "tangent_yaw_mae_deg": 3.5599006545409497,
+      "tangent_yaw_rmse_deg": 4.565375898952269,
+      "yaw_rate_rmse_rad_s": 0.13252573226619863,
+      "cross_track_rmse_m": 0.05757063513283812,
+      "altitude_error_rmse_m": 0.05360287625673529,
+      "anchor": {
+        "source": "firmware Trajectory origin log",
+        "origin_world_m": [
+          -0.0,
+          -0.0,
+          1.1
+        ],
+        "yaw_world_deg": 0.0
+      },
+      "comparison_to_baseline": {
+        "yaw_mae_improvement_fraction": -0.5585711489227144,
+        "yaw_rate_rmse_improvement_fraction": 0.32546675969889993,
+        "cross_track_degradation_fraction": 0.04670248985458691,
+        "altitude_degradation_fraction": -0.04010929306631664,
+        "improvement_at_least_15_percent": true,
+        "no_contact": false,
+        "cross_track_degradation_at_most_20_percent": true,
+        "altitude_degradation_at_most_20_percent": true
+      },
+      "promising": false
+    },
+    {
+      "mode": "motor_differential",
+      "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/yaw_cost_semicircle_20260821/yaw_diff_r_quarter",
+      "cost_metadata": {
+        "mode": "motor_differential",
+        "run_config_fields": {
+          "level_cost_mode": "yaw_diff_r_quarter"
+        }
+      },
+      "valid_launch": true,
+      "requested_launch_time_s": 2.0,
+      "actual_launch_time_s": 1.932999999999898,
+      "contact": true,
+      "first_contact_time_s": 53.50199999996601,
+      "first_contact_position_m": [
+        -1.7288196126613014,
+        4.254922704509288,
+        0.07510384030151396
+      ],
+      "semicircle_complete": true,
+      "semicircle_completion_time_after_launch_s": 25.145000000010214,
+      "geometric_progress_fraction": 0.9900002260857803,
+      "firmware_full_circle_progress_fraction": 1.0,
+      "evaluation_samples": 25146,
+      "evaluation_end_time_s": 27.07800000001011,
+      "tangent_yaw_mae_deg": 4.30668753044405,
+      "tangent_yaw_rmse_deg": 5.44012405360631,
+      "yaw_rate_rmse_rad_s": 0.18957737846509318,
+      "cross_track_rmse_m": 0.040910297168023475,
+      "altitude_error_rmse_m": 0.05405772127359579,
+      "anchor": {
+        "source": "firmware Trajectory origin log",
+        "origin_world_m": [
+          -0.0,
+          -0.0,
+          1.1
+        ],
+        "yaw_world_deg": 0.0
+      },
+      "comparison_to_baseline": {
+        "yaw_mae_improvement_fraction": -0.8855242277093434,
+        "yaw_rate_rmse_improvement_fraction": 0.03508366867962,
+        "cross_track_degradation_fraction": -0.2562022321335081,
+        "altitude_degradation_fraction": -0.031964179683065606,
+        "improvement_at_least_15_percent": false,
+        "no_contact": false,
+        "cross_track_degradation_at_most_20_percent": true,
+        "altitude_degradation_at_most_20_percent": true
+      },
+      "promising": false
+    }
+  ]
+}

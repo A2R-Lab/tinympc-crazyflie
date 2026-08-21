@@ -1,0 +1,13 @@
+[crazysim] Model type  : cf21B_500
+[crazysim] Num agents  : 1
+[crazysim] rpm2thrust  : (0.0, -3.133427287299859e-07, 4.407354891648379e-10)
+[crazysim] rpm2torque  : (0.0, 1.65886356219615e-09, 2.4693477924534137e-12)
+[crazysim] tau_up/down : 0.0649 / 0.0649 s
+[crazysim] max_rpm     : 21661
+[crazysim] mass       : 0.0434 kg
+[crazysim] diaginertia: (2.5e-05, 2.8e-05, 4.9e-05)
+[crazysim] thrust scale: 1.0000
+[crazysim] Agent 0: fw_port=19950  cflib_port=19850
+[crazysim] Agent 0: waiting for firmware on port 19950 ...
+[crazysim] Agent 0: firmware connected from ('127.0.0.1', 47042)
+[crazysim] Done.

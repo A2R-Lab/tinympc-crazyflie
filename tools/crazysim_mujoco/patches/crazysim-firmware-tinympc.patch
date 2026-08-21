@@ -1,8 +1,8 @@
 diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
-index 834317c6..6f66a2d5 100644
+index 834317c6..3dcae15d 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,84 @@ set(SRCS
+@@ -244,6 +244,146 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -11,9 +11,13 @@ index 834317c6..6f66a2d5 100644
 +set(TINYMPC_APP_DIR "" CACHE PATH "Path to controller_tinympc_eigen")
 +set(TINYMPC_SITL_SUPPORT_DIR "" CACHE PATH "Path to TinyMPC CrazySim support sources")
 +set(TINYMPC_TRAJECTORY "circle" CACHE STRING "TinyMPC stored trajectory")
++set(TINYMPC_REFERENCE_MODE "waypoint" CACHE STRING "waypoint, trajectory, or progress level-flight references")
++set(TINYMPC_COURSE_ACRO "none" CACHE STRING "Optional stored-LTV course primitive")
++set(TINYMPC_COURSE "none" CACHE STRING "Optional canonical racing course identity")
 +set(TINYMPC_SITL_START_DELAY_MS "0" CACHE STRING "Delay TinyMPC planning after SITL boot")
 +set(TINYMPC_SITL_TICK_US "1000" CACHE STRING "Wall-clock microseconds per simulated 1 ms RTOS tick")
 +option(TINYMPC_STORED_LTV "Use offline horizon-wise stored LTV matrices" OFF)
++option(TINYMPC_ACTUATOR_LTI "Use the fixed actuator-aware level model" ON)
 +
 +if(TINYMPC_APP_DIR)
 +  if(NOT EXISTS "${TINYMPC_APP_DIR}/src/controller_tinympc.cpp")
@@ -58,6 +62,13 @@ index 834317c6..6f66a2d5 100644
 +    $<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-result>
 +  )
 +
++  if(TINYMPC_COURSE STREQUAL "canonical_circle")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_CANONICAL_CIRCLE=1)
++  elseif(NOT TINYMPC_COURSE STREQUAL "none" AND
++         NOT TINYMPC_COURSE MATCHES "^canonical_(corridor|figure8|chicane|hairpin)$")
++    message(FATAL_ERROR "Unsupported TINYMPC_COURSE=${TINYMPC_COURSE}")
++  endif()
++
 +  if(TINYMPC_TRAJECTORY STREQUAL "roll_flip_360")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_ROLL_FLIP_360=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "front_flip_360")
@@ -68,26 +79,77 @@ index 834317c6..6f66a2d5 100644
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "straight")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "straight_long")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT_LONG=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_corridor")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_circle")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CIRCLE=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "figure8")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_FIGURE8=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "oval")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_OVAL=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_figure8")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_FIGURE8=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "chicane")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CHICANE=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "hairpin_180")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_HAIRPIN_180=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_chicane")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CHICANE=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_hairpin")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN=1)
 +  elseif(NOT TINYMPC_TRAJECTORY STREQUAL "circle")
 +    message(FATAL_ERROR "Unsupported TINYMPC_TRAJECTORY=${TINYMPC_TRAJECTORY}")
 +  endif()
++  if(TINYMPC_REFERENCE_MODE STREQUAL "trajectory")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_REFERENCE_MODE_TRAJECTORY=1)
++  elseif(TINYMPC_REFERENCE_MODE STREQUAL "progress")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_REFERENCE_MODE_PROGRESS=1)
++  elseif(NOT TINYMPC_REFERENCE_MODE STREQUAL "waypoint")
++    message(FATAL_ERROR "TINYMPC_REFERENCE_MODE must be waypoint, trajectory, or progress")
++  endif()
++
++  if(TINYMPC_COURSE_ACRO STREQUAL "barrel_roll_forward_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_ACRO_BARREL_ROLL_FORWARD_360=1)
++  elseif(TINYMPC_COURSE_ACRO STREQUAL "backflip_360")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_ACRO_BACKFLIP_360=1)
++  elseif(NOT TINYMPC_COURSE_ACRO STREQUAL "none")
++    message(FATAL_ERROR "Unsupported TINYMPC_COURSE_ACRO=${TINYMPC_COURSE_ACRO}")
++  endif()
++  if(NOT TINYMPC_COURSE_ACRO STREQUAL "none" AND NOT TINYMPC_STORED_LTV)
++    message(FATAL_ERROR "TINYMPC_COURSE_ACRO requires TINYMPC_STORED_LTV")
++  endif()
++  if(NOT TINYMPC_COURSE_ACRO STREQUAL "none" AND NOT TINYMPC_ACTUATOR_LTI)
++    message(FATAL_ERROR "TINYMPC_COURSE_ACRO requires TINYMPC_ACTUATOR_LTI")
++  endif()
 +
 +  if(TINYMPC_STORED_LTV)
-+    if(TINYMPC_TRAJECTORY STREQUAL "circle" OR
-+       TINYMPC_TRAJECTORY STREQUAL "straight" OR
-+       TINYMPC_TRAJECTORY STREQUAL "figure8")
-+      message(FATAL_ERROR "TINYMPC_STORED_LTV requires an acrobatic trajectory")
++    if(TINYMPC_COURSE_ACRO STREQUAL "none")
++      if(TINYMPC_TRAJECTORY STREQUAL "circle" OR
++         TINYMPC_TRAJECTORY STREQUAL "straight" OR
++         TINYMPC_TRAJECTORY STREQUAL "straight_long" OR
++         TINYMPC_TRAJECTORY STREQUAL "canonical_corridor" OR
++         TINYMPC_TRAJECTORY STREQUAL "canonical_circle" OR
++         TINYMPC_TRAJECTORY STREQUAL "figure8" OR
++         TINYMPC_TRAJECTORY STREQUAL "oval" OR
++         TINYMPC_TRAJECTORY STREQUAL "canonical_figure8" OR
++         TINYMPC_TRAJECTORY STREQUAL "canonical_chicane" OR
++         TINYMPC_TRAJECTORY STREQUAL "canonical_hairpin")
++        message(FATAL_ERROR "TINYMPC_STORED_LTV requires an acrobatic trajectory")
++      endif()
 +    endif()
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_STORED_LTV=1)
++  endif()
++  if(TINYMPC_ACTUATOR_LTI)
++    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_ACTUATOR_LTI=1)
 +  endif()
 +endif()
 +
  target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
  
  target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
-@@ -267,4 +345,4 @@ set_target_properties(
+@@ -267,4 +396,4 @@ set_target_properties(
    cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
  )
  

@@ -1,0 +1,103 @@
+address : INADDR_ANY , port : 19950 
+SOCKET_LINK: Create socket succeed 
+SOCKET_LINK: Binding succeed 
+SOCKET_LINK: Waiting for connection with gazebo ... 
+SOCKET_LINK: Connection established with gazebo 
+SYS: ----------------------------
+SYS: Software-in-the-Loop Simulator is up and running!
+SYS: Build 24:aa6571dc465f (v1.2-alpha +24) MODIFIED
+ESTKALMANUNSCENTED: Sigma Points chosen
+SENSORS: Forcing sensors to SensorImplementation_sitl
+AK8963 I2C connection [OK].
+LPS25H I2C connection [OK].
+Entering sensorsTask() 
+ESTIMATOR: Using Kalman (2) estimator
+CONTROLLER: Controller type forced
+TINYMPC-E: Level MPC cost=yaw_angle_4x Qyaw=1600.0 Qyaw_rate=40.0 Ryaw=724.068298
+TinyRacer vision listening on udp://127.0.0.1:19960
+TINYMPC-E: Stored trajectory enabled
+TINYMPC-E: Exclusive TinyMPC direct motor control enabled
+CONTROLLER: Using OutOfTree (5) controller
+SYS: About to run tests in system.c.
+SENSORS TEST PASSED [OK].
+SYS: Self test passed!
+STAB: Wait for sensor calibration...
+STAB: Starting stabilizer loop
+SUP: Can not fly
+SUP: Ready to fly
+GYro Bias found 
+STAB: WARNING: stabilizer loop rate is off (1027)
+TINYMPC-E: Progress path ready samples=376 speed=0.05..0.15m/s curvature_gain=0.75m projection_step=0.02m
+TINYMPC-E: Trajectory origin=(-0.00,-0.00,1.10) yaw=0.0deg hold=0.4s
+TINYMPC-E: Vision sample=0 valid=0 age=0ms danger=0 mask=0x6 blocked=0 active=0 mode=0
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.00,0.00) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC task stack free=1495 words
+TINYMPC-E: Progress path sample=51.44/375
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,-0.01,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: Progress path sample=100.44/375
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,-0.05,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,-0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,-0.00,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.01,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: Progress path sample=150.46/375
+ESTKALMAN: WARNING: Kalman prediction rate off (97)
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.04,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.05,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.03,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+ESTKALMAN: WARNING: Kalman prediction rate off (98)
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.03,0.08) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.01,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.05,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.03,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,-0.01,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.02,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.03,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: Progress path sample=200.21/375
+ESTKALMAN: WARNING: Kalman prediction rate off (98)
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.03,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,0.03,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,0.02,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.05,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.08,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.06,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,0.05,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.00,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.05,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: Progress path sample=250.00/375
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.08,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,0.07,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.07,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.09,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.10,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,0.07,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.04,0.08,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.05,0.04,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,0.04,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.03,-0.01,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.07,-0.02,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.03,-0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.05,0.02,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.07,0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.02,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,0.00,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.01,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,0.03,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.03,-0.02,0.10) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.04,-0.05,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,-0.00,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(-0.00,-0.05,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,-0.01,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,-0.02,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.03,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,-0.04,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.02,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.04,-0.04,0.04) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.03,0.06) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,0.00,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,-0.02,0.03) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.01,-0.07,0.07) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.00,-0.05,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000
+TINYMPC-E: MPC: iterations=5 solve_us=0 ref_local=(0.02,-0.05,0.05) plane_violation=0.000 consensus_error=0.000 slack=0.000

@@ -1,0 +1,238 @@
+{
+  "format": "tinympc-progress-speed-ladder-v1",
+  "circle_header": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/src/trajectories/50hz/traj_circle_50hz.h",
+  "reference_provenance": "reconstructed/inferred from compiled header and measured handoff pose",
+  "pass_rule": "calibrated launch; firmware complete exactly 750/750; no contact/crash, envelope violation, nonfinite state, or firmware failure signature",
+  "first_failed_speed_mps": null,
+  "runs": [
+    {
+      "status": "passed",
+      "passed": true,
+      "requested_speed_mps": 0.1,
+      "run_directory": "/Users/char_chen/School/TinyMPC/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/progress_speed_ladder_20260821_seed1/speed_0p10",
+      "launch": {
+        "calibrated": true,
+        "requested_s": 2.0,
+        "actual_s": 1.9379999999998974
+      },
+      "progress": {
+        "firmware_max_sample": 750.0,
+        "firmware_total_samples": 750,
+        "firmware_complete_750_of_750": true,
+        "inferred_max_sample": 750.0,
+        "inferred_fraction": 1.0,
+        "inferred_completion": true,
+        "inferred_completion_time_after_launch_s": 37.48899999999892
+      },
+      "safety": {
+        "contact_or_crash_active_route": false,
+        "contact_or_crash_post_completion": false,
+        "contact_or_crash": false,
+        "envelope_violation": false,
+        "nonfinite_state": false,
+        "nonfinite_state_post_completion": false,
+        "failure_signatures": []
+      },
+      "active_route_window": {
+        "start_time_s": 1.9379999999998974,
+        "end_time_s": 39.42699999999881,
+        "samples": 37490,
+        "ended_by": "inferred_completion",
+        "post_completion_terminal_drift_excluded": true
+      },
+      "tracking": {
+        "tangent_velocity_mps": {
+          "mean": 0.12309452729622096,
+          "rmse": 0.2232849878974627,
+          "p95_abs": 0.3198661481133481,
+          "max_abs": 1.2147668088948507
+        },
+        "normal_velocity_mps": {
+          "mean": 0.012416153394486406,
+          "rmse": 0.11701975520057724,
+          "p95_abs": 0.1529714634630884,
+          "max_abs": 0.7713323646096809
+        },
+        "world_vx_error_mps": {
+          "mean": 0.016314473910545697,
+          "rmse": 0.1558402884937605,
+          "p95_abs": 0.1565316183328131,
+          "max_abs": 1.1848535517127985
+        },
+        "world_vy_error_mps": {
+          "mean": -0.012583682663876515,
+          "rmse": 0.15698633045749677,
+          "p95_abs": 0.16642828725564657,
+          "max_abs": 1.0585566483718196
+        },
+        "world_vz_error_mps": {
+          "mean": -0.0013177219920535237,
+          "rmse": 0.07412849742137138,
+          "p95_abs": 0.1337349128363872,
+          "max_abs": 0.47517555022397856
+        },
+        "velocity_heading_error_deg": {
+          "mean": 29.045119010274288,
+          "rmse": 41.12725917872954,
+          "p95_abs": 90.51129797316055,
+          "max_abs": 179.86847514941266
+        },
+        "cross_track_m": {
+          "mean": -0.014705921540745327,
+          "rmse": 0.06845762990414558,
+          "p95_abs": 0.1487773489799116,
+          "max_abs": 0.4669073749308938
+        },
+        "altitude_error_m": {
+          "mean": -0.05701490779491947,
+          "rmse": 0.05792340572988685,
+          "p95_abs": 0.07451059133601026,
+          "max_abs": 0.08559297295546209
+        },
+        "vertical_speed_mps": {
+          "mean": -0.0013177219920535237,
+          "rmse": 0.07412849742137138,
+          "p95_abs": 0.1337349128363872,
+          "max_abs": 0.47517555022397856
+        },
+        "tangent_yaw_error_deg": {
+          "mean": -3.3166435510203813,
+          "rmse": 7.671079704723702,
+          "p95_abs": 9.891246705118316,
+          "max_abs": 58.23835767885223
+        },
+        "yaw_rate_error_radps": {
+          "mean": 0.0029307334983710194,
+          "rmse": 0.2516934971315885,
+          "p95_abs": 0.5110862240316285,
+          "max_abs": 1.5033034544203696
+        }
+      },
+      "attitude_rates": {
+        "roll_deg": {
+          "mean": -0.361955353923641,
+          "rmse": 2.7489707378108483,
+          "p95_abs": 4.301026099311898,
+          "max_abs": 16.287919559846046
+        },
+        "pitch_deg": {
+          "mean": 0.07564449483598042,
+          "rmse": 2.991721443984379,
+          "p95_abs": 5.1270184064441695,
+          "max_abs": 20.698819679627135
+        },
+        "tilt_deg": {
+          "mean": 2.832807985278426,
+          "rmse": 4.059007685116505,
+          "p95_abs": 6.659482372575784,
+          "max_abs": 21.183009247875034
+        },
+        "yaw_only_local_rodrigues_norm": {
+          "mean": 0.02476851314525172,
+          "rmse": 0.035592558474998974,
+          "p95_abs": 0.05819791297399394,
+          "max_abs": 0.18719836788516694
+        },
+        "wx_radps": {
+          "mean": 0.008909291890994913,
+          "rmse": 0.5656791608334925,
+          "p95_abs": 1.151852098423812,
+          "max_abs": 2.522227925585312
+        },
+        "wy_radps": {
+          "mean": -0.007426656095218932,
+          "rmse": 0.5262860067317554,
+          "p95_abs": 1.0469789235874698,
+          "max_abs": 2.154518756572407
+        },
+        "wz_radps": {
+          "mean": 0.13587482440114876,
+          "rmse": 0.28574468000924086,
+          "p95_abs": 0.53450816533491,
+          "max_abs": 1.2029832438785326
+        },
+        "rate_norm_radps": {
+          "mean": 0.7204092431574431,
+          "rmse": 0.8237838891581487,
+          "p95_abs": 1.491855947768185,
+          "max_abs": 2.5819414811152956
+        }
+      },
+      "motors": {
+        "maximum_rpm_model": 21661.0,
+        "rpm": {
+          "mean": 15865.164646786307,
+          "rmse": 15915.238591072795,
+          "p95_abs": 17424.78314884289,
+          "max_abs": 19225.405786243224
+        },
+        "saturation_fraction_samples_any_motor": 0.0,
+        "modal_energy_fraction": {
+          "collective": 0.9895085424572717,
+          "roll": 0.0035019948693424973,
+          "pitch": 0.0034335777960922773,
+          "yaw": 0.0035558848772935152
+        }
+      },
+      "first_sustained_threshold_crossings": {
+        "velocity_heading_error_over_45_deg": {
+          "threshold": 45.0,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": 33.69500000000776
+        },
+        "cross_track_over_0p25_m": {
+          "threshold": 0.25,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": null
+        },
+        "altitude_error_over_0p20_m": {
+          "threshold": 0.2,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": null
+        },
+        "vertical_speed_over_0p50_mps": {
+          "threshold": 0.5,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": null
+        },
+        "yaw_error_over_25_deg": {
+          "threshold": 25.0,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": 36.63100000000092
+        },
+        "yaw_rate_error_over_0p50_radps": {
+          "threshold": 0.5,
+          "required_duration_s": 0.5,
+          "first_start_time_after_launch_s": 36.66100000000085
+        },
+        "tilt_over_30_deg": {
+          "threshold": 30.0,
+          "required_duration_s": 0.25,
+          "first_start_time_after_launch_s": null
+        },
+        "yaw_frame_rodrigues_norm_over_1": {
+          "threshold": 1.0,
+          "required_duration_s": 0.25,
+          "first_start_time_after_launch_s": null
+        },
+        "body_rate_norm_over_5_radps": {
+          "threshold": 5.0,
+          "required_duration_s": 0.25,
+          "first_start_time_after_launch_s": null
+        },
+        "rpm_saturation_over_98_percent": {
+          "threshold": 0.98,
+          "required_duration_s": 0.1,
+          "first_start_time_after_launch_s": null
+        }
+      },
+      "inference_notes": [
+        "time-resolved progress/reference are reconstructed from measured handoff pose and circle header",
+        "projection mirrors the 4-back/60-forward monotonic search but omits firmware's per-50Hz 0.02 m advance cap because telemetry is 1 kHz",
+        "yaw-rate reference is reconstructed as circle curvature times requested constant speed",
+        "RPM modal fractions use squared normalized RPM as a thrust proxy"
+      ]
+    }
+  ],
+  "skipped": []
+}

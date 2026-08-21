@@ -1,5 +1,5 @@
 diff --git a/simulator_files/mujoco/crazysim.py b/simulator_files/mujoco/crazysim.py
-index d4a7eb9..5371db7 100644
+index d4a7eb9..75d3341 100644
 --- a/simulator_files/mujoco/crazysim.py
 +++ b/simulator_files/mujoco/crazysim.py
 @@ -56,6 +56,7 @@ Multi-agent usage:
@@ -52,12 +52,13 @@ index d4a7eb9..5371db7 100644
              drag_torque = MOTOR_DIR[i] * (a_q + b_q * rpm + c_q * rpm * rpm)
  
              self.data.ctrl[self._act_force[i]] = thrust
-@@ -1191,13 +1197,31 @@ class CrazySimMuJoCo:
+@@ -1191,13 +1197,32 @@ class CrazySimMuJoCo:
                   camera_enabled: bool = False,
                   cam_width: int = 324, cam_height: int = 244,
                   cam_fps: float = 20.0,
 -                 cam_port: int | None = None):
 +                 cam_port: int | None = None,
++                 cam_fovy: float | None = None,
 +                 duration: float | None = None,
 +                 state_log: str | None = None,
 +                 spawn_z: float = 0.0,
@@ -85,7 +86,7 @@ index d4a7eb9..5371db7 100644
  
          if model_type not in MOTOR_PARAMS:
              raise ValueError(f'Unknown model_type {model_type!r}. '
-@@ -1212,6 +1236,7 @@ class CrazySimMuJoCo:
+@@ -1212,6 +1237,7 @@ class CrazySimMuJoCo:
  
          print(f'[crazysim] mass       : {params.mass:.4f} kg')
          print(f'[crazysim] diaginertia: {params.diaginertia}')
@@ -93,8 +94,21 @@ index d4a7eb9..5371db7 100644
  
          # Print enabled features
          features = []
-@@ -1233,6 +1258,15 @@ class CrazySimMuJoCo:
+@@ -1231,8 +1257,28 @@ class CrazySimMuJoCo:
+         # Build shared MuJoCo model with all drones
+         self.model = _build_spec_multi_safe(model_path, spawn_positions, params)
          self.model.opt.timestep = self.dt
++        if cam_fovy is not None:
++            if cam_fovy <= 0.0 or cam_fovy >= 180.0:
++                raise ValueError('cam_fovy must be in (0, 180) degrees')
++            for i in range(self.num_agents):
++                camera_id = mujoco.mj_name2id(
++                    self.model, mujoco.mjtObj.mjOBJ_CAMERA,
++                    f'cf{i}_fpv_cam')
++                if camera_id < 0:
++                    raise ValueError(f'Camera cf{i}_fpv_cam not found in model')
++                self.model.cam_fovy[camera_id] = cam_fovy
++            print(f'[crazysim] camera fovy : {cam_fovy:.3f} deg')
          self.data = mujoco.MjData(self.model)
  
 +        # The stock scenes start on the floor. Aggressive maneuver references
@@ -109,7 +123,7 @@ index d4a7eb9..5371db7 100644
          # Create per-drone agents
          self.agents: list[DroneAgent] = []
          for i in range(self.num_agents):
-@@ -1261,11 +1295,40 @@ class CrazySimMuJoCo:
+@@ -1261,11 +1307,40 @@ class CrazySimMuJoCo:
                  ground_effect=ground_effect,
                  camera_renderer=agent_camera,
                  flowdeck=flowdeck,
@@ -150,7 +164,7 @@ index d4a7eb9..5371db7 100644
      def _apply_downwash(self):
          """Apply downwash force perturbations between drones."""
          for i, agent_below in enumerate(self.agents):
-@@ -1306,8 +1369,34 @@ class CrazySimMuJoCo:
+@@ -1306,8 +1381,34 @@ class CrazySimMuJoCo:
          for agent in self.agents:
              agent.start_threads()
  
@@ -185,7 +199,7 @@ index d4a7eb9..5371db7 100644
              for agent in self.agents:
                  agent.update_motors()
                  agent.apply_aero_effects()
-@@ -1317,6 +1406,21 @@ class CrazySimMuJoCo:
+@@ -1317,6 +1418,21 @@ class CrazySimMuJoCo:
              mujoco.mj_step(self.model, self.data)
              for agent in self.agents:
                  agent.send_sensor_data()
@@ -207,7 +221,7 @@ index d4a7eb9..5371db7 100644
  
          # Real-time factor tracking
          _rtf_interval = 1.0  # seconds between RTF updates
-@@ -1364,7 +1468,7 @@ class CrazySimMuJoCo:
+@@ -1364,7 +1480,7 @@ class CrazySimMuJoCo:
                          v.sync()
                          _last_render = t0
                      elapsed = time.perf_counter() - t0
@@ -216,7 +230,7 @@ index d4a7eb9..5371db7 100644
                      if sleep_t > 0:
                          time.sleep(sleep_t)
              self._running = False
-@@ -1375,7 +1479,7 @@ class CrazySimMuJoCo:
+@@ -1375,7 +1491,7 @@ class CrazySimMuJoCo:
                      _step_and_send()
                      _update_rtf()
                      elapsed = time.perf_counter() - t0
@@ -225,7 +239,7 @@ index d4a7eb9..5371db7 100644
                      if sleep_t > 0:
                          time.sleep(sleep_t)
              except KeyboardInterrupt:
-@@ -1384,6 +1488,8 @@ class CrazySimMuJoCo:
+@@ -1384,6 +1500,8 @@ class CrazySimMuJoCo:
          self._running = False
          for agent in self.agents:
              agent.stop()
@@ -234,7 +248,7 @@ index d4a7eb9..5371db7 100644
          print('[crazysim] Done.')
  
  
-@@ -1443,12 +1549,36 @@ def main():
+@@ -1443,12 +1561,36 @@ def main():
                     help=f'Drone variant (default: inferred from --model, else {DEFAULT_MODEL_TYPE})')
      p.add_argument('--vis', action='store_true', help='Launch passive viewer')
      p.add_argument('--dt', type=float, default=0.001, help='Physics timestep [s]')
@@ -271,7 +285,16 @@ index d4a7eb9..5371db7 100644
      p.add_argument('--scene', default=None,
                     help='Path to scene MJCF XML (default: scene.xml)')
      # --- Feature flags ---
-@@ -1499,10 +1629,23 @@ def main():
+@@ -1476,6 +1618,8 @@ def main():
+                    help='Camera image height [px] (default: 244, matches AI-deck)')
+     p.add_argument('--cam-fps', type=float, default=20.0,
+                    help='Camera frame rate [Hz] (default: 20)')
++    p.add_argument('--cam-fovy', type=float, default=None,
++                   help='Override vertical camera field of view [deg]')
+     p.add_argument('--cam-port', type=int, default=None,
+                    help='Base TCP port for internal frame server '
+                         '(default: 5100, agent N uses port+N). '
+@@ -1499,10 +1643,23 @@ def main():
      if model_type is None:
          model_type = DEFAULT_MODEL_TYPE
  
@@ -298,7 +321,7 @@ index d4a7eb9..5371db7 100644
  
      # Resolve model path (default paths are relative to this script)
      model_path = args.model
-@@ -1518,6 +1661,9 @@ def main():
+@@ -1518,6 +1675,9 @@ def main():
      # Parse spawn positions
      spawn_positions = _parse_spawn_positions(args.agents, args.spawn_file)
  
@@ -308,10 +331,11 @@ index d4a7eb9..5371db7 100644
      # Build optional feature models
      noise_model = SensorNoiseModel(
          dt=args.dt,
-@@ -1549,6 +1695,14 @@ def main():
+@@ -1549,6 +1709,15 @@ def main():
          cam_height=args.cam_height,
          cam_fps=args.cam_fps,
          cam_port=args.cam_port,
++        cam_fovy=args.cam_fovy,
 +        duration=args.duration,
 +        state_log=args.state_log,
 +        spawn_z=args.spawn_z,

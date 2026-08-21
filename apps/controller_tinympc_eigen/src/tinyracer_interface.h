@@ -27,6 +27,10 @@ typedef struct {
   /* Normalized image coordinates, ordered TL, TR, BR, BL. */
   float gate_corners_xy[TINYRACER_GATE_CORNERS * 2];
   float gate_confidence;
+  float gate_fx_normalized;
+  float gate_fy_normalized;
+  float gate_cx_normalized;
+  float gate_cy_normalized;
 } TinyRacerPerceptionObservation;
 
 typedef enum {

@@ -1,0 +1,18 @@
+{
+  "format": "tinympc-crazysim-course-v1",
+  "name": "straight_slalom",
+  "trajectory": "straight_long",
+  "scene": "vision_straight_slalom.xml",
+  "description": "Two alternating rectangular obstacles requiring sustained avoidance",
+  "centerline": [[0.0, 0.0], [3.1, 0.0]],
+  "corridor_y": [-1.3, 1.3],
+  "obstacles": [
+    {"name": "left_box", "shape": "box", "center": [0.65, -0.25], "half_size": [0.12, 0.27]},
+    {"name": "right_box", "shape": "box", "center": [1.78, 0.25], "half_size": [0.12, 0.27]}
+  ],
+  "pass_point": [3.0, 0.0],
+  "pass_radius_m": 0.45,
+  "minimum_dodge_encounters": 1,
+  "maximum_final_cross_track_m": 0.15,
+  "required_heading_change_deg": 0.0
+}

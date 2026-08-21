@@ -1,0 +1,478 @@
+[  2%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/usec_time_sitl.c.o
+[  2%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/init/main_sitl.c.o
+[  3%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/buzzer.c.o
+[  4%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c.o
+[  4%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/pm_sitl.c.o
+[  5%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/radiolink_sitl.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c: In function 'readEeprom':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:67:18: warning: implicit declaration of function 'eepromReadBuffer' [-Wimplicit-function-declaration]
+   67 |   bool success = eepromReadBuffer(data, KVE_PARTITION_START + address, length);
+      |                  ^~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c: In function 'writeEeprom':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:92:18: warning: implicit declaration of function 'eepromWriteBuffer' [-Wimplicit-function-declaration]
+   92 |   bool success = eepromWriteBuffer(data, KVE_PARTITION_START + address, length);
+      |                  ^~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c: In function 'storagePrintStats':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 2 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:250:3: note: in expansion of macro 'DEBUG_PRINT'
+  250 |   DEBUG_PRINT("Used storage: %d item stored, %d Bytes/%d Bytes (%d%%)\n", stats.totalItems, stats.itemSize, stats.totalSize, (stats.itemSize*100)/stats.totalSize);
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 3 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:250:3: note: in expansion of macro 'DEBUG_PRINT'
+  250 |   DEBUG_PRINT("Used storage: %d item stored, %d Bytes/%d Bytes (%d%%)\n", stats.totalItems, stats.itemSize, stats.totalSize, (stats.itemSize*100)/stats.totalSize);
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 4 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:250:3: note: in expansion of macro 'DEBUG_PRINT'
+  250 |   DEBUG_PRINT("Used storage: %d item stored, %d Bytes/%d Bytes (%d%%)\n", stats.totalItems, stats.itemSize, stats.totalSize, (stats.itemSize*100)/stats.totalSize);
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 5 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:250:3: note: in expansion of macro 'DEBUG_PRINT'
+  250 |   DEBUG_PRINT("Used storage: %d item stored, %d Bytes/%d Bytes (%d%%)\n", stats.totalItems, stats.itemSize, stats.totalSize, (stats.itemSize*100)/stats.totalSize);
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 2 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:251:3: note: in expansion of macro 'DEBUG_PRINT'
+  251 |   DEBUG_PRINT("Fragmentation: %d%%\n", stats.fragmentation);
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 2 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 3 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 4 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 5 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 6 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:47:22: warning: format '%d' expects argument of type 'int', but argument 7 has type 'size_t' {aka 'long unsigned int'} [-Wformat=]
+   47 | #define DEBUG_MODULE "STORAGE"
+      |                      ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:45:24: note: in expansion of macro 'DEBUG_MODULE'
+   45 | #define DEBUG_FMT(fmt) DEBUG_MODULE ": " fmt
+      |                        ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:66:40: note: in expansion of macro 'DEBUG_FMT'
+   66 |   #define DEBUG_PRINT(fmt, ...) printf(DEBUG_FMT(fmt), ##__VA_ARGS__)
+      |                                        ^~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:252:3: note: in expansion of macro 'DEBUG_PRINT'
+  252 |   DEBUG_PRINT("Efficiency: Data: %d Bytes (%d%%), Keys: %d Bytes (%d%%), Metadata: %d Bytes (%d%%)\n",
+      |   ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c: At top level:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:111:13: warning: 'flushEeprom' defined but not used [-Wunused-function]
+  111 | static void flushEeprom(void)
+      |             ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:86:15: warning: 'writeEeprom' defined but not used [-Wunused-function]
+   86 | static size_t writeEeprom(size_t address, const void* data, size_t length)
+      |               ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/storage.c:61:15: warning: 'readEeprom' defined but not used [-Wunused-function]
+   61 | static size_t readEeprom(size_t address, void* data, size_t length)
+      |               ^~~~~~~~~~
+[  6%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/deck/drivers/src/deck_sitl.c.o
+[  7%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/drivers/src/led_sitl.c.o
+[  8%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/ledseq.c.o
+[  9%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/deck/drivers/src/colorled_sitl.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/ledseq.c: In function 'ledseqInit':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/ledseq.c:222:70: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+  222 |     timer[i] = xTimerCreateStatic("ledseqTimer", M2T(1000), pdFALSE, (void*)i, runLedseq, &timerBuffer[i]);
+      |                                                                      ^
+[  9%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/socketlink.c.o
+[ 10%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp.c.o
+[ 11%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/sensors_sitl.c.o
+[ 13%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/hal/src/sensors.c.o
+[ 14%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/range.c.o
+[ 14%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/system.c.o
+[ 15%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/comm.c.o
+[ 16%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/console.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/system.c: In function 'systemInit':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/system.c:118:3: warning: implicit declaration of function 'socketlinkInit' [-Wimplicit-function-declaration]
+  118 |   socketlinkInit();
+      |   ^~~~~~~~~~~~~~
+[ 17%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/pid.c.o
+[ 18%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtpservice.c.o
+[ 19%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_task.c.o
+[ 19%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c: In function 'paramGetDefault':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:108:13: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  108 |   address = (uint32_t)(params[index].address);
+      |             ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:111:18: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  111 |   if (address >= (uint32_t)&_sdata &&
+      |                  ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:112:18: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  112 |       address <= (uint32_t)&_edata)
+      |                  ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:114:32: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  114 |     valueRelative =  address - (uint32_t)&_sdata;
+      |                                ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:115:32: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  115 |     ptrDefaultValue = (void *)((uint32_t)&_sidata + valueRelative);
+      |                                ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:115:23: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+  115 |     ptrDefaultValue = (void *)((uint32_t)&_sidata + valueRelative);
+      |                       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:118:23: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  118 |   else if (address >= (uint32_t)&_stext &&
+      |                       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:119:23: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+  119 |            address <= (uint32_t)&_etext)
+      |                       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:121:23: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+  121 |     ptrDefaultValue = (void *)(address);
+      |                       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c: In function 'paramPersistentStore':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:712:12: warning: implicit declaration of function 'storageStore' [-Wimplicit-function-declaration]
+  712 |   result = storageStore(key, params[index].address, paramGetLen(index));
+      |            ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c: In function 'paramPersistentGetState':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:779:31: warning: implicit declaration of function 'storageFetch' [-Wimplicit-function-declaration]
+  779 |   const bool isValueStored = (storageFetch(key, &value, paramLen) > 0);
+      |                               ^~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c: In function 'paramPersistentClear':
+[ 20%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/log.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:811:12: warning: implicit declaration of function 'storageDelete' [-Wimplicit-function-declaration]
+  811 |   result = storageDelete(key);
+      |            ^~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c: In function 'paramLogicStorageInit':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/param_logic.c:835:3: warning: implicit declaration of function 'storageForeach' [-Wimplicit-function-declaration]
+  835 |   storageForeach(PERSISTENT_PREFIX_STRING, persistentParamFromStorage);
+      |   ^~~~~~~~~~~~~~
+[ 21%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/worker.c.o
+[ 22%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/queuemonitor.c.o
+[ 23%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c.o
+[ 23%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/platformservice.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/platformservice.c: In function 'platformSrvTask':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/platformservice.c:181:7: warning: '__builtin_strncpy' specified bound 29 equals destination size [-Wstringop-truncation]
+  181 |       strncpy((char*)&p->data[1], V_STAG, CRTP_MAX_DATA_SIZE-1);
+      |       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:215:13: warning: 'mspHandleRequestSetMotor' declared 'static' but never defined [-Wunused-function]
+  215 | static void mspHandleRequestSetMotor(MspObject* pMspObject);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:600:17: warning: 'mapMotorRequestSpeed' defined but not used [-Wunused-function]
+  600 | static uint16_t mapMotorRequestSpeed(const uint16_t from)
+      |                 ^~~~~~~~~~~~~~~~~~~~
+In file included from /usr/include/string.h:548,
+                 from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:41:
+In function 'memcpy',
+    inlined from 'mspMakeTxPacket' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:617:3,
+    inlined from 'mspHandleRequestMspRc' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:458:3,
+    inlined from 'mspProcessRequest' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:367:7,
+    inlined from 'mspProcessByte' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:292:5:
+/usr/include/aarch64-linux-gnu/bits/string_fortified.h:29:10: warning: '__builtin_memcpy' accessing 8 bytes at offsets 29 and 29 overlaps 8 bytes at offset 29 [-Wrestrict]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                                  __glibc_objsize0 (__dest));
+      |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+In function 'memcpy',
+    inlined from 'mspMakeTxPacket' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:617:3,
+    inlined from 'mspHandleRequestsFcVariant' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:504:3,
+    inlined from 'mspProcessRequest' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:380:7,
+    inlined from 'mspProcessByte' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:292:5:
+/usr/include/aarch64-linux-gnu/bits/string_fortified.h:29:10: warning: '__builtin_memcpy' accessing 4 bytes at offsets 29 and 29 overlaps 4 bytes at offset 29 [-Wrestrict]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                                  __glibc_objsize0 (__dest));
+      |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+In function 'memcpy',
+    inlined from 'mspMakeTxPacket' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:617:3,
+    inlined from 'mspHandleRequestFeaturesConfig' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:564:3,
+    inlined from 'mspProcessRequest' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:408:7,
+    inlined from 'mspProcessByte' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/msp.c:292:5:
+/usr/include/aarch64-linux-gnu/bits/string_fortified.h:29:10: warning: '__builtin_memcpy' accessing 4 bytes at offsets 29 and 29 overlaps 4 bytes at offset 29 [-Wrestrict]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                                  __glibc_objsize0 (__dest));
+      |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 25%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sysload.c.o
+[ 26%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_mem.c.o
+[ 27%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c.o
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:29:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c: In function 'memoryRegisterHandler':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/cfassert.h:35:14: warning: implicit declaration of function 'vAssertCalled' [-Wimplicit-function-declaration]
+   35 |         else vAssertCalled( __LINE__ , __FILE__)
+      |              ^~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:97:5: note: in expansion of macro 'ASSERT'
+   97 |     ASSERT(handlerDef->type != handlers[i]->type);
+      |     ^~~~~~
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:30:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c: In function 'handleMemTesterWrite':
+[ 28%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/static_mem.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:223:21: warning: format '%lu' expects argument of type 'long unsigned int', but argument 4 has type 'uint32_t' {aka 'unsigned int'} [-Wformat=]
+  223 |         DEBUG_PRINT("Verification failed: expected: %d, actual: %d, addr: %lu\n", expectedData, actualData, addr);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/debug.h:49:24: note: in definition of macro 'DEBUG_FMT'
+   49 | #define DEBUG_FMT(fmt) fmt
+      |                        ^~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:223:9: note: in expansion of macro 'DEBUG_PRINT'
+  223 |         DEBUG_PRINT("Verification failed: expected: %d, actual: %d, addr: %lu\n", expectedData, actualData, addr);
+      |         ^~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/mem.c:223:77: note: format string is defined here
+  223 |         DEBUG_PRINT("Verification failed: expected: %d, actual: %d, addr: %lu\n", expectedData, actualData, addr);
+      |                                                                           ~~^
+      |                                                                             |
+      |                                                                             long unsigned int
+      |                                                                           %u
+[ 29%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/pptraj_compressed.c.o
+[ 29%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/pptraj.c.o
+[ 30%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/supervisor.c.o
+[ 31%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/supervisor_state_machine.c.o
+[ 32%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/app_channel.c.o
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../vendor/FreeRTOS/include/portable.h:51,
+                 from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../vendor/FreeRTOS/include/FreeRTOS.h:63,
+                 from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/app_channel.c:29:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/app_channel.c: In function 'appchannelReceiveDataPacket':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../vendor/FreeRTOS/portable/ThirdParty/GCC/Posix/portmacro.h:63:23: warning: overflow in conversion from 'long unsigned int' to 'int' changes value from '18446744073709551615' to '-1' [-Woverflow]
+   63 | #define portMAX_DELAY ( TickType_t ) ULONG_MAX
+      |                       ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/app_channel.c:70:18: note: in expansion of macro 'portMAX_DELAY'
+   70 |     tickToWait = portMAX_DELAY;
+      |                  ^~~~~~~~~~~~~
+[ 33%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/peer_localization.c.o
+[ 33%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/axis3fSubSampler.c.o
+[ 34%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/commander.c.o
+[ 35%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander.c.o
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander.c:31:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander.c: In function 'notifySetpointsStopDecoder':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/utils/interface/cfassert.h:35:14: warning: implicit declaration of function 'vAssertCalled' [-Wimplicit-function-declaration]
+   35 |         else vAssertCalled( __LINE__ , __FILE__)
+      |              ^~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander.c:99:3: note: in expansion of macro 'ASSERT'
+   99 |   ASSERT(datalen == sizeof(struct notifySetpointsStopPacket));
+      |   ^~~~~~
+[ 36%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_rpyt.c.o
+[ 38%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_generic.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_generic.c: In function 'fullStateDecoder':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_generic.c:367:3: warning: 'quatdecompress' accessing 16 bytes in a region of size 4 [-Wstringop-overflow=]
+  367 |   quatdecompress(values->quat, (float *)&setpoint->attitudeQuaternion.q0);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_generic.c:367:3: note: referencing argument 2 of type 'float[4]'
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_generic.c:36:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/modules/interface/quatcompress.h:65:20: note: in a call to function 'quatdecompress'
+   65 | static inline void quatdecompress(uint32_t comp, float q[4])
+      |                    ^~~~~~~~~~~~~~
+[ 39%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c.o
+[ 39%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c: In function 'lhPersistDataHandler':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c:294:41: warning: cast to pointer from integer of different size [-Wint-to-pointer-cast]
+  294 |     workerSchedule(lhPersistDataWorker, (void*)args->combinedField);
+      |                                         ^
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c: In function 'extPosePackedHandler':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c:221:7: warning: 'quatdecompress' accessing 16 bytes in a region of size 4 [-Wstringop-overflow=]
+  221 |       quatdecompress(item->quat, (float *)&ext_pose.quat.q0);
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c:221:7: note: referencing argument 2 of type 'float[4]'
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_localization_service.c:54:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../src/modules/interface/quatcompress.h:65:20: note: in a call to function 'quatdecompress'
+   65 | static inline void quatdecompress(uint32_t comp, float q[4])
+      |                    ^~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c: In function 'invSqrt':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:291:12: warning: 'y' is used uninitialized [-Wuninitialized]
+  291 |   long i = *(long*)&y;
+      |            ^~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:290:9: note: 'y' declared here
+  290 |   float y = x;
+      |         ^
+In function 'invSqrt',
+    inlined from 'sensfusion6UpdateQImpl' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:198:17,
+    inlined from 'sensfusion6UpdateQ' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:92:3:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:291:12: warning: array subscript 'long int[0]' is partly outside array bounds of 'float[1]' [-Warray-bounds=]
+  291 |   long i = *(long*)&y;
+      |            ^~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c: In function 'sensfusion6UpdateQ':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:290:9: note: object 'y' of size 4
+  290 |   float y = x;
+      |         ^
+In function 'invSqrt',
+    inlined from 'sensfusion6UpdateQImpl' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:249:15,
+    inlined from 'sensfusion6UpdateQ' at /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:92:3:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:291:12: warning: array subscript 'long int[0]' is partly outside array bounds of 'float[1]' [-Warray-bounds=]
+  291 |   long i = *(long*)&y;
+      |            ^~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c: In function 'sensfusion6UpdateQ':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/sensfusion6.c:290:9: note: object 'y' of size 4
+  290 |   float y = x;
+      |         ^
+[ 40%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c.o
+[ 41%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/eventtrigger.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c: In function 'stabilizerTask':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c:289:21: warning: passing argument 1 of 'vTaskDelayUntil' from incompatible pointer type [-Wincompatible-pointer-types]
+  289 |     vTaskDelayUntil(&lastWakeTime, F2T(RATE_MAIN_LOOP));
+      |                     ^~~~~~~~~~~~~
+      |                     |
+      |                     uint32_t * {aka unsigned int *}
+In file included from /workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c:31:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/sitl_make/../vendor/FreeRTOS/include/task.h:840:42: note: expected 'TickType_t * const' {aka 'long unsigned int * const'} but argument is of type 'uint32_t *' {aka 'unsigned int *'}
+  840 | void vTaskDelayUntil( TickType_t * const pxPreviousWakeTime,
+      |                       ~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c: At top level:
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/stabilizer.c:210:13: warning: 'batteryCompensation' defined but not used [-Wunused-function]
+  210 | static void batteryCompensation(const motors_thrust_uncapped_t* motorThrustUncapped, motors_thrust_uncapped_t* motorThrustBatCompUncapped)
+      |             ^~~~~~~~~~~~~~~~~~~
+[ 42%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/position_estimator_altitude.c.o
+[ 43%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator.c.o
+[ 43%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator_complementary.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator.c: In function 'stateEstimatorSwitchTo':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator.c:128: warning: "ESTIMATOR" redefined
+  128 |     #define ESTIMATOR StateEstimatorTypeAutoSelect
+      | 
+<command-line>: note: this is the location of the previous definition
+[ 44%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator_kalman.c.o
+[ 45%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/kalman_core.c.o
+[ 46%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_absolute_height.c.o
+[ 47%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_distance.c.o
+[ 48%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_flow.c.o
+[ 48%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_pose.c.o
+[ 50%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_position.c.o
+[ 51%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_sweep_angles.c.o
+[ 52%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_tdoa.c.o
+[ 53%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_tof.c.o
+[ 54%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_core/mm_yaw_error.c.o
+[ 54%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/kalman_supervisor.c.o
+[ 55%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/estimator/estimator_ukf.c.o
+[ 56%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/outlierfilter/outlierFilterTdoa.c.o
+[ 57%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/outlierfilter/outlierFilterTdoaSteps.c.o
+[ 58%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/outlierfilter/outlierFilterLighthouse.c.o
+[ 58%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/attitude_pid_controller.c.o
+[ 59%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/position_controller_pid.c.o
+[ 60%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller.c: In function 'controllerInit':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller.c:59: warning: "CONTROLLER" redefined
+   59 |     #define CONTROLLER ControllerTypeOot
+      | 
+<command-line>: note: this is the location of the previous definition
+[ 61%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller_pid.c.o
+[ 63%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller_mellinger.c.o
+[ 64%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller_indi.c.o
+[ 64%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/position_controller_indi.c.o
+[ 65%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/controller/controller_brescianini.c.o
+[ 66%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/power_distribution_sitl.c.o
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/power_distribution_sitl.c: In function 'getMotorRatio':
+/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/power_distribution_sitl.c:219:1: warning: control reaches end of non-void function [-Wreturn-type]
+  219 | }
+      | ^
+[ 67%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/crtp_commander_high_level.c.o
+[ 68%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/modules/src/planner.c.o
+[ 68%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/platform/src/platform.c.o
+[ 69%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/platform/src/platform_sitl.c.o
+[ 70%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/filter.c.o
+[ 71%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/eprintf.c.o
+[ 72%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/crc32.c.o
+[ 73%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/num.c.o
+[ 73%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/debug.c.o
+[ 76%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/configblocksitl.c.o
+[ 76%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/cfassert.c.o
+[ 77%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/rateSupervisor.c.o
+[ 78%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/statsCnt.c.o
+[ 78%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/kve/kve.c.o
+[ 79%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/src/utils/src/kve/kve_storage.c.o
+[ 80%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/version.c.o
+[ 81%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/event_groups.c.o
+[ 82%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/list.c.o
+[ 83%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/queue.c.o
+[ 83%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/tasks.c.o
+[ 84%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/timers.c.o
+[ 85%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/croutine.c.o
+[ 86%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/portable/ThirdParty/GCC/Posix/port.c.o
+[ 88%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/portable/ThirdParty/GCC/Posix/utils/wait_for_event.c.o
+[ 88%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/.deps/CrazySim/crazyflie-firmware/vendor/FreeRTOS/portable/MemMang/heap_3.c.o
+[ 89%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/src/controller_tinympc.cpp.o
+[ 90%] Building C object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/src/tinyracer_racing.c.o
+[ 91%] Building C object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/src/tinyracer_debug.c.o
+[ 92%] Building C object CMakeFiles/cf2.dir/workspace/tools/crazysim_mujoco/sitl/sequential_obstacle_link_sitl.c.o
+[ 93%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/utils.cpp.o
+[ 93%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/model.cpp.o
+[ 94%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/auxil.cpp.o
+[ 95%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/cost_lqr.cpp.o
+[ 96%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/lqr.cpp.o
+[ 97%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/constraint_linear.cpp.o
+[ 97%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/admm.cpp.o
+[ 98%] Building CXX object CMakeFiles/cf2.dir/workspace/apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/rho_benchmark.cpp.o
+[100%] Linking CXX executable cf2
+[100%] Built target cf2

@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #define TINYRACER_VISION_V2_HEADER "\x90\x19\x08\x39"
+#define TINYRACER_VISION_V3_HEADER "\x90\x19\x08\x3a"
 #define TINYRACER_VISION_HEADER_LEN 4
 #define TINYRACER_VISION_V2_VERSION 2
 
@@ -32,7 +33,24 @@ typedef struct __attribute__((packed)) {
   uint32_t checksum;
 } TinyRacerVisionV2Packet;
 
+typedef struct __attribute__((packed)) {
+  TinyRacerVisionV2Payload base;
+  /* Pinhole intrinsics normalized by image width/height. */
+  float gate_fx_normalized;
+  float gate_fy_normalized;
+  float gate_cx_normalized;
+  float gate_cy_normalized;
+} TinyRacerVisionV3Payload;
+
+typedef struct __attribute__((packed)) {
+  uint8_t header[TINYRACER_VISION_HEADER_LEN];
+  TinyRacerVisionV3Payload payload;
+  uint32_t checksum;
+} TinyRacerVisionV3Packet;
+
 _Static_assert(sizeof(TinyRacerVisionV2Packet) == 108,
                "TinyRacer vision v2 packet ABI changed");
+_Static_assert(sizeof(TinyRacerVisionV3Packet) == 124,
+               "TinyRacer vision v3 packet ABI changed");
 
 #endif

@@ -26,6 +26,10 @@ class TrajectorySettings:
     circle_radius_m: float = 0.75
     circle_period_s: float = 15.0
     circle_laps: int = 1
+    oval_x_radius_m: float = 1.0
+    oval_y_radius_m: float = 0.5
+    oval_period_s: float = 15.0
+    oval_laps: int = 1
     figure8_x_amplitude_m: float = 0.5
     figure8_y_amplitude_m: float = 1.0
     figure8_period_s: float = 15.0
@@ -77,6 +81,16 @@ def prompt_settings(defaults: TrajectorySettings) -> TrajectorySettings:
             "circle_period_s", defaults.circle_period_s, float
         ),
         circle_laps=prompt_number("circle_laps", defaults.circle_laps, int),
+        oval_x_radius_m=prompt_number(
+            "oval_x_radius_m", defaults.oval_x_radius_m, float
+        ),
+        oval_y_radius_m=prompt_number(
+            "oval_y_radius_m", defaults.oval_y_radius_m, float
+        ),
+        oval_period_s=prompt_number(
+            "oval_period_s", defaults.oval_period_s, float
+        ),
+        oval_laps=prompt_number("oval_laps", defaults.oval_laps, int),
         figure8_x_amplitude_m=prompt_number(
             "figure8_x_amplitude_m", defaults.figure8_x_amplitude_m, float
         ),
@@ -118,6 +132,10 @@ def validate_settings(settings: TrajectorySettings) -> None:
         "circle_radius_m": settings.circle_radius_m,
         "circle_period_s": settings.circle_period_s,
         "circle_laps": settings.circle_laps,
+        "oval_x_radius_m": settings.oval_x_radius_m,
+        "oval_y_radius_m": settings.oval_y_radius_m,
+        "oval_period_s": settings.oval_period_s,
+        "oval_laps": settings.oval_laps,
         "figure8_x_amplitude_m": settings.figure8_x_amplitude_m,
         "figure8_y_amplitude_m": settings.figure8_y_amplitude_m,
         "figure8_period_s": settings.figure8_period_s,
@@ -266,6 +284,28 @@ def circle_path(radius_m: float, laps: int) -> PathFunction:
             (radius_m * angular_rate * math.cos(angle), radius_m * angular_rate * math.sin(angle), 0.0),
             (radius_m * (angular_acceleration * math.cos(angle) - angular_rate**2 * math.sin(angle)),
              radius_m * (angular_acceleration * math.sin(angle) + angular_rate**2 * math.cos(angle)), 0.0),
+        )
+
+    return path
+
+
+def oval_path(x_radius_m: float, y_radius_m: float, laps: int) -> PathFunction:
+    def path(time_s: float, duration_s: float):
+        tau = min(max(time_s / duration_s, 0.0), 1.0)
+        blend = 10.0 * tau**3 - 15.0 * tau**4 + 6.0 * tau**5
+        blend_dot = (30.0 * tau**2 - 60.0 * tau**3 + 30.0 * tau**4) / duration_s
+        blend_ddot = (60.0 * tau - 180.0 * tau**2 + 120.0 * tau**3) / duration_s**2
+        angle = 2.0 * math.pi * laps * blend
+        angular_rate = 2.0 * math.pi * laps * blend_dot
+        angular_acceleration = 2.0 * math.pi * laps * blend_ddot
+        return (
+            (x_radius_m * math.sin(angle), y_radius_m * (1.0 - math.cos(angle)), 0.0),
+            (x_radius_m * angular_rate * math.cos(angle), y_radius_m * angular_rate * math.sin(angle), 0.0),
+            (
+                x_radius_m * (angular_acceleration * math.cos(angle) - angular_rate**2 * math.sin(angle)),
+                y_radius_m * (angular_acceleration * math.sin(angle) + angular_rate**2 * math.cos(angle)),
+                0.0,
+            ),
         )
 
     return path
@@ -448,10 +488,21 @@ def main() -> int:
             circle_path(settings.circle_radius_m, settings.circle_laps),
         ),
         (
+            "oval",
+            settings.oval_period_s * settings.oval_laps,
+            True,
+            True,
+            oval_path(
+                settings.oval_x_radius_m,
+                settings.oval_y_radius_m,
+                settings.oval_laps,
+            ),
+        ),
+        (
             "figure8",
             settings.figure8_period_s * settings.figure8_laps,
             True,
-            False,
+            True,
             figure8_path(
                 settings.figure8_x_amplitude_m,
                 settings.figure8_y_amplitude_m,
