@@ -643,6 +643,31 @@ All five log-supported nominal flights failed. The two earlier nominal
 failures without raw logs remain supplemental reports and are not used in the
 five-flight table.
 
+N=5 on-target timing: aerodynamic-drag/two-fan mission
+-------------------------------------------------------
+
+This table uses the complete five-flight outcome cohort for every method.
+Timing statistics are first computed within each valid flight interval and
+then averaged across flights, so a longer-surviving failed flight does not
+receive extra weight.  `Exact maximum` is the cumulative DWT maximum through
+the last valid endpoint.  The nominal takeoff-failure flight locked before a
+valid timed trajectory interval; its timing cells are therefore unavailable,
+and the nominal timing averages use the other four flights without replacing
+the failed fifth outcome.
+
+Method             Cohort  Timed  Mean flight median  Mean exact maximum  Worst exact maximum  Deadline use  Overruns
+-----------------  ------  -----  ------------------  ------------------  -------------------  ------------  --------
+Embedded LIMO        5       5          34.865 ms           43.151 ms            44.323 ms          88.65%        0
+Posthoc LIMO         5       5          33.712 ms           40.591 ms            42.953 ms          85.91%        0
+Analytic MPC-CBF     5       5          24.824 ms           31.092 ms            31.548 ms          63.10%        0
+Nominal TinyMPC      5       4          23.324 ms           28.936 ms            30.399 ms          60.80%        0
+
+The cohort is n=5 per method.  `Timed` is lower only for the nominal flight
+that physically failed before a valid timing interval existed.  This missing
+timing datum is not treated as a successful or excluded mission outcome.
+The condition is the fixed blocked-gap two-fan aerodynamic-disturbance setup;
+the saved record does not establish a calibrated wind-force magnitude.
+
 Scenario-2 mechanism and timing conclusion
 ------------------------------------------
 
@@ -833,15 +858,20 @@ analytic in-solver CBF is continuously active yet still contacts the floor in
 all five flights. The baseline failures cannot be dismissed as inactive safety
 mechanisms.
 
-On-target timing
-----------------
+N=5 on-target timing: aerodynamic disturbance plus 40% M1 loss
+----------------------------------------------------------------
 
-Method             Mean flight median step   Mean flight maximum   Worst maximum
------------------  ------------------------  --------------------  -------------
-Embedded LIMO              34.498 ms               42.931 ms          44.519 ms
-Posthoc LIMO               33.310 ms               40.810 ms          42.464 ms
-Analytic MPC-CBF           25.477 ms               31.657 ms          33.785 ms
-Nominal TinyMPC            22.635 ms               28.138 ms          29.354 ms
+The motor-fault cohort contains five flights and five valid timing intervals
+for every method.  Statistics are computed per flight and then averaged; the
+worst exact maximum is the largest cumulative DWT value observed in any of
+the five flights.
+
+Method             Cohort  Timed  Mean flight median  Mean exact maximum  Worst exact maximum  Deadline use  Overruns
+-----------------  ------  -----  ------------------  ------------------  -------------------  ------------  --------
+Embedded LIMO        5       5          34.498 ms           42.931 ms            44.519 ms          89.04%        0
+Posthoc LIMO         5       5          33.310 ms           40.810 ms            42.464 ms          84.93%        0
+Analytic MPC-CBF     5       5          25.477 ms           31.657 ms            33.785 ms          67.57%        0
+Nominal TinyMPC      5       5          22.635 ms           28.138 ms            29.354 ms          58.71%        0
 
 Every flight records zero 50 ms deadline overruns through its valid endpoint.
 The worst embedded step consumes 89.04% of the period. Scenario-3 failures are
