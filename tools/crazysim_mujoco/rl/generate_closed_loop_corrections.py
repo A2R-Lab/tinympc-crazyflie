@@ -15,20 +15,30 @@ from .generate_oracle_expert import (
     labeled_source, mirror_dataset, photometric_dataset,
     save_npz_deterministic, sha256)
 
-CORRECTION_SEEDS = frozenset((404, 505, 606))
-RESERVED_EVALUATION_SEEDS = frozenset((707, 808, 909))
+DEFAULT_CORRECTION_SEEDS = frozenset((404, 505, 606))
+DEFAULT_RESERVED_EVALUATION_SEEDS = frozenset((707, 808, 909))
 
 
-def validate_source_configs(configs: list[dict], source_policy_sha256: str) -> None:
+def validate_source_configs(configs: list[dict], source_policy_sha256: str,
+                            correction_seeds: frozenset[int] =
+                            DEFAULT_CORRECTION_SEEDS,
+                            reserved_evaluation_seeds: frozenset[int] =
+                            DEFAULT_RESERVED_EVALUATION_SEEDS) -> None:
+    if not correction_seeds:
+        raise ValueError("at least one correction seed is required")
+    overlap = correction_seeds & reserved_evaluation_seeds
+    if overlap:
+        raise ValueError(
+            f"correction and reserved seeds overlap: {sorted(overlap)}")
     observed = {int(config["random_seed"]) for config in configs}
-    if observed & RESERVED_EVALUATION_SEEDS:
+    if observed & reserved_evaluation_seeds:
         raise ValueError(
             "reserved evaluation seeds are forbidden: "
-            f"{sorted(observed & RESERVED_EVALUATION_SEEDS)}")
-    if observed != CORRECTION_SEEDS:
+            f"{sorted(observed & reserved_evaluation_seeds)}")
+    if observed != correction_seeds:
         raise ValueError(
             f"correction generation requires exactly seeds "
-            f"{sorted(CORRECTION_SEEDS)}, received {sorted(observed)}")
+            f"{sorted(correction_seeds)}, received {sorted(observed)}")
     for config in configs:
         seed = int(config["random_seed"])
         if config.get("vision_adapter") != "hybrid_rl":
@@ -65,7 +75,10 @@ def _counts(values: np.ndarray) -> list[int]:
 
 def generate(run_dirs: list[Path], course_path: Path, source_policy: Path,
              output_path: Path, manifest_path: Path,
-             lookahead_m: float = 2.25, recovery_m: float = 0.75) -> None:
+             lookahead_m: float = 2.25, recovery_m: float = 0.75,
+             correction_seeds: frozenset[int] = DEFAULT_CORRECTION_SEEDS,
+             reserved_evaluation_seeds: frozenset[int] =
+             DEFAULT_RESERVED_EVALUATION_SEEDS) -> None:
     policy_sha = sha256(source_policy)
     configured = []
     for run_dir in run_dirs:
@@ -75,7 +88,9 @@ def generate(run_dirs: list[Path], course_path: Path, source_policy: Path,
         summary = json.loads(summary_path.read_text())
         configured.append((run_dir, config_path, summary_path, config, summary))
     # Reject seed leakage and non-closed-loop sources before decoding frames.
-    validate_source_configs([item[3] for item in configured], policy_sha)
+    validate_source_configs(
+        [item[3] for item in configured], policy_sha, correction_seeds,
+        reserved_evaluation_seeds)
 
     course = json.loads(course_path.read_text())
     shards = []
@@ -128,8 +143,8 @@ def generate(run_dirs: list[Path], course_path: Path, source_policy: Path,
     })
     manifest = {
         "format": "tinympc-closed-loop-corrections-v1",
-        "correction_seeds": sorted(CORRECTION_SEEDS),
-        "reserved_evaluation_seeds": sorted(RESERVED_EVALUATION_SEEDS),
+        "correction_seeds": sorted(correction_seeds),
+        "reserved_evaluation_seeds": sorted(reserved_evaluation_seeds),
         "source_policy": {
             "path": str(source_policy.resolve()), "sha256": policy_sha},
         "lookahead_m": lookahead_m,
@@ -166,11 +181,22 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--lookahead-m", type=float, default=2.25)
     parser.add_argument("--recovery-m", type=float, default=0.75)
+    parser.add_argument("--correction-seeds", type=int, nargs="+",
+                        default=sorted(DEFAULT_CORRECTION_SEEDS))
+    parser.add_argument("--reserved-evaluation-seeds", type=int, nargs="+",
+                        default=sorted(DEFAULT_RESERVED_EVALUATION_SEEDS))
     args = parser.parse_args()
     if args.lookahead_m <= 0.0 or args.recovery_m < 0.0:
         parser.error("lookahead must be positive and recovery nonnegative")
+    correction_seeds = frozenset(args.correction_seeds)
+    reserved_evaluation_seeds = frozenset(args.reserved_evaluation_seeds)
+    if len(correction_seeds) != len(args.correction_seeds):
+        parser.error("correction seeds must be unique")
+    if len(reserved_evaluation_seeds) != len(args.reserved_evaluation_seeds):
+        parser.error("reserved evaluation seeds must be unique")
     generate(args.runs, args.course, args.source_policy, args.output,
-             args.manifest, args.lookahead_m, args.recovery_m)
+             args.manifest, args.lookahead_m, args.recovery_m,
+             correction_seeds, reserved_evaluation_seeds)
     return 0
 
 

@@ -47,6 +47,15 @@ class ClosedLoopCorrectionsTest(unittest.TestCase):
             validate_source_configs(
                 [config(404), config(505), config(606, "wrong")], "abc")
 
+    def test_iterative_seed_sets_remain_disjoint(self):
+        validate_source_configs(
+            [config(707), config(808), config(909)], "abc",
+            frozenset((707, 808, 909)), frozenset((1001, 1102, 1203)))
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            validate_source_configs(
+                [config(707), config(808), config(909)], "abc",
+                frozenset((707, 808, 909)), frozenset((909, 1001)))
+
     def test_focus_includes_disagreement_recovery_transition_and_terminal(self):
         focus = correction_focus_mask(
             dataset(), transition_radius=0, terminal_frames=1)

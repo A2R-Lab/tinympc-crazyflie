@@ -15,6 +15,8 @@ set -euo pipefail
 REPOSITORY_DIR="${REPOSITORY_DIR:-/home/cchen/tinympc-crazyflie}"
 PYTHON_BIN="${PYTHON_BIN:-/home/cchen/isaacsim-env/bin/python3.12}"
 COURSE_FILE="${COURSE_FILE:-$REPOSITORY_DIR/tools/crazysim_mujoco/courses/dronet_u.json}"
+CORRECTION_SEEDS="${CORRECTION_SEEDS:-404 505 606}"
+RESERVED_EVALUATION_SEEDS="${RESERVED_EVALUATION_SEEDS:-707 808 909}"
 mkdir -p "$OUTPUT_DIR"
 
 on_exit() {
@@ -39,5 +41,7 @@ cd "$REPOSITORY_DIR"
   --runs "${run_array[@]}" \
   --course "$COURSE_FILE" \
   --source-policy "$SOURCE_POLICY" \
+  --correction-seeds $CORRECTION_SEEDS \
+  --reserved-evaluation-seeds $RESERVED_EVALUATION_SEEDS \
   --output "$OUTPUT_DIR/closed_loop_corrections.npz" \
   --manifest "$OUTPUT_DIR/manifest.json"
