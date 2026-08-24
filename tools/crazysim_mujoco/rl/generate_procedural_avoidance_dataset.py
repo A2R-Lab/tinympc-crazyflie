@@ -222,6 +222,7 @@ def build_corridor_xml(config: DatasetConfig, layout: Layout, appearance_id: int
     <geom name="floor" type="box" pos="{half_length:.4f} 0 -0.055" size="{half_length:.4f} {wall_y + 0.2:.4f} 0.05" rgba="{rgba(floor)}"/>
     <geom name="left_wall" type="box" pos="{half_length:.4f} {wall_y:.4f} 1.0" size="{half_length:.4f} 0.06 1.0" rgba="{rgba(wall)}"/>
     <geom name="right_wall" type="box" pos="{half_length:.4f} {-wall_y:.4f} 1.0" size="{half_length:.4f} 0.06 1.0" rgba="{rgba(wall)}"/>
+    <geom name="end_wall" type="box" pos="{config.corridor_length_m:.4f} 0 1.0" size="0.06 {wall_y:.4f} 1.0" rgba="{rgba(wall)}"/>
     <geom name="ceiling" type="box" pos="{half_length:.4f} 0 {layout.corridor_height_m:.4f}" size="{half_length:.4f} {wall_y:.4f} 0.04" rgba="{rgba(wall)}"/>
     <geom name="obstacle" type="box" pos="{layout.obstacle_x_m:.4f} {layout.obstacle_center_y_m:.4f} {layout.obstacle_height_m / 2:.4f}" size="{layout.obstacle_half_x_m:.4f} {layout.obstacle_half_y_m:.4f} {layout.obstacle_height_m / 2:.4f}" rgba="{rgba(obstacle)}"/>
     <body name="camera_mount" mocap="true" pos="0 0 {config.camera_height_m:.4f}">
@@ -271,7 +272,19 @@ def _episode_arrays(config: DatasetConfig, episode_id: int) -> Tuple[Dict[str, n
     finish_x = config.corridor_length_m - 0.25
     if outcome == "timeout":
         finish_x = max(layout.obstacle_x_m + 1.1, 0.72 * finish_x)
-    x = np.linspace(0.25, finish_x, config.samples_per_episode, dtype=np.float64)
+    # Put half of the temporal samples around the actual decision/clearance
+    # region.  Uniform sampling over a long empty corridor made dangerous
+    # states too rare even with many nominal frames.
+    near_start = max(0.25, layout.obstacle_x_m - 1.0)
+    near_finish = min(finish_x, layout.obstacle_x_m + 1.0)
+    before_count = config.samples_per_episode // 4
+    near_count = config.samples_per_episode // 2
+    after_count = config.samples_per_episode - before_count - near_count
+    x = np.concatenate((
+        np.linspace(0.25, near_start, before_count, endpoint=False),
+        np.linspace(near_start, near_finish, near_count, endpoint=False),
+        np.linspace(near_finish, finish_x, after_count, endpoint=True),
+    )).astype(np.float64)
     if outcome == "contact":
         # Deliberately steer toward the wall-attached obstacle.  This creates a
         # true contact label even for shallow obstacle intrusions.
