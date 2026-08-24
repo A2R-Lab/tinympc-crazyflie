@@ -1,0 +1,72 @@
+{
+  "format": "tinympc-hybrid-rl-closed-loop-acceptance-v1",
+  "accepted": false,
+  "model_sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e",
+  "seeds": [404, 505, 606],
+  "successes": 0,
+  "trials": 3,
+  "mean_speed_mps": 0.6542610378577033,
+  "mean_cross_track_rmse_m": 0.4753135278294989,
+  "runs": [
+    {
+      "name": "seed_404_retry1",
+      "seed": 404,
+      "launch_time_s": 0.8390000000000006,
+      "course_success": false,
+      "contact_after_launch_s": 16.8219999999986,
+      "contact_obstacle_clearance_min_m": -0.044478007780961004,
+      "wall_clearance_min_m": 0.1082902635641563,
+      "cross_track_rmse_m": 0.3905388665391338,
+      "mean_speed_mps": 0.6535614593571125,
+      "reverse_fraction": 0.0,
+      "action_counts_track_left_right": [218, 112, 174],
+      "summary_sha256": "c6cbe04fd447e960ee9cf5068491e5b8695fd0bd43a2bf9229c4eb2dd69fcbe7",
+      "run_config_sha256": "b06f9d3b1184c11c47870c772b8d016e836ea3f55e435e623ef358fbd6ae6d29",
+      "state_csv_sha256": "dafcdda78160c1cbc75223dab4f31a76bf027d6525adac12b889aa4deda606e1",
+      "vision_csv_sha256": "8143ee57355f71238d3aef704e4b66e921210fc63b32efe42d2913e487763d90",
+      "fpv_camera_mp4_sha256": "34b069fb83edcca89abe9664314972771b90cc64c17f5f21cd8f3188ee48d234"
+    },
+    {
+      "name": "seed_505",
+      "seed": 505,
+      "launch_time_s": 0.8370000000000006,
+      "course_success": false,
+      "contact_after_launch_s": 14.769999999996788,
+      "contact_obstacle_clearance_min_m": 0.18512923506335774,
+      "wall_clearance_min_m": -0.04438248920567532,
+      "cross_track_rmse_m": 0.49854748061323756,
+      "mean_speed_mps": 0.7408211564738266,
+      "reverse_fraction": 0.058869329722390465,
+      "action_counts_track_left_right": [143, 96, 204],
+      "summary_sha256": "6efb3771ebdcf398b14d9adde7376943f37700ebb78a4db83c19ca92ed4f74ad",
+      "run_config_sha256": "815114e4285c3f0ab2a25f39a7e28882c510110d267f5ec7185a2bc33ec6a1cb",
+      "state_csv_sha256": "6109547f68bee5f72f1d1579657ad587a43cf0c65650c9a03fca818499494c62",
+      "vision_csv_sha256": "747cc82a0e01b81ae87a995e7330b5dbe22a913f7aa8482991c98536144ff2a9",
+      "fpv_camera_mp4_sha256": "4e242249404d5cb4b32ff0792adddd2099d5cc32e49ae4cf88b0fe132fca91bd"
+    },
+    {
+      "name": "seed_606",
+      "seed": 606,
+      "launch_time_s": 0.8370000000000006,
+      "course_success": false,
+      "contact_after_launch_s": 4.863000000000238,
+      "contact_obstacle_clearance_min_m": -0.02896656965897071,
+      "wall_clearance_min_m": 0.16342734717180077,
+      "cross_track_rmse_m": 0.5368542363361255,
+      "mean_speed_mps": 0.5684004977421707,
+      "reverse_fraction": 0.0,
+      "action_counts_track_left_right": [0, 146, 0],
+      "summary_sha256": "18f468782bb2b4b55795bbfdf09123a3fe0255ded75d4e967c445310a20ab71f",
+      "run_config_sha256": "08ed9905c2bd56bca58d8e27fea107764efadfe9ec404529572590e6884bb52c",
+      "state_csv_sha256": "8d976c586cbfe2f8b484f3539781b22857b9cc8e5fc382a7ebd6da93e7d44d76",
+      "vision_csv_sha256": "c5cb4cb6293d811f797dbcdbe33ec36f1ff1eff06e673e35250f11dd8df53bd5",
+      "fpv_camera_mp4_sha256": "c38b669662260ac5814092d27cc9bde8fa3c8e84cdb0d5bc21f7c8b51fbdbd1f"
+    }
+  ],
+  "excluded_attempts": [
+    {
+      "name": "seed_404",
+      "reason": "Preflight CMake cache host/container path mismatch; no firmware build or simulation."
+    }
+  ]
+}

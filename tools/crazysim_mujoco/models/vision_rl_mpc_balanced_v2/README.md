@@ -2,9 +2,9 @@
 
 This is the retrained two-frame obstacle-avoidance candidate produced from a
 balanced procedural MuJoCo dataset and U-course camera examples. It is stored
-separately from `vision_rl_mpc_poc`: it has passed offline acceptance, but has
-not yet passed a closed-loop CrazySim flight and is therefore not the default
-deployed policy.
+separately from `vision_rl_mpc_poc`: it passed offline acceptance but failed
+its subsequent three-seed closed-loop CrazySim acceptance and is therefore not
+the default deployed policy.
 
 The policy input is normalized float32 grayscale with shape `[1,2,160,160]`
 in `[previous,current]` order. Output logits use the canonical action order
@@ -49,9 +49,29 @@ recall of 0.8932 / 0.6185. The original proof-of-concept policy scored 0.0575
 with recalls of 0.0 / 0.1526 on the same frames.
 
 These U-course actions did not affect the retained trajectories. Consequently,
-the result establishes improved visual action classification and transfer, not
-collision avoidance, stability, course completion, or real-flight safety. A
-fresh closed-loop CrazySim evaluation is required before promotion.
+that result establishes improved visual action classification and transfer,
+not collision avoidance, stability, course completion, or real-flight safety.
+
+## Closed-loop U-course result
+
+Fresh seeds 404, 505, and 606 were run with the candidate actively controlling
+the firmware, stop-on-contact semantics, sensor noise, light turbulence, a
+30 Hz camera, one-frame latency, and no Flow Deck. The result was 0/3 course
+completions:
+
+- seed 404 cleared the first three obstacles and the turn, then contacted
+  `static_4` 16.822 s after launch;
+- seed 505 cleared the obstacles encountered before the turn, then contacted
+  the outer turn wall 14.770 s after launch;
+- seed 606 emitted LEFT throughout its retained active camera stream and
+  contacted `static_2` 4.863 s after launch.
+
+The three runs averaged 0.654 m/s active horizontal speed and 0.475 m
+cross-track RMSE. A path-relative action diagnostic on the resulting streams
+measured 0.699 decision accuracy, 0.894 LEFT recall, and 0.552 RIGHT recall.
+The original action collapse is reduced, but sequential side switching and
+recovery are not reliable enough for deployment. Compact summaries, configs,
+hashes, and the diagnostic are retained under `evidence/closed_loop_dronet_u`.
 
 ## Integrity
 

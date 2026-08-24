@@ -1,0 +1,179 @@
+{
+  "format": "tinympc-crazysim-run-config-v1",
+  "repository": "/home/cchen/tinympc-crazyflie",
+  "repository_commit": "ac163f4a4be0e2b8bf7da393c2584a51c25754a9",
+  "repository_dirty": false,
+  "runner_sha256": "d94dc974197edaff8bc1fa8ba680a48c40b58887b751e8a28e0b9fba660caa6f",
+  "controller_source_sha256": {
+    "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "161625706472f5765857acd5baa4a92f29b8f2235cc9b03ee5a19effac1b07d8",
+    "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "ce338e4fcdeeee07cfb4e91b442d5889551067684f03e22f772f79227f036ddf",
+    "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "63ca6aa281f2c882baf8ad92d0f0aa995d29915b8fa4807319640019febf0178",
+    "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+    "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+    "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+    "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+    "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+    "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+  },
+  "trajectory_header_sha256": "533c1d606f7e0e0dbac121eb54557483f53f6f774e94e789e17c6683809ea366",
+  "trajectory": "dronet_u",
+  "actuator_lti": true,
+  "rate_cascade": true,
+  "direct_plan_replay": false,
+  "rate_identification": false,
+  "reference_mode": "progress",
+  "level_cost_mode": "baseline",
+  "progress_sample_limit": 0,
+  "progress_speed_mps": 0.5,
+  "progress_reference_limits": "uncapped",
+  "progress_laps": 1,
+  "progress_entry_acceleration_mps2": 1.0,
+  "progress_terminal_deceleration_mps2": 1.5,
+  "progress_reward_weight": 0.0,
+  "flip_enabled": false,
+  "flip_trigger_s_m": 1.0,
+  "flip_trigger_window_m": 0.25,
+  "flip_duration_s": 0.8,
+  "flip_pitch_direction": 1,
+  "power_loop_enabled": false,
+  "power_loop_trigger_s_m": 1.0,
+  "power_loop_trigger_window_m": 0.25,
+  "power_loop_radius_m": 1.2,
+  "power_loop_bottom_speed_mps": 2.2,
+  "power_loop_top_speed_mps": 4.0,
+  "duration_s": 35.0,
+  "launch_time_s": 1.0,
+  "spawn_z_m": 0.5,
+  "model": "cf21B_500",
+  "mass": "stock",
+  "pwm_thrust_full_n": 0.2,
+  "launch_prespin": true,
+  "random_seed": 505,
+  "inertia_scale": 1.0,
+  "motor_tau_scale": 1.0,
+  "thrust_scale": 1.0,
+  "realtime_factor": 0.2,
+  "firmware_time_factor": 0.1942,
+  "vision_enabled": true,
+  "vision_model": {
+    "path": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_mpc_balanced_v2/policy.onnx",
+    "sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e"
+  },
+  "vision_adapter": "hybrid_rl",
+  "vision_scene": "dronet_u",
+  "vision_latency_frames": 1,
+  "camera_fps": 30.0,
+  "camera_calibration": {
+    "model": "Himax HM01B0",
+    "resolution": [
+      160,
+      160
+    ],
+    "fx_px": 89.1558392549,
+    "fy_px": 89.4608171623,
+    "cx_px": 81.103810523,
+    "cy_px": 73.3473030288,
+    "distortion_model": "opencv_plumb_bob",
+    "distortion_coefficients": [
+      -0.0176448766,
+      0.0994132451,
+      0.0054432154,
+      -0.006040012,
+      -0.1900189875
+    ],
+    "mujoco_vertical_fov_deg": 83.6091095,
+    "distortion_applied_in_mujoco": false,
+    "source_repository": "tinympc-perception",
+    "source_commit": "890bbd6923a9459d4d7ab7bee92542e4cb61c64d",
+    "source_file": "gap8_perception/configs/hm01b0_calibration.json"
+  },
+  "camera_only_enabled": false,
+  "camera_capture_enabled": true,
+  "camera_inference_enabled": true,
+  "vision_control_enabled": true,
+  "flowdeck_enabled": false,
+  "course": "dronet_u",
+  "course_manifest_sha256": "4e056562ea660098126210e47c486b6e9507f9267706d72d36e603da11bb81f6",
+  "course_scene_sha256": "1d14c420794e31c97b1c9230e1d8628b200badb2ad6c8d792cd626195a21e345",
+  "flight_video_requested": false,
+  "flight_video_fps": 24.0,
+  "flight_video_playback_speed": 2.0,
+  "stop_on_contact": true,
+  "extra_simulator_arguments": [
+    "--sensor-noise",
+    "--turbulence",
+    "light"
+  ],
+  "mpc_diagnostic": {
+    "mode": "off",
+    "enabled": false,
+    "schema": null,
+    "path": null,
+    "container": null,
+    "firmware_tick_us": 5149,
+    "drain_grace_s": 0.0,
+    "size_bytes": null,
+    "sha256": null
+  },
+  "acceptance_contract": {
+    "controller_sha256": "161625706472f5765857acd5baa4a92f29b8f2235cc9b03ee5a19effac1b07d8",
+    "bank_header_sha256": "5d5db163f21cbb9fc2be066d7d67a31de1447e4753dcda0d6b2d19845292bdd7",
+    "bank_provenance_sha256": "125ba361148397cdcc7f00d3389c7adabe13db477858b58095d6ec3fc03bba14",
+    "progress_path_sha256": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+    "frenet_error_sha256": "8fc767d767c07302c05b4e1833ade2bbbfa0c4cf5a3b74510974cedba372c0c1",
+    "generated_model_sha256": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+    "plant_model_sha256": "8f3a0f7cb6d13f5c5562d22da945394cf5c4d99988cf35bd9a67077bd6d47687",
+    "firmware_binary_sha256": "11d5d5ee81cd36a2cd4f72af600e1d1377671dce35b3b8aa3819384412852a8c",
+    "circle_radius_m": 0.75,
+    "flowdeck_enabled": false,
+    "passive_camera_capture_enabled": false,
+    "camera_inference_enabled": true,
+    "vision_control_enabled": true,
+    "direct_plan_replay": false,
+    "resolved_plant_profile": {
+      "name": "cf21B_500_runtime",
+      "mass_kg": 0.04338,
+      "diagonal_inertia_kg_m2": [
+        2.5e-05,
+        2.8e-05,
+        4.9e-05
+      ],
+      "drag_matrix_n_s_per_m": [
+        [
+          -0.02149163,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.02149163,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -0.02359736
+        ]
+      ],
+      "rpm_to_thrust": [
+        0.0,
+        -3.133427287299859e-07,
+        4.407354891648379e-10
+      ],
+      "normalized_command_full_thrust_n": 0.2,
+      "actuator_conversion_provenance": {
+        "source_class": "CrazySim runtime simulation authority; not hardware truth",
+        "source_revisions": {
+          "crazysim_commit": "3ec8b55da4bff887da542a9f314da825460e65be",
+          "crazyflie_firmware_commit": "aa6571dc465f06f7d1f9aaf7b0b861fbcd1b3d67",
+          "drone_models_commit": "89d8cf79fb722bf4bd7e363ade7d90d6c45d6d5d"
+        },
+        "source_sha256": {
+          "drone_models_params_toml": "5f9613e0f4fbf949e351e696ad5d840632405c2224313f1f12c7e1a57dd1e48e",
+          "crazysim_py": "a24cfd58f2d64600b9ba3d2b0a041a0a4520f7053199555028fd5249a4ad6d33"
+        },
+        "profile_sha256": "8f3a0f7cb6d13f5c5562d22da945394cf5c4d99988cf35bd9a67077bd6d47687"
+      }
+    }
+  }
+}
