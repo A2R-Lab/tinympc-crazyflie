@@ -143,6 +143,13 @@ def photometric_dataset(source: RunTransitions, episode_id: int, seed: int,
         noise = generator.normal(0.0, 2.0, source.frames.shape)
         frames = np.clip(source.frames.astype(np.float32) + noise,
                          0.0, 255.0).astype(np.uint8)
+    elif kind == "contrast":
+        frames = np.clip(
+            (source.frames.astype(np.float32) - 128.0) * 1.12 + 128.0,
+            0.0, 255.0).astype(np.uint8)
+    elif kind == "darkness":
+        frames = np.clip(source.frames.astype(np.float32) * 0.78 + 2.0,
+                         0.0, 255.0).astype(np.uint8)
     else:
         raise ValueError(kind)
     return _copy_dataset(
