@@ -31,6 +31,11 @@ course, camera, timing, noise, turbulence, and one-frame delivery delay planned
 for evaluation. Each retained run must include `run_config.json`, `state.csv`,
 `vision.csv`, and `fpv_camera.mp4`.
 
+The bounded collection/evaluation matrix is encoded in
+`slurm/run_crazysim_matrix.sbatch`. Set `PURPOSE` to `calibration`, `training`,
+`baseline`, or `hybrid` and provide a fresh `OUTPUT_ROOT`. Calibrate once with
+DroNet and use that same factor for every training and paired evaluation run.
+
 Submit training through SLURM; do not run the full job on the login node:
 
 ```bash
