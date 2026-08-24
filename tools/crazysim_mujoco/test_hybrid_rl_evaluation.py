@@ -78,6 +78,7 @@ class AnalyzeRunMetricsTest(unittest.TestCase):
             summary["course_cross_track_error_rmse_m"], math.sqrt(0.075))
         self.assertAlmostEqual(summary[
             "course_reverse_tangential_motion_fraction"], 1.0 / 3.0)
+        self.assertIsNotNone(summary["course_mean_horizontal_speed_active_mps"])
         self.assertEqual(summary["course_tangential_speed_min_mps"], -0.1)
         self.assertAlmostEqual(summary["vision_inference_latency_ms"]["p50"], 3.5)
         self.assertAlmostEqual(

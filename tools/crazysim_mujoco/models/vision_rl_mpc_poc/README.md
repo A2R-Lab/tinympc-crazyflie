@@ -19,3 +19,50 @@ Camera calibration provenance is recorded in each generated `bundle.json`.
 Only numeric values from tinympc-perception commit
 `890bbd6923a9459d4d7ab7bee92542e4cb61c64d` are used; no third-party texture
 or scene asset is copied into this bundle.
+
+## Selected proof-of-concept bundle
+
+The checked-in bundle was trained by Slurm job `5867` on an RTX 5090 using
+simulator seeds 11, 22, and 33. Its optimizer seed is 20260824. The retained
+artifacts are:
+
+- `checkpoint.pt`: `105afe86375d361960a8aa1a0938d6f62dc58c99c0ef2172d57e12e40cbf21b4`
+- `policy.onnx`: `27ced97ef2dd0cb9c27fc0a91ebd1069497f4cd8495d94c839465f1873bb578c`
+- `bundle.json`: camera, algorithm, action, source-run, and artifact provenance
+- `training_metrics.json`: all 20 epoch metrics
+
+The full raw runs remain under
+`apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc`. Compact
+calibration, scheduler, validation, and held-out comparison evidence is copied
+under `evidence/`.
+
+## Held-out result
+
+Evaluation used paired seeds 101, 202, and 303 with byte-identical firmware,
+factor 0.1942, 160 x 160 HM01B0 camera geometry, one-frame latency, sensor
+noise, light turbulence, and stop-on-contact semantics.
+
+| Metric | DroNet v3 | Hybrid RL |
+|---|---:|---:|
+| Contact-free completions | 0/3 | 0/3 |
+| Mean active horizontal speed | 0.467 m/s | 0.405 m/s |
+| Minimum obstacle clearance | -0.0287 m | -0.0294 m |
+| Minimum wall clearance | -0.0292 m | +0.5512 m |
+| Mean cross-track RMSE | 0.436 m | 0.094 m |
+| Mean cross-track p95 | 0.734 m | 0.164 m |
+| Reverse tangential fraction | 0 | 0 |
+| Mean inference p95 | 3.344 ms | 0.621 ms |
+
+The policy improved path tracking, wall clearance, and compute latency, but it
+did not improve the primary course-completion outcome: every held-out hybrid
+run still contacted an obstacle, and its mean speed was lower. The deployed
+actor also collapsed almost completely to `TRACK`: it chose `TRACK` for 230/230,
+120/120, and 214/216 frames across the three seeds. That explains the low
+cross-track error and high wall clearance, but also its failure to dodge. This
+is evidence that the interface and training method work end-to-end, not
+evidence that this small offline policy is ready for flight or better than
+DroNet.
+
+The exact course is a diagram-derived MuJoCo reconstruction, HM01B0 lens
+distortion is recorded but not rendered, and three dynamics/noise seeds do not
+establish visual, geometric, or sim-to-real generalization.

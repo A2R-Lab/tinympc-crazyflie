@@ -1,0 +1,14 @@
+{
+  "job_id": 5867,
+  "output_dir": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_artifacts_mbpo_seed20260824",
+  "run_dirs": [
+    "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_11",
+    "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_22",
+    "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_33"
+  ],
+  "script": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/rl/slurm/train_vision_rl.sbatch",
+  "script_sha256": "b114e5d3ea585247f6583ea5d097531489cb7469375f61490f7d9ad741c6be48",
+  "stderr": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_artifacts_mbpo_seed20260824/slurm-5867.err",
+  "stdout": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_artifacts_mbpo_seed20260824/slurm-5867.out",
+  "submitted_from": "/home/cchen/tinympc-crazyflie"
+}

@@ -1,0 +1,91 @@
+{
+  "artifacts": {
+    "bundle.json": {
+      "bytes": 5820,
+      "sha256": "52d8569e6404cc8cd952b3e4acc1caf39eee9464fbe0179341bb11f4b97b13b4"
+    },
+    "checkpoint.pt": {
+      "bytes": 95349,
+      "sha256": "105afe86375d361960a8aa1a0938d6f62dc58c99c0ef2172d57e12e40cbf21b4"
+    },
+    "policy.onnx": {
+      "bytes": 89860,
+      "sha256": "27ced97ef2dd0cb9c27fc0a91ebd1069497f4cd8495d94c839465f1873bb578c"
+    },
+    "training_metrics.json": {
+      "bytes": 7651,
+      "sha256": "28bd9868e4e6f918df7d4feb9c65464344ab1cea687562b5a9a33754a83d8f67"
+    }
+  },
+  "job": {
+    "cpus": 8,
+    "elapsed": "00:00:22",
+    "exit_code": "0:0",
+    "id": 5867,
+    "memory": "32G",
+    "node": "a2r-main",
+    "nvidia_smi_logged": true,
+    "partition": "debug",
+    "requested_gpu": "rtx5090:1",
+    "state": "COMPLETED"
+  },
+  "latency_benchmark": {
+    "host": "a2r-main",
+    "max_ms": 4.025932,
+    "mean_ms": 0.036107789,
+    "measured_runs": 1000,
+    "p50_ms": 0.0263425,
+    "p95_ms": 0.0808499,
+    "p99_ms": 0.08141303,
+    "provider": "CPUExecutionProvider",
+    "threads": 8,
+    "warmup_runs": 50
+  },
+  "onnx_contract": {
+    "finite_output": true,
+    "input_name": "frames",
+    "input_shape": [
+      1,
+      2,
+      160,
+      160
+    ],
+    "output_name": "action_logits",
+    "output_shape": [
+      1,
+      3
+    ]
+  },
+  "repository": {
+    "commit": "2c820cce8bacb33474ee4e8f0e5dea7b50b5b7b5",
+    "dirty_at_submission": false
+  },
+  "source_hashes_verified": true,
+  "training": {
+    "all_metrics_finite": true,
+    "epochs": 20,
+    "final_epoch": {
+      "actor": 1.4603310108184815,
+      "behavior": 0.813142254948616,
+      "critic": 0.010149965337477624,
+      "dynamics": 0.01666174390818924,
+      "epoch": 20,
+      "latent": 0.15691054604947566
+    },
+    "first_epoch": {
+      "actor": -0.06302334932610393,
+      "behavior": 1.1294737923145295,
+      "critic": 0.057452771626412866,
+      "dynamics": 0.5534183523058891,
+      "epoch": 1,
+      "latent": 0.8752432769536972
+    },
+    "imagined_horizon": 3,
+    "optimizer_seed": 20260824,
+    "training_seeds": [
+      11,
+      22,
+      33
+    ]
+  }
+}

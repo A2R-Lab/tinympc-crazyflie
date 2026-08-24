@@ -1,0 +1,200 @@
+{
+  "algorithm": {
+    "deployment_contains": [
+      "image_encoder",
+      "categorical_actor"
+    ],
+    "deployment_excludes": [
+      "privileged_latent",
+      "dynamics_ensemble",
+      "critic"
+    ],
+    "imagined_horizon_max": 5,
+    "name": "privileged-latent short-horizon Dyna/MBPO actor-critic"
+  },
+  "artifacts": {
+    "checkpoint": {
+      "path": "checkpoint.pt",
+      "sha256": "105afe86375d361960a8aa1a0938d6f62dc58c99c0ef2172d57e12e40cbf21b4"
+    },
+    "policy_onnx": {
+      "path": "policy.onnx",
+      "sha256": "27ced97ef2dd0cb9c27fc0a91ebd1069497f4cd8495d94c839465f1873bb578c"
+    }
+  },
+  "camera_provenance": {
+    "commit": "890bbd6923a9459d4d7ab7bee92542e4cb61c64d",
+    "copied_assets": [],
+    "hm01b0": {
+      "camera_matrix_px": [
+        [
+          89.1558392549,
+          0.0,
+          81.103810523
+        ],
+        [
+          0.0,
+          89.4608171623,
+          73.3473030288
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "distortion": [
+        -0.0176448766,
+        0.0994132451,
+        0.0054432154,
+        -0.006040012,
+        -0.1900189875
+      ],
+      "resolution": [
+        160,
+        160
+      ]
+    },
+    "mujoco_render": {
+      "distortion_applied": false,
+      "resolution": [
+        160,
+        160
+      ],
+      "vertical_fov_deg": 83.6091095
+    },
+    "note": "Only numeric calibration was transcribed; no texture or asset was copied. MuJoCo applies the matched vertical FOV but not the recorded lens distortion.",
+    "repository": "tinympc-perception",
+    "source_files": [
+      "gap8_perception/configs/hm01b0_calibration.json",
+      "gap8_perception/configs/isaac_render_calibration.json"
+    ]
+  },
+  "deployment": {
+    "input": {
+      "dtype": "float32",
+      "name": "frames",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "shape": [
+        1,
+        2,
+        160,
+        160
+      ],
+      "temporal_order": [
+        "previous",
+        "current"
+      ]
+    },
+    "output": {
+      "actions": [
+        "TRACK",
+        "LEFT",
+        "RIGHT"
+      ],
+      "name": "action_logits",
+      "shape": [
+        1,
+        3
+      ]
+    },
+    "packet_mapping": {
+      "LEFT": {
+        "collision": 1.0,
+        "steering": 1.0
+      },
+      "RIGHT": {
+        "collision": 1.0,
+        "steering": -1.0
+      },
+      "TRACK": {
+        "collision": 0.0,
+        "steering": 0.0
+      }
+    }
+  },
+  "format": "tinympc-vision-rl-mpc-poc-v1",
+  "runtime_adapter": "hybrid_rl",
+  "training": {
+    "action_contract": [
+      "TRACK",
+      "LEFT",
+      "RIGHT"
+    ],
+    "batch_size": 64,
+    "camera_fps": 30.0,
+    "camera_latency_frames": 1,
+    "course": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/courses/dronet_u.json",
+    "device": "cuda",
+    "ensemble_size": 5,
+    "epochs": 20,
+    "gamma": 0.98,
+    "imagined_horizon": 3,
+    "latent_mean": [
+      3.1317248344421387,
+      0.05778297781944275,
+      0.20123670995235443,
+      -0.005091775208711624,
+      0.07466825842857361,
+      0.9718159437179565,
+      0.5282084345817566
+    ],
+    "latent_names": [
+      "progress_m",
+      "cross_track_m",
+      "tangent_speed_mps",
+      "normal_speed_mps",
+      "yaw_error_rad",
+      "obstacle_clearance_m",
+      "wall_clearance_m"
+    ],
+    "latent_scale": [
+      2.177027940750122,
+      0.3439961373806,
+      0.16077227890491486,
+      0.2884982228279114,
+      0.16794373095035553,
+      0.43065017461776733,
+      0.2361152619123459
+    ],
+    "optimizer_seed": 20260824,
+    "run_directories": [
+      "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_11",
+      "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_22",
+      "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_33"
+    ],
+    "samples": 1366,
+    "source_runs": [
+      {
+        "fpv_camera_mp4_sha256": "685d84cd11a23f4fe08c254860a24d2ec9d8a07970457f49bccea1ad75296dc4",
+        "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_11",
+        "run_config_sha256": "431899dbce36e3475fd10da49baad9deed9d1c4b0ce85dd1448163fe847e04f3",
+        "state_csv_sha256": "3c2369f3a32f47ad05325abfaf7bad0bd403d923e0b443da28a3ee4588723489",
+        "vision_csv_sha256": "7a458b24abd8c65bf33f54c9b603d279a2da201c44f1d28897077c28b41ef30d"
+      },
+      {
+        "fpv_camera_mp4_sha256": "650bb61371a7d95826edf49b884b3d583f3a0c912e7def79ab7e311dc8e10877",
+        "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_22",
+        "run_config_sha256": "c2bf3cb21bb720a35759727af20e9cdaaaca4e61228cf2392a28cbdab4f05e7a",
+        "state_csv_sha256": "0457029510984b95a9ebc522c8b5197688f59aa682f3b883a8bacf8bfdcb8e2d",
+        "vision_csv_sha256": "3554866d7363a780f055158c82636a4d4ba9cd458e29de30e09eb37dd1e71dcf"
+      },
+      {
+        "fpv_camera_mp4_sha256": "db9e35b4202e351ffa2f118e1f04834f69b72f3a3249e35a7610bf9a5890b76a",
+        "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_33",
+        "run_config_sha256": "0ac8b03d3a5b310b41a7fad195748ce4a259f4ad49c838bdf12cfbed4a63aff4",
+        "state_csv_sha256": "24c9b57243b88cb264a0e93be8e04891c36918d849d1c7411959a40624f5d576",
+        "vision_csv_sha256": "ad484d7786b446ac8eaa66f60a1cb791d196dde4e032da19364bd054156b4b3c"
+      }
+    ],
+    "steps_per_epoch": 100,
+    "training_seeds": [
+      11,
+      22,
+      33
+    ]
+  }
+}

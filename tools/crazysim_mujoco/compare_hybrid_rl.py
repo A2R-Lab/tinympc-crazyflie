@@ -123,7 +123,9 @@ def run_row(run: dict[str, Any]) -> dict[str, Any]:
         "run_directory": run["path"],
         "contact_free_course_completion": bool(summary["course_success"]),
         "course_completion_time_s": summary["course_completion_time_s"],
-        "course_mean_horizontal_speed_mps": summary["course_mean_horizontal_speed_mps"],
+        "course_mean_horizontal_speed_mps": summary.get(
+            "course_mean_horizontal_speed_active_mps",
+            summary["course_mean_horizontal_speed_mps"]),
         "minimum_obstacle_clearance_m": summary["course_obstacle_clearance_min_m"],
         "minimum_wall_clearance_m": summary["course_wall_clearance_min_m"],
         "cross_track_rmse_m": summary["course_cross_track_error_rmse_m"],

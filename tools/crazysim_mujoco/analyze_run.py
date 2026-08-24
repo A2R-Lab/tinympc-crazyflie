@@ -89,6 +89,17 @@ def inference_latency_summary(
             result["emulated_delivery_mean"] = float(np.mean(finite_delivery))
             result["emulated_delivery_p95"] = float(
                 np.percentile(finite_delivery, 95.0))
+    actions = vision.get("rl_action")
+    if actions is not None:
+        active_actions = actions[mask & np.isfinite(actions)]
+        active_actions = active_actions[
+            (active_actions >= 0.0) & (active_actions <= 2.0)]
+        if active_actions.size:
+            counts = [int(np.count_nonzero(active_actions == action))
+                      for action in range(3)]
+            result["rl_action_counts_track_left_right"] = counts
+            result["rl_action_fractions_track_left_right"] = [
+                count / int(active_actions.size) for count in counts]
     return result
 
 
@@ -286,13 +297,13 @@ def build_summary(
         completion_time = (
             float(t[finish_index] - launch_time) if finish_index is not None else None
         )
-        mean_speed = None
-        if finish_index is not None and finish_index > launched_index:
-            speed = np.hypot(data["vx_mps"], data["vy_mps"])
+        speed = np.hypot(data["vx_mps"], data["vy_mps"])
+        if evaluation_end_index > launched_index:
             mean_speed = float(np.trapezoid(
-                speed[launched_index:finish_index + 1],
-                t[launched_index:finish_index + 1],
-            ) / max(1.0e-9, t[finish_index] - t[launched_index]))
+                speed[active_slice], t[active_slice],
+            ) / max(1.0e-9, t[evaluation_end_index] - t[launched_index]))
+        else:
+            mean_speed = float(speed[launched_index])
         segment_results = []
         segment_search_index = launched_index
         for segment in course.get("segments", []):
@@ -381,6 +392,7 @@ def build_summary(
             "course_segments": segment_results,
             "course_completion_time_s": completion_time,
             "course_mean_horizontal_speed_mps": mean_speed,
+            "course_mean_horizontal_speed_active_mps": mean_speed,
             "course_evaluation_end_time_s": float(t[evaluation_end_index]),
             "course_contact_before_completion": contact_before_completion,
             "course_cross_track_error_max_m": float(np.max(active_cross_track)),
@@ -557,7 +569,7 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
 def load_vision_csv(path: Path) -> dict[str, np.ndarray]:
     with path.open(newline="") as stream:
         rows = list(csv.DictReader(stream))
-    numeric = ["time_s", "inference_ms", "emulated_latency_ms",
+    numeric = ["time_s", "inference_ms", "emulated_latency_ms", "rl_action",
                "steering", "collision", "metric",
                "spatial_danger", "navigation", "gate_valid", "gate_confidence"] + [
                "danger_threshold"] + [
@@ -565,7 +577,9 @@ def load_vision_csv(path: Path) -> dict[str, np.ndarray]:
                f"confidence_{i}" for i in range(4)] + [
                f"danger_{i}" for i in range(4)] + [
                f"raw_danger_{i}" for i in range(4)]
-    return {name: np.asarray([float(row.get(name, 0.0)) for row in rows], dtype=float)
+    return {name: np.asarray([
+                float(row.get(name, math.nan if name == "rl_action" else 0.0))
+                for row in rows], dtype=float)
             for name in numeric}
 
 

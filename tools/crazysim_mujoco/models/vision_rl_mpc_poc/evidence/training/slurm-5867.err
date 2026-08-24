@@ -1,0 +1,2 @@
+/home/cchen/isaacsim-env/lib/python3.12/site-packages/torch/autograd/graph.py:869: UserWarning: adaptive_avg_pool2d_backward_cuda does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:160.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass

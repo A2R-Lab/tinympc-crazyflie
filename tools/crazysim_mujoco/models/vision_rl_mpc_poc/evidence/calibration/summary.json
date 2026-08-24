@@ -1,0 +1,89 @@
+{
+  "samples": 6000,
+  "duration_s": 5.999000000000338,
+  "launch_time_s": 1.0020000000000004,
+  "crashed": false,
+  "first_crash_time_s": null,
+  "first_crash_after_launch_s": null,
+  "altitude_min_m": 0.5,
+  "altitude_max_m": 0.5045937049004019,
+  "altitude_final_m": 0.5028916943474023,
+  "horizontal_displacement_max_m": 2.3396158314226403,
+  "horizontal_displacement_final_m": 2.3396158314226403,
+  "horizontal_speed_final_mps": 0.6887424962500821,
+  "attitude_geodesic_max_deg": 18.408341867780752,
+  "angular_rate_max_rad_s": 1.4050809085895768,
+  "rpm_max": 16608.231227145014,
+  "motor_saturation_fraction": 0.000875,
+  "contact_count_max": 0,
+  "course": "dronet_u",
+  "course_description": "PULP-DroNet v3 static U-course replica: published 5.0 m by 4.7 m interior footprint and obstacle arrangement; turn centerline and longitudinal obstacle positions are diagram-digitized approximations",
+  "course_pass_point_reached": false,
+  "course_pass_point_min_distance_m": 2.5003423876714237,
+  "course_obstacle_clearance_min_m": 0.22806979905305888,
+  "course_obstacle_clearance_by_name_m": {
+    "static_1": 0.2442951532257169,
+    "static_2": 0.22806979905305888,
+    "static_3": 0.9903722627144943,
+    "static_4": 1.8793206442649513
+  },
+  "course_wall_clearance_min_m": 0.10831617633356586,
+  "course_wall_clearance_by_name_m": {
+    "s1_outer_wall": 0.8999999995136913,
+    "s1_inner_wall": 0.10831617633356586,
+    "s3_inner_wall": 0.7083161763335657,
+    "s3_outer_wall": 2.808316176333566,
+    "turn_outer_wall": 2.6780697990530586
+  },
+  "course_segments": [
+    {
+      "name": "S1",
+      "reached": false,
+      "time_after_launch_s": null,
+      "minimum_distance_m": 1.3034810748122272
+    },
+    {
+      "name": "S2",
+      "reached": false,
+      "time_after_launch_s": null,
+      "minimum_distance_m": 2.2309363429691476
+    },
+    {
+      "name": "S3",
+      "reached": false,
+      "time_after_launch_s": null,
+      "minimum_distance_m": 2.5003423876714237
+    }
+  ],
+  "course_completion_time_s": null,
+  "course_mean_horizontal_speed_mps": null,
+  "course_evaluation_end_time_s": 6.000000000000338,
+  "course_contact_before_completion": false,
+  "course_cross_track_error_max_m": 0.7916838236664342,
+  "course_cross_track_error_rmse_m": 0.4523338146852357,
+  "course_cross_track_error_p95_m": 0.7821659359163181,
+  "course_cross_track_error_final_m": 0.7326857585372717,
+  "course_cross_track_error_final_limit_m": 0.3,
+  "course_final_cross_track_requirement_met": false,
+  "course_heading_change_max_deg": 0.2930351127378007,
+  "course_required_heading_change_deg": 180.0,
+  "course_heading_requirement_met": false,
+  "course_gate_results": [],
+  "course_gates_passed_in_order": true,
+  "course_reverse_tangential_motion_threshold_mps": -0.05,
+  "course_reverse_tangential_motion_fraction": 0.0,
+  "course_tangential_speed_min_mps": -0.0004924826749192762,
+  "course_tangential_speed_p05_mps": 0.06036670415898194,
+  "course_success": false,
+  "evaluation_end_time_s": 6.000000000000338,
+  "vision_inference_latency_ms": {
+    "sample_count": 150,
+    "mean": 2.105724938834707,
+    "p50": 1.8461234867572784,
+    "p95": 4.160426487214855,
+    "p99": 7.626513689756391,
+    "maximum": 7.915496826171875,
+    "emulated_delivery_mean": 33.33333333333334,
+    "emulated_delivery_p95": 33.333333333333336
+  }
+}
