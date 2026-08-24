@@ -113,7 +113,7 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --out DIRECTORY         Output directory
   --vision-model PATH     Model path, or bundled tinyracer/espnet, dronet-v3,
                           sequential, or stdc
-  --vision-adapter NAME   auto, espnet, sequential, stdc, or dronet (default: auto)
+  --vision-adapter NAME   auto, espnet, sequential, stdc, dronet, or hybrid_rl (default: auto)
   --vision-scene NAME     obstacle, gate, corridor, corridor_obstacles,
                           circle_obstacles, figure8_obstacles, or none
                           (default: obstacle)
@@ -378,7 +378,8 @@ if [[ "$LEVEL_COST_MODE" != baseline && "$ACTUATOR_LTI" != 1 ]]; then
   echo "non-baseline --level-cost-mode requires --actuator-lti 1" >&2
   exit 2
 fi
-case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
+case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet|rl|hybrid_rl) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
+[[ "$VISION_ADAPTER" != rl ]] || VISION_ADAPTER=hybrid_rl
 case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
@@ -420,6 +421,9 @@ if [[ -n "$VISION_MODEL" ]]; then
     dronet|dronet-v3)
       VISION_MODEL="$SCRIPT_DIR/models/pulp_dronet_v3/pulp_dronet_v3.onnx"
       VISION_ADAPTER=dronet ;;
+    vision-rl|rl-poc)
+      VISION_MODEL="$SCRIPT_DIR/models/vision_rl_mpc_poc/policy.onnx"
+      VISION_ADAPTER=hybrid_rl ;;
     tinyracer|espnet)
       VISION_MODEL="$SCRIPT_DIR/models/espnet_dronet_gate_v1/espnet_dronet_gate_seed2027_float.onnx"
       VISION_ADAPTER=espnet ;;
@@ -646,6 +650,23 @@ config = {
     "vision_scene": vision_scene,
     "vision_latency_frames": int(vision_latency_frames),
     "camera_fps": 30.0,
+    "camera_calibration": ({
+        "model": "Himax HM01B0",
+        "resolution": [160, 160],
+        "fx_px": 89.1558392549,
+        "fy_px": 89.4608171623,
+        "cx_px": 81.1038105230,
+        "cy_px": 73.3473030288,
+        "distortion_model": "opencv_plumb_bob",
+        "distortion_coefficients": [-0.0176448766, 0.0994132451,
+                                    0.0054432154, -0.0060400120,
+                                    -0.1900189875],
+        "mujoco_vertical_fov_deg": 83.6091095,
+        "distortion_applied_in_mujoco": False,
+        "source_repository": "tinympc-perception",
+        "source_commit": "890bbd6923a9459d4d7ab7bee92542e4cb61c64d",
+        "source_file": "gap8_perception/configs/hm01b0_calibration.json",
+    } if vision_adapter in ("dronet", "hybrid_rl") else None),
     "camera_only_enabled": bool(int(camera_only)),
     "camera_capture_enabled": bool(int(camera_only)) or bool(int(vision_enabled)),
     "camera_inference_enabled": bool(int(vision_enabled)),
@@ -872,11 +893,13 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
   scene=/workspace/tools/crazysim_mujoco/scenes/vision_${vision_scene}.xml
   camera_width=160; camera_height=120
   camera_fovy=""
-  if [[ "$camera_only" == 1 || "$vision_adapter" == dronet ]]; then
-    # Match the AI-deck Himax path: capture 324x244 QVGA, then let the bridge
-    # take PULP-DroNet v3's centered 200x200 crop.
-    camera_width=324; camera_height=244
-  elif [[ "$vision_adapter" == espnet ]]; then
+  if [[ "$vision_adapter" == dronet || "$vision_adapter" == hybrid_rl ]]; then
+    # Use one raw HM01B0/Isaac-calibrated camera stream for the baseline and
+    # learned policy. DroNet is resized to its legacy 200x200 network input;
+    # the RL policy consumes two consecutive raw 160x160 frames.
+    camera_width=160; camera_height=160
+    camera_fovy=83.6091095
+  elif [[ "$camera_only" == 1 || "$vision_adapter" == espnet ]]; then
     # The August 19 two-frame release consumes the full HM01B0 image; unlike
     # the previous deployment it must not receive the 160x120 center crop.
     camera_width=160; camera_height=160

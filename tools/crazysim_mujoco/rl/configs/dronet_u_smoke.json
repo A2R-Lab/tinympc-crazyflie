@@ -1,0 +1,14 @@
+{
+  "optimizer_seed": 7,
+  "training_seeds": [1],
+  "epochs": 1,
+  "steps_per_epoch": 2,
+  "batch_size": 8,
+  "ensemble_size": 2,
+  "imagined_horizon": 2,
+  "gamma": 0.98,
+  "course": "dronet_u",
+  "camera_fps": 30.0,
+  "camera_latency_frames": 1,
+  "action_contract": ["TRACK", "LEFT", "RIGHT"]
+}

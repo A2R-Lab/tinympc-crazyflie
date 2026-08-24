@@ -38,7 +38,15 @@ def quaternion_to_euler_deg(qw, qx, qy, qz):
 
 
 def point_to_polyline_distance(points: np.ndarray, line: np.ndarray) -> np.ndarray:
+    return point_to_polyline_metrics(points, line)[0]
+
+
+def point_to_polyline_metrics(
+    points: np.ndarray, line: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return closest distance and forward unit tangent for each point."""
     result = np.full(len(points), np.inf, dtype=float)
+    tangents = np.zeros_like(points, dtype=float)
     for first, second in zip(line[:-1], line[1:]):
         segment = second - first
         denominator = float(np.dot(segment, segment))
@@ -46,7 +54,41 @@ def point_to_polyline_distance(points: np.ndarray, line: np.ndarray) -> np.ndarr
             continue
         alpha = np.clip(((points - first) @ segment) / denominator, 0.0, 1.0)
         projected = first + alpha[:, None] * segment
-        result = np.minimum(result, np.linalg.norm(points - projected, axis=1))
+        distance = np.linalg.norm(points - projected, axis=1)
+        improved = distance < result
+        result[improved] = distance[improved]
+        tangents[improved] = segment / math.sqrt(denominator)
+    if np.any(~np.isfinite(result)):
+        raise ValueError("course centerline must contain a nonzero segment")
+    return result, tangents
+
+
+def inference_latency_summary(
+    vision: dict[str, np.ndarray] | None, start_time: float, end_time: float,
+) -> dict[str, object] | None:
+    if vision is None or "inference_ms" not in vision:
+        return None
+    mask = ((vision["time_s"] >= start_time)
+            & (vision["time_s"] <= end_time)
+            & np.isfinite(vision["inference_ms"]))
+    values = vision["inference_ms"][mask]
+    if not values.size:
+        return None
+    result: dict[str, object] = {
+        "sample_count": int(values.size),
+        "mean": float(np.mean(values)),
+        "p50": float(np.percentile(values, 50.0)),
+        "p95": float(np.percentile(values, 95.0)),
+        "p99": float(np.percentile(values, 99.0)),
+        "maximum": float(np.max(values)),
+    }
+    delivery = vision.get("emulated_latency_ms")
+    if delivery is not None:
+        finite_delivery = delivery[mask & np.isfinite(delivery)]
+        if finite_delivery.size:
+            result["emulated_delivery_mean"] = float(np.mean(finite_delivery))
+            result["emulated_delivery_p95"] = float(
+                np.percentile(finite_delivery, 95.0))
     return result
 
 
@@ -131,6 +173,7 @@ def build_summary(
     reference: dict[str, np.ndarray] | None = None,
     scene_kind: str = "none",
     course: dict | None = None,
+    vision: dict[str, np.ndarray] | None = None,
 ) -> dict[str, object]:
     t = data["time_s"]
     x, y, z = data["x_m"], data["y_m"], data["z_m"]
@@ -198,34 +241,48 @@ def build_summary(
                 and not crash_indices.size
             ),
         })
+    evaluation_end_index = (int(crash_indices[0])
+                            if crash_indices.size else t.size - 1)
     if course is not None:
         points = np.column_stack((x, y))
         vehicle_radius = 0.10
+        launched_index = min(int(np.searchsorted(t, launch_time)), t.size - 1)
+        centerline = np.asarray(course["centerline"], dtype=float)
+        cross_track, course_tangent = point_to_polyline_metrics(points, centerline)
+        pass_point = np.asarray(course["pass_point"], dtype=float)
+        pass_distance = np.linalg.norm(points - pass_point, axis=1)
+        finish_candidates = np.flatnonzero(
+            (np.arange(t.size) >= launched_index)
+            & (pass_distance <= float(course["pass_radius_m"]))
+        )
+        raw_finish_index = (int(finish_candidates[0])
+                            if finish_candidates.size else None)
+        contact_before_completion = bool(
+            crash_indices.size
+            and (raw_finish_index is None
+                 or int(crash_indices[0]) <= raw_finish_index))
+        finish_index = (raw_finish_index
+                        if raw_finish_index is not None
+                        and not contact_before_completion else None)
+        if finish_index is not None:
+            evaluation_end_index = finish_index
+        active_slice = slice(launched_index, evaluation_end_index + 1)
+        active_points = points[active_slice]
         per_obstacle = {
             obstacle["name"]: float(np.min(clearance_to_obstacle(
-                points, obstacle, vehicle_radius
+                active_points, obstacle, vehicle_radius
             )))
             for obstacle in course.get("obstacles", [])
         }
         minimum_obstacle_clearance = min(per_obstacle.values(), default=math.inf)
         per_wall = {
             wall["name"]: float(np.min(clearance_to_obstacle(
-                points, wall, vehicle_radius
+                active_points, wall, vehicle_radius
             )))
             for wall in course.get("walls", [])
         }
         minimum_wall_clearance = min(per_wall.values(), default=math.inf)
-        centerline = np.asarray(course["centerline"], dtype=float)
-        cross_track = point_to_polyline_distance(points, centerline)
-        pass_point = np.asarray(course["pass_point"], dtype=float)
-        pass_distance = np.linalg.norm(points - pass_point, axis=1)
-        pass_reached = bool(np.min(pass_distance) <= float(course["pass_radius_m"]))
-        launched_index = int(np.searchsorted(t, launch_time))
-        finish_candidates = np.flatnonzero(
-            (np.arange(t.size) >= launched_index)
-            & (pass_distance <= float(course["pass_radius_m"]))
-        )
-        finish_index = int(finish_candidates[0]) if finish_candidates.size else None
+        pass_reached = finish_index is not None
         completion_time = (
             float(t[finish_index] - launch_time) if finish_index is not None else None
         )
@@ -243,6 +300,7 @@ def build_summary(
             segment_distance = np.linalg.norm(points - segment_point, axis=1)
             candidates = np.flatnonzero(
                 (np.arange(t.size) >= segment_search_index)
+                & (np.arange(t.size) <= evaluation_end_index)
                 & (segment_distance <= float(segment["pass_radius_m"]))
             )
             reached = bool(candidates.size)
@@ -255,7 +313,7 @@ def build_summary(
                     if reached_index is not None else None
                 ),
                 "minimum_distance_m": float(np.min(
-                    segment_distance[segment_search_index:]
+                    segment_distance[segment_search_index:evaluation_end_index + 1]
                 )),
             })
             if reached_index is not None:
@@ -264,7 +322,7 @@ def build_summary(
             data["qw"], data["qx"], data["qy"], data["qz"]
         )
         yaw_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(yaw_deg)))
-        launched_indices = np.flatnonzero(t >= launch_time)
+        launched_indices = np.arange(launched_index, evaluation_end_index + 1)
         heading_change = 0.0
         if launched_indices.size:
             heading_change = float(np.max(np.abs(
@@ -275,7 +333,8 @@ def build_summary(
         maximum_final_cross_track = float(
             course.get("maximum_final_cross_track_m", np.inf)
         )
-        final_cross_track = float(cross_track[-1])
+        active_cross_track = cross_track[active_slice]
+        final_cross_track = float(cross_track[evaluation_end_index])
         final_cross_track_met = final_cross_track <= maximum_final_cross_track
         wall_clearance = (minimum_wall_clearance
                           if course.get("walls", []) else None)
@@ -283,12 +342,24 @@ def build_summary(
         if "corridor_y" in course:
             lower, upper = map(float, course["corridor_y"])
             wall_clearance = float(np.min(np.minimum(
-                y - lower - vehicle_radius, upper - y - vehicle_radius
+                y[active_slice] - lower - vehicle_radius,
+                upper - y[active_slice] - vehicle_radius
             )))
             wall_clearance_safe = wall_clearance >= 0.0
         gate_results, gates_passed = ordered_gate_crossings(
             data, course.get("gates", []), launch_time, vehicle_radius
         )
+        tangent_velocity = np.sum(
+            np.column_stack((data["vx_mps"], data["vy_mps"]))
+            * course_tangent, axis=1)[active_slice]
+        active_t = t[active_slice]
+        reverse = tangent_velocity < -0.05
+        if active_t.size >= 2 and active_t[-1] > active_t[0]:
+            reverse_fraction = float(
+                np.trapezoid(reverse.astype(float), active_t)
+                / (active_t[-1] - active_t[0]))
+        else:
+            reverse_fraction = float(reverse[0]) if reverse.size else 0.0
         course_success = bool(
             pass_reached
             and minimum_obstacle_clearance >= 0.0
@@ -296,7 +367,7 @@ def build_summary(
             and gates_passed
             and heading_requirement_met
             and final_cross_track_met
-            and not crash_indices.size
+            and not contact_before_completion
         )
         summary.update({
             "course": course["name"],
@@ -310,7 +381,13 @@ def build_summary(
             "course_segments": segment_results,
             "course_completion_time_s": completion_time,
             "course_mean_horizontal_speed_mps": mean_speed,
-            "course_cross_track_error_max_m": float(np.max(cross_track)),
+            "course_evaluation_end_time_s": float(t[evaluation_end_index]),
+            "course_contact_before_completion": contact_before_completion,
+            "course_cross_track_error_max_m": float(np.max(active_cross_track)),
+            "course_cross_track_error_rmse_m": float(np.sqrt(np.mean(
+                active_cross_track ** 2))),
+            "course_cross_track_error_p95_m": float(np.percentile(
+                active_cross_track, 95.0)),
             "course_cross_track_error_final_m": final_cross_track,
             "course_cross_track_error_final_limit_m": maximum_final_cross_track,
             "course_final_cross_track_requirement_met": final_cross_track_met,
@@ -319,8 +396,18 @@ def build_summary(
             "course_heading_requirement_met": heading_requirement_met,
             "course_gate_results": gate_results,
             "course_gates_passed_in_order": gates_passed,
+            "course_reverse_tangential_motion_threshold_mps": -0.05,
+            "course_reverse_tangential_motion_fraction": reverse_fraction,
+            "course_tangential_speed_min_mps": float(np.min(tangent_velocity)),
+            "course_tangential_speed_p05_mps": float(np.percentile(
+                tangent_velocity, 5.0)),
             "course_success": course_success,
         })
+    summary["evaluation_end_time_s"] = float(t[evaluation_end_index])
+    latency = inference_latency_summary(
+        vision, launch_time, float(t[evaluation_end_index]))
+    if latency is not None:
+        summary["vision_inference_latency_ms"] = latency
     return summary
 
 
@@ -470,7 +557,8 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
 def load_vision_csv(path: Path) -> dict[str, np.ndarray]:
     with path.open(newline="") as stream:
         rows = list(csv.DictReader(stream))
-    numeric = ["time_s", "inference_ms", "steering", "collision", "metric",
+    numeric = ["time_s", "inference_ms", "emulated_latency_ms",
+               "steering", "collision", "metric",
                "spatial_danger", "navigation", "gate_valid", "gate_confidence"] + [
                "danger_threshold"] + [
                f"clearance_{i}_m" for i in range(4)] + [
@@ -580,7 +668,8 @@ def main() -> int:
         airborne_indices = np.flatnonzero(data["airborne"] > 0.5)
         if airborne_indices.size:
             launch_time = float(data["time_s"][airborne_indices[0]])
-    summary = build_summary(data, launch_time, reference, args.scene_kind, course)
+    summary = build_summary(
+        data, launch_time, reference, args.scene_kind, course, vision)
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     plot_run(data, reference, launch_time, summary, args.out / "validation.png",
              vision, args.scene_kind, course)

@@ -131,6 +131,8 @@ class Prediction:
     danger_threshold: float = math.nan
     # fx/width, fy/height, cx/width, cy/height for gate projection.
     gate_intrinsics: tuple[float, float, float, float] = LEGACY_GATE_INTRINSICS
+    action: int = -1
+    action_logits: tuple[float, float, float] = (math.nan, math.nan, math.nan)
 
 
 class FixedFrameLatencyQueue:
@@ -968,7 +970,9 @@ class DronetAdapter:
         shape = self.input.shape
         height = int(shape[-2]) if isinstance(shape[-2], int) else 120
         width = int(shape[-1]) if isinstance(shape[-1], int) else 160
-        image_u8 = center_crop(frame, height, width)
+        image_u8 = (center_crop(frame, height, width)
+                    if frame.shape[0] >= height and frame.shape[1] >= width
+                    else resize_nearest(frame, height, width))
         self.last_input = image_u8
         image = image_u8.astype(np.float32) / 255.0
         outputs = self.session.run(None, {self.input.name: image[None, None]})
@@ -981,6 +985,61 @@ class DronetAdapter:
         return Prediction(False, False, True, np.full(4, 6.0), np.zeros(4), danger,
                           steering, collision, False, np.zeros((4, 2)), 0.0,
                           "not_provided")
+
+
+class VisionRlAdapter:
+    """Two-frame HM01B0 policy with TRACK/LEFT/RIGHT categorical actions."""
+
+    TRACK = 0
+    LEFT = 1
+    RIGHT = 2
+
+    def __init__(self, model_path: Path):
+        import onnxruntime as ort
+        self.session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"])
+        inputs = self.session.get_inputs()
+        outputs = self.session.get_outputs()
+        if len(inputs) != 1 or inputs[0].name != "frames" or \
+                list(inputs[0].shape) != [1, 2, 160, 160]:
+            raise ValueError(
+                "vision RL input must be frames with shape [1,2,160,160]")
+        if len(outputs) != 1 or outputs[0].name != "action_logits" or \
+                list(outputs[0].shape) != [1, 3]:
+            raise ValueError(
+                "vision RL output must be action_logits with shape [1,3]")
+        self.input_name = inputs[0].name
+        self.previous_frame = None
+        self.last_input = None
+        self.last_input_raw = None
+
+    def reset(self) -> None:
+        self.previous_frame = None
+        self.last_input = None
+        self.last_input_raw = None
+
+    def predict(self, frame: np.ndarray) -> Prediction:
+        current = hm01b0_full_frame(frame)
+        previous = current if self.previous_frame is None else self.previous_frame
+        ordered = np.stack((previous, current), axis=0)
+        logits = np.asarray(self.session.run(
+            ["action_logits"],
+            {self.input_name: ordered[None].astype(np.float32) / 255.0},
+        )[0], dtype=np.float32).reshape(3)
+        if not np.all(np.isfinite(logits)):
+            raise ValueError("vision RL produced non-finite action logits")
+        action = int(np.argmax(logits))
+        steering = 1.0 if action == self.LEFT else (-1.0 if action == self.RIGHT else 0.0)
+        collision = 0.0 if action == self.TRACK else 1.0
+        self.previous_frame = current.copy()
+        self.last_input = current
+        self.last_input_raw = np.stack((previous, current), axis=-1)
+        return Prediction(
+            False, False, True, np.full(4, 6.0), np.zeros(4),
+            np.full(4, collision), steering, collision, False,
+            np.zeros((4, 2)), 0.0, "not_provided", action=action,
+            action_logits=tuple(float(value) for value in logits),
+        )
 
 
 def make_adapter(kind: str, model: Path, threshold: float):
@@ -1003,6 +1062,8 @@ def make_adapter(kind: str, model: Path, threshold: float):
         return EspnetAdapter(model), kind
     if kind == "dronet":
         return DronetAdapter(model), kind
+    if kind in ("rl", "hybrid_rl"):
+        return VisionRlAdapter(model), kind
     raise ValueError(kind)
 
 
@@ -1103,7 +1164,8 @@ def main() -> int:
     mode.add_argument("--camera-only", action="store_true",
                       help="Capture/log frames without inference or firmware I/O")
     parser.add_argument("--adapter",
-                        choices=("auto", "espnet", "sequential", "stdc", "dronet"),
+                        choices=("auto", "espnet", "sequential", "stdc", "dronet",
+                                 "rl", "hybrid_rl"),
                         default="auto")
     parser.add_argument("--camera-port", type=int, default=5200)
     parser.add_argument("--firmware-port", type=int, default=19960)
@@ -1141,7 +1203,8 @@ def main() -> int:
     args.log.parent.mkdir(parents=True, exist_ok=True)
     fields = ["time_s", "sequence", "scheduled_delivery_sequence",
               "emulated_latency_ms", "adapter", "inference_ms", "steering",
-              "collision", "metric", "spatial_danger", "navigation",
+              "collision", "rl_action", "rl_logit_track", "rl_logit_left",
+              "rl_logit_right", "metric", "spatial_danger", "navigation",
               "gate_valid", "gate_confidence", "gate_reason",
               "danger_threshold", "gate_fx_normalized",
               "gate_fy_normalized", "gate_cx_normalized",
@@ -1277,6 +1340,10 @@ def main() -> int:
                     1000.0 * args.delivery_latency_frames / args.camera_fps),
                 "adapter": adapter_name, "inference_ms": inference_ms,
                 "steering": prediction.steering, "collision": prediction.collision,
+                "rl_action": prediction.action,
+                "rl_logit_track": prediction.action_logits[0],
+                "rl_logit_left": prediction.action_logits[1],
+                "rl_logit_right": prediction.action_logits[2],
                 "metric": int(prediction.metric), "gate_valid": int(prediction.gate_valid),
                 "spatial_danger": int(prediction.sector_danger),
                 "navigation": int(prediction.navigation),

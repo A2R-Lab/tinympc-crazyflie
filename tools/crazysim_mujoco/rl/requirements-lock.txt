@@ -1,0 +1,5 @@
+numpy==2.3.1
+opencv-python-headless==4.13.0.92
+torch==2.11.0
+onnx==1.17.0
+onnxruntime==1.22.0
