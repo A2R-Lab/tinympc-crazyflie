@@ -1,0 +1,35 @@
+{
+  "format": "tinympc-outer-loop-rate-response-v1",
+  "identified": true,
+  "source_class": "CrazySim cf21B_500 stock 500 Hz rate PID; constrained least-squares y-u=F(x-u), 348 consecutive 20 ms samples from rate_response_identification_seed1",
+  "sample_dt_s": 0.02,
+  "input_cost_diagonal": [300.0, 20.0, 20.0, 40.0],
+  "physical_input_bounds": {
+    "collective_thrust_n": [0.12, 0.65],
+    "body_rate_setpoint_rad_s": [
+      [-6.0, 6.0],
+      [-6.0, 6.0],
+      [-4.0, 4.0]
+    ]
+  },
+  "bundles": {
+    "level": {
+      "F": [
+        [0.2842542955, -0.0185791845, 0.0005530286],
+        [0.0075084886, 0.2968602723, -0.0029678112],
+        [-0.0118163839, 0.0937864451, 0.8270247733]
+      ],
+      "G": [
+        [0.7157457045, 0.0185791845, -0.0005530286],
+        [-0.0075084886, 0.7031397277, 0.0029678112],
+        [0.0118163839, -0.0937864451, 0.1729752267]
+      ]
+    },
+    "left_low": {"inherit": "level"},
+    "right_low": {"inherit": "level"},
+    "left_medium": {"inherit": "level"},
+    "right_medium": {"inherit": "level"},
+    "left_high": {"inherit": "level"},
+    "right_high": {"inherit": "level"}
+  }
+}

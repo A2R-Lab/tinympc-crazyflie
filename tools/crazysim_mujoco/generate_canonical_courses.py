@@ -40,7 +40,7 @@ def trajectory_points(name: str) -> list[list[float]]:
 COURSES = {
     "canonical_corridor": {
         "trajectory": "canonical_corridor",
-        "description": "Straight corridor, offset obstacle, then a forward barrel roll",
+        "description": "Straight corridor with an offset obstacle",
         "obstacles": [
             {"name": "offset_box", "shape": "box", "center": [1.80, -0.24],
              "half_size": [0.12, 0.27], "height": 0.72},
@@ -50,8 +50,6 @@ COURSES = {
         "pass_point": [5.0, 0.0], "pass_radius_m": 0.45,
         "minimum_dodge_encounters": 1, "maximum_final_cross_track_m": 0.20,
         "required_heading_change_deg": 0.0,
-        "acro_maneuver": "barrel_roll_forward_360", "acro_axis": "roll",
-        "acro_trigger_index": 680, "minimum_acro_rotation_deg": 315.0,
         "duration_s": 32.0,
     },
     "canonical_circle": {
@@ -93,7 +91,7 @@ COURSES = {
     },
     "canonical_hairpin": {
         "trajectory": "canonical_hairpin",
-        "description": "180-degree hairpin with avoidance followed by a backflip",
+        "description": "180-degree hairpin with obstacle avoidance",
         "obstacles": [
             {"name": "apex_cylinder", "shape": "circle", "center": [2.24, 0.718],
              "radius": 0.18, "height": 0.76},
@@ -102,8 +100,6 @@ COURSES = {
         "pass_point": [0.08, 1.61], "pass_radius_m": 0.38,
         "minimum_dodge_encounters": 1, "maximum_final_cross_track_m": 0.22,
         "required_heading_change_deg": 150.0,
-        "acro_maneuver": "backflip_360", "acro_axis": "pitch",
-        "acro_trigger_index": 738, "minimum_acro_rotation_deg": 315.0,
         "duration_s": 60.0,
     },
 }

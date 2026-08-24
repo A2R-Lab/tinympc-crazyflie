@@ -2,7 +2,7 @@ diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
 index 834317c6..3dcae15d 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,146 @@ set(SRCS
+@@ -244,6 +244,98 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -11,12 +11,9 @@ index 834317c6..3dcae15d 100644
 +set(TINYMPC_APP_DIR "" CACHE PATH "Path to controller_tinympc_eigen")
 +set(TINYMPC_SITL_SUPPORT_DIR "" CACHE PATH "Path to TinyMPC CrazySim support sources")
 +set(TINYMPC_TRAJECTORY "circle" CACHE STRING "TinyMPC stored trajectory")
-+set(TINYMPC_REFERENCE_MODE "waypoint" CACHE STRING "waypoint, trajectory, or progress level-flight references")
-+set(TINYMPC_COURSE_ACRO "none" CACHE STRING "Optional stored-LTV course primitive")
 +set(TINYMPC_COURSE "none" CACHE STRING "Optional canonical racing course identity")
 +set(TINYMPC_SITL_START_DELAY_MS "0" CACHE STRING "Delay TinyMPC planning after SITL boot")
 +set(TINYMPC_SITL_TICK_US "1000" CACHE STRING "Wall-clock microseconds per simulated 1 ms RTOS tick")
-+option(TINYMPC_STORED_LTV "Use offline horizon-wise stored LTV matrices" OFF)
 +option(TINYMPC_ACTUATOR_LTI "Use the fixed actuator-aware level model" ON)
 +
 +if(TINYMPC_APP_DIR)
@@ -69,18 +66,12 @@ index 834317c6..3dcae15d 100644
 +    message(FATAL_ERROR "Unsupported TINYMPC_COURSE=${TINYMPC_COURSE}")
 +  endif()
 +
-+  if(TINYMPC_TRAJECTORY STREQUAL "roll_flip_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_ROLL_FLIP_360=1)
-+  elseif(TINYMPC_TRAJECTORY STREQUAL "front_flip_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_FRONT_FLIP_360=1)
-+  elseif(TINYMPC_TRAJECTORY STREQUAL "backflip_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BACKFLIP_360=1)
-+  elseif(TINYMPC_TRAJECTORY STREQUAL "barrel_roll_forward_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_BARREL_ROLL_FORWARD_360=1)
-+  elseif(TINYMPC_TRAJECTORY STREQUAL "straight")
++  if(TINYMPC_TRAJECTORY STREQUAL "straight")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "straight_long")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT_LONG=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "straight_9m")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_STRAIGHT_9M=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_corridor")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_circle")
@@ -102,45 +93,6 @@ index 834317c6..3dcae15d 100644
 +  elseif(NOT TINYMPC_TRAJECTORY STREQUAL "circle")
 +    message(FATAL_ERROR "Unsupported TINYMPC_TRAJECTORY=${TINYMPC_TRAJECTORY}")
 +  endif()
-+  if(TINYMPC_REFERENCE_MODE STREQUAL "trajectory")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_REFERENCE_MODE_TRAJECTORY=1)
-+  elseif(TINYMPC_REFERENCE_MODE STREQUAL "progress")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_REFERENCE_MODE_PROGRESS=1)
-+  elseif(NOT TINYMPC_REFERENCE_MODE STREQUAL "waypoint")
-+    message(FATAL_ERROR "TINYMPC_REFERENCE_MODE must be waypoint, trajectory, or progress")
-+  endif()
-+
-+  if(TINYMPC_COURSE_ACRO STREQUAL "barrel_roll_forward_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_ACRO_BARREL_ROLL_FORWARD_360=1)
-+  elseif(TINYMPC_COURSE_ACRO STREQUAL "backflip_360")
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_ACRO_BACKFLIP_360=1)
-+  elseif(NOT TINYMPC_COURSE_ACRO STREQUAL "none")
-+    message(FATAL_ERROR "Unsupported TINYMPC_COURSE_ACRO=${TINYMPC_COURSE_ACRO}")
-+  endif()
-+  if(NOT TINYMPC_COURSE_ACRO STREQUAL "none" AND NOT TINYMPC_STORED_LTV)
-+    message(FATAL_ERROR "TINYMPC_COURSE_ACRO requires TINYMPC_STORED_LTV")
-+  endif()
-+  if(NOT TINYMPC_COURSE_ACRO STREQUAL "none" AND NOT TINYMPC_ACTUATOR_LTI)
-+    message(FATAL_ERROR "TINYMPC_COURSE_ACRO requires TINYMPC_ACTUATOR_LTI")
-+  endif()
-+
-+  if(TINYMPC_STORED_LTV)
-+    if(TINYMPC_COURSE_ACRO STREQUAL "none")
-+      if(TINYMPC_TRAJECTORY STREQUAL "circle" OR
-+         TINYMPC_TRAJECTORY STREQUAL "straight" OR
-+         TINYMPC_TRAJECTORY STREQUAL "straight_long" OR
-+         TINYMPC_TRAJECTORY STREQUAL "canonical_corridor" OR
-+         TINYMPC_TRAJECTORY STREQUAL "canonical_circle" OR
-+         TINYMPC_TRAJECTORY STREQUAL "figure8" OR
-+         TINYMPC_TRAJECTORY STREQUAL "oval" OR
-+         TINYMPC_TRAJECTORY STREQUAL "canonical_figure8" OR
-+         TINYMPC_TRAJECTORY STREQUAL "canonical_chicane" OR
-+         TINYMPC_TRAJECTORY STREQUAL "canonical_hairpin")
-+        message(FATAL_ERROR "TINYMPC_STORED_LTV requires an acrobatic trajectory")
-+      endif()
-+    endif()
-+    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_STORED_LTV=1)
-+  endif()
 +  if(TINYMPC_ACTUATOR_LTI)
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_USE_ACTUATOR_LTI=1)
 +  endif()
@@ -149,7 +101,7 @@ index 834317c6..3dcae15d 100644
  target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
  
  target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
-@@ -267,4 +396,4 @@ set_target_properties(
+@@ -267,4 +359,4 @@ set_target_properties(
    cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
  )
  
@@ -244,3 +196,182 @@ index f9fe7e88..4d16fdb3 100644
 -LOG_GROUP_STOP(motor)
 \ No newline at end of file
 +LOG_GROUP_STOP(motor)
+diff --git a/src/modules/interface/estimator/estimator.h b/src/modules/interface/estimator/estimator.h
+index 8d208b33..a94e4334 100644
+--- a/src/modules/interface/estimator/estimator.h
++++ b/src/modules/interface/estimator/estimator.h
+@@ -85,6 +85,19 @@ void stateEstimator(state_t *state, const stabilizerStep_t stabilizerStep);
+ StateEstimatorType stateEstimatorGetType(void);
+ const char* stateEstimatorGetName();
+ 
++typedef enum {
++  EstimatorAidingInhibitNone = 0,
++  EstimatorAidingInhibitFlow = 1 << 0,
++  EstimatorAidingInhibitDownRange = 1 << 1,
++} estimatorAidingInhibit_t;
++
++/* A controller may temporarily inhibit geometrically invalid external aiding
++ * while the estimator continues normal IMU prediction and process-noise
++ * propagation. The queue is still drained, so stale measurements are never
++ * fused when aiding is restored. */
++void estimatorSetAidingInhibit(uint8_t inhibitMask);
++uint8_t estimatorGetAidingInhibit(void);
++
+ // Support to incorporate additional sensors into the state estimate via the following functions
+ void estimatorEnqueue(const measurement_t *measurement);
+ 
+diff --git a/src/modules/src/estimator/estimator.c b/src/modules/src/estimator/estimator.c
+index 9930ca29..6791d3e5 100644
+--- a/src/modules/src/estimator/estimator.c
++++ b/src/modules/src/estimator/estimator.c
+@@ -28,6 +28,9 @@ STATIC_MEM_QUEUE_ALLOC(measurementsQueue, MEASUREMENTS_QUEUE_SIZE, sizeof(measur
+ #define ONE_SECOND 1000
+ static STATS_CNT_RATE_DEFINE(measurementAppendedCounter, ONE_SECOND);
+ static STATS_CNT_RATE_DEFINE(measurementNotAppendedCounter, ONE_SECOND);
++static volatile uint8_t aidingInhibitMask = EstimatorAidingInhibitNone;
++static uint32_t inhibitedFlowCount = 0;
++static uint32_t inhibitedTofCount = 0;
+ 
+ // events
+ EVENTTRIGGER(estTDOA, uint8, idA, uint8, idB, float, distanceDiff)
+@@ -168,16 +171,35 @@ const char* stateEstimatorGetName() {
+   return estimatorFunctions[currentEstimator].name;
+ }
+ 
++void estimatorSetAidingInhibit(uint8_t inhibitMask) {
++  aidingInhibitMask = inhibitMask;
++}
++
++uint8_t estimatorGetAidingInhibit(void) {
++  return aidingInhibitMask;
++}
+ 
+ void estimatorEnqueue(const measurement_t *measurement) {
+   if (!measurementsQueue) {
+     return;
+   }
+ 
++  const uint8_t inhibitMask = aidingInhibitMask;
++  if (measurement->type == MeasurementTypeFlow
++      && (inhibitMask & EstimatorAidingInhibitFlow)) {
++    ++inhibitedFlowCount;
++    return;
++  }
++  if (measurement->type == MeasurementTypeTOF
++      && (inhibitMask & EstimatorAidingInhibitDownRange)) {
++    ++inhibitedTofCount;
++    return;
++  }
++
+   portBASE_TYPE result;
+   #ifndef CONFIG_PLATFORM_SITL
+   bool isInInterrupt = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0;
+   #else
+   bool isInInterrupt = false;
+   #endif
+   if (isInInterrupt) {
+@@ -262,4 +284,7 @@ bool estimatorDequeue(measurement_t *measurement) {
+ LOG_GROUP_START(estimator)
+   STATS_CNT_RATE_LOG_ADD(rtApnd, &measurementAppendedCounter)
+   STATS_CNT_RATE_LOG_ADD(rtRej, &measurementNotAppendedCounter)
++  LOG_ADD(LOG_UINT8, aidInhib, &aidingInhibitMask)
++  LOG_ADD(LOG_UINT32, flowInh, &inhibitedFlowCount)
++  LOG_ADD(LOG_UINT32, tofInh, &inhibitedTofCount)
+ LOG_GROUP_STOP(estimator)
+diff --git a/src/modules/src/kalman_core/mm_flow.c b/src/modules/src/kalman_core/mm_flow.c
+index 0689ad64..23d16f73 100644
+--- a/src/modules/src/kalman_core/mm_flow.c
++++ b/src/modules/src/kalman_core/mm_flow.c
+@@ -36,6 +36,15 @@ static float measuredNY;
+ 
+ void kalmanCoreUpdateWithFlow(kalmanCoreData_t* this, const flowMeasurement_t *flow, const Axis3f *gyro)
+ {
++  const float beamVertical = this->R[2][2];
++  const float minimumBeamVertical = 0.25f;
++  if (!isfinite(flow->dt) || !isfinite(flow->stdDevX)
++      || !isfinite(flow->stdDevY) || flow->dt <= 0.0f
++      || flow->stdDevX <= 0.0f || flow->stdDevY <= 0.0f
++      || beamVertical <= minimumBeamVertical) {
++    return;
++  }
++  const float confidenceScale = 1.0f / beamVertical;
+   // Inclusion of flow measurements in the EKF done by two scalar updates
+ 
+   // ~~~ Camera constants ~~~
+@@ -84,7 +93,9 @@ void kalmanCoreUpdateWithFlow(kalmanCoreData_t* this, const flowMeasurement_t *f
+   hx[KC_STATE_PX] = (Npix * flow->dt / thetapix) * (this->R[2][2] / z_g);
+ 
+   //First update
+-  kalmanCoreScalarUpdate(this, &Hx, (measuredNX-predictedNX), flow->stdDevX*FLOW_RESOLUTION);
++  kalmanCoreScalarUpdate(
++      this, &Hx, (measuredNX-predictedNX),
++      flow->stdDevX * FLOW_RESOLUTION * confidenceScale);
+ 
+   // ~~~ Y velocity prediction and update ~~~
+   float hy[KC_STATE_DIM] = {0};
+@@ -97,7 +108,9 @@ void kalmanCoreUpdateWithFlow(kalmanCoreData_t* this, const flowMeasurement_t *f
+   hy[KC_STATE_PY] = (Npix * flow->dt / thetapix) * (this->R[2][2] / z_g);
+ 
+   // Second update
+-  kalmanCoreScalarUpdate(this, &Hy, (measuredNY-predictedNY), flow->stdDevY*FLOW_RESOLUTION);
++  kalmanCoreScalarUpdate(
++      this, &Hy, (measuredNY-predictedNY),
++      flow->stdDevY * FLOW_RESOLUTION * confidenceScale);
+ }
+ 
+ /**
+diff --git a/src/modules/src/kalman_core/mm_tof.c b/src/modules/src/kalman_core/mm_tof.c
+index b7499475..a8f10435 100644
+--- a/src/modules/src/kalman_core/mm_tof.c
++++ b/src/modules/src/kalman_core/mm_tof.c
+@@ -27,35 +27,22 @@
+ 
+ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
+ {
+-  // Updates the filter with a measured distance in the zb direction using the
+   float h[KC_STATE_DIM] = {0};
+   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
+-
+-  // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
+-  if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0){
+-    float angle = fabsf(acosf(this->R[2][2])) - DEG_TO_RAD * (15.0f / 2.0f);
+-    if (angle < 0.0f) {
+-      angle = 0.0f;
+-    }
+-    float predictedDistance = this->S[KC_STATE_Z] / cosf(angle);
+-    float measuredDistance = tof->distance; // [m]
+-
+-    /*
+-    The sensor model (Pg.95-96, https://lup.lub.lu.se/student-papers/search/publication/8905295)
+-    
+-    h = z/((R*z_b).z_b) = z/cos(alpha)
+-    
+-    Here,
+-    h (Measured variable)[m] = Distance given by TOF sensor. This is the closest point from any surface to the sensor in the measurement cone
+-    z (Estimated variable)[m] = THe actual elevation of the crazyflie
+-    z_b = Basis vector in z direction of body coordinate system
+-    R = Rotation matrix made from ZYX Tait-Bryan angles. Assumed to be stationary
+-    alpha = angle between [line made by measured point <---> sensor] and [the intertial z-axis] 
+-    */
+-
+-    h[KC_STATE_Z] = 1 / cosf(angle); // This just acts like a gain for the sensor model. Further updates are done in the scalar update function below
+-
+-    // Scalar update
+-    kalmanCoreScalarUpdate(this, &H, measuredDistance-predictedDistance, tof->stdDev);
++  const float beamVertical = this->R[2][2];
++  const float minimumBeamVertical = 0.25f;
++  if (!isfinite(tof->distance) || !isfinite(tof->stdDev)
++      || tof->distance <= 0.0f || tof->stdDev <= 0.0f
++      || beamVertical <= minimumBeamVertical) {
++    return;
+   }
++
++  /* For a horizontal ground plane, the body-down beam measures slant range.
++   * Convert it to vertical height. Inflate uncertainty as the beam approaches
++   * horizontal to account for attitude, footprint, and surface geometry. */
++  const float measuredHeight = tof->distance * beamVertical;
++  const float effectiveStdDev = tof->stdDev / beamVertical;
++  h[KC_STATE_Z] = 1.0f;
++  kalmanCoreScalarUpdate(
++      this, &H, measuredHeight - this->S[KC_STATE_Z], effectiveStdDev);
+ }

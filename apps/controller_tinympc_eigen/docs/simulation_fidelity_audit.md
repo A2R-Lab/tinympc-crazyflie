@@ -78,8 +78,8 @@ The largest remaining gaps are the actual estimator (bias, drift, optical-flow
 surface and lighting failures), battery/ESC/PWM behavior, motor-lag variation,
 propeller inflow and blade flapping, ground and wall effects, wind, flexible
 structure, contact geometry for the installed decks/guards, timing jitter, and
-unmodeled lateral forces and torques. These dominate the uncertainty for flips
-and high-rate racing maneuvers.
+unmodeled lateral forces and torques. These dominate the uncertainty for
+high-rate racing maneuvers.
 
 The next fidelity milestone should be log replay and residual identification:
 record estimator state, normalized motor commands, battery voltage, and motion
@@ -94,9 +94,4 @@ flight testing, not proof that flight testing will succeed.
 python3 tools/pybullet_simulation/validate_plant_fidelity.py \
   --out sim_runs/final_parity_audit/plant_fidelity.json
 
-python3 tools/pybullet_simulation/run_racing_maneuver_suite.py \
-  --out sim_runs/racing_maneuver_suite_realistic_v1 --overwrite
-
-python3 tools/pybullet_simulation/run_racing_maneuver_suite.py \
-  --out sim_runs/racing_maneuver_suite_ideal --profile ideal --overwrite
 ```

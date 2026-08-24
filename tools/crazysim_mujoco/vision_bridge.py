@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Run a repository-local ONNX vision head on CrazySim FPV frames.
+"""Capture CrazySim FPV frames or run a repository-local ONNX vision head.
 
 The bridge deliberately carries metric clearance, collision risk, navigation,
 and gate geometry as different signals. It sends the same versioned packet
 that the AI deck can send to the STM32 firmware.
+
+Camera-only mode is a passive evidence recorder. It creates no firmware
+socket, performs no inference, and cannot emit observations or commands.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import math
 import signal
 import socket
 import struct
+import subprocess
 import time
 import zlib
 from dataclasses import dataclass
@@ -70,6 +74,43 @@ class CameraFrameAssembler:
         if pixels.size != width * height:
             return None
         return pixels.reshape(height, width)
+
+
+class CameraVideoWriter:
+    """Stream raw grayscale camera frames into an H.264 MP4."""
+
+    def __init__(self, path: Path | None, fps: float):
+        self.path = path
+        self.fps = fps
+        self.process = None
+
+    def write(self, frame: np.ndarray) -> None:
+        if self.path is None:
+            return
+        if self.process is None:
+            height, width = frame.shape
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.process = subprocess.Popen(
+                [
+                    "ffmpeg", "-loglevel", "error", "-y",
+                    "-f", "rawvideo", "-pixel_format", "gray",
+                    "-video_size", f"{width}x{height}",
+                    "-framerate", f"{self.fps:g}", "-i", "-",
+                    "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", str(self.path),
+                ],
+                stdin=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        self.process.stdin.write(np.ascontiguousarray(frame).tobytes())
+
+    def close(self) -> None:
+        if self.process is None:
+            return
+        self.process.stdin.close()
+        return_code = self.process.wait()
+        if return_code != 0:
+            raise RuntimeError(f"FPV video encoder exited with {return_code}")
 
 
 @dataclass
@@ -128,15 +169,15 @@ def resize_nearest(frame: np.ndarray, height: int, width: int) -> np.ndarray:
     return frame[np.ix_(ys, xs)]
 
 
-def bottom_center_crop(frame: np.ndarray, height: int, width: int) -> np.ndarray:
-    """Match the deployed DroNet 324x244 Himax -> 200x200 crop."""
+def center_crop(frame: np.ndarray, height: int, width: int) -> np.ndarray:
+    """Match PULP-DroNet v3's torchvision/Himax center crop."""
     if frame.ndim != 2:
         raise ValueError(f"DroNet expects one grayscale plane, received {frame.shape}")
     if frame.shape[0] < height or frame.shape[1] < width:
         raise ValueError(
             f"DroNet cannot crop {height}x{width} from camera frame {frame.shape}")
     left = (frame.shape[1] - width) // 2
-    top = frame.shape[0] - height
+    top = (frame.shape[0] - height) // 2
     return np.ascontiguousarray(frame[top:top + height, left:left + width])
 
 
@@ -179,7 +220,7 @@ def navigation_from_sectors(danger: np.ndarray, previous: float) -> tuple[float,
                      max(np.sum(1.0 - danger), 1e-6))
     # A centered obstacle is an ambiguous tie. Keep the previous chosen side
     # instead of alternating on inference noise; start with a left pass.
-    if collision >= 0.25 and abs(steering) < 0.08:
+    if collision >= 0.50 and abs(steering) < 0.08:
         steering = math.copysign(0.60, previous if abs(previous) > 0.08 else 1.0)
     return float(np.clip(steering, -1.0, 1.0)), collision
 
@@ -694,9 +735,89 @@ class EspnetDronetGateAdapter:
         self.previous_frame = None
         self.last_input = None
         self.last_input_raw = None
+        self.gate_mask_center_px = None
+        self.gate_mask_span_px = None
+        self.gate_mask_streak = 0
+        self.gate_filtered_corners_px = None
+        self.gate_corner_velocity_px_per_frame = None
+        self.gate_frames_since_valid = 0
 
     @staticmethod
-    def _decode_gate(corner_logits, mask_logits, presence_logit):
+    def _largest_mask_component(mask: np.ndarray) -> np.ndarray:
+        """Return row/column coordinates of the largest 4-connected region."""
+        active = np.asarray(mask, dtype=bool)
+        visited = np.zeros(active.shape, dtype=bool)
+        largest = []
+        for row, column in np.argwhere(active):
+            if visited[row, column]:
+                continue
+            component = []
+            pending = [(int(row), int(column))]
+            visited[row, column] = True
+            while pending:
+                current_row, current_column = pending.pop()
+                component.append((current_row, current_column))
+                for next_row, next_column in (
+                        (current_row - 1, current_column),
+                        (current_row + 1, current_column),
+                        (current_row, current_column - 1),
+                        (current_row, current_column + 1)):
+                    if (0 <= next_row < active.shape[0]
+                            and 0 <= next_column < active.shape[1]
+                            and active[next_row, next_column]
+                            and not visited[next_row, next_column]):
+                        visited[next_row, next_column] = True
+                        pending.append((next_row, next_column))
+            if len(component) > len(largest):
+                largest = component
+        return np.asarray(largest, dtype=np.int32).reshape(-1, 2)
+
+    @classmethod
+    def _mask_opening_center(cls, mask_probability: np.ndarray):
+        """Return the center of a resolved gate-opening mask component."""
+        active = np.asarray(mask_probability, dtype=float) >= 0.5
+        component = cls._largest_mask_component(active)
+        if len(component) < 5:
+            return None, "mask_component"
+        rows, columns = component[:, 0], component[:, 1]
+        center = np.asarray((8.0 * columns.mean() + 4.0,
+                             8.0 * rows.mean() + 4.0), dtype=np.float32)
+        return center, "mask_supported"
+
+    @staticmethod
+    def _square_pose_supported(corners_px: np.ndarray) -> bool:
+        """Check whether a quadrilateral is a credible projection of a square."""
+        source = np.asarray(((0.0, 0.0), (1.0, 0.0),
+                             (1.0, 1.0), (0.0, 1.0)))
+        system = []
+        target = []
+        for (x, y), (u, v) in zip(source, corners_px):
+            system.extend(((x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y),
+                           (0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y)))
+            target.extend((u, v))
+        try:
+            homography = np.append(
+                np.linalg.solve(np.asarray(system), np.asarray(target)),
+                1.0).reshape(3, 3)
+        except np.linalg.LinAlgError:
+            return False
+        camera_inverse = np.linalg.inv(np.asarray((
+            (89.1558392549, 0.0, 81.1038105230),
+            (0.0, 89.4608171623, 73.3473030288),
+            (0.0, 0.0, 1.0))))
+        first_axis = camera_inverse @ homography[:, 0]
+        second_axis = camera_inverse @ homography[:, 1]
+        first_norm = float(np.linalg.norm(first_axis))
+        second_norm = float(np.linalg.norm(second_axis))
+        if min(first_norm, second_norm) < 1e-6:
+            return False
+        axis_scale_ratio = max(first_norm, second_norm) / min(
+            first_norm, second_norm)
+        axis_cosine = abs(float(np.dot(first_axis, second_axis)
+                                / (first_norm * second_norm)))
+        return axis_scale_ratio <= 1.8 and axis_cosine <= 0.40
+
+    def _decode_gate(self, corner_logits, mask_logits, presence_logit):
         corner_probability = sigmoid(corner_logits)
         mask_probability = sigmoid(mask_logits)
         presence = float(sigmoid(presence_logit))
@@ -708,6 +829,50 @@ class EspnetDronetGateAdapter:
             corner_peaks.append(float(heatmap[y, x]))
         corners_px = np.asarray(corners_px, dtype=np.float32)
         geometry_valid, reason = EspnetAdapter._gate_geometry(corners_px)
+        mask_center, mask_reason = self._mask_opening_center(
+            mask_probability)
+        mask_supported = mask_center is not None
+        if mask_supported:
+            quadrilateral_center = corners_px.mean(axis=0)
+            quadrilateral_diagonal = float(np.linalg.norm(
+                corners_px[2] - corners_px[0]))
+            mask_supported = bool(np.linalg.norm(
+                mask_center - quadrilateral_center)
+                <= max(18.0, 0.22 * quadrilateral_diagonal))
+            if not mask_supported:
+                mask_reason = "mask_center_disagreement"
+
+        pose_supported = geometry_valid and self._square_pose_supported(
+            corners_px)
+
+        temporal_consistent = False
+        if mask_supported and pose_supported:
+            mask_span = corners_px[2] - corners_px[0]
+            if self.gate_mask_center_px is None:
+                temporal_consistent = True
+            else:
+                center_motion_px = float(np.linalg.norm(
+                    mask_center - self.gate_mask_center_px))
+                previous_scale = float(np.linalg.norm(self.gate_mask_span_px))
+                current_scale = float(np.linalg.norm(mask_span))
+                scale_ratio = current_scale / max(previous_scale, 1.0)
+                temporal_consistent = bool(
+                    center_motion_px <= max(16.0, 0.40 * previous_scale)
+                    and 0.60 <= scale_ratio <= 1.67)
+            if temporal_consistent:
+                self.gate_mask_streak += 1
+            else:
+                self.gate_mask_streak = 1
+            self.gate_mask_center_px = mask_center
+            self.gate_mask_span_px = mask_span
+        else:
+            self.gate_mask_streak = 0
+        # Independent agreement between the mask and planar-square pose is
+        # sufficient for the first observation. Subsequent observations are
+        # bounded against the last credible center and scale; requiring an
+        # uninterrupted streak discarded good views whenever one intervening
+        # heatmap frame was weak.
+        temporal_supported = temporal_consistent
         mask_score = float(np.mean(np.partition(
             mask_probability.reshape(-1), -16)[-16:]))
         corner_score = float(np.mean(corner_peaks))
@@ -720,12 +885,49 @@ class EspnetDronetGateAdapter:
         )
         confidence = float(sigmoid(confidence_logit))
         valid = bool(
-            geometry_valid and confidence >= 0.6174671283
+            geometry_valid and pose_supported and mask_supported
+            and temporal_supported
+            and confidence >= 0.6174671283
             and sum(score >= 0.5 for score in corner_peaks) >= 3
         )
-        if not valid and geometry_valid:
+        if not geometry_valid:
+            pass
+        elif not pose_supported:
+            reason = "square_pose"
+        elif not mask_supported:
+            reason = mask_reason
+        elif not temporal_supported:
+            reason = "mask_temporal"
+        elif not valid:
             reason = "presence_mask_confidence"
-        return valid, corners_px / 160.0, confidence, reason
+
+        published_corners_px = corners_px
+        self.gate_frames_since_valid += 1
+        if valid:
+            gap_frames = self.gate_frames_since_valid
+            if (self.gate_filtered_corners_px is None
+                    or self.gate_corner_velocity_px_per_frame is None
+                    or gap_frames > 12):
+                self.gate_filtered_corners_px = corners_px.copy()
+                self.gate_corner_velocity_px_per_frame = np.zeros_like(
+                    corners_px)
+            else:
+                predicted = (self.gate_filtered_corners_px
+                             + gap_frames
+                             * self.gate_corner_velocity_px_per_frame)
+                residual = corners_px - predicted
+                self.gate_filtered_corners_px = predicted + 0.65 * residual
+                self.gate_corner_velocity_px_per_frame += (
+                    0.10 / max(1, gap_frames)) * residual
+                self.gate_filtered_corners_px = np.clip(
+                    self.gate_filtered_corners_px, 0.0, 160.0)
+            published_corners_px = self.gate_filtered_corners_px
+            self.gate_frames_since_valid = 0
+        elif self.gate_frames_since_valid > 12:
+            self.gate_filtered_corners_px = None
+            self.gate_corner_velocity_px_per_frame = None
+        return (valid, published_corners_px / 160.0,
+                confidence, reason)
 
     def predict(self, frame: np.ndarray) -> Prediction:
         current = hm01b0_full_frame(frame)
@@ -755,7 +957,7 @@ class EspnetDronetGateAdapter:
 
 
 class DronetAdapter:
-    """Adapter for the deployed PULP-DroNet steering/collision contract."""
+    """Adapter for the full PULP-DroNet v3 steering/collision contract."""
     def __init__(self, model_path: Path):
         import onnxruntime as ort
         self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
@@ -766,7 +968,7 @@ class DronetAdapter:
         shape = self.input.shape
         height = int(shape[-2]) if isinstance(shape[-2], int) else 120
         width = int(shape[-1]) if isinstance(shape[-1], int) else 160
-        image_u8 = bottom_center_crop(frame, height, width)
+        image_u8 = center_crop(frame, height, width)
         self.last_input = image_u8
         image = image_u8.astype(np.float32) / 255.0
         outputs = self.session.run(None, {self.input.name: image[None, None]})
@@ -825,9 +1027,81 @@ def packet_bytes(prediction: Prediction, sequence: int, timestamp_ms: int) -> by
     return body + struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF)
 
 
+def record_camera_only(args: argparse.Namespace) -> int:
+    """Record reassembled camera frames without any firmware-facing channel."""
+    camera = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    camera.bind(("127.0.0.1", args.camera_port))
+    camera.settimeout(0.25)
+    running = True
+
+    def stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    args.log.parent.mkdir(parents=True, exist_ok=True)
+    if args.frames_dir is not None:
+        from PIL import Image
+        args.frames_dir.mkdir(parents=True, exist_ok=True)
+    assembler = CameraFrameAssembler()
+    sequence = 0
+    metadata = {
+        "mode": "camera_only",
+        "inference_enabled": False,
+        "firmware_output_enabled": False,
+        "frames_received": 0,
+    }
+    video = CameraVideoWriter(args.camera_video, args.camera_fps)
+    print(f"camera-only bridge ready: udp://127.0.0.1:{args.camera_port} "
+          "(passive; no firmware output)", flush=True)
+    with args.log.open("w", newline="") as stream:
+        fields = ["time_s", "sequence", "width", "height", "bytes", "sha256"]
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        while running:
+            try:
+                datagram, _ = camera.recvfrom(65535)
+            except socket.timeout:
+                continue
+            frame = assembler.feed(datagram)
+            if frame is None:
+                continue
+            video.write(frame)
+            sequence += 1
+            timestamp_ms = int(round(1000.0 * sequence / args.camera_fps))
+            frame_bytes = np.ascontiguousarray(frame).tobytes()
+            writer.writerow({
+                "time_s": timestamp_ms / 1000.0,
+                "sequence": sequence,
+                "width": frame.shape[1],
+                "height": frame.shape[0],
+                "bytes": len(frame_bytes),
+                "sha256": hashlib.sha256(frame_bytes).hexdigest(),
+            })
+            stream.flush()
+            metadata["frames_received"] = sequence
+            if sequence == 1:
+                metadata["first_frame_shape"] = list(frame.shape)
+                metadata["first_frame_sha256"] = hashlib.sha256(frame_bytes).hexdigest()
+                if args.frames_dir is not None:
+                    Image.fromarray(frame, mode="L").save(
+                        args.frames_dir / "first_camera_frame.png")
+                    np.asarray(frame, dtype=np.uint8).tofile(
+                        args.frames_dir / "first_camera_frame.raw")
+            if args.frames_dir is not None:
+                (args.frames_dir / "metadata.json").write_text(
+                    json.dumps(metadata, indent=2) + "\n")
+    video.close()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--model", type=Path)
+    mode.add_argument("--camera-only", action="store_true",
+                      help="Capture/log frames without inference or firmware I/O")
     parser.add_argument("--adapter",
                         choices=("auto", "espnet", "sequential", "stdc", "dronet"),
                         default="auto")
@@ -836,15 +1110,21 @@ def main() -> int:
     parser.add_argument("--camera-fps", type=float, default=20.0)
     parser.add_argument("--delivery-latency-frames", type=int, default=1,
                         help="Fixed capture-to-firmware latency in camera frames")
+    parser.add_argument("--passive", action="store_true",
+                        help="Run and log inference without sending firmware packets")
     parser.add_argument("--clearance-threshold", type=float, default=0.30)
     parser.add_argument("--log", required=True, type=Path)
     parser.add_argument("--frames-dir", type=Path,
                         help="Save the first, first critical, and maximum-risk inputs")
+    parser.add_argument("--camera-video", type=Path,
+                        help="Encode the complete simulated onboard-camera stream")
     args = parser.parse_args()
     if args.camera_fps <= 0.0:
         parser.error("--camera-fps must be positive")
     if args.delivery_latency_frames < 0:
         parser.error("--delivery-latency-frames must be nonnegative")
+    if args.camera_only:
+        return record_camera_only(args)
     adapter, adapter_name = make_adapter(args.adapter, args.model.resolve(),
                                          args.clearance_threshold)
 
@@ -879,11 +1159,14 @@ def main() -> int:
     critical_saved = False
     gate_saved = False
     frame_metadata = {}
+    video = CameraVideoWriter(args.camera_video, args.camera_fps)
     if args.frames_dir is not None:
         from PIL import Image
         args.frames_dir.mkdir(parents=True, exist_ok=True)
+    destination = ("passive log only" if args.passive else
+                   f"udp://127.0.0.1:{args.firmware_port}")
     print(f"vision bridge ready: udp://127.0.0.1:{args.camera_port} -> "
-          f"udp://127.0.0.1:{args.firmware_port} ({adapter_name})", flush=True)
+          f"{destination} ({adapter_name})", flush=True)
     with args.log.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
@@ -895,6 +1178,7 @@ def main() -> int:
             frame = assembler.feed(datagram)
             if frame is None:
                 continue
+            video.write(frame)
             inference_start = time.perf_counter()
             prediction = adapter.predict(frame)
             raw_danger = (prediction.danger if prediction.raw_danger is None
@@ -980,7 +1264,7 @@ def main() -> int:
                 (args.frames_dir / "metadata.json").write_text(
                     json.dumps(frame_metadata, indent=2) + "\n")
             ready = delivery_queue.push(sequence, timestamp_ms, prediction)
-            if ready is not None:
+            if ready is not None and not args.passive:
                 ready_sequence, ready_timestamp_ms, ready_prediction = ready
                 sender.sendto(packet_bytes(
                     ready_prediction, ready_sequence, ready_timestamp_ms),
@@ -1013,6 +1297,7 @@ def main() -> int:
                 row[f"gate_{corner}_y"] = prediction.corners[index, 1]
             writer.writerow(row)
             stream.flush()
+    video.close()
     return 0
 
 

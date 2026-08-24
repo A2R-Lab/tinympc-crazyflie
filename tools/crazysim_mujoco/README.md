@@ -6,9 +6,10 @@ the CrazySim brushless motor model, contacts, and simulated sensors. An optional
 offscreen FPV camera feeds a repository-local ONNX bridge, which sends the same
 versioned perception observation consumed by the firmware controller.
 The PWM bridge applies the firmware's quadratic normalized-speed law
-(`thrust = command^2 * 0.312852 N`), then CrazySim independently converts that
-thrust target through its measured RPM polynomial, 65 ms rotor dynamics, and
-0.200 N `cf21B_500` motor/propeller limit.
+(`thrust = command^2 * 0.200 N`), matching the active generated controller
+model. CrazySim then independently converts that thrust target through its RPM
+polynomial and 65 ms rotor dynamics. The `--pwm-thrust-full` option is retained
+only for explicit plant-robustness perturbations.
 
 The dependency is cloned under this directory at a pinned commit and patched at
 setup time. Nothing is loaded from `tinympc-vision`, `tinympc-perception`, or a
@@ -16,12 +17,14 @@ sibling CrazySim checkout. The build and Python environment run in Docker.
 
 CrazySim and the POSIX firmware do not naturally share a simulation clock: the
 physics loop advances fixed 1 ms steps while the firmware's FreeRTOS port ticks
-from wall time. The harness therefore runs the physics with a 0.1 real-time cap
-and calibrates the firmware tick to the measured 0.07 simulation/wall-time rate
-on the validation host. A run is rejected if the first motor command occurs
-more than 0.5 s from the requested simulation launch time. Use
-`--firmware-time-factor` to recalibrate this value when moving to a materially
-different host.
+from wall time. The harness therefore runs the physics with a 1.0 real-time cap
+and calibrates the firmware tick to a 0.8 simulation/wall-time rate on the
+rootless-Docker validation host. This pair produced 12/12 accepted launch times
+across 1.0, 1.5, 2.0, and 3.0 m/s progress-circle trials (three seeds each). A
+run is rejected if the first motor command occurs more than 0.5 s from the
+requested simulation launch time. Use `--realtime-factor` and
+`--firmware-time-factor` to recalibrate when moving to a materially different
+host or workload.
 
 ## Run
 
@@ -29,114 +32,40 @@ From the repository root:
 
 ```sh
 tools/crazysim_mujoco/run.sh \
-  --trajectory backflip_360 \
-  --stored-ltv 1 \
-  --out apps/controller_tinympc_eigen/sim_runs/crazysim/backflip_ltv \
+  --trajectory circle --duration 30 --stop-on-contact \
+  --out apps/controller_tinympc_eigen/sim_runs/crazysim/circle \
   --overwrite
 ```
 
-Compare against the original fixed dynamics matrices:
+Each run produces `state.csv`, firmware and simulator logs, `summary.json`,
+and `validation.png`. Add `--video` for a post-run 3-D replay.
 
-```sh
-tools/crazysim_mujoco/run.sh \
-  --trajectory backflip_360 \
-  --stored-ltv 0 \
-  --out apps/controller_tinympc_eigen/sim_runs/crazysim/backflip_fixed \
-  --overwrite
-```
+### Progress-indexed level routes
 
-Other available references are `front_flip_360`, `roll_flip_360`, and
-`barrel_roll_forward_360`. Run `tools/crazysim_mujoco/run.sh --help` for noise,
-Flow-deck, wind, ground-effect, plant-parameter, and timing options. The default
-1.5 m handoff altitude is the validated nominal entry height; the reference is
-anchored to the actual handoff pose.
-
-For racing, use `barrel_roll_forward_360` as a declared track primitive rather
-than triggering a flip directly from DroNet collision risk:
-
-```sh
-tools/crazysim_mujoco/run.sh \
-  --trajectory barrel_roll_forward_360 --stored-ltv 1 --duration 16 \
-  --launch-time 4 --spawn-z 1.5 \
-  --out apps/controller_tinympc_eigen/sim_runs/crazysim/racing_barrel_roll \
-  --overwrite
-```
-
-The primitive carries up to 0.54 m/s forward speed, advances 1.45 m, completes
-one body-x roll, and returns its reference to the entry altitude. Its energy
-management arc needs 2.26 m of overhead clearance, so the track planner must
-reserve that corridor before selecting it. The runner independently regenerates
-the CSV, firmware reference, and all horizon-wise stored LTV matrices before an
-acrobatic build; stale or mismatched artifacts stop the run. The final report
-marks `acrobatics_success` only with no contact, a complete rotation, upright
-recovery, and at most 0.50 m terminal position error.
-
-The division of responsibility is deliberate: DroNet chooses a banked lateral
-dodge for an unstructured obstacle because its output has no obstacle height or
-free-space volume. A track declaration may select the barrel roll when its full
-3-D corridor is known. The current harness uses separate level/vision and
-acrobatic firmware builds, so camera inference is disabled for the whole stored
-primitive. A future runtime track sequencer must disable vision before the
-rangefinder tilts away from the ground and reacquire it only after the stored
-maneuver reaches its upright recovery segment.
-
-For the full noisy validation window used during tuning:
-
-```sh
-tools/crazysim_mujoco/run.sh \
-  --trajectory backflip_360 --stored-ltv 1 --duration 15 --sensor-noise \
-  --out apps/controller_tinympc_eigen/sim_runs/crazysim/backflip_noise --overwrite
-```
-
-Each run produces `state.csv` (MuJoCo ground truth), `firmware.log`,
-`simulator.log`, `summary.json`, and `validation.png`. Add `--video` to also
-produce `flight.mp4`, a post-run 3-D replay of the logged ground-truth pose.
-Because it is rendered after the simulator exits, encoding cannot change the
-controller, vision, or physics timing. The plot includes the
-top-down path, altitude/crash marker, attitude, and all four motor speeds. The
-summary also reports integrated maneuver-axis rotation, final horizontal error
-and speed, saturation, and contact/crash status.
-
-### Level-route reference comparison
-
-Figure-eight, oval, and circle can be flown with three matched reference
-policies:
+Figure-eight, oval, and circle use the progress-indexed reference policy:
 
 ```sh
 tools/crazysim_mujoco/run.sh --trajectory figure8 \
-  --reference-mode waypoint --duration 130 --stop-on-contact \
+  --duration 130 --stop-on-contact \
   --random-seed 1 --out apps/controller_tinympc_eigen/sim_runs/crazysim/example
 ```
 
-`waypoint` holds discrete route goals, `progress` builds a smooth horizon from
-local geometric path progress, and `trajectory` samples the dense route by
-elapsed time. All three use the same trajectory artifact, plant, controller
-costs, local-frame transform, and launch protocol. Yaw references are tracked
-inside TinyMPC; no post-solve outer yaw correction is applied.
-
-The reproducible benchmark runs all 27 shape/mode/seed combinations and retains
-contact failures as evidence:
-
-```sh
-python3 tools/crazysim_mujoco/run_reference_benchmark.py
-```
-
-Its output directory contains per-run raw logs and summaries plus
-`comparison.json`, `comparison.csv`, `comparison.png`, `flight_paths.png`, and
-`REPORT.md`. Common geometric metrics are truncated at first contact. Dense
-trajectory runs additionally report errors against their wall-clock schedule.
+The controller projects measured position onto a bounded path window and builds
+the MPC horizon forward by arc length. Yaw references are tracked inside
+TinyMPC; no post-solve outer yaw correction is applied.
 
 ## Vision and DroNet baseline
 
 The bundled baseline uses the full PULP-DroNet v3 weights published for the
 AI-deck/Crazyflie, converted once to ONNX without retraining. It is
-self-contained under `models/dronet/` and does not download code or models at
-run time. The camera path also matches deployment: a 324x244 Himax-style
-grayscale frame followed by the bottom-centered 200x200 crop:
+self-contained under `models/pulp_dronet_v3/` and does not download code or
+models at run time. The camera path also matches deployment: a 324x244
+Himax-style grayscale frame followed by the centered 200x200 crop used by the
+v3 training and GAP8 deployment code:
 
 ```sh
 tools/crazysim_mujoco/run.sh \
-  --trajectory straight --stored-ltv 0 --duration 18 \
+  --trajectory straight --duration 18 \
   --launch-prespin 1 --vision-model dronet --vision-scene obstacle \
   --out apps/controller_tinympc_eigen/sim_runs/crazysim/dronet_obstacle \
   --overwrite
@@ -151,7 +80,7 @@ automatic launch-time check fails.
 DroNet provides only steering and one collision-risk score. The paper warns
 that the latter is not a calibrated Bayesian probability. The firmware keeps
 the published speed/yaw filtering, then uses those signals as evidence for a
-racing-specific banked dodge: two risk samples at or above 0.25 latch the
+racing-specific banked dodge: two risk samples at or above 0.50 latch the
 steering-selected pass side on an unstructured straight. On a known curve,
 the trajectory curvature deterministically selects the outside passing lane;
 this prevents small rendering/timing changes from flipping the racing line.
@@ -184,18 +113,14 @@ The default suite runs four manifest-backed courses: a centered box, an offset
 cylinder, two alternating boxes, and an obstacle on a tangent-heading left
 turn. The report computes clearance to every physical obstacle, corridor-wall
 clearance, cross-track error, pass-region arrival, required heading change,
-contact status, and dodge-phase validity. The checked-in nominal evidence
-also requires at most 0.15 m final cross-track error. It passes 4/4 with
-minimum obstacle clearances 0.055, 0.278, 0.054, and 0.197 m;
-see `models/dronet/crazysim_multicourse_acceptance.json`.
+contact status, and dodge-phase validity. The removed 2018 model's acceptance
+reports do not validate the v3 replacement; generate fresh v3 evidence before
+making obstacle-avoidance acceptance claims.
 
 The disturbed profile retains the stock `cf21B_500` mass, inertia, thrust,
 and rotor dynamics while enabling sensor noise, the simulated Flow deck,
-0.25 m/s wind, and light turbulence. The earlier single-obstacle disturbed
-gate remains checked in as `models/dronet/crazysim_acceptance.json`: seeds 1,
-7, and 19 passed 3/3, with minimum obstacle and wall clearances 0.261 m and
-0.361 m. Every new simulation writes `run_config.json` with its complete
-configuration and artifact hashes.
+0.25 m/s wind, and light turbulence. Every new simulation writes
+`run_config.json` with its complete configuration and artifact hashes.
 
 - `espnet`/`tinyracer`: the finalized two-frame DroNet/gate float ONNX from
   perception commit `193fa12`; it supplies raw yaw/collision navigation plus
@@ -207,7 +132,8 @@ configuration and artifact hashes.
   comparisons, with four metric clearances/confidences plus gate heatmaps;
 - `stdc`: the earlier real-flight STDC deployment, with its dense danger map
   conservatively pooled into four symmetric regions plus gate corners;
-- `dronet`: steering and collision probability only.
+- `dronet`/`dronet-v3`: the full PULP-DroNet v3 ResBlock model; steering and
+  collision probability only. `dronet` is retained as the short CLI alias.
 
 Use `--vision-model tinyracer-candidate`, `--vision-model sequential`,
 `--vision-model stdc`, or `--vision-model dronet` for the self-contained
@@ -216,7 +142,7 @@ being mistaken for the finalized custom head. For example:
 
 ```sh
 tools/crazysim_mujoco/run.sh \
-  --trajectory straight --stored-ltv 0 --launch-prespin 1 \
+  --trajectory straight --launch-prespin 1 \
   --vision-model tinyracer-candidate --vision-scene obstacle \
   --out apps/controller_tinympc_eigen/sim_runs/crazysim/tinyracer_obstacle \
   --overwrite
@@ -290,10 +216,7 @@ above 0.617, four confident corners, and collision 0.013.
 You may also pass a new model with `--vision-model PATH --vision-adapter NAME`.
 Its complete parent bundle is mounted read-only so adjacent quantization
 manifests remain available. All shipped adapter/runtime dependencies live in
-this repository and Docker image. Vision is rejected for stored flip/roll
-runs. It is active only on ordinary approach trajectories, and an acrobatic
-handoff must latch vision out until the primitive has completed and the
-altitude/attitude estimator has recovered.
+this repository and Docker image. Vision is available on supported level-flight approach trajectories.
 
 Vision runs additionally produce `vision.csv`, `vision.png`, and a
 `vision_frames/` directory containing the full first camera frame plus the
@@ -319,11 +242,11 @@ The current obstacle-only validation suite contains five repository-local
 tracks. Gate geometry and gate-control logic are deliberately detached until
 the final deployment head and matching real gate setup are ready:
 
-- `canonical_corridor`: 5 m corridor, offset box, and forward barrel roll;
+- `canonical_corridor`: 5 m corridor with an offset box;
 - `canonical_circle`: tangent-heading oval and a left-arc obstacle;
 - `canonical_figure8`: smooth zero-speed-start figure-eight and lobe obstacle;
 - `canonical_chicane`: slowed S-turn and post-turn obstacle;
-- `canonical_hairpin`: slowed 180-degree turn, exit obstacle, and backflip.
+- `canonical_hairpin`: slowed 180-degree turn with an exit obstacle.
 
 Run all five headlessly with the finalized portable vision head:
 
@@ -343,19 +266,34 @@ Each trial writes `state.csv`, `vision.csv`, `firmware.log`, `summary.json`,
 `validation.png`, `vision.png`, selected network-input images, and complete
 artifact/configuration hashes. `acceptance.json` requires nonnegative
 conservative obstacle/wall clearance, pass-region arrival, heading and final
-cross-track limits, complete dodge phases, no contact, and—where scheduled—
-matching firmware events plus a physics-derived 315–430 degree rotation and
-recovery.
+cross-track limits, complete dodge phases, no contact.
 
-The hybrid controller uses the fixed actuator-aware level TinyMPC and live
-vision during ordinary track segments. During a scheduled primitive it latches
-vision out, switches to the existing offline horizon-wise stored-LTV direct-
-motor controller, applies the rangefinder-invalid altitude freeze/blend, then
-rejoins the nearest forward level-track knot. It does not perform online
-relinearization or online Riccati updates.
+The controller uses actuator-aware level TinyMPC with live vision throughout supported tracks.
 
 The vision bridge applies a fixed one-camera-frame (50 ms at 20 Hz) delivery
 delay indexed by camera sequence, rather than host inference completion time.
+
+### Combined Flow deck and passive AI-deck camera capture
+
+CrazySim external pose is the default state source. The simulated Flow deck is
+currently opt-in with `--flowdeck` while its observation-model mismatch is
+investigated.
+
+Use `--flowdeck --camera-only` to pass the simulated Flow deck through to
+CrazySim while also generating and recording an AI-deck-style 324 x 244
+grayscale camera stream. `run_config.json` records `flowdeck_enabled`,
+`camera_only_enabled`, `camera_capture_enabled`, and
+`camera_inference_enabled` as first-class booleans. Passive capture writes
+`camera.csv`, `camera_frames/first_camera_frame.{png,raw}`, and
+`camera_frames/metadata.json`.
+
+Camera-only mode is deliberately disconnected from flight control: it loads
+no model, performs no inference, creates no firmware sender socket, and is
+launched without a firmware destination. Consequently it cannot provide a
+navigation observation, reference, constraint, or motor command. Existing
+`--vision-model` runs retain their inference and firmware-packet behavior, and
+the runner rejects combining `--camera-only` with `--vision-model`.
+
 Each one-obstacle canonical route carries a coarse reference-index approach
 window. The neural collision output still decides whether and when to dodge
 inside it; the window prevents a background-high output elsewhere on the route
@@ -370,17 +308,15 @@ retained 0.203 m conservative clearance after a 369 degree heading change. The
 figure-eight now uses tangent heading and a rate-limited reference, but its
 stable 0.50 m bypass misses the conservative obstacle envelope by about 0.003 m;
 a 0.53 m command is outside the fixed model's repeatable stability envelope.
-The hairpin's lane-held neural avoidance retains about 0.11 m clearance, but
-the fixed level model still diverges later in the high-yaw segment before a
-valid stored-LTV backflip handoff. Disturbed seeds remain unqualified. These
+The hairpin's lane-held neural avoidance retains about 0.11 m clearance, but the fixed level model still diverges later in the high-yaw segment. Disturbed seeds remain unqualified. These
 failures remain in the acceptance reports; substituting ground-truth detection
 would hide the current perception/control boundary.
 
 ## Fidelity boundary
 
 The controller source, TinyMPC core, 50 Hz scheduler, five ADMM iterations,
-20-step horizon, generated reference, direct PWM output, and stored LTV
-matrices are the same files used by the hardware build. There is no secondary
+20-step horizon, generated reference, direct PWM output
+are the same files used by the hardware build. There is no secondary
 attitude/rate or position controller. CrazySim's
 `cf21B_500` model independently supplies mass/inertia, thrust and torque curves,
 motor lag, sensor transport, estimator execution, and contact physics.
@@ -399,25 +335,3 @@ identified rotor lag is active from the first command; `--launch-prespin 1`
 exists only for comparison with older staged runs. The harness also defaults to
 the selected model's stock mass. Ground contact after handoff is classified as
 a crash.
-
-The acrobatic optimizer has 16 states: 12 reference-centered rigid-body errors
-plus four normalized rotor-RPM errors. Its offline model uses CrazySim's
-64.9 ms RPM response, RPM-to-thrust/torque curves, nominal inertia, and
-the rigid-body equations. The four optimized commanded-thrust corrections go directly
-to the firmware PWM conversion. Motor RPM is not measured on the current
-hardware path, so firmware propagates the same four-state first-order estimate
-from its previous commands.
-
-A stock-mass/no-pre-spin backflip completed three of three clock-valid clean
-repetitions, plus separate seeded sensor-noise and Flow-deck trials. A severe
-combined case—10% thrust loss, 10% extra mass, 15% extra inertia, 25% slower
-motors, noise, Flow, wind, and turbulence—completed the rotation without contact
-from a 2.0 m entry, but contacted the ground from 1.5 m and accumulated about
-1.8 m of lateral drift. See
-`apps/controller_tinympc_eigen/docs/crazysim_direct_motor_robustness_2026-08-19.md`
-for the complete matrix. This establishes a simulation envelope, not approval
-for unrestricted flight testing.
-
-As a negative control, the same trajectory and motor feedforward with the stored
-LTV sequence disabled achieved only -1.97 degrees of net rotation and contacted
-the ground. The successful flip therefore is not a feedforward-only artifact.

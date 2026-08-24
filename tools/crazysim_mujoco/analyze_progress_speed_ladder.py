@@ -29,6 +29,8 @@ import numpy as np
 ROW_RE = re.compile(r"^\s*\{([^{}]+)\},\s*$", re.MULTILINE)
 PROGRESS_RE = re.compile(r"Progress path (?:sample|complete sample)=([0-9.]+)/([0-9]+)")
 COMPLETE_RE = re.compile(r"Progress path complete sample=([0-9.]+)/([0-9]+)")
+TIMED_COMPLETE_RE = re.compile(
+    r"Progress path complete sample=([0-9.]+)/([0-9]+) elapsed_s=([0-9.]+)")
 READY_RE = re.compile(r"Progress path ready samples=(\d+) speed=([0-9.]+)\.\.([0-9.]+)m/s")
 REFERENCE_LIMITS_RE = re.compile(r"Progress reference limits=(default|uncapped)\b")
 DIAGNOSTIC_PREFIX_RE = re.compile(
@@ -268,6 +270,84 @@ def parse_uncapped_diagnostics(firmware: str) -> list[dict[str, Any]]:
     return records
 
 
+def parse_bounded_progress_diagnostics(firmware: str, speed: float) -> dict[str, Any]:
+    """Parse the meter-based PROGRESS invariant telemetry emitted at 1 Hz."""
+    groups: dict[str, list[dict[str, float]]] = {
+        "state": [], "step": [], "counters": [],
+    }
+    for line in firmware.splitlines():
+        for kind in groups:
+            if f"PROGRESS {kind} " in line:
+                groups[kind].append({
+                    key: float(value) for key, value in KEY_VALUE_RE.findall(line)
+                })
+                break
+    count = min((len(values) for values in groups.values()), default=0)
+    states = groups["state"][:count]
+    steps = groups["step"][:count]
+    counters = groups["counters"][:count]
+    present = bool(count)
+    required_step = {
+        "projection_candidate_m", "measured_m", "measured_bound_m",
+        "command_request_m", "command_m", "lead_m", "lead_bound_m",
+    }
+    required_counter = {
+        "projection_violation", "projection_violation_count",
+        "command_violation", "command_violation_count",
+        "lead_violation", "lead_violation_count",
+    }
+    parseable = bool(present and all(required_step <= set(item) for item in steps)
+                     and all(required_counter <= set(item) for item in counters)
+                     and all({"measured_total_m", "target_total_m"} <= set(item)
+                             for item in states))
+    tolerance = max((item.get("tolerance_m", 0.0) for item in steps), default=0.0)
+    epsilon = 1.0e-5
+    target_step_bound = speed * 0.02
+    if parseable:
+        projection_violations = max(item["projection_violation_count"] for item in counters)
+        command_violations = max(item["command_violation_count"] for item in counters)
+        lead_violations = max(item["lead_violation_count"] for item in counters)
+        flags_zero = all(
+            item[name] == 0.0 for item in counters
+            for name in ("projection_violation", "command_violation", "lead_violation"))
+        command_valid = all(item["command_m"] <= target_step_bound + epsilon for item in steps)
+        measured_valid = all(item["measured_m"] <= item["measured_bound_m"] + epsilon
+                             for item in steps)
+        lead_valid = all(item["lead_m"] <= item["lead_bound_m"] + epsilon
+                         for item in steps)
+    else:
+        projection_violations = command_violations = lead_violations = None
+        flags_zero = command_valid = measured_valid = lead_valid = False
+    valid = bool(parseable and flags_zero and projection_violations == 0
+                 and command_violations == 0 and lead_violations == 0
+                 and command_valid and measured_valid and lead_valid)
+    return {
+        "format": "meter_bounded_v1" if present else None,
+        "present": present, "parseable": parseable, "record_count": count,
+        "diagnostic_axis": "emission_order_nominal_1hz",
+        "target_step_bound_m": target_step_bound,
+        "tolerance_m": tolerance,
+        "projection_violation_count_max": projection_violations,
+        "command_violation_count_max": command_violations,
+        "lead_violation_count_max": lead_violations,
+        "violation_flags_zero": flags_zero,
+        "target_step_within_vdt": command_valid,
+        "measured_advance_within_physical_bound": measured_valid,
+        "phase_lead_within_bound": lead_valid,
+        "valid": valid,
+        "maxima": {
+            "projection_candidate_m": max((x.get("projection_candidate_m", 0.0) for x in steps), default=None),
+            "measured_advance_m": max((x.get("measured_m", 0.0) for x in steps), default=None),
+            "measured_advance_bound_m": max((x.get("measured_bound_m", 0.0) for x in steps), default=None),
+            "command_request_m": max((x.get("command_request_m", 0.0) for x in steps), default=None),
+            "command_advance_m": max((x.get("command_m", 0.0) for x in steps), default=None),
+            "phase_lead_m": max((x.get("lead_m", 0.0) for x in steps), default=None),
+            "phase_lead_bound_m": max((x.get("lead_bound_m", 0.0) for x in steps), default=None),
+        },
+        "series": {"state": states, "step": steps, "counters": counters},
+    }
+
+
 def progress_jump_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:
     explicit = [item["progress_jump_samples"] for item in records
                 if "progress_jump_samples" in item]
@@ -484,14 +564,33 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
     reference_limits = configured_limits if configured_limits in ("default", "uncapped") else "unknown"
     uncapped = reference_limits == "uncapped"
     diagnostics = parse_uncapped_diagnostics(firmware)
+    bounded_diagnostics = parse_bounded_progress_diagnostics(firmware, requested_speed)
     jump_evidence = progress_jump_evidence(diagnostics)
+    if bounded_diagnostics["present"]:
+        jump_evidence = {
+            "validation": "not_applicable_meter_bounded_format",
+            "invalid": False,
+            "reason": "meter-bounded diagnostics supersede legacy knot-jump validation",
+            "observed_jumps_samples": [],
+        }
     time = state["time_s"]
     airborne = np.flatnonzero(state["airborne"] > 0.5)
     requested_launch = float(config.get("launch_time_s", 0.0))
     launch = int(airborne[0]) if airborne.size else int(np.searchsorted(time, requested_launch))
     launch = min(launch, len(time) - 1)
     actual_launch = float(summary.get("launch_time_s", time[launch]))
+    timing_error = actual_launch - requested_launch
     calibrated = bool(airborne.size and abs(actual_launch - requested_launch) <= 0.5)
+    random_seed = config.get("random_seed")
+    random_seed = int(random_seed) if random_seed is not None else None
+    command_config = {
+        key: config.get(key) for key in (
+            "trajectory", "reference_mode", "progress_speed_mps",
+            "progress_reference_limits", "random_seed", "duration_s",
+            "launch_time_s", "realtime_factor", "firmware_time_factor",
+            "actuator_lti", "stop_on_contact",
+        )
+    }
     route = anchor_route(raw_route, state, launch)
     geometry = route_geometry(route)
     severity = reference_severity(route, geometry, requested_speed)
@@ -514,12 +613,19 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
     firmware_total = max((total for _, total in progress_events), default=len(route) - 1)
     complete_events = [(float(value), int(total)) for value, total in COMPLETE_RE.findall(firmware)]
     firmware_complete = any(total == 750 and value >= 749.999 for value, total in complete_events)
+    timed_complete_events = [
+        float(elapsed) for value, total, elapsed in TIMED_COMPLETE_RE.findall(firmware)
+        if int(total) == 750 and float(value) >= 749.999
+    ]
     diagnostic_completion_times = [
         item["time_after_launch_s"] for item in diagnostics
         if item.get("progress_sample", -math.inf) >= len(route) - 1.001
         and "time_after_launch_s" in item
     ]
-    firmware_complete_time = min(diagnostic_completion_times) if diagnostic_completion_times else None
+    firmware_complete_time = (
+        min(timed_complete_events) if timed_complete_events
+        else (min(diagnostic_completion_times)
+              if diagnostic_completion_times else None))
     authoritative_complete_at = (
         int(np.searchsorted(time[after] - time[launch], firmware_complete_time))
         if firmware_complete and firmware_complete_time is not None else None
@@ -659,6 +765,8 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
         uncapped_failure_reasons.append("invalid_progress_jump")
     if uncapped and not uncapped_banner_valid:
         uncapped_failure_reasons.append("uncapped_firmware_banner_missing_or_mismatched")
+    if bounded_diagnostics["present"] and not bounded_diagnostics["valid"]:
+        uncapped_failure_reasons.append("bounded_progress_invariant_failure")
     passed = bool(
         calibrated and firmware_complete and not active_contact and not envelope
         and not nonfinite and not failures and not uncapped_failure_reasons
@@ -667,12 +775,17 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
         "status": "passed" if passed else "failed",
         "passed": passed,
         "requested_speed_mps": requested_speed,
+        "random_seed": random_seed,
         "run_directory": str(run.resolve()),
+        "command_config": command_config,
         "progress_reference_limits": reference_limits,
         "evidence_label": (
             "artifact_exposed" if uncapped and
             severity["summary"]["startup_curvature_artifact"]["exposed"] else "standard"),
-        "launch": {"calibrated": calibrated, "requested_s": requested_launch, "actual_s": actual_launch},
+        "launch": {
+            "calibrated": calibrated, "requested_s": requested_launch,
+            "actual_s": actual_launch, "timing_error_s": timing_error,
+        },
         "progress": {
             "firmware_max_sample": firmware_max, "firmware_total_samples": firmware_total,
             "firmware_complete_750_of_750": firmware_complete,
@@ -683,6 +796,7 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
             "inferred_completion_time_after_launch_s": inferred_completion_time,
             "offline_completion_used_as_authority": False if uncapped else True,
             "jump_evidence": jump_evidence,
+            "bounded_diagnostics": bounded_diagnostics,
         },
         "safety": {
             "contact_or_crash_active_route": active_contact,
@@ -805,6 +919,7 @@ def analyze_run(run: Path, speed: float | None, raw_route: np.ndarray) -> tuple[
         "raw_reference_thrust_scale": inferred_thrust_scale,
         "header_severity": severity["series"],
         "rate_grid": rate_grid,
+        "bounded_progress": bounded_diagnostics,
     }
     return result, plot
 
@@ -844,18 +959,23 @@ def diagnostic_plot(result: dict[str, Any], data: dict[str, np.ndarray], path: P
     axes[2, 2].legend(fontsize=8); axes[2, 2].set_title("Exact header reference severity")
     for axis in axes.flat:
         axis.grid(True, alpha=0.25); axis.set_xlabel("time after launch (s)")
-    fig.suptitle(f"{result['requested_speed_mps']:.3f} m/s — {result['status']}")
+    seed = result.get("random_seed")
+    seed_label = "seed unknown" if seed is None else f"seed {seed}"
+    fig.suptitle(
+        f"{result['requested_speed_mps']:.3f} m/s, {seed_label} — {result['status']}")
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
 
-def comparison_plot(results: list[dict[str, Any]], plots: dict[float, dict[str, np.ndarray]], path: Path) -> None:
+def comparison_plot(results: list[dict[str, Any]], plots: dict[str, dict[str, np.ndarray]], path: Path) -> None:
     fig, axes = plt.subplots(3, 2, figsize=(14, 13))
     for result in results:
         speed = float(result["requested_speed_mps"])
-        data = plots[speed]
-        label = f"{speed:.3f} ({result['status']})"
+        data = plots[result["run_directory"]]
+        seed = result.get("random_seed")
+        seed_label = "?" if seed is None else str(seed)
+        label = f"{speed:.3f} m/s seed {seed_label} ({result['status']})"
         axes[0, 0].plot(data["position"][:, 0], data["position"][:, 1], label=label)
         grid = data["rate_grid"]
         axes[0, 1].plot(grid["time_s"], grid["measured_signed_tangent_speed_mps"], label=label)
@@ -880,6 +1000,122 @@ def comparison_plot(results: list[dict[str, Any]], plots: dict[float, dict[str, 
     axes[2, 1].set_title("Safety / tilt")
     for axis in axes.flat:
         axis.grid(True, alpha=0.25); axis.legend(fontsize=8)
+    fig.tight_layout(); fig.savefig(path, dpi=170); plt.close(fig)
+
+
+def trajectories_by_speed_plot(results: list[dict[str, Any]],
+                               plots: dict[str, dict[str, np.ndarray]],
+                               path: Path) -> None:
+    speeds = sorted({float(result["requested_speed_mps"]) for result in results})
+    fig, axes = plt.subplots(1, len(speeds), figsize=(5.2 * len(speeds), 4.8), squeeze=False)
+    for axis, speed in zip(axes[0], speeds):
+        matching = [result for result in results
+                    if float(result["requested_speed_mps"]) == speed]
+        reference = plots[matching[0]["run_directory"]]["route"]
+        axis.plot(reference[:, 0], reference[:, 1], "--", color="0.55",
+                  linewidth=1.5, label="reference")
+        for result in matching:
+            data = plots[result["run_directory"]]
+            seed = result.get("random_seed")
+            axis.plot(data["position"][:, 0], data["position"][:, 1],
+                      linewidth=1.2, label=f"seed {seed if seed is not None else '?'}")
+        axis.set_title(f"{speed:.1f} m/s")
+        axis.set_xlabel("x (m)"); axis.set_ylabel("y (m)")
+        axis.axis("equal"); axis.grid(True, alpha=0.25)
+        axis.legend(fontsize=8, loc="best", framealpha=0.85)
+    fig.suptitle("Progress-circle trajectories by commanded speed")
+    fig.tight_layout(); fig.savefig(path, dpi=170); plt.close(fig)
+
+
+def tracking_errors_by_speed_plot(results: list[dict[str, Any]],
+                                  plots: dict[str, dict[str, np.ndarray]],
+                                  path: Path) -> None:
+    speeds = sorted({float(result["requested_speed_mps"]) for result in results})
+    fig, axes = plt.subplots(len(speeds), 3, figsize=(14.5, 3.6 * len(speeds)),
+                             squeeze=False, sharex=False)
+    columns = (
+        ("cross_track", "Cross-track error (m)"),
+        ("altitude_error", "Altitude error (m)"),
+        ("yaw_error_deg", "Tangent-yaw error (deg)"),
+    )
+    for row, speed in enumerate(speeds):
+        matching = [result for result in results
+                    if float(result["requested_speed_mps"]) == speed]
+        for result in matching:
+            data = plots[result["run_directory"]]
+            seed = result.get("random_seed")
+            label = f"seed {seed if seed is not None else '?'}"
+            for column, (key, _) in enumerate(columns):
+                axes[row, column].plot(data["time"], data[key], linewidth=1.1, label=label)
+        for column, (_, ylabel) in enumerate(columns):
+            axis = axes[row, column]
+            axis.axhline(0.0, color="0.55", linewidth=0.8)
+            axis.grid(True, alpha=0.25)
+            axis.set_xlabel("time after launch (s)")
+            axis.set_ylabel(ylabel)
+            axis.set_title(f"{speed:.1f} m/s — {ylabel}")
+            axis.legend(fontsize=8, loc="best", ncol=min(3, len(matching)), framealpha=0.85)
+    fig.suptitle("Progress-circle tracking errors by commanded speed and seed")
+    fig.tight_layout(); fig.savefig(path, dpi=170); plt.close(fig)
+
+
+def bounded_progress_by_speed_plot(results: list[dict[str, Any]],
+                                   plots: dict[str, dict[str, np.ndarray]],
+                                   path: Path) -> None:
+    speeds = sorted({float(result["requested_speed_mps"]) for result in results})
+    fig, axes = plt.subplots(len(speeds), 2, figsize=(13.5, 3.7 * len(speeds)),
+                             squeeze=False)
+    for row, speed in enumerate(speeds):
+        matching = [result for result in results
+                    if float(result["requested_speed_mps"]) == speed]
+        for result in matching:
+            bounded = plots[result["run_directory"]]["bounded_progress"]
+            if not bounded["parseable"]:
+                continue
+            seed = result.get("random_seed")
+            label = f"seed {seed if seed is not None else '?'}"
+            x = np.arange(1, bounded["record_count"] + 1)
+            state = bounded["series"]["state"]
+            step = bounded["series"]["step"]
+            axes[row, 0].plot(x, [item["measured_total_m"] for item in state], label=f"{label} measured")
+            axes[row, 0].plot(x, [item["target_total_m"] for item in state], "--", label=f"{label} target")
+            axes[row, 1].plot(x, [item["lead_m"] for item in step], label=f"{label} lead")
+            axes[row, 1].plot(x, [item["lead_bound_m"] for item in step], "--", label=f"{label} bound")
+        axes[row, 0].set_title(f"{speed:.1f} m/s — measured vs commanded arc progress")
+        axes[row, 1].set_title(f"{speed:.1f} m/s — phase lead and bound")
+        for column in range(2):
+            axes[row, column].set_xlabel("diagnostic emission (nominal 1 Hz)")
+            axes[row, column].set_ylabel("arc distance (m)")
+            axes[row, column].grid(True, alpha=0.25)
+            axes[row, column].legend(fontsize=7, ncol=2, loc="best")
+    fig.suptitle("Meter-bounded progress invariants by commanded speed and seed")
+    fig.tight_layout(); fig.savefig(path, dpi=170); plt.close(fig)
+
+
+def run_outcomes_plot(results: list[dict[str, Any]], path: Path) -> None:
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4.2))
+    for result in results:
+        speed = float(result["requested_speed_mps"])
+        seed = result.get("random_seed") or 0
+        label = f"{speed:.1f} m/s seed {seed}"
+        axes[0].scatter(speed, result["launch"]["timing_error_s"], label=label)
+        axes[1].scatter(speed, result["progress"]["firmware_max_sample"] / 750.0,
+                        label=label)
+        axes[2].scatter(speed, seed, marker="s", s=90,
+                        color="tab:red" if result["safety"]["contact_or_crash"] else "tab:green")
+        axes[3].scatter(speed, seed, marker="s", s=90,
+                        color="tab:green" if result["passed"] else "tab:red")
+    axes[0].axhspan(-0.5, 0.5, color="tab:green", alpha=0.08)
+    axes[0].set_title("Launch timing error"); axes[0].set_ylabel("seconds")
+    axes[1].axhline(1.0, color="0.5", linestyle="--")
+    axes[1].set_title("Firmware max progress"); axes[1].set_ylabel("fraction of 750")
+    axes[2].set_title("Contact (red=yes)"); axes[2].set_ylabel("seed")
+    axes[3].set_title("Strict pass (green=yes)"); axes[3].set_ylabel("seed")
+    for axis in axes:
+        axis.set_xlabel("commanded speed (m/s)")
+        axis.set_xticks(sorted({float(item["requested_speed_mps"]) for item in results}))
+        axis.grid(True, alpha=0.25)
+    fig.suptitle("Timing, completion, contact, and strict acceptance outcomes")
     fig.tight_layout(); fig.savefig(path, dpi=170); plt.close(fig)
 
 
@@ -912,6 +1148,28 @@ def planned_speeds(args: argparse.Namespace, root: Path | None) -> list[float]:
     return sorted(set(values))
 
 
+def speed_summary(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summaries = []
+    for speed in sorted({float(item["requested_speed_mps"]) for item in results}):
+        matching = [item for item in results
+                    if float(item["requested_speed_mps"]) == speed]
+        summaries.append({
+            "requested_speed_mps": speed, "runs": len(matching),
+            "passes": sum(bool(item.get("passed")) for item in matching),
+            "contacts": sum(bool(item.get("safety", {}).get("contact_or_crash"))
+                            for item in matching),
+            "firmware_completions": sum(bool(item.get("progress", {}).get(
+                "firmware_complete_750_of_750")) for item in matching),
+            "cross_track_rmse_mean_m": float(np.mean([
+                item["tracking"]["cross_track_m"]["rmse"] for item in matching])),
+            "altitude_rmse_mean_m": float(np.mean([
+                item["tracking"]["altitude_error_m"]["rmse"] for item in matching])),
+            "tangent_yaw_rmse_mean_deg": float(np.mean([
+                item["tracking"]["tangent_yaw_error_deg"]["rmse"] for item in matching])),
+        })
+    return summaries
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -920,6 +1178,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--planned-speed", action="append", type=float, default=[])
     parser.add_argument("--planned-speeds", help="comma-separated planned ladder")
     parser.add_argument("--circle-header", type=Path, required=True)
+    parser.add_argument("--baseline-report", type=Path,
+                        help="retained comparison.json to summarize without modifying")
     parser.add_argument("--out", type=Path, required=True)
     return parser.parse_args()
 
@@ -941,12 +1201,14 @@ def main() -> None:
     analyzed = [analyze_run(run, speed, raw) for speed, run in entries]
     analyzed.sort(key=lambda pair: float(pair[0]["requested_speed_mps"]))
     results = [pair[0] for pair in analyzed]
-    plots = {float(result["requested_speed_mps"]): plot for result, plot in analyzed}
+    plots = {result["run_directory"]: plot for result, plot in analyzed}
     args.out.mkdir(parents=True, exist_ok=True)
     diagnostics = args.out / "diagnostics"
     diagnostics.mkdir(exist_ok=True)
-    for result, plot in analyzed:
-        stem = f"speed_{result['requested_speed_mps']:.3f}"
+    for index, (result, plot) in enumerate(analyzed, start=1):
+        seed = result.get("random_seed")
+        seed_suffix = f"seed_{seed}" if seed is not None else f"run_{index:03d}"
+        stem = f"speed_{result['requested_speed_mps']:.3f}_{seed_suffix}"
         diagnostic_plot(result, plot, diagnostics / f"{stem}.png")
         write_rate_grid(diagnostics / f"{stem}_corrected_rate_50hz.csv", plot["rate_grid"])
         severity_name = f"{stem}_raw_reference_by_sample.csv"
@@ -970,16 +1232,39 @@ def main() -> None:
             "calibrated launch; firmware complete exactly 750/750; no contact/crash, nonfinite, failure signature, "
             "or route-envelope failure; uncapped additionally fails sustained cross-track >0.25m/0.5s, "
             "altitude error >0.20m/0.5s, tilt >35deg/0.25s, body rate >5rad/s/0.25s, "
-            "any motor >=98%/0.1s, invalid progress jumps, or missing/mismatched uncapped banner"),
+            "any motor >=98%/0.1s, missing/mismatched uncapped banner, or failed meter-bounded "
+            "progress invariants; legacy logs retain knot-jump validation"),
         "first_failed_speed_mps": first_failure,
         "runs": results,
         "skipped": skipped,
     }
+    if args.baseline_report:
+        baseline = load_json(args.baseline_report)
+        baseline_comparison = {
+            "format": "tinympc-progress-baseline-comparison-v1",
+            "baseline_report": str(args.baseline_report.resolve()),
+            "baseline": speed_summary(baseline.get("runs", [])),
+            "current": speed_summary(results),
+        }
+        report["baseline_comparison"] = baseline_comparison
+        (args.out / "baseline_comparison.json").write_text(
+            json.dumps(baseline_comparison, indent=2, allow_nan=False) + "\n")
     (args.out / "comparison.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
-    fields = ["requested_speed_mps", "progress_reference_limits", "evidence_label",
+    fields = ["requested_speed_mps", "random_seed", "run_directory",
+              "trajectory", "reference_mode", "configured_speed_mps",
+              "configured_progress_reference_limits", "duration_s",
+              "requested_launch_s", "actual_launch_s", "timing_error_s",
+              "realtime_factor", "firmware_time_factor",
+              "actuator_lti", "stop_on_contact",
+              "progress_reference_limits", "evidence_label",
               "status", "passed", "calibrated_launch",
               "firmware_max_progress", "firmware_complete_750_of_750", "inferred_progress_fraction",
               "completion_time_s", "completion_time_source", "contact_or_crash", "envelope_violation", "nonfinite_state",
+              "bounded_progress_format", "bounded_progress_records", "bounded_progress_valid",
+              "projection_violation_count", "command_violation_count", "lead_violation_count",
+              "target_step_within_vdt", "measured_advance_within_bound", "phase_lead_within_bound",
+              "max_command_advance_m", "max_measured_advance_m", "max_measured_bound_m",
+              "max_phase_lead_m", "max_phase_lead_bound_m",
               "yaw_error_rmse_deg", "yaw_rate_error_rmse_radps", "corrected_euler_yaw_rate_rmse_radps",
               "corrected_body_wz_rmse_radps", "wz_minus_euler_yaw_rate_rmse_radps", "cross_track_rmse_m",
               "altitude_rmse_m", "tilt_max_deg", "rate_norm_max_radps", "rpm_saturation_fraction",
@@ -990,6 +1275,20 @@ def main() -> None:
         for item in results:
             writer.writerow({
                 "requested_speed_mps": item["requested_speed_mps"],
+                "random_seed": item["random_seed"],
+                "run_directory": item["run_directory"],
+                "trajectory": item["command_config"]["trajectory"],
+                "reference_mode": item["command_config"]["reference_mode"],
+                "configured_speed_mps": item["command_config"]["progress_speed_mps"],
+                "configured_progress_reference_limits": item["command_config"]["progress_reference_limits"],
+                "duration_s": item["command_config"]["duration_s"],
+                "requested_launch_s": item["launch"]["requested_s"],
+                "actual_launch_s": item["launch"]["actual_s"],
+                "timing_error_s": item["launch"]["timing_error_s"],
+                "realtime_factor": item["command_config"]["realtime_factor"],
+                "firmware_time_factor": item["command_config"]["firmware_time_factor"],
+                "actuator_lti": item["command_config"]["actuator_lti"],
+                "stop_on_contact": item["command_config"]["stop_on_contact"],
                 "progress_reference_limits": item["progress_reference_limits"],
                 "evidence_label": item["evidence_label"],
                 "status": item["status"], "passed": item["passed"],
@@ -1009,6 +1308,20 @@ def main() -> None:
                 "contact_or_crash": item["safety"]["contact_or_crash"],
                 "envelope_violation": item["safety"]["envelope_violation"],
                 "nonfinite_state": item["safety"]["nonfinite_state"],
+                "bounded_progress_format": item["progress"]["bounded_diagnostics"]["format"],
+                "bounded_progress_records": item["progress"]["bounded_diagnostics"]["record_count"],
+                "bounded_progress_valid": item["progress"]["bounded_diagnostics"]["valid"],
+                "projection_violation_count": item["progress"]["bounded_diagnostics"]["projection_violation_count_max"],
+                "command_violation_count": item["progress"]["bounded_diagnostics"]["command_violation_count_max"],
+                "lead_violation_count": item["progress"]["bounded_diagnostics"]["lead_violation_count_max"],
+                "target_step_within_vdt": item["progress"]["bounded_diagnostics"]["target_step_within_vdt"],
+                "measured_advance_within_bound": item["progress"]["bounded_diagnostics"]["measured_advance_within_physical_bound"],
+                "phase_lead_within_bound": item["progress"]["bounded_diagnostics"]["phase_lead_within_bound"],
+                "max_command_advance_m": item["progress"]["bounded_diagnostics"]["maxima"]["command_advance_m"],
+                "max_measured_advance_m": item["progress"]["bounded_diagnostics"]["maxima"]["measured_advance_m"],
+                "max_measured_bound_m": item["progress"]["bounded_diagnostics"]["maxima"]["measured_advance_bound_m"],
+                "max_phase_lead_m": item["progress"]["bounded_diagnostics"]["maxima"]["phase_lead_m"],
+                "max_phase_lead_bound_m": item["progress"]["bounded_diagnostics"]["maxima"]["phase_lead_bound_m"],
                 "yaw_error_rmse_deg": item["tracking"]["tangent_yaw_error_deg"]["rmse"],
                 "yaw_rate_error_rmse_radps": item["tracking"]["yaw_rate_error_radps"]["rmse"],
                 "corrected_euler_yaw_rate_rmse_radps": item["tracking"]["corrected_yaw_rate_50hz"]["euler_yaw_rate_minus_geometric_radps"]["rmse"],
@@ -1026,6 +1339,10 @@ def main() -> None:
                 "uncapped_failure_reasons": ";".join(item["safety"]["uncapped_failure_reasons"]),
             })
     comparison_plot(results, plots, args.out / "comparison.png")
+    trajectories_by_speed_plot(results, plots, args.out / "trajectories_by_speed.png")
+    tracking_errors_by_speed_plot(results, plots, args.out / "tracking_errors_by_speed.png")
+    bounded_progress_by_speed_plot(results, plots, args.out / "bounded_progress_by_speed.png")
+    run_outcomes_plot(results, args.out / "run_outcomes_by_speed.png")
     print(json.dumps({str(item["requested_speed_mps"]): item["status"] for item in results}, indent=2))
 
 

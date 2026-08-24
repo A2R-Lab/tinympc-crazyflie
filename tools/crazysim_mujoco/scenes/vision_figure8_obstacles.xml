@@ -1,0 +1,106 @@
+<mujoco model="TinyRacer figure-eight obstacle room">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="0 0 1.5" extent="4.5"/>
+  <visual>
+    <headlight diffuse="0.12 0.12 0.12" ambient="0.08 0.08 0.08"
+               specular="0 0 0"/>
+    <rgba haze="0.03 0.03 0.03 0" fog="1 1 1 0"/>
+    <map fogstart="0" fogend="0"/>
+    <global azimuth="135" elevation="-25" ellipsoidinertia="true"/>
+  </visual>
+
+  <asset>
+    <texture name="figure8_floor_texture" type="2d" builtin="checker"
+             rgb1="0.25 0.28 0.30" rgb2="0.16 0.18 0.20"
+             width="512" height="512"/>
+    <texture name="figure8_wall_texture" type="2d"
+             file="textures/off_white_painted_plaster.png"/>
+    <material name="figure8_floor" texture="figure8_floor_texture"
+              texrepeat="7 6" texuniform="true" reflectance="0.10"
+              specular="0.14" shininess="0.20"/>
+    <material name="figure8_wall" texture="figure8_wall_texture"
+              texrepeat="4 2" texuniform="true" rgba="1 1 1 1"
+              specular="0.07" shininess="0.10"/>
+    <material name="figure8_ceiling" rgba="0.80 0.81 0.80 1"
+              specular="0.03" shininess="0.06"/>
+    <material name="strip_light" rgba="1 0.98 0.87 1"
+              emission="1" specular="0" shininess="0"/>
+  </asset>
+
+  <worldbody>
+    <camera name="figure8_room_preview" pos="0 -4.0 3.2"
+            xyaxes="1 0 0 0 0.45 0.893" fovy="58"/>
+
+    <!--
+      Clear room interior: x=-3..3 m, y=-2.25..2.25 m, z=0..3 m.
+      The current broad figure-eight is
+        x = 1.5 sin(theta), y = 0.75 sin(2 theta),
+      so the nearest wall remains at least 1.50 m beyond its nominal path.
+    -->
+    <geom name="figure8_floor" type="box" pos="0 0 -0.05"
+          size="3.05 2.30 0.05" material="figure8_floor"
+          contype="1" conaffinity="1"/>
+    <geom name="figure8_north_wall" type="box" pos="0 2.30 1.5"
+          size="3.05 0.05 1.5" material="figure8_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="figure8_south_wall" type="box" pos="0 -2.30 1.5"
+          size="3.05 0.05 1.5" material="figure8_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="figure8_east_wall" type="box" pos="3.05 0 1.5"
+          size="0.05 2.30 1.5" material="figure8_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="figure8_west_wall" type="box" pos="-3.05 0 1.5"
+          size="0.05 2.30 1.5" material="figure8_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="figure8_ceiling" type="box" pos="0 0 3.05"
+          size="3.05 2.30 0.05" material="figure8_ceiling"
+          contype="1" conaffinity="1"/>
+
+    <!-- Compact pylons intersect three well-separated portions of the stored
+         route. Their 0.32 x 0.32 m footprints leave over one metre of room
+         on either side of the path for the controller's 0.70 m sidestep. -->
+    <geom name="right_lobe_lower_pylon" type="box"
+          pos="1.46 -0.33 1.5" size="0.08 0.08 0.85"
+          rgba="0.80 0.19 0.12 1" contype="1" conaffinity="1"/>
+    <geom name="left_lobe_upper_pylon" type="box"
+          pos="-1.03 0.75 1.5" size="0.08 0.08 0.85"
+          rgba="0.10 0.38 0.79 1" contype="1" conaffinity="1"/>
+    <geom name="left_lobe_lower_pylon" type="box"
+          pos="-1.29 -0.66 1.5" size="0.08 0.08 0.85"
+          rgba="0.90 0.57 0.08 1" contype="1" conaffinity="1"/>
+
+    <!-- A pair of visible ceiling strips and six local sources avoid the
+         severe luminance falloff that makes onboard-camera inference brittle. -->
+    <geom name="ceiling_strip_x" type="box" pos="0 0 2.985"
+          size="2.60 0.045 0.015" material="strip_light"
+          contype="0" conaffinity="0"/>
+    <geom name="ceiling_strip_y" type="box" pos="0 0 2.984"
+          size="0.045 1.85 0.015" material="strip_light"
+          contype="0" conaffinity="0"/>
+    <light name="figure8_light_ne" pos="1.55 1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+    <light name="figure8_light_e" pos="1.55 -1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+    <light name="figure8_light_n" pos="0 1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+    <light name="figure8_light_s" pos="0 -1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+    <light name="figure8_light_nw" pos="-1.55 1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+    <light name="figure8_light_w" pos="-1.55 -1.05 2.94" dir="0 0 -1"
+           diffuse="0.80 0.79 0.72" specular="0.10 0.10 0.09"
+           cutoff="78" exponent="1" attenuation="0.28 0.08 0.02"
+           castshadow="true"/>
+  </worldbody>
+</mujoco>

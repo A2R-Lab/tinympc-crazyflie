@@ -30,8 +30,11 @@ class TrajectorySettings:
     oval_y_radius_m: float = 0.5
     oval_period_s: float = 15.0
     oval_laps: int = 1
-    figure8_x_amplitude_m: float = 0.5
-    figure8_y_amplitude_m: float = 1.0
+    # Broad Gerono lobes keep the minimum turn radius above 0.31 m.  The old
+    # 0.5 m x 1.0 m geometry reached 32.3 1/m curvature (a 3.1 cm radius),
+    # which made even a 0.7 m/s progress reference dynamically infeasible.
+    figure8_x_amplitude_m: float = 1.5
+    figure8_y_amplitude_m: float = 0.75
     figure8_period_s: float = 15.0
     figure8_laps: int = 1
 
@@ -479,6 +482,13 @@ def main() -> int:
             False,
             False,
             straight_path(settings.straight_length_m),
+        ),
+        (
+            "straight_9m",
+            18.0,
+            False,
+            False,
+            straight_path(9.0),
         ),
         (
             "circle",

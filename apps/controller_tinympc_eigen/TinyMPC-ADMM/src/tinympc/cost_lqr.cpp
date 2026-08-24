@@ -9,6 +9,10 @@ enum tiny_ErrorCode tiny_AddStageCost(tiny_AdmmWorkspace* work, const int k) {
                          (*(work->data->Q)) * (work->soln->X[k] - work->data->Xref[k]) +
                          0.5 * (work->soln->U[k] - work->data->Uref[k]).transpose() * 
                          (*(work->data->R)) * (work->soln->U[k] - work->data->Uref[k])).value();
+  if (work->data->state_linear_cost) {
+    work->info->obj_val +=
+        work->data->state_linear_cost[k].dot(work->soln->X[k]);
+  }
   return TINY_NO_ERROR;
 }
 
@@ -22,6 +26,10 @@ enum tiny_ErrorCode tiny_AddTerminalCost(tiny_AdmmWorkspace* work) {
     work->info->obj_val += 0.5 * (work->soln->X[N-1] - work->data->Xref[N-1]).transpose() * 
                           (*(work->soln->Pinf)) * (work->soln->X[N-1] - work->data->Xref[N-1]);
   }
+  if (work->data->state_linear_cost) {
+    work->info->obj_val +=
+        work->data->state_linear_cost[N-1].dot(work->soln->X[N-1]);
+  }
   return TINY_NO_ERROR;
 }
 
@@ -30,6 +38,9 @@ enum tiny_ErrorCode tiny_UpdateLinearCost(tiny_AdmmWorkspace* work) {
   for (int k = 0; k < N - 1; ++k) {
     /* Compute q[k] = -Q*Xref[k] */  
     (work->data->q[k]).noalias() = -(*(work->data->Q)).lazyProduct(work->data->Xref[k]);
+    if (work->data->state_linear_cost) {
+      work->data->q[k] += work->data->state_linear_cost[k];
+    }
 
     /* Compute r[k] = -R*Uref[k] */ 
     (work->data->r[k]).noalias() = -(*(work->data->R)).lazyProduct(work->data->Uref[k]);
@@ -40,6 +51,9 @@ enum tiny_ErrorCode tiny_UpdateLinearCost(tiny_AdmmWorkspace* work) {
   }
   else {
     (work->soln->p[N-1]).noalias() = -(*(work->soln->Pinf)).lazyProduct(work->data->Xref[N-1]);
+  }
+  if (work->data->state_linear_cost) {
+    work->soln->p[N-1] += work->data->state_linear_cost[N-1];
   }
   return TINY_NO_ERROR;
 }
@@ -57,6 +71,9 @@ enum tiny_ErrorCode tiny_UpdateConstrainedLinearCost(tiny_AdmmWorkspace* work) {
       /* Rebuild q from the reference before adding the current ADMM term. */
       (work->data->q[k]).noalias() =
           -(*(work->data->Q)).lazyProduct(work->data->Xref[k]);
+      if (work->data->state_linear_cost) {
+        work->data->q[k] += work->data->state_linear_cost[k];
+      }
       work->data->q[k] -=
           work->rho * (work->ZX_new[k] - work->soln->YX[k]);
     }
@@ -68,6 +85,9 @@ enum tiny_ErrorCode tiny_UpdateConstrainedLinearCost(tiny_AdmmWorkspace* work) {
     else {
       (work->soln->p[N-1]).noalias() =
           -(*(work->soln->Pinf)).lazyProduct(work->data->Xref[N-1]);
+    }
+    if (work->data->state_linear_cost) {
+      work->soln->p[N-1] += work->data->state_linear_cost[N-1];
     }
     work->soln->p[N-1] -=
         work->rho * (work->ZX_new[N-1] - work->soln->YX[N-1]);

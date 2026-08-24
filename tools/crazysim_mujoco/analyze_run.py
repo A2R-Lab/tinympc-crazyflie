@@ -126,67 +126,6 @@ def ordered_gate_crossings(
     return results, bool(all(item["crossed"] for item in results))
 
 
-def detect_course_acrobatics(
-    data: dict[str, np.ndarray], course: dict, launch_time: float,
-) -> dict[str, object]:
-    axis_name = str(course["acro_axis"])
-    axis_key = {"roll": "wx_radps", "pitch": "wy_radps", "yaw": "wz_radps"}[axis_name]
-    t = data["time_s"]
-    rate = data[axis_key]
-    eligible = t >= launch_time + 0.5
-    fast = eligible & (np.abs(rate) >= 2.0)
-    indices = np.flatnonzero(fast)
-    if not indices.size:
-        return {
-            "course_acro_maneuver": course["acro_maneuver"],
-            "course_acro_axis": axis_name,
-            "course_acro_detected": False,
-            "course_acro_rotation_deg": 0.0,
-            "course_acro_success": False,
-            "course_acro_start_time_s": None,
-            "course_acro_end_time_s": None,
-        }
-    # Merge brief rate dips, then select the segment with the most rotation.
-    breaks = np.flatnonzero(np.diff(t[indices]) > 0.30)
-    groups = np.split(indices, breaks + 1)
-    candidates = []
-    for group in groups:
-        begin, end = int(group[0]), int(group[-1])
-        while begin > 0 and eligible[begin - 1] and abs(rate[begin - 1]) >= 0.25:
-            begin -= 1
-        while end + 1 < len(t) and abs(rate[end + 1]) >= 0.25:
-            end += 1
-        rotation = float(np.rad2deg(np.trapezoid(rate[begin:end + 1], t[begin:end + 1])))
-        candidates.append((abs(rotation), rotation, begin, end))
-    _, signed_rotation, begin, end = max(candidates)
-    before_q = np.asarray([data[key][begin] for key in ("qw", "qx", "qy", "qz")])
-    recovery_index = min(len(t) - 1, int(np.searchsorted(t, t[end] + 1.0)))
-    recovery_q = np.asarray([
-        data[key][recovery_index] for key in ("qw", "qx", "qy", "qz")
-    ])
-    attitude_dot = float(np.clip(abs(np.dot(before_q, recovery_q)), 0.0, 1.0))
-    recovery_attitude_error = math.degrees(2.0 * math.acos(attitude_dot))
-    minimum_rotation = float(course.get("minimum_acro_rotation_deg", 315.0))
-    success = bool(
-        abs(signed_rotation) >= minimum_rotation
-        and abs(signed_rotation) <= 430.0
-        and recovery_attitude_error <= 25.0
-        and data["z_m"][recovery_index] >= 0.50
-    )
-    return {
-        "course_acro_maneuver": course["acro_maneuver"],
-        "course_acro_axis": axis_name,
-        "course_acro_detected": True,
-        "course_acro_rotation_deg": signed_rotation,
-        "course_acro_minimum_rotation_deg": minimum_rotation,
-        "course_acro_start_time_s": float(t[begin]),
-        "course_acro_end_time_s": float(t[end]),
-        "course_acro_recovery_attitude_error_deg": recovery_attitude_error,
-        "course_acro_recovery_altitude_m": float(data["z_m"][recovery_index]),
-        "course_acro_success": success,
-    }
-
-
 def build_summary(
     data: dict[str, np.ndarray], launch_time: float,
     reference: dict[str, np.ndarray] | None = None,
@@ -229,77 +168,6 @@ def build_summary(
         "motor_saturation_fraction": float(np.mean(rpm >= saturation_threshold)),
         "contact_count_max": int(np.max(data["contacts"])),
     }
-    if reference is not None and all(f"w{axis}" in reference for axis in ("x", "y", "z")):
-        axes = ("x", "y", "z")
-        reference_rates = np.column_stack(
-            [reference[f"w{axis}"] for axis in axes]
-        )
-        axis_index = int(np.argmax(np.max(np.abs(reference_rates), axis=0)))
-        actual_rate = data[f"w{axes[axis_index]}_radps"]
-        launched = t >= launch_time
-        integrated_rotation_deg = float(np.rad2deg(np.trapezoid(
-            actual_rate[launched], t[launched]
-        )))
-        reference_rotation_deg = float(np.rad2deg(np.trapezoid(
-            reference_rates[:, axis_index], reference["t"]
-        )))
-        summary.update({
-            "maneuver_axis": axes[axis_index],
-            "integrated_rotation_deg": integrated_rotation_deg,
-            "reference_integrated_rotation_deg": reference_rotation_deg,
-            "rotation_error_deg": integrated_rotation_deg - reference_rotation_deg,
-        })
-        # Acrobatic references finish in the same physical attitude as they
-        # start (q and -q are equivalent).  Check recovery relative to the
-        # measured handoff attitude, and rotate the stored terminal displacement
-        # through the measured handoff yaw just as firmware does.
-        launch_index = min(int(np.searchsorted(t, launch_time)), len(t) - 1)
-        launch_quaternion = np.asarray([
-            data[name][launch_index] for name in ("qw", "qx", "qy", "qz")
-        ])
-        final_quaternion = np.asarray([
-            data[name][-1] for name in ("qw", "qx", "qy", "qz")
-        ])
-        attitude_dot = float(np.clip(
-            abs(np.dot(launch_quaternion, final_quaternion)), 0.0, 1.0
-        ))
-        final_attitude_error_deg = math.degrees(2.0 * math.acos(attitude_dot))
-        _, _, launch_yaw_deg = quaternion_to_euler_deg(
-            *[data[name][launch_index] for name in ("qw", "qx", "qy", "qz")]
-        )
-        launch_yaw = math.radians(float(launch_yaw_deg))
-        reference_delta = np.asarray([
-            reference[axis][-1] - reference[axis][0]
-            for axis in ("x", "y", "z")
-        ])
-        expected_delta = np.asarray([
-            math.cos(launch_yaw) * reference_delta[0]
-                - math.sin(launch_yaw) * reference_delta[1],
-            math.sin(launch_yaw) * reference_delta[0]
-                + math.cos(launch_yaw) * reference_delta[1],
-            reference_delta[2],
-        ])
-        actual_delta = np.asarray([
-            data[name][-1] - data[name][launch_index]
-            for name in ("x_m", "y_m", "z_m")
-        ])
-        final_position_error_m = float(np.linalg.norm(
-            actual_delta - expected_delta
-        ))
-        full_rotation_reference = abs(reference_rotation_deg) >= 300.0
-        if full_rotation_reference:
-            acrobatics_success = bool(
-                not crash_indices.size
-                and float(np.max(attitude_geodesic[launched])) >= 150.0
-                and abs(integrated_rotation_deg - reference_rotation_deg) <= 45.0
-                and final_attitude_error_deg <= 20.0
-                and final_position_error_m <= 0.50
-            )
-            summary.update({
-                "final_attitude_error_deg": final_attitude_error_deg,
-                "final_position_error_m": final_position_error_m,
-                "acrobatics_success": acrobatics_success,
-            })
     if scene_kind == "obstacle":
         # Exact obstacle footprint from vision_obstacle.xml. Report clearance
         # for a conservative 0.10 m Crazyflie footprint, not merely whether
@@ -373,17 +241,11 @@ def build_summary(
         gate_results, gates_passed = ordered_gate_crossings(
             data, course.get("gates", []), launch_time, vehicle_radius
         )
-        acro_result = None
-        acro_requirement_met = True
-        if course.get("acro_maneuver"):
-            acro_result = detect_course_acrobatics(data, course, launch_time)
-            acro_requirement_met = bool(acro_result["course_acro_success"])
         course_success = bool(
             pass_reached
             and minimum_obstacle_clearance >= 0.0
             and wall_clearance_safe
             and gates_passed
-            and acro_requirement_met
             and heading_requirement_met
             and final_cross_track_met
             and not crash_indices.size
@@ -405,11 +267,8 @@ def build_summary(
             "course_heading_requirement_met": heading_requirement_met,
             "course_gate_results": gate_results,
             "course_gates_passed_in_order": gates_passed,
-            "course_acro_requirement_met": acro_requirement_met,
             "course_success": course_success,
         })
-        if acro_result is not None:
-            summary.update(acro_result)
     return summary
 
 
@@ -483,12 +342,6 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
         ax.add_patch(Circle(course["pass_point"], course["pass_radius_m"],
                             fill=False, edgecolor="#2e7d32", linestyle=":",
                             label="course pass region"))
-        acro_start = summary.get("course_acro_start_time_s")
-        acro_end = summary.get("course_acro_end_time_s")
-        if acro_start is not None and acro_end is not None:
-            maneuver = (t >= float(acro_start)) & (t <= float(acro_end))
-            ax.plot(data["x_m"][maneuver], data["y_m"][maneuver],
-                    color="#00838f", linewidth=3, label="acro maneuver")
     if vision is not None:
         # Purple is reserved for the DroNet-style collision head so it has one
         # unambiguous meaning across adapters. Raw clearances and sector scores
@@ -547,9 +400,6 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
 
     if "course_success" in summary:
         status = "COURSE PASS" if summary["course_success"] else "COURSE FAIL"
-    elif "acrobatics_success" in summary:
-        status = ("ACROBATICS PASS" if summary["acrobatics_success"]
-                  else "ACROBATICS FAIL")
     else:
         status = "CRASH/CONTACT" if summary["crashed"] else "NO CONTACT"
     fig.suptitle(f"CrazySim/MuJoCo exact-firmware validation — {status}", fontsize=15)

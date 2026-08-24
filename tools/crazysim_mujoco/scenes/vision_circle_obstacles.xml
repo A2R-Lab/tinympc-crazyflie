@@ -1,0 +1,86 @@
+<mujoco model="TinyRacer circle obstacle room">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="0 0.75 1.5" extent="4.5"/>
+  <visual>
+    <headlight diffuse="0.14 0.14 0.14" ambient="0.09 0.09 0.09"
+               specular="0 0 0"/>
+    <global azimuth="135" elevation="-24" ellipsoidinertia="true"/>
+  </visual>
+
+  <asset>
+    <texture name="circle_floor_texture" type="2d" builtin="checker"
+             rgb1="0.28 0.29 0.30" rgb2="0.20 0.21 0.22"
+             width="512" height="512"/>
+    <texture name="circle_wall_texture" type="2d"
+             file="textures/off_white_painted_plaster.png"/>
+    <material name="circle_floor" texture="circle_floor_texture"
+              texrepeat="8 8" texuniform="true" reflectance="0.10"
+              specular="0.15" shininess="0.20"/>
+    <material name="circle_wall" texture="circle_wall_texture"
+              texrepeat="4 2" texuniform="true" rgba="1 1 1 1"
+              specular="0.07" shininess="0.10"/>
+    <material name="circle_ceiling" rgba="0.83 0.83 0.80 1"
+              specular="0.03" shininess="0.06"/>
+    <material name="strip_light" rgba="1 0.98 0.87 1"
+              emission="1" specular="0" shininess="0"/>
+  </asset>
+
+  <worldbody>
+    <camera name="circle_room_preview" pos="0 -3.8 2.8"
+            xyaxes="1 0 0 0 0.48 0.88" fovy="52"/>
+
+    <!-- The ordinary circle trajectory is local to the launch pose:
+         center=(0, 0.75), radius=0.75 m, z held at launch altitude.
+         Clear room interior: x=-2.25..2.25, y=-1.25..2.75, z=0..3.2 m. -->
+    <geom name="circle_room_floor" type="box" pos="0 0.75 -0.05"
+          size="2.30 2.05 0.05" material="circle_floor"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_room_west_wall" type="box" pos="-2.30 0.75 1.6"
+          size="0.05 2.05 1.6" material="circle_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_room_east_wall" type="box" pos="2.30 0.75 1.6"
+          size="0.05 2.05 1.6" material="circle_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_room_south_wall" type="box" pos="0 -1.30 1.6"
+          size="2.30 0.05 1.6" material="circle_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_room_north_wall" type="box" pos="0 2.80 1.6"
+          size="2.30 0.05 1.6" material="circle_wall"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_room_ceiling" type="box" pos="0 0.75 3.25"
+          size="2.30 2.05 0.05" material="circle_ceiling"
+          contype="1" conaffinity="1"/>
+
+    <!-- Compact, full-height pylons intersect the nominal radius but are
+         biased slightly inward. The controller chooses the outside of the
+         local bend after each independent vision trigger, so this placement
+         leaves useful body-radius clearance without encoding obstacle poses
+         in firmware. -->
+    <geom name="circle_obstacle_1" type="box" pos="0.59 0.47 1.5"
+          size="0.10 0.14 0.85" rgba="0.78 0.20 0.12 1"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_obstacle_2" type="box" pos="0.28 1.30 1.5"
+          size="0.12 0.10 0.85" rgba="0.12 0.34 0.76 1"
+          contype="1" conaffinity="1"/>
+    <geom name="circle_obstacle_3" type="box" pos="-0.60 1.09 1.5"
+          size="0.10 0.14 0.85" rgba="0.82 0.55 0.10 1"
+          contype="1" conaffinity="1"/>
+
+    <geom name="circle_ceiling_strip" type="box" pos="0 0.75 3.185"
+          size="1.75 0.06 0.015" material="strip_light"
+          contype="0" conaffinity="0"/>
+    <light name="circle_light_south" pos="0 -0.65 3.12" dir="0 0 -1"
+           diffuse="0.86 0.83 0.74" specular="0.10 0.10 0.08"
+           cutoff="78" exponent="1" attenuation="0.25 0.08 0.02"
+           castshadow="true"/>
+    <light name="circle_light_center" pos="0 0.75 3.12" dir="0 0 -1"
+           diffuse="0.86 0.83 0.74" specular="0.10 0.10 0.08"
+           cutoff="78" exponent="1" attenuation="0.25 0.08 0.02"
+           castshadow="true"/>
+    <light name="circle_light_north" pos="0 2.15 3.12" dir="0 0 -1"
+           diffuse="0.86 0.83 0.74" specular="0.10 0.10 0.08"
+           cutoff="78" exponent="1" attenuation="0.25 0.08 0.02"
+           castshadow="true"/>
+  </worldbody>
+</mujoco>

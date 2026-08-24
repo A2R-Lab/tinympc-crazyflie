@@ -10,6 +10,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+TOOLS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(TOOLS))
+import crazysim_runtime_profile as plant_profile  # noqa: E402
+
 
 @dataclass(frozen=True)
 class CompileTimeProblem:
@@ -34,6 +38,9 @@ PROBLEM = CompileTimeProblem()
 
 
 def vehicle_mass(problem: CompileTimeProblem) -> float:
+    if plant_profile.is_active_configuration(
+            problem.crazyflie, problem.deck, problem.propeller_guards):
+        return plant_profile.MASS_KG
     base_masses = {"brushless": 0.039, "brushed": 0.028}
     deck_masses = {"none": 0.0, "aideck": 0.0044, "flowdeck": 0.0016, "both": 0.006}
     try:
@@ -54,6 +61,8 @@ def build_continuous_model(problem: CompileTimeProblem):
     import autograd.numpy as np
 
     gravity = 9.81
+    runtime_profile_active = plant_profile.is_active_configuration(
+        problem.crazyflie, problem.deck, problem.propeller_guards)
     deck_properties = {
         "aideck": (0.0044, np.array([0.030, 0.052, 0.008]), np.array([0.0, 0.0, 0.010])),
         "flowdeck": (0.0016, np.array([0.021, 0.028, 0.004]), np.array([0.0, 0.0, -0.007])),
@@ -141,6 +150,16 @@ def build_continuous_model(problem: CompileTimeProblem):
             position - center_of_mass,
         )
 
+    body_linear_drag = np.zeros((3, 3))
+    if runtime_profile_active:
+        mass = plant_profile.MASS_KG
+        center_of_mass = np.zeros(3)
+        inertia = np.diag(np.asarray(
+            plant_profile.INERTIA_DIAGONAL_KGM2))
+        arm_offset = plant_profile.ARM_OFFSET_M
+        body_linear_drag = np.diag(np.asarray(
+            plant_profile.BODY_LINEAR_DRAG_DIAGONAL_N_PER_MPS))
+
     inertia_inverse = np.linalg.inv(inertia)
 
     def dynamics(x, u):
@@ -160,16 +179,36 @@ def build_continuous_model(problem: CompileTimeProblem):
         )
 
         motor_thrust = u
-        yaw_torque = thrust_to_torque * (
-            -motor_thrust[0]
-            + motor_thrust[1]
-            - motor_thrust[2]
-            + motor_thrust[3]
-        )
+        if runtime_profile_active:
+            thrust_curve = plant_profile.RPM_TO_THRUST
+            torque_curve = plant_profile.RPM_TO_TORQUE
+            discriminant = (
+                thrust_curve[1] * thrust_curve[1]
+                - 4.0 * thrust_curve[2]
+                * (thrust_curve[0] - motor_thrust))
+            motor_rpm = (
+                -thrust_curve[1] + np.sqrt(discriminant)
+            ) / (2.0 * thrust_curve[2])
+            motor_torque = (
+                torque_curve[0] + torque_curve[1] * motor_rpm
+                + torque_curve[2] * motor_rpm * motor_rpm)
+            yaw_torque = (
+                -motor_torque[0] + motor_torque[1]
+                - motor_torque[2] + motor_torque[3])
+        else:
+            yaw_torque = thrust_to_torque * (
+                -motor_thrust[0]
+                + motor_thrust[1]
+                - motor_thrust[2]
+                + motor_thrust[3]
+            )
         total_thrust = np.sum(motor_thrust)
+        body_velocity = rotation.T @ velocity
+        drag_force_world = rotation @ (body_linear_drag @ body_velocity)
         acceleration = np.array([0.0, 0.0, -gravity]) + (
-            rotation @ np.array([0.0, 0.0, total_thrust / mass])
-        )
+            rotation @ np.array([0.0, 0.0, total_thrust])
+            + drag_force_world
+        ) / mass
 
         roll_torque = arm_offset * (-motor_thrust[0] - motor_thrust[1] + motor_thrust[2] + motor_thrust[3])
         pitch_torque = arm_offset * (-motor_thrust[0] + motor_thrust[1] + motor_thrust[2] - motor_thrust[3])
@@ -214,6 +253,12 @@ def linearize_discrete_model(problem: CompileTimeProblem):
     return A, B, f
 
 
+# Keep centerline tracking soft enough that velocity tracking and the explicit
+# progress reward can trade a small position error for forward motion. The
+# path tunnel remains the hard cross-track safety envelope.
+POSITION_STATE_WEIGHT = 20.0
+
+
 def build_cost_matrices(problem: CompileTimeProblem):
     if problem.state_dim != 12 or problem.input_dim != 4:
         raise ValueError("the Crazyflie cost requires 12 states and 4 inputs")
@@ -223,9 +268,9 @@ def build_cost_matrices(problem: CompileTimeProblem):
     Q = np.diag(
         np.array(
             [
-                100.0,
-                100.0,
-                10000.0,
+                POSITION_STATE_WEIGHT,
+                POSITION_STATE_WEIGHT,
+                POSITION_STATE_WEIGHT,
                 4.0,
                 4.0,
                 400.0,
@@ -241,8 +286,14 @@ def build_cost_matrices(problem: CompileTimeProblem):
     _, _, physical_hover = build_input_bounds_and_reference(problem)
     match problem.crazyflie:
         case "brushless":
-            hover_command = np.sqrt(physical_hover / (3.72e-8 * 2900.0**2))
-            thrust_slope = 2.0 * 3.72e-8 * 2900.0**2 * hover_command
+            full_command_thrust = (
+                plant_profile.NORMALIZED_COMMAND_FULL_THRUST_N
+                if plant_profile.is_active_configuration(
+                    problem.crazyflie, problem.deck,
+                    problem.propeller_guards)
+                else 3.72e-8 * 2900.0**2)
+            hover_command = np.sqrt(physical_hover / full_command_thrust)
+            thrust_slope = 2.0 * full_command_thrust * hover_command
         case "brushed":
             a = 2.130295e-11
             b = 1.032633e-6
@@ -305,7 +356,12 @@ def build_input_bounds_and_reference(problem: CompileTimeProblem):
 
     match problem.crazyflie:
         case "brushless":
-            maximum_motor_thrust = 3.72e-8 * 2900.0**2
+            maximum_motor_thrust = (
+                plant_profile.MAX_MOTOR_THRUST_N
+                if plant_profile.is_active_configuration(
+                    problem.crazyflie, problem.deck,
+                    problem.propeller_guards)
+                else 3.72e-8 * 2900.0**2)
         case "brushed":
             maximum_command = 65535.0
             maximum_motor_thrust = (
@@ -511,7 +567,20 @@ def emit_firmware_header(problem: CompileTimeProblem, A, B, f, Q, R, cache) -> P
         for name, value in cache.items()
     )
 
-    if problem.crazyflie == "brushless":
+    if problem.crazyflie == "brushless" and plant_profile.is_active_configuration(
+        problem.crazyflie, problem.deck, problem.propeller_guards
+    ):
+        full_command_thrust = (
+            plant_profile.NORMALIZED_COMMAND_FULL_THRUST_N)
+        full_command_thrust_literal = f"{full_command_thrust:.9g}f"
+        actuator_body = f"""\
+  float command = sqrtf(thrust_newtons / {full_command_thrust_literal});
+  return command > 1.0f ? 1.0f : command;
+"""
+        inverse_actuator_body = f"""\
+  return {full_command_thrust_literal} * command * command;
+"""
+    elif problem.crazyflie == "brushless":
         actuator_body = """\
   float command = sqrtf(thrust_newtons / 3.72e-8f) / 2900.0f;
   return command > 1.0f ? 1.0f : command;

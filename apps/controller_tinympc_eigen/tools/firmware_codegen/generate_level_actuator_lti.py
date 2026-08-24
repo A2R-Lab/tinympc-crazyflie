@@ -21,7 +21,7 @@ PYBULLET_TOOLS = APP / "tools" / "pybullet_simulation"
 sys.path.insert(0, str(PYBULLET_TOOLS))
 sys.path.insert(0, str(HERE))
 
-from stored_ltv_controller import (  # noqa: E402
+from quadrotor_dynamics import (  # noqa: E402
     MOTOR_TIME_CONSTANT_S,
     ROTOR_STATE_SCALE_RPM,
     RPM_TO_THRUST,
@@ -30,6 +30,7 @@ from stored_ltv_controller import (  # noqa: E402
 )
 from tinympc_to_crazyflie_adapter import (  # noqa: E402
     CompileTimeProblem,
+    POSITION_STATE_WEIGHT,
     build_upstream_cache,
     vehicle_mass,
 )
@@ -47,13 +48,18 @@ MAX_MOTOR_THRUST_N = 0.20
 # the optimizer account for stored actuator energy without making it chase RPM
 # estimation noise more aggressively than attitude/rate error.
 BASE_Q_DIAGONAL = np.asarray([
-    100.0, 100.0, 10000.0,
+    POSITION_STATE_WEIGHT, POSITION_STATE_WEIGHT, POSITION_STATE_WEIGHT,
     4.0, 4.0, 400.0,
     4.0, 4.0, 4.0,
     20.0, 20.0, 40.0,
     300.0, 300.0, 300.0, 300.0,
 ])
-BASE_R_EIGENVALUE = 724.068315
+_HOVER_THRUST_N = vehicle_mass(CompileTimeProblem()) * 9.81 / INPUT_DIM
+_HOVER_NORMALIZED_COMMAND = math.sqrt(
+    _HOVER_THRUST_N / MAX_MOTOR_THRUST_N)
+_THRUST_SLOPE_N_PER_COMMAND = (
+    2.0 * MAX_MOTOR_THRUST_N * _HOVER_NORMALIZED_COMMAND)
+BASE_R_EIGENVALUE = 100.0 / (_THRUST_SLOPE_N_PER_COMMAND ** 2)
 YAW_MOTOR_MODE = np.asarray([-1.0, 1.0, -1.0, 1.0]) / 2.0
 
 

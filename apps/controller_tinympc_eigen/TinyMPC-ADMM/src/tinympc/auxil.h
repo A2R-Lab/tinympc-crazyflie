@@ -18,6 +18,9 @@ enum tiny_ErrorCode tiny_SetUnconstrained(tiny_AdmmSettings* stgs);
 enum tiny_ErrorCode tiny_InitDataCost(tiny_AdmmWorkspace* work, 
 Eigen::MatrixNf* Q, Eigen::VectorNf* q, Eigen::MatrixMf* R, Eigen::VectorMf* r, Eigen::VectorMf* r_tilde);
 
+enum tiny_ErrorCode tiny_SetStateLinearCost(
+    tiny_AdmmWorkspace* work, Eigen::VectorNf* state_linear_cost);
+
 enum tiny_ErrorCode tiny_InitSolution(tiny_AdmmWorkspace* work,
 Eigen::VectorNf* X, Eigen::VectorMf* U,
 Eigen::VectorNf* YX, Eigen::VectorMf* YU, Eigen::VectorNf* YG,

@@ -20,7 +20,15 @@ index d4a7eb9..75d3341 100644
          self.agent_id = agent_id
          self.model = model
          self.data = data
-@@ -761,16 +763,20 @@ class DroneAgent:
+@@ -699,4 +701,7 @@ class DroneAgent:
+         self._rpm = np.zeros(4)
+         self._rpm_ref = np.zeros(4)
+         self._rpm_dot = np.zeros(4)  # RPM/s for gyroscopic z-torque
++        self._motor_command_packet_count = 0
++        self._motor_command_logged_count = 0
++        self._motor_command_last_sim_time = math.nan
+         self._motor_lock = threading.Lock()
+@@ -761,16 +766,20 @@ class DroneAgent:
          self._noise_model = noise_model
          self._wind_model = wind_model
          self._ground_effect = ground_effect
@@ -43,7 +51,15 @@ index d4a7eb9..75d3341 100644
          a, b, c = self._params.rpm2thrust
          # Solve c*rpm² + b*rpm + (a - thrust) = 0
          disc = b * b - 4.0 * c * (a - thrust)
-@@ -914,7 +920,7 @@ class DroneAgent:
+@@ -819,6 +828,7 @@ class DroneAgent:
+                 m0, m1, m2, m3 = struct.unpack_from('<HHHH', data, 1)
+                 with self._motor_lock:
+                     self._rpm_ref[:] = [self._pwm_to_rpm(p) for p in (m0, m1, m2, m3)]
++                    self._motor_command_packet_count += 1
+             elif hdr == CRTP_HDR_LED and len(data) >= 5:
+                 # LED RGB packet (SIM port, channel 1): [pos, R, G, B]
+                 pos, r, g, b = data[1], data[2], data[3], data[4]
+@@ -914,7 +924,7 @@ class DroneAgent:
  
              rpm = self._rpm[i]
              thrust = a_t + b_t * rpm + c_t * rpm * rpm
@@ -164,7 +180,7 @@ index d4a7eb9..75d3341 100644
      def _apply_downwash(self):
          """Apply downwash force perturbations between drones."""
          for i, agent_below in enumerate(self.agents):
-@@ -1306,8 +1381,34 @@ class CrazySimMuJoCo:
+@@ -1306,8 +1385,37 @@ class CrazySimMuJoCo:
          for agent in self.agents:
              agent.start_threads()
  
@@ -181,6 +197,9 @@ index d4a7eb9..75d3341 100644
 +                'vx_mps', 'vy_mps', 'vz_mps',
 +                'wx_radps', 'wy_radps', 'wz_radps',
 +                'rpm_1', 'rpm_2', 'rpm_3', 'rpm_4', 'contacts', 'airborne',
++                'rpm_ref_1', 'rpm_ref_2', 'rpm_ref_3', 'rpm_ref_4',
++                'motor_cmd_packet_count', 'motor_cmd_last_packet_sim_time_s',
++                'motor_cmd_age_s',
 +            ])
 +
          def _step_and_send():
@@ -199,7 +218,7 @@ index d4a7eb9..75d3341 100644
              for agent in self.agents:
                  agent.update_motors()
                  agent.apply_aero_effects()
-@@ -1317,6 +1418,21 @@ class CrazySimMuJoCo:
+@@ -1317,6 +1425,35 @@ class CrazySimMuJoCo:
              mujoco.mj_step(self.model, self.data)
              for agent in self.agents:
                  agent.send_sensor_data()
@@ -207,6 +226,16 @@ index d4a7eb9..75d3341 100644
 +                agent = self.agents[0]
 +                bid = agent._body_id
 +                qvel = self.data.qvel[agent._qvel_adr:agent._qvel_adr + 6]
++                with agent._motor_lock:
++                    rpm_ref = agent._rpm_ref.copy()
++                    motor_command_packet_count = agent._motor_command_packet_count
++                    if motor_command_packet_count != agent._motor_command_logged_count:
++                        agent._motor_command_last_sim_time = self.data.time
++                        agent._motor_command_logged_count = motor_command_packet_count
++                    motor_command_last_sim_time = agent._motor_command_last_sim_time
++                motor_command_age = (
++                    self.data.time - motor_command_last_sim_time
++                    if math.isfinite(motor_command_last_sim_time) else math.nan)
 +                state_writer.writerow([
 +                    self.data.time,
 +                    *self.data.xpos[bid],
@@ -215,6 +244,10 @@ index d4a7eb9..75d3341 100644
 +                    *agent._rpm,
 +                    self.data.ncon,
 +                    int(self._launch_applied),
++                    *rpm_ref,
++                    motor_command_packet_count,
++                    motor_command_last_sim_time,
++                    motor_command_age,
 +                ])
 +            if self._duration is not None and self.data.time >= self._duration:
 +                self._running = False

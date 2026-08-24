@@ -3,7 +3,7 @@
   "name": "canonical_hairpin",
   "scene": "vision_canonical_hairpin.xml",
   "trajectory": "canonical_hairpin",
-  "description": "180-degree hairpin with avoidance followed by a backflip",
+  "description": "180-degree hairpin with obstacle avoidance",
   "obstacles": [
     {
       "name": "apex_cylinder",
@@ -25,10 +25,6 @@
   "minimum_dodge_encounters": 1,
   "maximum_final_cross_track_m": 0.22,
   "required_heading_change_deg": 150.0,
-  "acro_maneuver": "backflip_360",
-  "acro_axis": "pitch",
-  "acro_trigger_index": 738,
-  "minimum_acro_rotation_deg": 315.0,
   "duration_s": 60.0,
   "centerline": [
     [

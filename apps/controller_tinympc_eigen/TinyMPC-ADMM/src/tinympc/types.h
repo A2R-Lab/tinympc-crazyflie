@@ -131,6 +131,8 @@ typedef struct {
   Eigen::MatrixNf* Q;
   Eigen::MatrixMf* R;
   Eigen::VectorNf* q;
+  /* Optional per-knot linear state cost added to q and terminal p. */
+  Eigen::VectorNf* state_linear_cost;
   Eigen::VectorMf* r;
   Eigen::VectorMf* r_tilde;
   

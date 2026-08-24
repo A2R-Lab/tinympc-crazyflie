@@ -17,6 +17,11 @@ import numpy as np
 import analyze_progress_speed_ladder as analyzer
 
 
+CONTROLLER = (Path(__file__).resolve().parents[2]
+              / "apps" / "controller_tinympc_eigen" / "src"
+              / "controller_tinympc.cpp")
+
+
 def write_header(path: Path, *, curvature_spike: bool = False) -> None:
     rows = []
     for theta in np.linspace(0.0, 2.0 * math.pi, 751):
@@ -31,17 +36,21 @@ def write_header(path: Path, *, curvature_spike: bool = False) -> None:
 
 
 def write_run(root: Path, speed: float, contact: bool, *, uncapped: bool = False,
-              sustained_altitude_error: bool = False) -> Path:
-    run = root / f"speed_{speed:.3f}"
+              sustained_altitude_error: bool = False, random_seed: int | None = None,
+              name: str | None = None, bounded_diagnostics: bool = False) -> Path:
+    run = root / (name or f"speed_{speed:.3f}")
     run.mkdir()
     (run / "run_config.json").write_text(json.dumps({
         "trajectory": "circle", "reference_mode": "progress",
         "launch_time_s": 1.0, "progress_speed_mps": speed,
+        "random_seed": random_seed,
         "progress_reference_limits": "uncapped" if uncapped else "default",
     }))
     (run / "summary.json").write_text(json.dumps({"launch_time_s": 1.0, "crashed": contact}))
     final_progress = 600.0 if contact else 750.0
-    completion = "TINYMPC-E: Progress path complete sample=750.00/750\n" if not contact else ""
+    completion = (
+        "TINYMPC-E: Progress path complete sample=750.00/750 elapsed_s=6.000\n"
+        if not contact else "")
     limits_banner = (
         "TINYMPC-E: Progress reference limits=uncapped projection_advance=finite-unbounded "
         "yaw_phase_slew=uncapped roll_pitch=uncapped local_yaw=+/-15deg\n"
@@ -54,11 +63,17 @@ def write_run(root: Path, speed: float, contact: bool, *, uncapped: bool = False
         "TINYMPC-E: Progress reference diagnostic t=0.22 sample=20 kappa=1 kappa_v=1 "
         "kappa_v2=1 bank_deg=5.82 thrust_scale=0.005 ref_rod=0.05 jump=10\n"
         if uncapped else "")
+    bounded = (
+        "TINYMPC-E: PROGRESS state measured=10.000 target=11.000 measured_index_delta=1.000 target_index_delta=1.000 measured_total_m=0.10000000 target_total_m=0.12000000\n"
+        f"TINYMPC-E: PROGRESS step vehicle_m=0.02000000 forward_m=0.01800000 projection_candidate_m=0.03000000 measured_m=0.01800000 measured_bound_m=0.01800000 command_request_m={speed * 0.02:.8f} command_m=0.01800000 lead_m=0.02000000 lead_bound_m=0.02100000 tolerance_m=0.00100000\n"
+        "TINYMPC-E: PROGRESS counters vehicle_total_m=0.10000 forward_total_m=0.09900 projection_limited=1 limited_count=1 projection_violation=0 projection_violation_count=0 command_violation=0 command_violation_count=0 lead_violation=0 lead_violation_count=0\n"
+        if bounded_diagnostics else "")
     (run / "firmware.log").write_text(
         limits_banner
         +
         f"TINYMPC-E: Progress path ready samples=751 speed={speed:.3f}..{speed:.3f}m/s curvature_gain=0.75m projection_step=0.02m\n"
         + diagnostics
+        + bounded
         + f"TINYMPC-E: Progress path sample={final_progress:.2f}/750\n" + completion
         + "TINYMPC-E: MPC: iterations=5\n"
     )
@@ -87,6 +102,17 @@ def write_run(root: Path, speed: float, contact: bool, *, uncapped: bool = False
 
 
 class ProgressSpeedLadderTest(unittest.TestCase):
+    def test_firmware_bounded_metrics_emit_eight_decimal_precision(self) -> None:
+        source = CONTROLLER.read_text()
+        self.assertIn(
+            "measured_total_m=%.8f target_total_m=%.8f\\n", source)
+        self.assertIn(
+            "PROGRESS step vehicle_m=%.8f forward_m=%.8f "
+            "projection_candidate_m=%.8f measured_m=%.8f "
+            "measured_bound_m=%.8f command_request_m=%.8f "
+            "command_m=%.8f lead_m=%.8f lead_bound_m=%.8f "
+            "tolerance_m=%.8f\\n", source)
+
     def test_first_sustained_crossing(self) -> None:
         time = np.arange(0.0, 2.0, 0.1)
         values = np.zeros_like(time)
@@ -126,6 +152,62 @@ class ProgressSpeedLadderTest(unittest.TestCase):
             self.assertEqual(len(list((output / "diagnostics").glob("*.png"))), 2)
             self.assertEqual(len(list((output / "diagnostics").glob("*_corrected_rate_50hz.csv"))), 2)
             self.assertEqual(len(list((output / "diagnostics").glob("*_raw_reference_by_sample.csv"))), 2)
+
+    def test_repeated_speed_seeds_have_unique_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            header = root / "circle.h"; write_header(header)
+            first = write_run(root, 1.0, False, random_seed=11, name="seed_11")
+            second = write_run(root, 1.0, False, random_seed=12, name="seed_12")
+            output = root / "output"
+            subprocess.run([
+                sys.executable, str(Path(analyzer.__file__)),
+                "--run", f"1.0={first}", "--run", f"1.0={second}",
+                "--circle-header", str(header), "--out", str(output),
+            ], check=True, capture_output=True, text=True)
+            report = json.loads((output / "comparison.json").read_text())
+            self.assertEqual([item["random_seed"] for item in report["runs"]], [11, 12])
+            self.assertEqual(len({item["run_directory"] for item in report["runs"]}), 2)
+            self.assertEqual(report["runs"][0]["command_config"]["progress_speed_mps"], 1.0)
+            self.assertIn("timing_error_s", report["runs"][0]["launch"])
+            diagnostics = output / "diagnostics"
+            self.assertEqual(len(list(diagnostics.glob("*.png"))), 2)
+            self.assertTrue((diagnostics / "speed_1.000_seed_11.png").exists())
+            self.assertTrue((diagnostics / "speed_1.000_seed_12.png").exists())
+            self.assertGreater((output / "comparison.png").stat().st_size, 1000)
+            self.assertGreater((output / "trajectories_by_speed.png").stat().st_size, 1000)
+            self.assertGreater((output / "tracking_errors_by_speed.png").stat().st_size, 1000)
+            self.assertGreater((output / "bounded_progress_by_speed.png").stat().st_size, 1000)
+            self.assertGreater((output / "run_outcomes_by_speed.png").stat().st_size, 1000)
+            csv_text = (output / "comparison.csv").read_text()
+            self.assertIn("random_seed", csv_text)
+            self.assertIn("timing_error_s", csv_text)
+
+    def test_meter_bounded_progress_supersedes_knot_jump_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            header = root / "circle.h"; write_header(header)
+            run = write_run(root, 1.0, False, uncapped=True, random_seed=7,
+                            name="bounded", bounded_diagnostics=True)
+            result, _ = analyzer.analyze_run(run, None, analyzer.load_header(header))
+            bounded = result["progress"]["bounded_diagnostics"]
+            self.assertTrue(bounded["present"])
+            self.assertTrue(bounded["parseable"])
+            self.assertTrue(bounded["valid"])
+            self.assertEqual(bounded["projection_violation_count_max"], 0)
+            self.assertEqual(bounded["command_violation_count_max"], 0)
+            self.assertEqual(bounded["lead_violation_count_max"], 0)
+            self.assertTrue(bounded["target_step_within_vdt"])
+            self.assertTrue(bounded["measured_advance_within_physical_bound"])
+            self.assertTrue(bounded["phase_lead_within_bound"])
+            self.assertEqual(
+                result["progress"]["firmware_completion_time_after_launch_s"],
+                6.0)
+            self.assertEqual(
+                result["active_route_window"]["ended_by"],
+                "firmware_timed_completion")
+            self.assertEqual(result["progress"]["jump_evidence"]["validation"],
+                             "not_applicable_meter_bounded_format")
 
     def test_curvature_artifact_and_uncapped_safety_classification(self) -> None:
         route = np.zeros((101, 13))

@@ -16,18 +16,47 @@
              width="512" height="512"/>
     <material name="groundplane" texture="groundplane" texuniform="true"
               texrepeat="2 2" reflectance="0.2"/>
+    <texture type="2d" name="newbeedrone_gate_texture"
+             file="textures/newbeedrone_gate_front_rgba_v1.png"/>
+    <material name="newbeedrone_gate" texture="newbeedrone_gate_texture"
+              texuniform="false" rgba="1 1 1 1" specular="0.08"
+              shininess="0.12"/>
+    <mesh name="newbeedrone_gate_top"
+          file="meshes/newbeedrone_gate_top.obj"/>
+    <mesh name="newbeedrone_gate_bottom"
+          file="meshes/newbeedrone_gate_bottom.obj"/>
+    <mesh name="newbeedrone_gate_left"
+          file="meshes/newbeedrone_gate_left.obj"/>
+    <mesh name="newbeedrone_gate_right"
+          file="meshes/newbeedrone_gate_right.obj"/>
   </asset>
   <worldbody>
     <light pos="0 0 4" dir="0 0 -1" directional="true"/>
+    <camera name="crazyflie_preview" pos="0 0 1.5"
+            xyaxes="0 -1 0 0 0 1" fovy="47.168554"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
-    <!-- 0.8 x 0.7 m opening, deliberately offset 0.18 m to the drone's left. -->
-    <geom name="gate_left" type="box" pos="1.55 0.68 1.5" size="0.06 0.06 0.47"
-          rgba="0.95 0.48 0.05 1" contype="1" conaffinity="1"/>
-    <geom name="gate_right" type="box" pos="1.55 -0.32 1.5" size="0.06 0.06 0.47"
-          rgba="0.95 0.48 0.05 1" contype="1" conaffinity="1"/>
-    <geom name="gate_top" type="box" pos="1.55 0.18 1.91" size="0.06 0.56 0.06"
-          rgba="0.95 0.48 0.05 1" contype="1" conaffinity="1"/>
-    <geom name="gate_bottom" type="box" pos="1.55 0.18 1.09" size="0.06 0.56 0.06"
-          rgba="0.95 0.48 0.05 1" contype="1" conaffinity="1"/>
+    <!-- NewBeeDrone frame: 0.5 x 0.5 m clear opening with 0.12 m rails. -->
+    <body name="newbeedrone_gate" pos="2.2 0.18 1.5">
+      <geom type="mesh" mesh="newbeedrone_gate_top"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_bottom"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_left"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_right"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom name="gate_left" type="box" pos="0 -0.31 0"
+            size="0.025 0.06 0.25" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_right" type="box" pos="0 0.31 0"
+            size="0.025 0.06 0.25" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_top" type="box" pos="0 0 0.31"
+            size="0.025 0.37 0.06" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_bottom" type="box" pos="0 0 -0.31"
+            size="0.025 0.37 0.06" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+    </body>
   </worldbody>
 </mujoco>

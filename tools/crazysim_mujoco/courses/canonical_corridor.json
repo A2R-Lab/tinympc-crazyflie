@@ -3,7 +3,7 @@
   "name": "canonical_corridor",
   "scene": "vision_canonical_corridor.xml",
   "trajectory": "canonical_corridor",
-  "description": "Straight corridor, offset obstacle, then a forward barrel roll",
+  "description": "Straight corridor with an offset obstacle",
   "obstacles": [
     {
       "name": "offset_box",
@@ -32,10 +32,6 @@
   "minimum_dodge_encounters": 1,
   "maximum_final_cross_track_m": 0.2,
   "required_heading_change_deg": 0.0,
-  "acro_maneuver": "barrel_roll_forward_360",
-  "acro_axis": "roll",
-  "acro_trigger_index": 680,
-  "minimum_acro_rotation_deg": 315.0,
   "duration_s": 32.0,
   "centerline": [
     [

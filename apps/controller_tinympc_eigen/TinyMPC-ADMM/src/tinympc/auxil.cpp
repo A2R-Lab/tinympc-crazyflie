@@ -81,6 +81,12 @@ Eigen::MatrixNf* Q, Eigen::VectorNf* q, Eigen::MatrixMf* R, Eigen::VectorMf* r, 
   return TINY_NO_ERROR;
 }
 
+enum tiny_ErrorCode tiny_SetStateLinearCost(
+    tiny_AdmmWorkspace* work, Eigen::VectorNf* state_linear_cost) {
+  work->data->state_linear_cost = state_linear_cost;
+  return TINY_NO_ERROR;
+}
+
 enum tiny_ErrorCode tiny_InitWorkspace(tiny_AdmmWorkspace* work,
                                        tiny_AdmmInfo* info,
                                        tiny_Model* model,
@@ -92,6 +98,7 @@ enum tiny_ErrorCode tiny_InitWorkspace(tiny_AdmmWorkspace* work,
   work->soln = soln;
   work->stgs = stgs;
   work->data->model = model;
+  work->data->state_linear_cost = 0;
 
   // tiny_InitSolution(work);
   // tiny_InitData(work);
