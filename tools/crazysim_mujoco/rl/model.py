@@ -23,7 +23,9 @@ class TemporalPolicy(nn.Module):
             nn.Linear(64, latent_dim),
         )
         self.actor = nn.Sequential(
-            nn.Linear(latent_dim, 32), nn.Tanh(), nn.Linear(32, ACTION_COUNT))
+            # ReLU is supported by the NeMO/DORY integer deployment path;
+            # Tanh is not lowerable by the local DORY frontend.
+            nn.Linear(latent_dim, 32), nn.ReLU(), nn.Linear(32, ACTION_COUNT))
 
     def encode(self, frames: torch.Tensor) -> torch.Tensor:
         return self.encoder(frames)

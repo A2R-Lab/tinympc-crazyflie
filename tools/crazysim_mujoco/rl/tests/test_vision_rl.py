@@ -93,6 +93,14 @@ class VisionRlContractTest(unittest.TestCase):
         frames = torch.linspace(0.0, 1.0, 2 * 160 * 160).reshape(1, 2, 160, 160)
         torch.testing.assert_close(first(frames), second(frames))
 
+    def test_deployment_policy_uses_dory_lowerable_activations(self):
+        import torch
+        policy = TemporalPolicy()
+        self.assertFalse(any(isinstance(module, torch.nn.Tanh)
+                             for module in policy.modules()))
+        self.assertTrue(any(isinstance(module, torch.nn.ReLU)
+                            for module in policy.actor.modules()))
+
     def test_torch_onnx_parity_when_available(self):
         try:
             import onnxruntime as ort
