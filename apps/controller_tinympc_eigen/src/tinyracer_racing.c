@@ -186,6 +186,7 @@ void tinyRacerDodgeUpdate(
       state->trigger_samples >= config->trigger_samples_required) {
     state->phase = TINYRACER_DODGE_SIDESTEP;
     state->pass_side = selectedPassSide(navigation, config);
+    state->redirect_active = false;
     state->forward_distance_m = 0.0f;
     state->clear_samples = 0;
   }
@@ -204,6 +205,7 @@ void tinyRacerDodgeUpdate(
       redirected_side != state->pass_side) {
     state->phase = TINYRACER_DODGE_SIDESTEP;
     state->pass_side = redirected_side;
+    state->redirect_active = true;
     state->forward_distance_m = 0.0f;
     state->trigger_samples = 0;
     state->clear_samples = 0;
@@ -214,9 +216,11 @@ void tinyRacerDodgeUpdate(
    * waiting to reach TRACK. */
   if (config->allow_rejoin_redirect &&
       state->phase == TINYRACER_DODGE_REJOIN &&
-      state->trigger_samples >= config->trigger_samples_required) {
+      state->trigger_samples >= config->trigger_samples_required &&
+      redirected_side != state->pass_side) {
     state->phase = TINYRACER_DODGE_SIDESTEP;
     state->pass_side = redirected_side;
+    state->redirect_active = true;
     state->forward_distance_m = 0.0f;
     state->trigger_samples = 0;
     state->clear_samples = 0;
@@ -229,12 +233,11 @@ void tinyRacerDodgeUpdate(
   switch (state->phase) {
     case TINYRACER_DODGE_SIDESTEP:
       target_offset = (float)state->pass_side * config->lateral_offset_m;
-      /* Close slalom obstacles can require crossing from one pass lane to the
-       * other. Use a faster banked redirect only while the existing and target
-       * offsets have opposite signs; ordinary single-obstacle sidesteps retain
-       * the conservative rate. */
-      rate = state->lateral_offset_m * target_offset < 0.0f
-          ? 2.0f * config->sidestep_rate_mps
+      /* A direct opposite-side redirect is a larger maneuver, not permission
+       * to double the lateral reference velocity. Its separately configured
+       * rate is passed through the same acceleration/braking governor below. */
+      rate = state->redirect_active
+          ? config->redirect_rate_mps
           : config->sidestep_rate_mps;
       forward_speed = config->sidestep_forward_speed_mps;
       state->forward_distance_m +=
@@ -267,11 +270,41 @@ void tinyRacerDodgeUpdate(
   }
 
   const float previous_offset = state->lateral_offset_m;
-  state->lateral_offset_m = moveToward(
-      state->lateral_offset_m, target_offset, fmaxf(rate, 0.0f) * dt);
+  const float maximum_offset = fmaxf(config->maximum_lateral_offset_m, 0.0f);
+  target_offset = fminf(fmaxf(target_offset, -maximum_offset), maximum_offset);
+  const float remaining = target_offset - state->lateral_offset_m;
+  const float acceleration = fmaxf(config->lateral_acceleration_mps2, 0.0f);
+  const float speed_limit = fmaxf(rate, 0.0f);
+  float requested_rate = 0.0f;
+  if (fabsf(remaining) > 1.0e-6f) {
+    const float direction = copysignf(1.0f, remaining);
+    const float rate_toward_target = direction * state->lateral_rate_mps;
+    const float stopping_distance = acceleration > 0.0f &&
+        rate_toward_target > 0.0f
+        ? rate_toward_target * rate_toward_target / (2.0f * acceleration)
+        : 0.0f;
+    const float next_step_travel =
+        fmaxf(rate_toward_target, 0.0f) * dt;
+    requested_rate = acceleration > 0.0f &&
+        stopping_distance + next_step_travel >= fabsf(remaining)
+        ? 0.0f : direction * speed_limit;
+  }
+  state->lateral_rate_mps = acceleration > 0.0f
+      ? moveToward(state->lateral_rate_mps, requested_rate, acceleration * dt)
+      : requested_rate;
+  state->lateral_offset_m += state->lateral_rate_mps * dt;
+  const bool crossed_target = (target_offset - previous_offset) *
+      (target_offset - state->lateral_offset_m) <= 0.0f;
+  if (crossed_target || fabsf(target_offset - state->lateral_offset_m) < 1.0e-6f) {
+    state->lateral_offset_m = target_offset;
+    state->lateral_rate_mps = 0.0f;
+  }
+  state->lateral_offset_m = fminf(fmaxf(
+      state->lateral_offset_m, -maximum_offset), maximum_offset);
   if (state->phase == TINYRACER_DODGE_SIDESTEP &&
       fabsf(state->lateral_offset_m - target_offset) < 1.0e-4f) {
     state->phase = TINYRACER_DODGE_PASS;
+    state->redirect_active = false;
     /* minimum_pass_distance_m describes travel in the established bypass
      * lane. Distance accumulated while building the lateral offset does not
      * prove that the vehicle has passed the obstacle. */

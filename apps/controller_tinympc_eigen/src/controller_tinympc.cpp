@@ -436,12 +436,17 @@ static const TinyRacerNavigationConfig navigation_config = {
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_DRONET_U)
 /* PULP-DroNet v3 benchmark: each one-metre obstacle occupies half of the
- * two-metre corridor, so a 0.60 m center shift leaves vehicle-envelope
- * clearance while retaining 0.30 m to the opposite wall. */
-#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.60f
+ * two-metre corridor. Center the bypass between the obstacle envelope and the
+ * wall instead of riding near the wall. Bound the reference to the corridor
+ * interior, and use an acceleration-limited redirect so a LEFT-to-RIGHT
+ * switch cannot inject the former 1 m/s lateral step into TinyMPC. */
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.35f
 #define TINYRACER_DODGE_REARM_DISTANCE_M 0.30f
 #define TINYRACER_DODGE_PASS_SIDE 0
-#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.50f
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.35f
+#define TINYRACER_DODGE_REDIRECT_RATE_MPS 0.35f
+#define TINYRACER_DODGE_LATERAL_ACCELERATION_MPS2 1.00f
+#define TINYRACER_DODGE_MAXIMUM_LATERAL_OFFSET_M 0.45f
 #define TINYRACER_DODGE_PASS_SPEED_MPS \
   ((float)TINYMPC_PROGRESS_SPEED_MPS > 0.0f \
       ? (float)TINYMPC_PROGRESS_SPEED_MPS : 0.50f)
@@ -499,6 +504,17 @@ static const TinyRacerNavigationConfig navigation_config = {
 #if !defined(TINYRACER_DODGE_REJOIN_RATE_MPS)
 #define TINYRACER_DODGE_REJOIN_RATE_MPS 0.30f
 #endif
+#if !defined(TINYRACER_DODGE_REDIRECT_RATE_MPS)
+#define TINYRACER_DODGE_REDIRECT_RATE_MPS \
+  (2.0f * TINYRACER_DODGE_SIDESTEP_RATE_MPS)
+#endif
+#if !defined(TINYRACER_DODGE_LATERAL_ACCELERATION_MPS2)
+#define TINYRACER_DODGE_LATERAL_ACCELERATION_MPS2 1000.0f
+#endif
+#if !defined(TINYRACER_DODGE_MAXIMUM_LATERAL_OFFSET_M)
+#define TINYRACER_DODGE_MAXIMUM_LATERAL_OFFSET_M \
+  TINYRACER_DODGE_LATERAL_OFFSET_M
+#endif
 #if !defined(TINYRACER_DODGE_REJOIN_SPEED_MPS)
 #define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.35f
 #endif
@@ -520,11 +536,20 @@ static const TinyRacerNavigationConfig navigation_config = {
 #if !defined(TINYRACER_DODGE_PASS_DISTANCE_M)
 #define TINYRACER_DODGE_PASS_DISTANCE_M perception_pass_distance_m
 #endif
+#if defined(TINYMPC_TRAJECTORY_DRONET_U) && TINYMPC_PATH_TUNNEL_ENABLE
+static_assert(
+    (float)TINYRACER_DODGE_MAXIMUM_LATERAL_OFFSET_M +
+        (float)TINYMPC_PATH_TUNNEL_HALF_WIDTH_1_M <= 0.80f,
+    "shifted U-course tracking tube must remain inside the eroded corridor");
+#endif
 static const TinyRacerDodgeConfig dodge_config = {
   TINYRACER_DODGE_TRIGGER_PROBABILITY,
   TINYRACER_DODGE_RELEASE_PROBABILITY,
   TINYRACER_DODGE_LATERAL_OFFSET_M,
   TINYRACER_DODGE_SIDESTEP_RATE_MPS, TINYRACER_DODGE_REJOIN_RATE_MPS,
+  TINYRACER_DODGE_REDIRECT_RATE_MPS,
+  TINYRACER_DODGE_LATERAL_ACCELERATION_MPS2,
+  TINYRACER_DODGE_MAXIMUM_LATERAL_OFFSET_M,
   0.12f, TINYRACER_DODGE_PASS_SPEED_MPS,
   TINYRACER_DODGE_REJOIN_SPEED_MPS, TINYRACER_DODGE_PASS_DISTANCE_M,
   TINYRACER_DODGE_REARM_DISTANCE_M,

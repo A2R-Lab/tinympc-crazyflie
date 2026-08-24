@@ -76,6 +76,9 @@ typedef struct {
   float lateral_offset_m;
   float sidestep_rate_mps;
   float rejoin_rate_mps;
+  float redirect_rate_mps;
+  float lateral_acceleration_mps2;
+  float maximum_lateral_offset_m;
   float sidestep_forward_speed_mps;
   float pass_forward_speed_mps;
   float rejoin_forward_speed_mps;
@@ -92,11 +95,13 @@ typedef struct {
   TinyRacerDodgePhase phase;
   int8_t pass_side;
   float lateral_offset_m;
+  float lateral_rate_mps;
   float forward_distance_m;
   float rearm_distance_m;
   uint8_t trigger_samples;
   uint8_t clear_samples;
   bool armed;
+  bool redirect_active;
 } TinyRacerDodgeState;
 
 typedef struct {

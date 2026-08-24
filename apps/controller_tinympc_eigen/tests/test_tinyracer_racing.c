@@ -214,6 +214,7 @@ int main(void) {
   TinyRacerDodgeIntent dodge_intent;
   const TinyRacerDodgeConfig dodge_config = {
     0.25f, 0.18f, 0.10f, 0.50f, 0.25f,
+    1.00f, 1000.00f, 0.20f,
     0.12f, 0.45f, 0.35f, 0.08f, 0.20f, true, 0, 2, 2
   };
   tinyRacerDodgeReset(&dodge_state);
@@ -233,9 +234,12 @@ int main(void) {
   assert(dodge_intent.pass_side == -1);
   assert(fabsf(dodge_intent.lateral_offset_m + 0.05f) < 1.0e-6f);
   navigation_intent.new_sample = false;
-  tinyRacerDodgeUpdate(
-      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
-      &dodge_intent);
+  for (int step = 0; step < 4 &&
+       dodge_intent.phase == TINYRACER_DODGE_SIDESTEP; ++step) {
+    tinyRacerDodgeUpdate(
+        &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+        &dodge_intent);
+  }
   assert(dodge_intent.phase == TINYRACER_DODGE_PASS);
   assert(fabsf(dodge_intent.lateral_offset_m + 0.10f) < 1.0e-6f);
   assert(fabsf(dodge_state.forward_distance_m) < 1.0e-6f);
@@ -291,6 +295,63 @@ int main(void) {
   assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
   assert(dodge_intent.pass_side == 1);
 
+  /* Opposite-side redirects use a bounded trapezoidal reference profile.
+   * Neither the configured corridor envelope, lateral speed, nor acceleration
+   * may be exceeded, and the reference must settle without overshoot. */
+  TinyRacerDodgeConfig governed_dodge_config = dodge_config;
+  governed_dodge_config.lateral_offset_m = 0.45f;
+  governed_dodge_config.redirect_rate_mps = 0.35f;
+  governed_dodge_config.lateral_acceleration_mps2 = 0.75f;
+  governed_dodge_config.maximum_lateral_offset_m = 0.70f;
+  tinyRacerDodgeReset(&dodge_state);
+  dodge_state.phase = TINYRACER_DODGE_PASS;
+  dodge_state.pass_side = 1;
+  dodge_state.lateral_offset_m = 0.45f;
+  dodge_state.forward_distance_m = governed_dodge_config.minimum_pass_distance_m;
+  navigation_intent.collision_probability = 0.8f;
+  navigation_intent.yaw_rate_rad_s = -0.4f;
+  navigation_intent.new_sample = true;
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &governed_dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &governed_dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
+  float previous_rate = dodge_intent.lateral_rate_mps;
+  for (int step = 0; step < 100 &&
+       dodge_intent.phase == TINYRACER_DODGE_SIDESTEP; ++step) {
+    const float previous_offset = dodge_intent.lateral_offset_m;
+    navigation_intent.new_sample = false;
+    tinyRacerDodgeUpdate(
+        &dodge_state, &navigation_intent, &governed_dodge_config, 0.1f, 0.45f,
+        &dodge_intent);
+    assert(fabsf(dodge_intent.lateral_offset_m) <= 0.700001f);
+    assert(fabsf(dodge_intent.lateral_rate_mps) <= 0.350001f);
+    const float acceleration_step = 0.075f;
+    const float terminal_tolerance =
+        dodge_intent.phase == TINYRACER_DODGE_PASS
+        ? 2.0f * acceleration_step : acceleration_step;
+    assert(fabsf(dodge_intent.lateral_rate_mps - previous_rate) <=
+           terminal_tolerance + 1.0e-6f);
+    assert(dodge_intent.lateral_offset_m <= previous_offset + 1.0e-6f);
+    previous_rate = dodge_intent.lateral_rate_mps;
+  }
+  assert(dodge_intent.phase == TINYRACER_DODGE_PASS);
+  assert(fabsf(dodge_intent.lateral_offset_m + 0.45f) < 1.0e-6f);
+  assert(fabsf(dodge_state.lateral_rate_mps) < 1.0e-6f);
+
+  governed_dodge_config.lateral_offset_m = 0.80f;
+  tinyRacerDodgeReset(&dodge_state);
+  dodge_state.phase = TINYRACER_DODGE_SIDESTEP;
+  dodge_state.pass_side = 1;
+  for (int step = 0; step < 100; ++step) {
+    tinyRacerDodgeUpdate(
+        &dodge_state, &navigation_intent, &governed_dodge_config, 0.1f, 0.45f,
+        &dodge_intent);
+  }
+  assert(fabsf(dodge_intent.lateral_offset_m - 0.70f) < 1.0e-6f);
+
   /* If alternating obstacles overlap visually, risk may remain high through
    * PASS. After the committed bypass distance, an opposite steering sign is
    * sufficient to redirect without requiring an artificial clear frame. */
@@ -316,6 +377,7 @@ int main(void) {
    * encounter and must be allowed to reverse the selected pass side. */
   tinyRacerDodgeReset(&dodge_state);
   dodge_state.phase = TINYRACER_DODGE_REJOIN;
+  dodge_state.pass_side = -1;
   dodge_state.lateral_offset_m = -0.08f;
   navigation_intent.collision_probability = 0.8f;
   navigation_intent.yaw_rate_rad_s = 0.4f;
@@ -329,6 +391,22 @@ int main(void) {
       &dodge_intent);
   assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
   assert(dodge_intent.pass_side == 1);
+
+  /* Repeated evidence for the lane being rejoined from is not a new
+   * encounter and must not restart SIDESTEP. */
+  tinyRacerDodgeReset(&dodge_state);
+  dodge_state.phase = TINYRACER_DODGE_REJOIN;
+  dodge_state.pass_side = -1;
+  dodge_state.lateral_offset_m = -0.08f;
+  navigation_intent.yaw_rate_rad_s = -0.4f;
+  navigation_intent.new_sample = true;
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_REJOIN);
 
   /* A known curved track may prescribe the outside lane. That geometric
    * choice must dominate a noisy or frame-sensitive navigation steering sign. */
