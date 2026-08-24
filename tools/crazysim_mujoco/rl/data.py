@@ -27,9 +27,19 @@ class RunTransitions:
     frames: np.ndarray
     latent: np.ndarray
     next_latent: np.ndarray
-    action: np.ndarray
+    behavior_action: np.ndarray
+    expert_action: np.ndarray
+    expert_scores: np.ndarray
+    decision_mask: np.ndarray
+    hard_track_mask: np.ndarray
     reward: np.ndarray
     done: np.ndarray
+    episode_id: np.ndarray
+
+    @property
+    def action(self) -> np.ndarray:
+        """Backward-compatible alias for the action that caused transition."""
+        return self.behavior_action
 
 
 def _numeric_csv(path: Path) -> dict[str, np.ndarray]:
@@ -169,6 +179,20 @@ def load_run(run_dir: Path, course_path: Path, camera_fps: float = 30.0):
     next_index = current_index + stride
     current_actions = actions[current_index]
     previous_actions = np.concatenate(([current_actions[0]], current_actions[:-1]))
+    # Camera capture commonly stops one frame before the state logger records a
+    # physical terminal.  Propagate the retained run outcome onto the final
+    # aligned transition so crashes are not silently converted into ordinary
+    # timeouts with no contact penalty.
+    summary_path = run_dir / "summary.json"
+    if summary_path.is_file():
+        summary = json.loads(summary_path.read_text())
+        run_contact = bool(summary.get("crashed", False) or
+                           summary.get("course_contact_before_completion", False))
+        run_complete = bool(summary.get("course_success", False))
+        if run_contact and not np.any(contacts[next_index]):
+            contacts[next_index[-1]] = True
+        if run_complete and not np.any(complete[next_index]):
+            complete[next_index[-1]] = True
     reward = transition_reward(
         progress[next_index] - progress[current_index], cross[next_index],
         tangent_speed[next_index],
@@ -178,12 +202,118 @@ def load_run(run_dir: Path, course_path: Path, camera_fps: float = 30.0):
     # A retained run boundary is terminal even when it ended by timeout.
     done[-1] = 1.0
     paired = np.stack((np.concatenate((images[:1], images[:-1])), images), axis=1)
-    return RunTransitions(paired[current_index], latent[current_index],
-                          latent[next_index], current_actions,
-                          reward, done)
+    expert_scores = np.zeros((transition_count, 3), dtype=np.float32)
+    expert_scores[np.arange(transition_count), current_actions] = 1.0
+    return RunTransitions(
+        paired[current_index], latent[current_index], latent[next_index],
+        current_actions, current_actions.copy(), expert_scores,
+        current_actions != ACTION_TRACK,
+        np.zeros(transition_count, dtype=bool), reward, done,
+        np.zeros(transition_count, dtype=np.int64))
 
 
 def concatenate_runs(run_dirs: list[Path], course_path: Path):
     runs = [load_run(path, course_path) for path in run_dirs]
-    return RunTransitions(*(np.concatenate([getattr(run, field) for run in runs])
+    for episode, run in enumerate(runs):
+        run.episode_id[:] = episode
+    return concatenate_datasets(runs)
+
+
+def concatenate_datasets(datasets: list[RunTransitions]) -> RunTransitions:
+    if not datasets:
+        raise ValueError("at least one transition dataset is required")
+    return RunTransitions(*(np.concatenate([getattr(item, field) for item in datasets])
                             for field in RunTransitions.__dataclass_fields__))
+
+
+def _derived_reward(latent, next_latent, behavior_action, done, episode_id):
+    previous_action = behavior_action.copy()
+    same_episode = episode_id[1:] == episode_id[:-1]
+    previous_action[1:] = np.where(
+        same_episode, behavior_action[:-1], behavior_action[1:])
+    return transition_reward(
+        next_latent[:, 0] - latent[:, 0], next_latent[:, 1],
+        next_latent[:, 2], np.minimum(next_latent[:, 5], next_latent[:, 6]),
+        behavior_action, previous_action, np.zeros_like(done), done)
+
+
+def load_expert_npz(path: Path) -> RunTransitions:
+    """Load the stable procedural-expert interchange schema."""
+    required = (
+        "frames", "latent", "next_latent", "behavior_action", "expert_action",
+        "expert_scores", "decision_mask", "hard_track_mask", "done", "episode_id")
+    with np.load(path, allow_pickle=False) as archive:
+        missing = [name for name in required if name not in archive]
+        if missing:
+            raise ValueError(f"expert dataset missing {missing}: {path}")
+        values = {name: np.asarray(archive[name]) for name in required}
+        reward = np.asarray(archive["reward"], dtype=np.float32) \
+            if "reward" in archive else None
+    count = values["frames"].shape[0]
+    if values["frames"].shape != (count, 2, 160, 160):
+        raise ValueError("expert frames must have shape [N,2,160,160]")
+    if values["latent"].shape != (count, len(LATENT_NAMES)) or \
+            values["next_latent"].shape != values["latent"].shape:
+        raise ValueError("expert latent arrays must have shape [N,7]")
+    if values["expert_scores"].shape != (count, 3):
+        raise ValueError("expert_scores must have shape [N,3]")
+    for name in ("behavior_action", "expert_action"):
+        action = values[name]
+        if (action.shape != (count,) or not np.all(np.isfinite(action)) or
+                not np.all(np.abs(action - np.rint(action)) < 1.0e-6) or
+                not np.all((action >= 0) & (action < 3))):
+            raise ValueError(f"{name} must contain actions 0..2")
+    for name in ("decision_mask", "hard_track_mask", "done", "episode_id"):
+        if values[name].shape != (count,):
+            raise ValueError(f"{name} must have shape [N]")
+    if not np.all(np.isfinite(values["latent"])) or \
+            not np.all(np.isfinite(values["next_latent"])) or \
+            not np.all(np.isfinite(values["expert_scores"])):
+        raise ValueError("expert latent/scores must be finite")
+    if not np.issubdtype(values["frames"].dtype, np.number) or \
+            np.any(values["frames"] < 0) or np.any(values["frames"] > 255):
+        raise ValueError("expert frames must be numeric in [0,255]")
+    if np.any(np.asarray(values["hard_track_mask"], dtype=bool) &
+              (values["expert_action"] != ACTION_TRACK)):
+        raise ValueError("hard_track_mask may only mark TRACK labels")
+    row = np.arange(count)
+    if np.any(values["expert_scores"][row, values["expert_action"].astype(int)] +
+              1.0e-6 < np.max(values["expert_scores"], axis=1)):
+        raise ValueError("expert_action must maximize expert_scores")
+    if reward is None:
+        reward = _derived_reward(
+            values["latent"], values["next_latent"],
+            values["behavior_action"], values["done"], values["episode_id"])
+    if reward.shape != (count,) or not np.all(np.isfinite(reward)):
+        raise ValueError("expert reward must be finite with shape [N]")
+    return RunTransitions(
+        values["frames"].astype(np.uint8, copy=False),
+        values["latent"].astype(np.float32, copy=False),
+        values["next_latent"].astype(np.float32, copy=False),
+        values["behavior_action"].astype(np.int64, copy=False),
+        values["expert_action"].astype(np.int64, copy=False),
+        values["expert_scores"].astype(np.float32, copy=False),
+        values["decision_mask"].astype(bool, copy=False),
+        values["hard_track_mask"].astype(bool, copy=False),
+        reward.astype(np.float32, copy=False),
+        values["done"].astype(np.float32, copy=False), values["episode_id"])
+
+
+def subset_dataset(dataset: RunTransitions, selection) -> RunTransitions:
+    return RunTransitions(*(getattr(dataset, field)[selection]
+                            for field in RunTransitions.__dataclass_fields__))
+
+
+def split_by_episode(dataset: RunTransitions, validation_fraction: float,
+                     seed: int) -> tuple[RunTransitions, RunTransitions]:
+    episodes = np.unique(dataset.episode_id)
+    if episodes.size < 2:
+        raise ValueError("episode-level validation requires at least two episodes")
+    generator = np.random.default_rng(seed)
+    shuffled = generator.permutation(episodes)
+    validation_count = min(episodes.size - 1, max(
+        1, int(round(validation_fraction * episodes.size))))
+    validation_episodes = shuffled[:validation_count]
+    validation_mask = np.isin(dataset.episode_id, validation_episodes)
+    return subset_dataset(dataset, ~validation_mask), subset_dataset(
+        dataset, validation_mask)

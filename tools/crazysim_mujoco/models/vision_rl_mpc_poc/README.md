@@ -20,6 +20,14 @@ Only numeric values from tinympc-perception commit
 `890bbd6923a9459d4d7ab7bee92542e4cb61c64d` are used; no third-party texture
 or scene asset is copied into this bundle.
 
+For expert-regularized training, pass `--expert-dataset expert.npz` and
+optionally `--validation-dataset validation.npz`. The stable NPZ schema is:
+`frames`, `latent`, `next_latent`, `behavior_action`, `expert_action`,
+`expert_scores`, `decision_mask`, `hard_track_mask`, `done`, and `episode_id`.
+Without an explicit validation file, complete episode IDs are held out from
+the expert dataset. Dynamics always use `behavior_action`; actor supervision
+uses `expert_action` and counterfactual `expert_scores`.
+
 ## Selected proof-of-concept bundle
 
 The checked-in bundle was trained by Slurm job `5867` on an RTX 5090 using
