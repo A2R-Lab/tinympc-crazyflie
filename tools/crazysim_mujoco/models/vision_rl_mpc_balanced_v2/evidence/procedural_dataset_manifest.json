@@ -1,0 +1,98 @@
+{
+  "acceptance_targets": {
+    "appearances_at_least_5": true,
+    "episodes_at_least_60": true,
+    "every_action_at_least_10pct": true,
+    "layouts_at_least_10": true,
+    "noise_variants_at_least_3": true,
+    "success_contact_near_miss_each_at_least_20pct": true,
+    "transitions_at_least_30000": true
+  },
+  "action_counts": {
+    "LEFT": 8840,
+    "RIGHT": 7935,
+    "TRACK": 20380
+  },
+  "action_fractions": {
+    "LEFT": 0.2379222177365092,
+    "RIGHT": 0.21356479612434395,
+    "TRACK": 0.5485129861391468
+  },
+  "action_names": [
+    "TRACK",
+    "LEFT",
+    "RIGHT"
+  ],
+  "camera": {
+    "channels": 1,
+    "fovy_degrees": 83.6091095,
+    "height": 160,
+    "mount_euler_degrees": [
+      0,
+      -90,
+      -90
+    ],
+    "temporal_frames": 2,
+    "width": 160
+  },
+  "config": {
+    "appearance_variants": 6,
+    "camera_height_m": 0.5,
+    "corridor_half_width_m": 1.0,
+    "corridor_length_m": 10.0,
+    "drone_radius_m": 0.1,
+    "episodes": 60,
+    "layout_variants": 12,
+    "noise_variants": 3,
+    "output": ".",
+    "samples_per_episode": 720,
+    "seed": 20260824,
+    "validation_fraction": 0.2
+  },
+  "determinism": {
+    "analytic_arrays": "byte-exact for a fixed seed and configuration",
+    "hashes": "integrity and provenance of this generation, not a cross-GPU golden digest",
+    "rendered_frames": "semantic; EGL edge pixels may differ by one 5-bit level"
+  },
+  "episodes": 60,
+  "files": {
+    "train.npz": {
+      "sha256": "7bdaa52fc5139bfb7b63f849009c1f5654bd08f9055c6bae7fb2043f0864c6eb"
+    },
+    "train_manifest.json": {
+      "sha256": "21a03b26b3c70164fdcf5ff020f3058189c2d626e50ca7abe6efce512dd96433"
+    },
+    "validation.npz": {
+      "sha256": "08d435c35c30735fc9b79d6cbc77f360aa0813456d7b019d55cf311cdd0ad767"
+    },
+    "validation_manifest.json": {
+      "sha256": "b9f2baa8e2be9f110db45eb075f97b92bcf8b8e45f0299da42598df4ac95ea75"
+    }
+  },
+  "generator": "generate_procedural_avoidance_dataset.py",
+  "generator_sha256": "4390b8a6bb4b8bf47a59354abed88e2894c1caa5f68211f42104cca1df2130b2",
+  "latent_names": [
+    "progress_m",
+    "cross_track_m",
+    "tangent_speed_mps",
+    "normal_speed_mps",
+    "yaw_error_rad",
+    "obstacle_clearance_m",
+    "wall_clearance_m"
+  ],
+  "meets_acceptance_targets": true,
+  "outcome_episode_counts": {
+    "contact": 15,
+    "near_miss": 15,
+    "success": 15,
+    "timeout": 15
+  },
+  "outcome_episode_fractions": {
+    "contact": 0.25,
+    "near_miss": 0.25,
+    "success": 0.25,
+    "timeout": 0.25
+  },
+  "schema_version": 1,
+  "transitions": 37155
+}

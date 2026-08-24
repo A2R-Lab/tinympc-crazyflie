@@ -1,0 +1,67 @@
+{
+  "augmentations": [
+    "original",
+    "horizontal_mirror",
+    "brightness_0p92_plus_6",
+    "gaussian_noise_sigma_2"
+  ],
+  "course": {
+    "path": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/courses/dronet_u.json",
+    "sha256": "4e056562ea660098126210e47c486b6e9507f9267706d72d36e603da11bb81f6"
+  },
+  "episode_group_rule": "all variants use namespaced group 100000 + source seed",
+  "excluded_heldout_seeds": [
+    101,
+    202,
+    303
+  ],
+  "format": "tinympc-u-course-oracle-expert-v1",
+  "lookahead_m": 2.25,
+  "output": {
+    "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/u_course_oracle_seed11_22_33/u_course_oracle_expert.npz",
+    "samples": 5464,
+    "sha256": "d121e489eed8cdf94f9b766f07495e123aae633b3cc752d561b2270101481c62"
+  },
+  "pass_side_rule": "opposite signed obstacle cross-track",
+  "recovery_m": 0.75,
+  "sources": [
+    {
+      "files": {
+        "fpv_camera.mp4": "685d84cd11a23f4fe08c254860a24d2ec9d8a07970457f49bccea1ad75296dc4",
+        "run_config.json": "431899dbce36e3475fd10da49baad9deed9d1c4b0ce85dd1448163fe847e04f3",
+        "state.csv": "3c2369f3a32f47ad05325abfaf7bad0bd403d923e0b443da28a3ee4588723489",
+        "vision.csv": "7a458b24abd8c65bf33f54c9b603d279a2da201c44f1d28897077c28b41ef30d"
+      },
+      "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_11",
+      "samples": 152,
+      "seed": 11
+    },
+    {
+      "files": {
+        "fpv_camera.mp4": "650bb61371a7d95826edf49b884b3d583f3a0c912e7def79ab7e311dc8e10877",
+        "run_config.json": "c2bf3cb21bb720a35759727af20e9cdaaaca4e61228cf2392a28cbdab4f05e7a",
+        "state.csv": "0457029510984b95a9ebc522c8b5197688f59aa682f3b883a8bacf8bfdcb8e2d",
+        "vision.csv": "3554866d7363a780f055158c82636a4d4ba9cd458e29de30e09eb37dd1e71dcf"
+      },
+      "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_22",
+      "samples": 166,
+      "seed": 22
+    },
+    {
+      "files": {
+        "fpv_camera.mp4": "db9e35b4202e351ffa2f118e1f04834f69b72f3a3249e35a7610bf9a5890b76a",
+        "run_config.json": "0ac8b03d3a5b310b41a7fad195748ce4a259f4ad49c838bdf12cfbed4a63aff4",
+        "state.csv": "24c9b57243b88cb264a0e93be8e04891c36918d849d1c7411959a40624f5d576",
+        "vision.csv": "ad484d7786b446ac8eaa66f60a1cb791d196dde4e032da19364bd054156b4b3c"
+      },
+      "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/training_dronet_factor_0p1942/seed_33",
+      "samples": 1048,
+      "seed": 33
+    }
+  ],
+  "training_seeds": [
+    11,
+    22,
+    33
+  ]
+}

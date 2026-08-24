@@ -1,0 +1,1667 @@
+{
+  "format": "tinympc-u-course-off-policy-transfer-v1",
+  "diagnostic_scope": "off-policy classification on retained camera/state streams",
+  "closed_loop_success_claim_permitted": false,
+  "interpretation_warning": "Candidate actions did not affect retained trajectories. Accuracy and recall do not establish collision avoidance, stability, or course completion.",
+  "action_contract": [
+    "TRACK",
+    "LEFT",
+    "RIGHT"
+  ],
+  "course": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/courses/dronet_u.json",
+  "course_sha256": "4e056562ea660098126210e47c486b6e9507f9267706d72d36e603da11bb81f6",
+  "decision_window": {
+    "minimum_obstacle_delta_progress_m": -0.05,
+    "maximum_obstacle_delta_progress_m": 2.25,
+    "selection": "minimum eligible obstacle delta progress",
+    "safe_side": "opposite sign of obstacle center signed path-normal offset",
+    "outside_window": "TRACK"
+  },
+  "obstacle_path_coordinates": [
+    {
+      "index": 0,
+      "name": "static_1",
+      "path_progress_m": 1.5,
+      "signed_cross_track_m": -0.5,
+      "safe_action": 1,
+      "safe_action_name": "LEFT"
+    },
+    {
+      "index": 1,
+      "name": "static_2",
+      "path_progress_m": 2.7,
+      "signed_cross_track_m": 0.5,
+      "safe_action": 2,
+      "safe_action_name": "RIGHT"
+    },
+    {
+      "index": 2,
+      "name": "static_3",
+      "path_progress_m": 7.703833207124512,
+      "signed_cross_track_m": 0.5,
+      "safe_action": 2,
+      "safe_action_name": "RIGHT"
+    },
+    {
+      "index": 3,
+      "name": "static_4",
+      "path_progress_m": 9.30383320712451,
+      "signed_cross_track_m": -0.5,
+      "safe_action": 1,
+      "safe_action_name": "LEFT"
+    }
+  ],
+  "evaluation_seeds": [
+    101,
+    202,
+    303
+  ],
+  "training_seeds": [
+    11,
+    22,
+    33,
+    20260824
+  ],
+  "training_seed_overlap": [],
+  "training_seed_evidence": [
+    {
+      "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/dataset_seed20260824_v2/manifest.json",
+      "sha256": "a1d50623d987b197d139edce613c5a01417bcd876eadd8e9db1d608f88471c99",
+      "extracted_training_seeds": [
+        20260824
+      ]
+    },
+    {
+      "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/u_course_oracle_seed11_22_33/manifest.json",
+      "sha256": "71d27a2b43a27a1fe7eceb954483737e98f038866180f014558bc99d17fef824",
+      "extracted_training_seeds": [
+        11,
+        22,
+        33
+      ]
+    },
+    {
+      "path": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_mpc_poc/bundle.json",
+      "sha256": "52d8569e6404cc8cd952b3e4acc1caf39eee9464fbe0179341bb11f4b97b13b4",
+      "policy": "old",
+      "extracted_training_seeds": [
+        11,
+        22,
+        33
+      ]
+    },
+    {
+      "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/training_seed20260824_v5_domain_balanced/bundle.json",
+      "sha256": "eede305d99df84f8e55dac53e9259e17b2f37cbfdf6b8a8f8886957529c25478",
+      "policy": "v5",
+      "extracted_training_seeds": [
+        11,
+        22,
+        33
+      ]
+    },
+    {
+      "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/training_seed20260824_v6_final/bundle.json",
+      "sha256": "70c200930320f8883da66334834e2ca12e25dd43083322e183f5d5c42f04a076",
+      "policy": "final",
+      "extracted_training_seeds": [
+        11,
+        22,
+        33
+      ]
+    }
+  ],
+  "policies": {
+    "old": {
+      "model": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_mpc_poc/policy.onnx",
+      "model_sha256": "27ced97ef2dd0cb9c27fc0a91ebd1069497f4cd8495d94c839465f1873bb578c",
+      "runs": [
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_101",
+          "random_seed": 101,
+          "active_window_s": [
+            1.007,
+            11.216999999999222
+          ],
+          "frames": 306,
+          "label_action_counts_track_left_right": [
+            0,
+            151,
+            155
+          ],
+          "predicted_action_counts_track_left_right": [
+            295,
+            1,
+            10
+          ],
+          "decision_frames": 306,
+          "decision_accuracy": 0.032679738562091505,
+          "decision_left_recall": 0.0,
+          "decision_right_recall": 0.06451612903225806,
+          "decision_direction_balanced_accuracy": 0.03225806451612903,
+          "all_frame_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                151,
+                0,
+                0
+              ],
+              [
+                144,
+                1,
+                10
+              ]
+            ],
+            "accuracy": 0.032679738562091505,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.06451612903225806
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.12121212121212122
+            ],
+            "balanced_accuracy": 0.02150537634408602,
+            "macro_f1": 0.04040404040404041,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              295,
+              1,
+              10
+            ]
+          },
+          "decision_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                151,
+                0,
+                0
+              ],
+              [
+                144,
+                1,
+                10
+              ]
+            ],
+            "accuracy": 0.032679738562091505,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.06451612903225806
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.12121212121212122
+            ],
+            "balanced_accuracy": 0.02150537634408602,
+            "macro_f1": 0.04040404040404041,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              295,
+              1,
+              10
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 151,
+            "static_2": 155,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "8dac5b812eabab660fb0cbfdbed4195767a8b048c6d8b1a9100828580afab008",
+            "state.csv": "052442f58163680af0602c1defd52d82c1bbdf8eff878a8bc798a4fd35d171f6",
+            "vision.csv": "487b423724634e710af80545b209b922d941f75189a7ea159bf8c53a297853c2",
+            "fpv_camera.mp4": "12161527ac9a7c992ea14fb3527c96b176b4ef81c82f09703cf8ddffb2b19ac9"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_202",
+          "random_seed": 202,
+          "active_window_s": [
+            1.007,
+            5.799000000000271
+          ],
+          "frames": 143,
+          "label_action_counts_track_left_right": [
+            0,
+            142,
+            1
+          ],
+          "predicted_action_counts_track_left_right": [
+            143,
+            0,
+            0
+          ],
+          "decision_frames": 143,
+          "decision_accuracy": 0.0,
+          "decision_left_recall": 0.0,
+          "decision_right_recall": 0.0,
+          "decision_direction_balanced_accuracy": 0.0,
+          "all_frame_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                142,
+                0,
+                0
+              ],
+              [
+                1,
+                0,
+                0
+              ]
+            ],
+            "accuracy": 0.0,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "balanced_accuracy": 0.0,
+            "macro_f1": 0.0,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              143,
+              0,
+              0
+            ]
+          },
+          "decision_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                142,
+                0,
+                0
+              ],
+              [
+                1,
+                0,
+                0
+              ]
+            ],
+            "accuracy": 0.0,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "balanced_accuracy": 0.0,
+            "macro_f1": 0.0,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              143,
+              0,
+              0
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 142,
+            "static_2": 1,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "c6a3358496ba0487a4347b43275dae29bc4f8cd33462c16c2cb840df28f28311",
+            "state.csv": "409d2d25d1f6d769b3e11a65078d09b2e3d565ab286992d85870d8afaf95c1e5",
+            "vision.csv": "d6fe281a4ad41b1c62faa0cbbabea2f7e9008b2f97f7afa1f082f532e9e1bac7",
+            "fpv_camera.mp4": "5bbaae89d05aef783915140113472587aaad221ddf5c9ab6188ae4af9887df6a"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_303",
+          "random_seed": 303,
+          "active_window_s": [
+            1.0089999999999997,
+            8.078000000000962
+          ],
+          "frames": 212,
+          "label_action_counts_track_left_right": [
+            0,
+            119,
+            93
+          ],
+          "predicted_action_counts_track_left_right": [
+            179,
+            5,
+            28
+          ],
+          "decision_frames": 212,
+          "decision_accuracy": 0.1320754716981132,
+          "decision_left_recall": 0.0,
+          "decision_right_recall": 0.3010752688172043,
+          "decision_direction_balanced_accuracy": 0.15053763440860216,
+          "all_frame_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                119,
+                0,
+                0
+              ],
+              [
+                60,
+                5,
+                28
+              ]
+            ],
+            "accuracy": 0.1320754716981132,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.3010752688172043
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.4628099173553719
+            ],
+            "balanced_accuracy": 0.1003584229390681,
+            "macro_f1": 0.15426997245179064,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              179,
+              5,
+              28
+            ]
+          },
+          "decision_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                119,
+                0,
+                0
+              ],
+              [
+                60,
+                5,
+                28
+              ]
+            ],
+            "accuracy": 0.1320754716981132,
+            "precision_track_left_right": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.0,
+              0.3010752688172043
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.0,
+              0.4628099173553719
+            ],
+            "balanced_accuracy": 0.1003584229390681,
+            "macro_f1": 0.15426997245179064,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              179,
+              5,
+              28
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 119,
+            "static_2": 93,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "f5a3829814b599f2f243c1d1b599e77e3481d2f19ccc2cc5d22833faf9ae89b2",
+            "state.csv": "42909c3fa8bf28ddede68fb7de78f60e60b5edf830a131fe42b8084caf4f6f5a",
+            "vision.csv": "2eb0f110e4731443c976503253587515a634b8aabd7f9c29e330f491bd65d18a",
+            "fpv_camera.mp4": "89c9146ea6e0b85c577c404e79ee92280421fc83ac0128fc7d86980c8bb67083"
+          }
+        }
+      ],
+      "aggregate": {
+        "runs": 3,
+        "frames": 661,
+        "label_action_counts_track_left_right": [
+          0,
+          412,
+          249
+        ],
+        "predicted_action_counts_track_left_right": [
+          617,
+          6,
+          38
+        ],
+        "decision_frames": 661,
+        "decision_accuracy": 0.057488653555219364,
+        "decision_left_recall": 0.0,
+        "decision_right_recall": 0.15261044176706828,
+        "decision_direction_balanced_accuracy": 0.07630522088353414,
+        "all_frame_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              412,
+              0,
+              0
+            ],
+            [
+              205,
+              6,
+              38
+            ]
+          ],
+          "accuracy": 0.057488653555219364,
+          "precision_track_left_right": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.0,
+            0.15261044176706828
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.0,
+            0.26480836236933797
+          ],
+          "balanced_accuracy": 0.050870147255689425,
+          "macro_f1": 0.08826945412311266,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            617,
+            6,
+            38
+          ]
+        },
+        "decision_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              412,
+              0,
+              0
+            ],
+            [
+              205,
+              6,
+              38
+            ]
+          ],
+          "accuracy": 0.057488653555219364,
+          "precision_track_left_right": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.0,
+            0.15261044176706828
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.0,
+            0.26480836236933797
+          ],
+          "balanced_accuracy": 0.050870147255689425,
+          "macro_f1": 0.08826945412311266,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            617,
+            6,
+            38
+          ]
+        }
+      }
+    },
+    "v5": {
+      "model": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/training_seed20260824_v5_domain_balanced/policy.onnx",
+      "model_sha256": "b1ebff69b0fc90b5a9ea81a5ff54ac0f6be64eb696a8882f81b2f48cc847c246",
+      "runs": [
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_101",
+          "random_seed": 101,
+          "active_window_s": [
+            1.007,
+            11.216999999999222
+          ],
+          "frames": 306,
+          "label_action_counts_track_left_right": [
+            0,
+            151,
+            155
+          ],
+          "predicted_action_counts_track_left_right": [
+            65,
+            127,
+            114
+          ],
+          "decision_frames": 306,
+          "decision_accuracy": 0.7091503267973857,
+          "decision_left_recall": 0.8410596026490066,
+          "decision_right_recall": 0.5806451612903226,
+          "decision_direction_balanced_accuracy": 0.7108523819696646,
+          "all_frame_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                127,
+                24
+              ],
+              [
+                65,
+                0,
+                90
+              ]
+            ],
+            "accuracy": 0.7091503267973857,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.7894736842105263
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8410596026490066,
+              0.5806451612903226
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9136690647482013,
+              0.6691449814126395
+            ],
+            "balanced_accuracy": 0.4739015879797764,
+            "macro_f1": 0.5276046820536137,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              65,
+              127,
+              114
+            ]
+          },
+          "decision_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                127,
+                24
+              ],
+              [
+                65,
+                0,
+                90
+              ]
+            ],
+            "accuracy": 0.7091503267973857,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.7894736842105263
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8410596026490066,
+              0.5806451612903226
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9136690647482013,
+              0.6691449814126395
+            ],
+            "balanced_accuracy": 0.4739015879797764,
+            "macro_f1": 0.5276046820536137,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              65,
+              127,
+              114
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 151,
+            "static_2": 155,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "8dac5b812eabab660fb0cbfdbed4195767a8b048c6d8b1a9100828580afab008",
+            "state.csv": "052442f58163680af0602c1defd52d82c1bbdf8eff878a8bc798a4fd35d171f6",
+            "vision.csv": "487b423724634e710af80545b209b922d941f75189a7ea159bf8c53a297853c2",
+            "fpv_camera.mp4": "12161527ac9a7c992ea14fb3527c96b176b4ef81c82f09703cf8ddffb2b19ac9"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_202",
+          "random_seed": 202,
+          "active_window_s": [
+            1.007,
+            5.799000000000271
+          ],
+          "frames": 143,
+          "label_action_counts_track_left_right": [
+            0,
+            142,
+            1
+          ],
+          "predicted_action_counts_track_left_right": [
+            0,
+            132,
+            11
+          ],
+          "decision_frames": 143,
+          "decision_accuracy": 0.9300699300699301,
+          "decision_left_recall": 0.9295774647887324,
+          "decision_right_recall": 1.0,
+          "decision_direction_balanced_accuracy": 0.9647887323943662,
+          "all_frame_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                132,
+                10
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ],
+            "accuracy": 0.9300699300699301,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.09090909090909091
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.9295774647887324,
+              1.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9635036496350364,
+              0.16666666666666669
+            ],
+            "balanced_accuracy": 0.6431924882629109,
+            "macro_f1": 0.3767234387672344,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              0,
+              132,
+              11
+            ]
+          },
+          "decision_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                132,
+                10
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ],
+            "accuracy": 0.9300699300699301,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.09090909090909091
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.9295774647887324,
+              1.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9635036496350364,
+              0.16666666666666669
+            ],
+            "balanced_accuracy": 0.6431924882629109,
+            "macro_f1": 0.3767234387672344,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              0,
+              132,
+              11
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 142,
+            "static_2": 1,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "c6a3358496ba0487a4347b43275dae29bc4f8cd33462c16c2cb840df28f28311",
+            "state.csv": "409d2d25d1f6d769b3e11a65078d09b2e3d565ab286992d85870d8afaf95c1e5",
+            "vision.csv": "d6fe281a4ad41b1c62faa0cbbabea2f7e9008b2f97f7afa1f082f532e9e1bac7",
+            "fpv_camera.mp4": "5bbaae89d05aef783915140113472587aaad221ddf5c9ab6188ae4af9887df6a"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_303",
+          "random_seed": 303,
+          "active_window_s": [
+            1.0089999999999997,
+            8.078000000000962
+          ],
+          "frames": 212,
+          "label_action_counts_track_left_right": [
+            0,
+            119,
+            93
+          ],
+          "predicted_action_counts_track_left_right": [
+            33,
+            109,
+            70
+          ],
+          "decision_frames": 212,
+          "decision_accuracy": 0.7594339622641509,
+          "decision_left_recall": 0.8823529411764706,
+          "decision_right_recall": 0.6021505376344086,
+          "decision_direction_balanced_accuracy": 0.7422517394054395,
+          "all_frame_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                105,
+                14
+              ],
+              [
+                33,
+                4,
+                56
+              ]
+            ],
+            "accuracy": 0.7594339622641509,
+            "precision_track_left_right": [
+              0.0,
+              0.963302752293578,
+              0.8
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8823529411764706,
+              0.6021505376344086
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9210526315789473,
+              0.6871165644171778
+            ],
+            "balanced_accuracy": 0.4948344929369597,
+            "macro_f1": 0.5360563986653751,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              33,
+              109,
+              70
+            ]
+          },
+          "decision_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                105,
+                14
+              ],
+              [
+                33,
+                4,
+                56
+              ]
+            ],
+            "accuracy": 0.7594339622641509,
+            "precision_track_left_right": [
+              0.0,
+              0.963302752293578,
+              0.8
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8823529411764706,
+              0.6021505376344086
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9210526315789473,
+              0.6871165644171778
+            ],
+            "balanced_accuracy": 0.4948344929369597,
+            "macro_f1": 0.5360563986653751,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              33,
+              109,
+              70
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 119,
+            "static_2": 93,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "f5a3829814b599f2f243c1d1b599e77e3481d2f19ccc2cc5d22833faf9ae89b2",
+            "state.csv": "42909c3fa8bf28ddede68fb7de78f60e60b5edf830a131fe42b8084caf4f6f5a",
+            "vision.csv": "2eb0f110e4731443c976503253587515a634b8aabd7f9c29e330f491bd65d18a",
+            "fpv_camera.mp4": "89c9146ea6e0b85c577c404e79ee92280421fc83ac0128fc7d86980c8bb67083"
+          }
+        }
+      ],
+      "aggregate": {
+        "runs": 3,
+        "frames": 661,
+        "label_action_counts_track_left_right": [
+          0,
+          412,
+          249
+        ],
+        "predicted_action_counts_track_left_right": [
+          98,
+          368,
+          195
+        ],
+        "decision_frames": 661,
+        "decision_accuracy": 0.773071104387292,
+        "decision_left_recall": 0.883495145631068,
+        "decision_right_recall": 0.5903614457831325,
+        "decision_direction_balanced_accuracy": 0.7369282957071003,
+        "all_frame_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              364,
+              48
+            ],
+            [
+              98,
+              4,
+              147
+            ]
+          ],
+          "accuracy": 0.773071104387292,
+          "precision_track_left_right": [
+            0.0,
+            0.9891304347826086,
+            0.7538461538461538
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.883495145631068,
+            0.5903614457831325
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.9333333333333333,
+            0.6621621621621622
+          ],
+          "balanced_accuracy": 0.49128553047140017,
+          "macro_f1": 0.5318318318318318,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            98,
+            368,
+            195
+          ]
+        },
+        "decision_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              364,
+              48
+            ],
+            [
+              98,
+              4,
+              147
+            ]
+          ],
+          "accuracy": 0.773071104387292,
+          "precision_track_left_right": [
+            0.0,
+            0.9891304347826086,
+            0.7538461538461538
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.883495145631068,
+            0.5903614457831325
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.9333333333333333,
+            0.6621621621621622
+          ],
+          "balanced_accuracy": 0.49128553047140017,
+          "macro_f1": 0.5318318318318318,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            98,
+            368,
+            195
+          ]
+        }
+      }
+    },
+    "final": {
+      "model": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_balanced_v2/training_seed20260824_v6_final/policy.onnx",
+      "model_sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e",
+      "runs": [
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_101",
+          "random_seed": 101,
+          "active_window_s": [
+            1.007,
+            11.216999999999222
+          ],
+          "frames": 306,
+          "label_action_counts_track_left_right": [
+            0,
+            151,
+            155
+          ],
+          "predicted_action_counts_track_left_right": [
+            65,
+            127,
+            114
+          ],
+          "decision_frames": 306,
+          "decision_accuracy": 0.7091503267973857,
+          "decision_left_recall": 0.8410596026490066,
+          "decision_right_recall": 0.5806451612903226,
+          "decision_direction_balanced_accuracy": 0.7108523819696646,
+          "all_frame_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                127,
+                24
+              ],
+              [
+                65,
+                0,
+                90
+              ]
+            ],
+            "accuracy": 0.7091503267973857,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.7894736842105263
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8410596026490066,
+              0.5806451612903226
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9136690647482013,
+              0.6691449814126395
+            ],
+            "balanced_accuracy": 0.4739015879797764,
+            "macro_f1": 0.5276046820536137,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              65,
+              127,
+              114
+            ]
+          },
+          "decision_metrics": {
+            "samples": 306,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                127,
+                24
+              ],
+              [
+                65,
+                0,
+                90
+              ]
+            ],
+            "accuracy": 0.7091503267973857,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.7894736842105263
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8410596026490066,
+              0.5806451612903226
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9136690647482013,
+              0.6691449814126395
+            ],
+            "balanced_accuracy": 0.4739015879797764,
+            "macro_f1": 0.5276046820536137,
+            "expected_action_counts": [
+              0,
+              151,
+              155
+            ],
+            "predicted_action_counts": [
+              65,
+              127,
+              114
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 151,
+            "static_2": 155,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "8dac5b812eabab660fb0cbfdbed4195767a8b048c6d8b1a9100828580afab008",
+            "state.csv": "052442f58163680af0602c1defd52d82c1bbdf8eff878a8bc798a4fd35d171f6",
+            "vision.csv": "487b423724634e710af80545b209b922d941f75189a7ea159bf8c53a297853c2",
+            "fpv_camera.mp4": "12161527ac9a7c992ea14fb3527c96b176b4ef81c82f09703cf8ddffb2b19ac9"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_202",
+          "random_seed": 202,
+          "active_window_s": [
+            1.007,
+            5.799000000000271
+          ],
+          "frames": 143,
+          "label_action_counts_track_left_right": [
+            0,
+            142,
+            1
+          ],
+          "predicted_action_counts_track_left_right": [
+            0,
+            134,
+            9
+          ],
+          "decision_frames": 143,
+          "decision_accuracy": 0.9440559440559441,
+          "decision_left_recall": 0.9436619718309859,
+          "decision_right_recall": 1.0,
+          "decision_direction_balanced_accuracy": 0.971830985915493,
+          "all_frame_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                134,
+                8
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ],
+            "accuracy": 0.9440559440559441,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.1111111111111111
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.9436619718309859,
+              1.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9710144927536231,
+              0.19999999999999998
+            ],
+            "balanced_accuracy": 0.647887323943662,
+            "macro_f1": 0.39033816425120765,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              0,
+              134,
+              9
+            ]
+          },
+          "decision_metrics": {
+            "samples": 143,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                134,
+                8
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ],
+            "accuracy": 0.9440559440559441,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.1111111111111111
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.9436619718309859,
+              1.0
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9710144927536231,
+              0.19999999999999998
+            ],
+            "balanced_accuracy": 0.647887323943662,
+            "macro_f1": 0.39033816425120765,
+            "expected_action_counts": [
+              0,
+              142,
+              1
+            ],
+            "predicted_action_counts": [
+              0,
+              134,
+              9
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 142,
+            "static_2": 1,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "c6a3358496ba0487a4347b43275dae29bc4f8cd33462c16c2cb840df28f28311",
+            "state.csv": "409d2d25d1f6d769b3e11a65078d09b2e3d565ab286992d85870d8afaf95c1e5",
+            "vision.csv": "d6fe281a4ad41b1c62faa0cbbabea2f7e9008b2f97f7afa1f082f532e9e1bac7",
+            "fpv_camera.mp4": "5bbaae89d05aef783915140113472587aaad221ddf5c9ab6188ae4af9887df6a"
+          }
+        },
+        {
+          "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/hybrid_rl_poc/eval_factor_0p1942/baseline/seed_303",
+          "random_seed": 303,
+          "active_window_s": [
+            1.0089999999999997,
+            8.078000000000962
+          ],
+          "frames": 212,
+          "label_action_counts_track_left_right": [
+            0,
+            119,
+            93
+          ],
+          "predicted_action_counts_track_left_right": [
+            30,
+            107,
+            75
+          ],
+          "decision_frames": 212,
+          "decision_accuracy": 0.8018867924528302,
+          "decision_left_recall": 0.8991596638655462,
+          "decision_right_recall": 0.6774193548387096,
+          "decision_direction_balanced_accuracy": 0.7882895093521279,
+          "all_frame_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                107,
+                12
+              ],
+              [
+                30,
+                0,
+                63
+              ]
+            ],
+            "accuracy": 0.8018867924528302,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.84
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8991596638655462,
+              0.6774193548387096
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9469026548672567,
+              0.75
+            ],
+            "balanced_accuracy": 0.5255263395680853,
+            "macro_f1": 0.5656342182890856,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              30,
+              107,
+              75
+            ]
+          },
+          "decision_metrics": {
+            "samples": 212,
+            "confusion_expected_rows_predicted_columns": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                107,
+                12
+              ],
+              [
+                30,
+                0,
+                63
+              ]
+            ],
+            "accuracy": 0.8018867924528302,
+            "precision_track_left_right": [
+              0.0,
+              1.0,
+              0.84
+            ],
+            "recall_track_left_right": [
+              0.0,
+              0.8991596638655462,
+              0.6774193548387096
+            ],
+            "f1_track_left_right": [
+              0.0,
+              0.9469026548672567,
+              0.75
+            ],
+            "balanced_accuracy": 0.5255263395680853,
+            "macro_f1": 0.5656342182890856,
+            "expected_action_counts": [
+              0,
+              119,
+              93
+            ],
+            "predicted_action_counts": [
+              30,
+              107,
+              75
+            ]
+          },
+          "selected_obstacle_frame_counts": {
+            "static_1": 119,
+            "static_2": 93,
+            "static_3": 0,
+            "static_4": 0
+          },
+          "retained_run_artifact_hashes": {
+            "run_config.json": "f5a3829814b599f2f243c1d1b599e77e3481d2f19ccc2cc5d22833faf9ae89b2",
+            "state.csv": "42909c3fa8bf28ddede68fb7de78f60e60b5edf830a131fe42b8084caf4f6f5a",
+            "vision.csv": "2eb0f110e4731443c976503253587515a634b8aabd7f9c29e330f491bd65d18a",
+            "fpv_camera.mp4": "89c9146ea6e0b85c577c404e79ee92280421fc83ac0128fc7d86980c8bb67083"
+          }
+        }
+      ],
+      "aggregate": {
+        "runs": 3,
+        "frames": 661,
+        "label_action_counts_track_left_right": [
+          0,
+          412,
+          249
+        ],
+        "predicted_action_counts_track_left_right": [
+          95,
+          368,
+          198
+        ],
+        "decision_frames": 661,
+        "decision_accuracy": 0.789712556732224,
+        "decision_left_recall": 0.8932038834951457,
+        "decision_right_recall": 0.6184738955823293,
+        "decision_direction_balanced_accuracy": 0.7558388895387376,
+        "all_frame_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              368,
+              44
+            ],
+            [
+              95,
+              0,
+              154
+            ]
+          ],
+          "accuracy": 0.789712556732224,
+          "precision_track_left_right": [
+            0.0,
+            1.0,
+            0.7777777777777778
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.8932038834951457,
+            0.6184738955823293
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.9435897435897436,
+            0.6890380313199105
+          ],
+          "balanced_accuracy": 0.503892593025825,
+          "macro_f1": 0.544209258303218,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            95,
+            368,
+            198
+          ]
+        },
+        "decision_metrics": {
+          "samples": 661,
+          "confusion_expected_rows_predicted_columns": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              368,
+              44
+            ],
+            [
+              95,
+              0,
+              154
+            ]
+          ],
+          "accuracy": 0.789712556732224,
+          "precision_track_left_right": [
+            0.0,
+            1.0,
+            0.7777777777777778
+          ],
+          "recall_track_left_right": [
+            0.0,
+            0.8932038834951457,
+            0.6184738955823293
+          ],
+          "f1_track_left_right": [
+            0.0,
+            0.9435897435897436,
+            0.6890380313199105
+          ],
+          "balanced_accuracy": 0.503892593025825,
+          "macro_f1": 0.544209258303218,
+          "expected_action_counts": [
+            0,
+            412,
+            249
+          ],
+          "predicted_action_counts": [
+            95,
+            368,
+            198
+          ]
+        }
+      }
+    }
+  }
+}
