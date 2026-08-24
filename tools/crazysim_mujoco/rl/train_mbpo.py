@@ -221,6 +221,7 @@ def train(args) -> dict:
     metrics = []
     best_policy = None
     best_validation_score = -float("inf")
+    best_validation_gates_passed = False
     best_epoch = None
     steps_per_epoch = int(config.get("steps_per_epoch", 100))
     for epoch in range(int(config.get("epochs", 20))):
@@ -335,8 +336,12 @@ def train(args) -> dict:
             validation["gates"] = validation_gates(validation, config)
             epoch_metrics["validation"] = validation
             score = validation["decision_macro_f1"]
-            if score > best_validation_score:
+            gates_passed = bool(validation["gates"]["all_passed"])
+            if ((gates_passed and not best_validation_gates_passed) or
+                    (gates_passed == best_validation_gates_passed and
+                     score > best_validation_score)):
                 best_validation_score = score
+                best_validation_gates_passed = gates_passed
                 best_policy = copy.deepcopy(policy.state_dict())
                 best_epoch = epoch + 1
         metrics.append(epoch_metrics)
@@ -376,6 +381,7 @@ def train(args) -> dict:
         "validation_dataset_sha256": file_sha256(args.validation_dataset)
             if args.validation_dataset is not None else None,
         "best_epoch": best_epoch,
+        "best_validation_gates_passed": best_validation_gates_passed,
         "best_validation": best_validation,
         "latent_names": LATENT_NAMES, "latent_mean": mean.tolist(),
         "latent_scale": scale.tolist(), "imagined_horizon": horizon,

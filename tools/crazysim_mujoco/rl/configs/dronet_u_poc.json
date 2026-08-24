@@ -18,7 +18,7 @@
   "validation_gates": {
     "left_recall": 0.8,
     "right_recall": 0.8,
-    "hard_track_recall": 0.85,
+    "hard_track_recall": 0.90,
     "easy_track_false_dodge_rate": 0.05
   },
   "course": "dronet_u",
