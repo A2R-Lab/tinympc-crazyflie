@@ -1,0 +1,24 @@
+<mujoco model="TinyRacer dronet_u">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="2.5 1.5 1.5" extent="7.5"/>
+  <visual><headlight diffuse="0.58 0.58 0.58" ambient="0.38 0.38 0.38" specular="0 0 0"/><global azimuth="20" elevation="-25" ellipsoidinertia="true"/></visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.62 0.67 0.70" rgb2="0.24 0.28 0.31" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.22 0.30 0.38" rgb2="0.11 0.18 0.25" markrgb="0.8 0.8 0.8" width="512" height="512"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="3 3" reflectance="0.15"/>
+  </asset>
+  <worldbody>
+    <light pos="1 0 5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="s1_outer_wall" type="box" pos="2.5 -1.05 1.0" size="2.5 0.05 1.0" rgba="0.72 0.70 0.66 1" contype="1" conaffinity="1"/>
+    <geom name="s1_inner_wall" type="box" pos="1.725 1.05 1.0" size="1.725 0.05 1.0" rgba="0.72 0.70 0.66 1" contype="1" conaffinity="1"/>
+    <geom name="s3_inner_wall" type="box" pos="1.725 1.65 1.0" size="1.725 0.05 1.0" rgba="0.72 0.70 0.66 1" contype="1" conaffinity="1"/>
+    <geom name="s3_outer_wall" type="box" pos="2.5 3.75 1.0" size="2.5 0.05 1.0" rgba="0.72 0.70 0.66 1" contype="1" conaffinity="1"/>
+    <geom name="turn_outer_wall" type="box" pos="5.05 1.35 1.0" size="0.05 2.4 1.0" rgba="0.72 0.70 0.66 1" contype="1" conaffinity="1"/>
+    <geom name="static_1" type="box" pos="1.5 -0.5 0.6" size="0.15 0.5 0.6" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="static_2" type="box" pos="2.7 0.5 0.6" size="0.15 0.5 0.6" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="static_3" type="box" pos="2.9 2.2 0.6" size="0.15 0.5 0.6" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="static_4" type="box" pos="1.3 3.2 0.6" size="0.15 0.5 0.6" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+  </worldbody>
+</mujoco>

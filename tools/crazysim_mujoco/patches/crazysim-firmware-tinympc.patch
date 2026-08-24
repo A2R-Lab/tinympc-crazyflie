@@ -2,7 +2,7 @@ diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
 index 834317c6..3dcae15d 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,98 @@ set(SRCS
+@@ -244,6 +244,101 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -62,6 +62,7 @@ index 834317c6..3dcae15d 100644
 +  if(TINYMPC_COURSE STREQUAL "canonical_circle")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_CANONICAL_CIRCLE=1)
 +  elseif(NOT TINYMPC_COURSE STREQUAL "none" AND
++         NOT TINYMPC_COURSE STREQUAL "dronet_u" AND
 +         NOT TINYMPC_COURSE MATCHES "^canonical_(corridor|figure8|chicane|hairpin)$")
 +    message(FATAL_ERROR "Unsupported TINYMPC_COURSE=${TINYMPC_COURSE}")
 +  endif()
@@ -90,6 +91,8 @@ index 834317c6..3dcae15d 100644
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CHICANE=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_hairpin")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "dronet_u")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_DRONET_U=1)
 +  elseif(NOT TINYMPC_TRAJECTORY STREQUAL "circle")
 +    message(FATAL_ERROR "Unsupported TINYMPC_TRAJECTORY=${TINYMPC_TRAJECTORY}")
 +  endif()
@@ -101,7 +104,7 @@ index 834317c6..3dcae15d 100644
  target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
  
  target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
-@@ -267,4 +359,4 @@ set_target_properties(
+@@ -267,4 +362,4 @@ set_target_properties(
    cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
  )
  

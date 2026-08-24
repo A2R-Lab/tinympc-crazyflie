@@ -208,11 +208,58 @@ def build_summary(
             for obstacle in course.get("obstacles", [])
         }
         minimum_obstacle_clearance = min(per_obstacle.values(), default=math.inf)
+        per_wall = {
+            wall["name"]: float(np.min(clearance_to_obstacle(
+                points, wall, vehicle_radius
+            )))
+            for wall in course.get("walls", [])
+        }
+        minimum_wall_clearance = min(per_wall.values(), default=math.inf)
         centerline = np.asarray(course["centerline"], dtype=float)
         cross_track = point_to_polyline_distance(points, centerline)
         pass_point = np.asarray(course["pass_point"], dtype=float)
         pass_distance = np.linalg.norm(points - pass_point, axis=1)
         pass_reached = bool(np.min(pass_distance) <= float(course["pass_radius_m"]))
+        launched_index = int(np.searchsorted(t, launch_time))
+        finish_candidates = np.flatnonzero(
+            (np.arange(t.size) >= launched_index)
+            & (pass_distance <= float(course["pass_radius_m"]))
+        )
+        finish_index = int(finish_candidates[0]) if finish_candidates.size else None
+        completion_time = (
+            float(t[finish_index] - launch_time) if finish_index is not None else None
+        )
+        mean_speed = None
+        if finish_index is not None and finish_index > launched_index:
+            speed = np.hypot(data["vx_mps"], data["vy_mps"])
+            mean_speed = float(np.trapezoid(
+                speed[launched_index:finish_index + 1],
+                t[launched_index:finish_index + 1],
+            ) / max(1.0e-9, t[finish_index] - t[launched_index]))
+        segment_results = []
+        segment_search_index = launched_index
+        for segment in course.get("segments", []):
+            segment_point = np.asarray(segment["pass_point"], dtype=float)
+            segment_distance = np.linalg.norm(points - segment_point, axis=1)
+            candidates = np.flatnonzero(
+                (np.arange(t.size) >= segment_search_index)
+                & (segment_distance <= float(segment["pass_radius_m"]))
+            )
+            reached = bool(candidates.size)
+            reached_index = int(candidates[0]) if reached else None
+            segment_results.append({
+                "name": segment["name"],
+                "reached": reached,
+                "time_after_launch_s": (
+                    float(t[reached_index] - launch_time)
+                    if reached_index is not None else None
+                ),
+                "minimum_distance_m": float(np.min(
+                    segment_distance[segment_search_index:]
+                )),
+            })
+            if reached_index is not None:
+                segment_search_index = reached_index
         _, _, yaw_deg = quaternion_to_euler_deg(
             data["qw"], data["qx"], data["qy"], data["qz"]
         )
@@ -230,8 +277,9 @@ def build_summary(
         )
         final_cross_track = float(cross_track[-1])
         final_cross_track_met = final_cross_track <= maximum_final_cross_track
-        wall_clearance = None
-        wall_clearance_safe = True
+        wall_clearance = (minimum_wall_clearance
+                          if course.get("walls", []) else None)
+        wall_clearance_safe = minimum_wall_clearance >= 0.0
         if "corridor_y" in course:
             lower, upper = map(float, course["corridor_y"])
             wall_clearance = float(np.min(np.minimum(
@@ -258,6 +306,10 @@ def build_summary(
             "course_obstacle_clearance_min_m": minimum_obstacle_clearance,
             "course_obstacle_clearance_by_name_m": per_obstacle,
             "course_wall_clearance_min_m": wall_clearance,
+            "course_wall_clearance_by_name_m": per_wall,
+            "course_segments": segment_results,
+            "course_completion_time_s": completion_time,
+            "course_mean_horizontal_speed_mps": mean_speed,
             "course_cross_track_error_max_m": float(np.max(cross_track)),
             "course_cross_track_error_final_m": final_cross_track,
             "course_cross_track_error_final_limit_m": maximum_final_cross_track,
@@ -327,6 +379,14 @@ def plot_run(data, reference, launch_time: float, summary, output: Path,
                                   2 * half[0], 2 * half[1], color="#d84315",
                                   alpha=0.40, label=label)
             ax.add_patch(patch)
+        for index, wall in enumerate(course.get("walls", [])):
+            center = wall["center"]
+            half = wall["half_size"]
+            ax.add_patch(Rectangle(
+                (center[0] - half[0], center[1] - half[1]),
+                2 * half[0], 2 * half[1], color="0.40", alpha=0.35,
+                label="course walls" if index == 0 else None,
+            ))
         for index, gate in enumerate(course.get("gates", [])):
             center = np.asarray(gate["center"][:2], dtype=float)
             normal = np.asarray(gate["normal"], dtype=float)

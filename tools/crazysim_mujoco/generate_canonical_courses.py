@@ -102,6 +102,60 @@ COURSES = {
         "required_heading_change_deg": 150.0,
         "duration_s": 60.0,
     },
+    "dronet_u": {
+        "trajectory": "dronet_u",
+        "description": (
+            "PULP-DroNet v3 static U-course replica: published 5.0 m by "
+            "4.7 m interior footprint and obstacle arrangement; turn "
+            "centerline and longitudinal obstacle positions are "
+            "diagram-digitized approximations"
+        ),
+        # Figure 5 gives one-metre obstacle intrusion and alternating walls,
+        # but no longitudinal coordinates or thickness.  The x positions are
+        # digitized from the vector figure; 0.30 m thickness is disclosed here.
+        "obstacles": [
+            {"name": "static_1", "shape": "box", "center": [1.50, -0.50],
+             "half_size": [0.15, 0.50], "height": 1.20, "center_z": 0.60},
+            {"name": "static_2", "shape": "box", "center": [2.70, 0.50],
+             "half_size": [0.15, 0.50], "height": 1.20, "center_z": 0.60},
+            {"name": "static_3", "shape": "box", "center": [2.90, 2.20],
+             "half_size": [0.15, 0.50], "height": 1.20, "center_z": 0.60},
+            {"name": "static_4", "shape": "box", "center": [1.30, 3.20],
+             "half_size": [0.15, 0.50], "height": 1.20, "center_z": 0.60},
+        ],
+        "walls": [
+            {"name": "s1_outer_wall", "shape": "box", "center": [2.50, -1.05],
+             "half_size": [2.50, 0.05], "height": 2.00},
+            {"name": "s1_inner_wall", "shape": "box", "center": [1.725, 1.05],
+             "half_size": [1.725, 0.05], "height": 2.00},
+            {"name": "s3_inner_wall", "shape": "box", "center": [1.725, 1.65],
+             "half_size": [1.725, 0.05], "height": 2.00},
+            {"name": "s3_outer_wall", "shape": "box", "center": [2.50, 3.75],
+             "half_size": [2.50, 0.05], "height": 2.00},
+            {"name": "turn_outer_wall", "shape": "box", "center": [5.05, 1.35],
+             "half_size": [0.05, 2.40], "height": 2.00},
+        ],
+        "segments": [
+            {"name": "S1", "pass_point": [3.30, 0.0], "pass_radius_m": 0.90},
+            {"name": "S2", "pass_point": [3.30, 2.70], "pass_radius_m": 0.90},
+            {"name": "S3", "pass_point": [0.0, 2.70], "pass_radius_m": 0.30},
+        ],
+        "gates": [],
+        "pass_point": [0.0, 2.70], "pass_radius_m": 0.30,
+        "minimum_dodge_encounters": 4,
+        "maximum_final_cross_track_m": 0.30,
+        "required_heading_change_deg": 180.0,
+        "duration_s": 35.0,
+        "published_geometry": {
+            "interior_footprint_m": [5.0, 4.7],
+            "straight_corridor_width_m": 2.0,
+            "corridor_gap_m": 0.7,
+            "obstacle_intrusion_m": 1.0,
+            "target_altitude_m": 0.5,
+            "target_speeds_mps": [0.5, 1.0, 1.5],
+            "trials_per_speed": 5,
+        },
+    },
 }
 
 
@@ -127,8 +181,8 @@ def gate_xml(gate: dict) -> str:
 
 def obstacle_xml(obstacle: dict) -> str:
     x, y = obstacle["center"]
-    z = 1.5
     half_height = obstacle.get("height", 0.72) / 2.0
+    z = obstacle.get("center_z", 1.5)
     if obstacle["shape"] == "circle":
         return (f'    <geom name="{obstacle["name"]}" type="cylinder" pos="{x} {y} {z}" '
                 f'size="{obstacle["radius"]} {half_height}" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>')
@@ -137,8 +191,18 @@ def obstacle_xml(obstacle: dict) -> str:
             f'size="{hx} {hy} {half_height}" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>')
 
 
+def wall_xml(wall: dict) -> str:
+    x, y = wall["center"]
+    hx, hy = wall["half_size"]
+    half_height = wall.get("height", 2.0) / 2.0
+    return (f'    <geom name="{wall["name"]}" type="box" pos="{x} {y} {half_height}" '
+            f'size="{hx} {hy} {half_height}" rgba="0.72 0.70 0.66 1" '
+            'contype="1" conaffinity="1"/>')
+
+
 def scene_xml(name: str, course: dict) -> str:
-    geometry = [obstacle_xml(obstacle) for obstacle in course["obstacles"]]
+    geometry = [wall_xml(wall) for wall in course.get("walls", [])]
+    geometry += [obstacle_xml(obstacle) for obstacle in course["obstacles"]]
     if "corridor_y" in course:
         geometry += [
             '    <geom name="wall_left" type="box" pos="2.0 1.35 1.5" size="3.5 0.05 1.5" rgba="0.48 0.47 0.44 1" contype="1" conaffinity="1"/>',

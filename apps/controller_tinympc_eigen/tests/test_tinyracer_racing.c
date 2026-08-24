@@ -291,6 +291,27 @@ int main(void) {
   assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
   assert(dodge_intent.pass_side == 1);
 
+  /* If alternating obstacles overlap visually, risk may remain high through
+   * PASS. After the committed bypass distance, an opposite steering sign is
+   * sufficient to redirect without requiring an artificial clear frame. */
+  tinyRacerDodgeReset(&dodge_state);
+  dodge_state.phase = TINYRACER_DODGE_PASS;
+  dodge_state.pass_side = -1;
+  dodge_state.lateral_offset_m = -0.10f;
+  dodge_state.forward_distance_m = dodge_config.minimum_pass_distance_m;
+  navigation_intent.collision_probability = 0.8f;
+  navigation_intent.yaw_rate_rad_s = 0.4f;
+  navigation_intent.new_sample = true;
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_PASS);
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
+  assert(dodge_intent.pass_side == 1);
+
   /* A new sustained threat during rejoin is a distinct close-spaced slalom
    * encounter and must be allowed to reverse the selected pass side. */
   tinyRacerDodgeReset(&dodge_state);

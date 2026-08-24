@@ -40,7 +40,8 @@ def course_geometry(path: Path | None) -> tuple[list[dict], list[dict]]:
     if path is None:
         return [], []
     manifest = json.loads(path.read_text())
-    return manifest.get("obstacles", []), manifest.get("gates", [])
+    return (manifest.get("obstacles", []) + manifest.get("walls", []),
+            manifest.get("gates", []))
 
 
 def main() -> int:

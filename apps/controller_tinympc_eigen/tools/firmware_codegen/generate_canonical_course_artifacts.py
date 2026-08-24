@@ -310,12 +310,67 @@ def render_corridor_track(output: Path) -> None:
     ]))
 
 
+def render_dronet_u_track(output: Path) -> None:
+    """Render the published PULP-DroNet v3 U-course centerline.
+
+    The paper fixes the 5.0 m by 4.7 m footprint, two 2.0 m straight
+    corridors, and their 0.7 m separation, but does not publish a turn radius
+    or centerline.  This reference follows the center of each straight and a
+    smooth, diagram-matched turnaround that stays inside the measured
+    footprint.  Geometry is sampled by arc length so progress speed remains a
+    physical m/s command rather than depending on the drawing parameter.
+    """
+    straight_length = 3.45
+    centerline_separation = 2.7
+    turnaround_radius_x = 1.00
+    sample_spacing_m = 0.02
+
+    # Half ellipse: it is tangent to both straights, spans their published
+    # 2.7 m centerline separation, and stays 0.55 m inside the outer wall. The
+    # paper does not specify this centerline, so it remains a disclosed
+    # approximation.
+    turn_angle = np.linspace(-0.5 * math.pi, 0.5 * math.pi, 1601)
+    turn = np.column_stack((
+        straight_length + turnaround_radius_x * np.cos(turn_angle),
+        0.5 * centerline_separation
+        + 0.5 * centerline_separation * np.sin(turn_angle),
+    ))
+    dense = np.vstack((
+        np.column_stack((np.linspace(0.0, straight_length, 1201),
+                         np.zeros(1201))),
+        turn[1:],
+        np.column_stack((np.linspace(straight_length, 0.0, 1201)[1:],
+                         np.full(1200, centerline_separation))),
+    ))
+    dense_s = np.concatenate(([0.0], np.cumsum(np.hypot(
+        np.diff(dense[:, 0]), np.diff(dense[:, 1])))))
+    route_s = np.arange(0.0, dense_s[-1], sample_spacing_m)
+    route_s = np.append(route_s, dense_s[-1])
+    x = np.interp(route_s, dense_s, dense[:, 0])
+    y = np.interp(route_s, dense_s, dense[:, 1])
+    dx = np.gradient(x, route_s, edge_order=2)
+    dy = np.gradient(y, route_s, edge_order=2)
+    tangent_norm = np.hypot(dx, dy)
+    tx, ty = dx / tangent_norm, dy / tangent_norm
+    yaw = np.unwrap(np.arctan2(ty, tx))
+    curvature = np.gradient(yaw, route_s, edge_order=2)
+    samples = [
+        [x[i], y[i], 0.5, math.cos(0.5 * yaw[i]), 0.0, 0.0,
+         math.sin(0.5 * yaw[i]), tx[i], ty[i], 0.0,
+         0.0, 0.0, curvature[i]]
+        for i in range(len(route_s))
+    ]
+    render_samples(Track("", "dronet_u", 1, 1), samples,
+                   (len(samples) - 1) * DT_S, output)
+
+
 def main() -> int:
     output = APP_ROOT / "src/trajectories/50hz"
     output.mkdir(parents=True, exist_ok=True)
     render_corridor_track(output / "traj_canonical_corridor_50hz.h")
     render_circle_track(output / "traj_canonical_circle_50hz.h")
     render_figure8_track(output / "traj_canonical_figure8_50hz.h")
+    render_dronet_u_track(output / "traj_dronet_u_50hz.h")
     for track in CANONICAL_TRACKS:
         render_slow_track(track, output / f"traj_{track.name}_50hz.h")
     for track in TRACKS:

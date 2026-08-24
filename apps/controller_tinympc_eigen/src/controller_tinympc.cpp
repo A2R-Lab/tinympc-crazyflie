@@ -158,6 +158,9 @@ void appMain() {
 #ifndef TINYMPC_RATE_CASCADE
 #define TINYMPC_RATE_CASCADE 0
 #endif
+#ifndef TINYMPC_PROGRESS_SPEED_MPS
+#define TINYMPC_PROGRESS_SPEED_MPS 0.0f
+#endif
 #if TINYMPC_RATE_CASCADE && defined(TINYMPC_DIRECT_PLAN_REPLAY)
 #error "TINYMPC rate cascade and direct plan replay are mutually exclusive"
 #endif
@@ -242,6 +245,8 @@ enum {
 #include "trajectories/50hz/traj_canonical_chicane_50hz.h"
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN)
 #include "trajectories/50hz/traj_canonical_hairpin_50hz.h"
+#elif defined(TINYMPC_TRAJECTORY_DRONET_U)
+#include "trajectories/50hz/traj_dronet_u_50hz.h"
 #else
 #include "trajectories/50hz/traj_circle_50hz.h"
 #endif
@@ -380,7 +385,10 @@ static const TinyRacerRaceConfig race_config = {
   0.28f, 0.70f, 2, 0.18f, 2, 0.25f, 2
 };
 static const TinyRacerNavigationConfig navigation_config = {
-  250, 0.50f, 2.09439510239f, 0.30f
+  250,
+  (float)TINYMPC_PROGRESS_SPEED_MPS > 0.0f
+      ? (float)TINYMPC_PROGRESS_SPEED_MPS : 0.50f,
+  2.09439510239f, 0.30f
 };
 /* Tangent-heading curves revisit scenery and already consume lateral
  * acceleration. Keep their smaller dodge envelope and use the outside passing
@@ -426,6 +434,45 @@ static const TinyRacerNavigationConfig navigation_config = {
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.50f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.45f
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
+#elif defined(TINYMPC_TRAJECTORY_DRONET_U)
+/* PULP-DroNet v3 benchmark: each one-metre obstacle occupies half of the
+ * two-metre corridor, so a 0.60 m center shift leaves vehicle-envelope
+ * clearance while retaining 0.30 m to the opposite wall. */
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.60f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.30f
+#define TINYRACER_DODGE_PASS_SIDE 0
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.50f
+#define TINYRACER_DODGE_PASS_SPEED_MPS \
+  ((float)TINYMPC_PROGRESS_SPEED_MPS > 0.0f \
+      ? (float)TINYMPC_PROGRESS_SPEED_MPS : 0.50f)
+#define TINYRACER_DODGE_REJOIN_RATE_MPS 0.10f
+#define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.40f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
+#elif defined(TINYMPC_TRAJECTORY_CIRCLE)
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.30f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
+#define TINYRACER_DODGE_PASS_SIDE 0
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.30f
+#define TINYRACER_DODGE_PASS_SPEED_MPS 0.40f
+#define TINYRACER_DODGE_REJOIN_RATE_MPS 0.10f
+#define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.15f
+#define TINYRACER_DODGE_TRIGGER_PROBABILITY 0.45f
+#define TINYRACER_DODGE_TRIGGER_SAMPLES 2
+#define TINYRACER_DODGE_RELEASE_PROBABILITY 0.40f
+#define TINYRACER_DODGE_PASS_DISTANCE_M 0.75f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
+#elif defined(TINYMPC_TRAJECTORY_FIGURE8)
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.35f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
+#define TINYRACER_DODGE_PASS_SIDE 0
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.30f
+#define TINYRACER_DODGE_PASS_SPEED_MPS 0.40f
+#define TINYRACER_DODGE_REJOIN_RATE_MPS 0.10f
+#define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.15f
+#define TINYRACER_DODGE_TRIGGER_PROBABILITY 0.70f
+#define TINYRACER_DODGE_TRIGGER_SAMPLES 2
+#define TINYRACER_DODGE_RELEASE_PROBABILITY 0.45f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif TRAJECTORY_TANGENT_HEADING
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.30f
 #define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
@@ -438,14 +485,16 @@ static const TinyRacerNavigationConfig navigation_config = {
 #define TINYRACER_DODGE_TRIGGER_SAMPLES 5
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #else
-#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.70f
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 1.15f
 #define TINYRACER_DODGE_REARM_DISTANCE_M 0.40f
 #define TINYRACER_DODGE_PASS_SIDE 0
-#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.15f
-#define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.35f
+#define TINYRACER_DODGE_PASS_SPEED_MPS 0.45f
 #define TINYRACER_DODGE_REJOIN_RATE_MPS 0.15f
 #define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.25f
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
+#define TINYRACER_DODGE_CLEAR_SAMPLES 15
+#define TINYRACER_DODGE_PASS_DISTANCE_M 1.90f
 #endif
 #if !defined(TINYRACER_DODGE_REJOIN_RATE_MPS)
 #define TINYRACER_DODGE_REJOIN_RATE_MPS 0.30f
@@ -462,15 +511,26 @@ static const TinyRacerNavigationConfig navigation_config = {
 #if !defined(TINYRACER_DODGE_TRIGGER_SAMPLES)
 #define TINYRACER_DODGE_TRIGGER_SAMPLES 2
 #endif
+#if !defined(TINYRACER_DODGE_RELEASE_PROBABILITY)
+#define TINYRACER_DODGE_RELEASE_PROBABILITY 0.18f
+#endif
+#if !defined(TINYRACER_DODGE_CLEAR_SAMPLES)
+#define TINYRACER_DODGE_CLEAR_SAMPLES 4
+#endif
+#if !defined(TINYRACER_DODGE_PASS_DISTANCE_M)
+#define TINYRACER_DODGE_PASS_DISTANCE_M perception_pass_distance_m
+#endif
 static const TinyRacerDodgeConfig dodge_config = {
-  TINYRACER_DODGE_TRIGGER_PROBABILITY, 0.18f,
+  TINYRACER_DODGE_TRIGGER_PROBABILITY,
+  TINYRACER_DODGE_RELEASE_PROBABILITY,
   TINYRACER_DODGE_LATERAL_OFFSET_M,
   TINYRACER_DODGE_SIDESTEP_RATE_MPS, TINYRACER_DODGE_REJOIN_RATE_MPS,
   0.12f, TINYRACER_DODGE_PASS_SPEED_MPS,
-  TINYRACER_DODGE_REJOIN_SPEED_MPS, perception_pass_distance_m,
+  TINYRACER_DODGE_REJOIN_SPEED_MPS, TINYRACER_DODGE_PASS_DISTANCE_M,
   TINYRACER_DODGE_REARM_DISTANCE_M,
   TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT,
-  TINYRACER_DODGE_PASS_SIDE, TINYRACER_DODGE_TRIGGER_SAMPLES, 4
+  TINYRACER_DODGE_PASS_SIDE, TINYRACER_DODGE_TRIGGER_SAMPLES,
+  TINYRACER_DODGE_CLEAR_SAMPLES
 };
 typedef struct {
   Eigen::Vector3f normal_world;
@@ -1728,6 +1788,17 @@ static void applyVisionNavigation(
   if (step + 5u >= TRAJECTORY_SAMPLE_COUNT) {
     navigation_observation.collision_probability = 0.0f;
   }
+#if defined(TINYMPC_TRAJECTORY_DRONET_U)
+  /* The published U course deliberately makes the corridor walls fill the
+   * camera during S2. They are boundaries already represented by the stored
+   * path, not new cross-lane obstacles. Suppress new neural dodge triggers in
+   * the locally curved turnaround so the active bypass can rejoin center and
+   * TinyMPC can execute the 180-degree reference. Reactive avoidance resumes
+   * automatically on the straight S3 segment. */
+  if (trajectoryOutsidePassSide() != 0) {
+    navigation_observation.collision_probability = 0.0f;
+  }
+#endif
   tinyRacerNavigationUpdate(
       &navigation_state, &navigation_observation, &navigation_config, DT,
       active_local_frame.yaw_world, &navigation_intent);
@@ -1796,18 +1867,33 @@ static void applyVisionNavigation(
   } else {
     path_local.normalize();
   }
-  const float commanded_forward_speed_mps =
+  const float requested_avoidance_speed_mps =
       (gate_priority_latched || course_gate_approach_active)
       ? T_MIN(dodge_intent.forward_speed_mps, 0.18f)
       : dodge_intent.forward_speed_mps;
-  const Eigen::Vector3f tangent_world = localVectorToWorld(
-      active_local_frame, path_local);
+  /* Preserve the progress controller's curvature and terminal speed limits.
+   * Avoidance may slow the route, but it must never overwrite a lower nominal
+   * speed—especially the finite-route braking ramp—with its pass speed. */
 #if TINYMPC_PATH_TUNNEL_ENABLE
   TinyMpcTunnelFrame previous_shifted_tunnel_frame = {};
 #endif
   for (int k = 0; k < NHORIZON; ++k) {
+    /* Preserve the trajectory's analytical tangent at every prediction knot.
+     * Reusing one horizon chord is exact on a straight, but turns a curved
+     * bypass into a succession of locally straight velocity references and
+     * removes the centripetal preview that the outer loop needs. */
+    Eigen::Vector3f knot_path_local = Xref[k].segment<3>(6);
+    knot_path_local.z() = 0.0f;
+    const float nominal_forward_speed_mps = knot_path_local.head(2).norm();
+    if (nominal_forward_speed_mps < 0.01f) {
+      knot_path_local = path_local;
+    } else {
+      knot_path_local /= nominal_forward_speed_mps;
+    }
     const Eigen::Vector3f lateral_local(
-        -path_local.y(), path_local.x(), 0.0f);
+        -knot_path_local.y(), knot_path_local.x(), 0.0f);
+    const float commanded_forward_speed_mps = T_MIN(
+        requested_avoidance_speed_mps, nominal_forward_speed_mps);
     const float unconstrained_offset = dodge_intent.lateral_offset_m
         + dodge_intent.lateral_rate_mps * (float)k * DT;
     const float target_offset = dodge_intent.phase == TINYRACER_DODGE_REJOIN
@@ -1824,12 +1910,25 @@ static void applyVisionNavigation(
         && fabsf(future_offset - target_offset) > 1.0e-6f
             ? dodge_intent.lateral_rate_mps : 0.0f;
     Xref[k].head(3) += lateral_local * future_offset;
-    Xref[k](6) = path_local.x() * commanded_forward_speed_mps +
+#if defined(TINYMPC_TRAJECTORY_CIRCLE)
+    /* The circle obstacles are passed on the outside. Its displaced radius is
+     * R + d, so kappa_d / kappa = R / (R + d). Scale the local roll
+     * feedforward by that exact curvature ratio; otherwise the nominal-circle
+     * bank continuously pulls the vehicle back toward the obstacle while the
+     * position reference asks it to move outward. */
+    constexpr float circle_radius_m = 0.75f;
+    const float outside_offset_m = T_MAX(-future_offset, 0.0f);
+    Xref[k](3) *= circle_radius_m /
+        (circle_radius_m + outside_offset_m);
+#endif
+    Xref[k](6) = knot_path_local.x() * commanded_forward_speed_mps +
         lateral_local.x() * future_lateral_rate_mps;
-    Xref[k](7) = path_local.y() * commanded_forward_speed_mps +
+    Xref[k](7) = knot_path_local.y() * commanded_forward_speed_mps +
         lateral_local.y() * future_lateral_rate_mps;
 #if TINYMPC_PATH_TUNNEL_ENABLE
     if (k > 0) {
+      const Eigen::Vector3f tangent_world = localVectorToWorld(
+          active_local_frame, knot_path_local);
       const TinyMpcTunnelVector tunnel_tangent = tinyMpcTunnelVector(
           tangent_world.x(), tangent_world.y(), tangent_world.z());
       const TinyMpcTunnelVector *previous_normal =

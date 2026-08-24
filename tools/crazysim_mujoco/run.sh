@@ -64,7 +64,7 @@ usage() {
   cat <<'EOF'
 Usage: tools/crazysim_mujoco/run.sh [options]
   --trajectory NAME       straight, straight_long, straight_9m, figure8, oval, circle, chicane,
-                          hairpin_180, or a canonical level-flight route
+                          hairpin_180, dronet_u, or a canonical level-flight route
   --actuator-lti 0|1      Include fixed motor-lag states in level flight (default: 1)
   --rate-cascade 0|1      Use TinyMPC collective/body-rate output with the 500 Hz
                           firmware rate PID and legacy mixer (default: 0)
@@ -210,7 +210,7 @@ if [[ "$FLOWDECK_ENABLED" == 1 ]]; then
 fi
 
 case "$TRAJECTORY" in
-  straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin) ;;
+  straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
   *) echo "Unsupported trajectory: $TRAJECTORY" >&2; exit 2 ;;
 esac
 if [[ "$ACTUATOR_LTI" != 0 && "$ACTUATOR_LTI" != 1 ]]; then
@@ -379,7 +379,7 @@ if [[ "$LEVEL_COST_MODE" != baseline && "$ACTUATOR_LTI" != 1 ]]; then
   exit 2
 fi
 case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
-case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
   echo "--camera-only and --vision-model are mutually exclusive" >&2
@@ -436,7 +436,7 @@ if [[ -n "$VISION_MODEL" ]]; then
   VISION_MODEL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$VISION_MODEL")"
   [[ -e "$VISION_MODEL" ]] || { echo "Vision model not found: $VISION_MODEL" >&2; exit 2; }
   case "$TRAJECTORY" in
-    straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin) ;;
+    straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
     *) echo "Vision requires a supported level-flight trajectory." >&2; exit 2 ;;
   esac
   if [[ -d "$VISION_MODEL" ]]; then
@@ -571,6 +571,13 @@ if vision_model:
     else:
         vision_identity = {"path": str(path), "sha256": sha256(path)}
 
+course_scene_sha256 = None
+if course_manifest:
+    manifest_data = json.loads(Path(course_manifest).read_text())
+    scene_path = (Path(repository) / "tools/crazysim_mujoco/scenes"
+                  / manifest_data["scene"])
+    course_scene_sha256 = sha256(scene_path)
+
 config = {
     "format": "tinympc-crazysim-run-config-v1",
     "repository": str(Path(repository).resolve()),
@@ -646,6 +653,7 @@ config = {
     "flowdeck_enabled": bool(int(flowdeck_enabled)),
     "course": course_name or None,
     "course_manifest_sha256": sha256(course_manifest) if course_manifest else None,
+    "course_scene_sha256": course_scene_sha256,
     "flight_video_requested": bool(int(render_video)),
     "flight_video_fps": float(video_fps),
     "flight_video_playback_speed": float(video_speed),

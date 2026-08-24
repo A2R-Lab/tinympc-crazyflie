@@ -190,16 +190,33 @@ void tinyRacerDodgeUpdate(
     state->clear_samples = 0;
   }
 
-  /* A racing slalom can present the next obstacle before the previous lateral
-   * offset has fully decayed. REJOIN is entered only after a clear run and the
-   * configured pass distance, so fresh sustained risk here is a new encounter,
-   * not a duplicate trigger from the obstacle just passed. Redirect directly
-   * toward the new DroNet-selected side instead of waiting to reach TRACK. */
+  /* Alternating half-corridor obstacles can overlap in the camera view, so
+   * collision probability may never fall below the release threshold between
+   * them. Once the first obstacle's full bypass distance is complete, accept
+   * a sustained opposite steering sign as the next encounter and cross
+   * directly to its pass lane. The distance and opposite-side requirements
+   * prevent noise near the first obstacle from reversing a committed bypass. */
+  const int8_t redirected_side = selectedPassSide(navigation, config);
+  if (config->allow_rejoin_redirect &&
+      state->phase == TINYRACER_DODGE_PASS &&
+      state->forward_distance_m >= config->minimum_pass_distance_m &&
+      state->trigger_samples >= config->trigger_samples_required &&
+      redirected_side != state->pass_side) {
+    state->phase = TINYRACER_DODGE_SIDESTEP;
+    state->pass_side = redirected_side;
+    state->forward_distance_m = 0.0f;
+    state->trigger_samples = 0;
+    state->clear_samples = 0;
+  }
+
+  /* A racing slalom can also present the next obstacle before the previous
+   * lateral offset has fully decayed. Redirect during REJOIN rather than
+   * waiting to reach TRACK. */
   if (config->allow_rejoin_redirect &&
       state->phase == TINYRACER_DODGE_REJOIN &&
       state->trigger_samples >= config->trigger_samples_required) {
     state->phase = TINYRACER_DODGE_SIDESTEP;
-    state->pass_side = selectedPassSide(navigation, config);
+    state->pass_side = redirected_side;
     state->forward_distance_m = 0.0f;
     state->trigger_samples = 0;
     state->clear_samples = 0;

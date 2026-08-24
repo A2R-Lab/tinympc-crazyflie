@@ -312,6 +312,38 @@ The hairpin's lane-held neural avoidance retains about 0.11 m clearance, but the
 failures remain in the acceptance reports; substituting ground-truth detection
 would hide the current perception/control boundary.
 
+### PULP-DroNet v3 U-course benchmark
+
+`dronet_u` reproduces the static-obstacle test in Figure 5 of the
+[PULP-DroNet v3 paper](https://arxiv.org/abs/2407.12675): a 5.0 m by 4.7 m
+U-shaped footprint, two 2.0 m straight corridors separated by 0.7 m, four
+alternating one-metre wall obstacles, a 0.5 m flight altitude, and the
+published 0.5/1.0/1.5 m/s target-speed points. The paper does not publish the
+turn centerline, obstacle thickness, or longitudinal obstacle coordinates.
+The manifest therefore records the half-ellipse turnaround and vector-figure
+digitization as approximations rather than claiming an exact replica.
+
+Run a matched static-course trial with:
+
+```sh
+tools/crazysim_mujoco/run.sh \
+  --trajectory dronet_u --course dronet_u \
+  --vision-model dronet-v3 --rate-cascade 1 \
+  --progress-speed-mps 0.5 --progress-reward-weight 0 \
+  --spawn-z 0.5 --launch-prespin 1 --stop-on-contact \
+  --duration 35 --random-seed 1 \
+  --out apps/controller_tinympc_eigen/sim_runs/crazysim/dronet_u_seed1
+```
+
+Use zero progress reward for the paper's commanded-speed comparison; a
+nonzero linear progress reward deliberately raises the effective feedforward
+speed. `summary.json` reports sequential S1/S2/S3 arrival, first finish time,
+successful-run mean horizontal speed, vehicle-envelope obstacle/wall
+clearance, and full-course success. A `dronet-v3` run uses the published
+network through this repository's TinyMPC lane-shift controller, not the
+paper's original yaw-rate/forward-speed state machine, so results are a
+cross-system comparison rather than an exact controller replay.
+
 ## Fidelity boundary
 
 The controller source, TinyMPC core, 50 Hz scheduler, five ADMM iterations,
