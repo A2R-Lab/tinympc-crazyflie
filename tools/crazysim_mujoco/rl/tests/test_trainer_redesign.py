@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as functional
 
 from tools.crazysim_mujoco.rl.data import (
-    RunTransitions, load_expert_npz, split_by_episode)
+    RunTransitions, load_expert_npz, load_expert_shards, split_by_episode)
 from tools.crazysim_mujoco.rl.model import TemporalPolicy
 from tools.crazysim_mujoco.rl.train_mbpo import balanced_expert_indices
 
@@ -30,19 +30,35 @@ def dataset(count=12):
 
 
 class TrainerRedesignTest(unittest.TestCase):
+    @staticmethod
+    def write_npz(path, source):
+        np.savez(path, **{
+            field: getattr(source, field) for field in (
+                "frames", "latent", "next_latent", "behavior_action",
+                "expert_action", "expert_scores", "decision_mask",
+                "hard_track_mask", "done", "episode_id")})
+
     def test_npz_schema_and_derived_reward(self):
         source = dataset()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "expert.npz"
-            np.savez(path, **{
-                field: getattr(source, field) for field in (
-                    "frames", "latent", "next_latent", "behavior_action",
-                    "expert_action", "expert_scores", "decision_mask",
-                    "hard_track_mask", "done", "episode_id")})
+            self.write_npz(path, source)
             loaded = load_expert_npz(path)
         self.assertEqual(loaded.frames.shape, (12, 2, 160, 160))
         self.assertTrue(np.all(np.isfinite(loaded.reward)))
         np.testing.assert_array_equal(loaded.expert_action, source.expert_action)
+
+    def test_multiple_shards_preserve_overlapping_provenance_groups(self):
+        source = dataset(6)
+        source.episode_id[:] = np.repeat([0, 1], 3)
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.npz"
+            second = Path(directory) / "second.npz"
+            self.write_npz(first, source)
+            self.write_npz(second, source)
+            loaded = load_expert_shards([first, second])
+        self.assertEqual(len(np.unique(loaded.episode_id)), 2)
+        self.assertEqual(len(loaded.expert_action), 12)
 
     def test_episode_split_has_no_overlap(self):
         training, validation = split_by_episode(dataset(), 1.0 / 3.0, 9)
@@ -70,4 +86,3 @@ class TrainerRedesignTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

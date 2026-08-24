@@ -16,7 +16,7 @@ import torch.nn.functional as functional
 
 from . import ACTION_COUNT
 from .data import (LATENT_NAMES, RunTransitions, concatenate_runs,
-                   load_expert_npz, split_by_episode)
+                   load_expert_shards, split_by_episode)
 from .export_onnx import export
 from .model import LatentDynamics, QNetwork, TemporalPolicy
 
@@ -173,11 +173,11 @@ def train(args) -> dict:
             f"observed={sorted(observed_training_seeds)} "
             f"expected={sorted(expected_training_seeds)}")
     dataset = concatenate_runs(args.runs, args.course)
-    expert_dataset = load_expert_npz(args.expert_dataset) \
+    expert_dataset = load_expert_shards(args.expert_dataset) \
         if args.expert_dataset is not None else dataset
     validation_dataset = None
     if args.validation_dataset is not None:
-        validation_dataset = load_expert_npz(args.validation_dataset)
+        validation_dataset = load_expert_shards(args.validation_dataset)
     elif args.expert_dataset is not None:
         expert_dataset, validation_dataset = split_by_episode(
             expert_dataset, float(config.get("validation_fraction", 0.20)), seed)
@@ -372,14 +372,15 @@ def train(args) -> dict:
         "expert_samples": int(len(expert_dataset.expert_action)),
         "validation_samples": int(len(validation_dataset.expert_action))
             if validation_dataset is not None else 0,
-        "expert_dataset": str(args.expert_dataset.resolve())
-            if args.expert_dataset is not None else None,
-        "expert_dataset_sha256": file_sha256(args.expert_dataset)
-            if args.expert_dataset is not None else None,
-        "validation_dataset": str(args.validation_dataset.resolve())
-            if args.validation_dataset is not None else None,
-        "validation_dataset_sha256": file_sha256(args.validation_dataset)
-            if args.validation_dataset is not None else None,
+        "expert_datasets": [str(path.resolve()) for path in args.expert_dataset]
+            if args.expert_dataset is not None else [],
+        "expert_dataset_sha256": [file_sha256(path) for path in args.expert_dataset]
+            if args.expert_dataset is not None else [],
+        "validation_datasets": [str(path.resolve()) for path in args.validation_dataset]
+            if args.validation_dataset is not None else [],
+        "validation_dataset_sha256": [file_sha256(path)
+                                      for path in args.validation_dataset]
+            if args.validation_dataset is not None else [],
         "best_epoch": best_epoch,
         "best_validation_gates_passed": best_validation_gates_passed,
         "best_validation": best_validation,
@@ -404,8 +405,8 @@ def main() -> int:
     parser.add_argument("--course", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--expert-dataset", type=Path)
-    parser.add_argument("--validation-dataset", type=Path)
+    parser.add_argument("--expert-dataset", type=Path, nargs="+")
+    parser.add_argument("--validation-dataset", type=Path, nargs="+")
     parser.add_argument("--seed", type=int, default=20260824)
     parser.add_argument("--cpu", action="store_true")
     args = parser.parse_args()

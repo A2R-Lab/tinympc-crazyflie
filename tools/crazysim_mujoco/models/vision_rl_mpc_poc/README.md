@@ -20,13 +20,19 @@ Only numeric values from tinympc-perception commit
 `890bbd6923a9459d4d7ab7bee92542e4cb61c64d` are used; no third-party texture
 or scene asset is copied into this bundle.
 
-For expert-regularized training, pass `--expert-dataset expert.npz` and
-optionally `--validation-dataset validation.npz`. The stable NPZ schema is:
+For expert-regularized training, pass one or more shards after
+`--expert-dataset` and optionally after `--validation-dataset`. The stable NPZ schema is:
 `frames`, `latent`, `next_latent`, `behavior_action`, `expert_action`,
 `expert_scores`, `decision_mask`, `hard_track_mask`, `done`, and `episode_id`.
 Without an explicit validation file, complete episode IDs are held out from
 the expert dataset. Dynamics always use `behavior_action`; actor supervision
 uses `expert_action` and counterfactual `expert_scores`.
+
+Generate the deterministic U-course oracle shard only from training seeds
+11/22/33 with `python -m tools.crazysim_mujoco.rl.generate_oracle_expert`.
+The generator rejects held-out seeds 101/202/303 before loading their data,
+uses a 2.25 m upcoming-obstacle window, and groups all mirror/photometric
+variants by source seed to prevent validation leakage.
 
 ## Selected proof-of-concept bundle
 

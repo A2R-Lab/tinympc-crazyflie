@@ -39,10 +39,12 @@ nvidia-smi | tee "$OUTPUT_DIR/nvidia-smi.txt"
 IFS=: read -r -a run_array <<<"$RUN_DIRS"
 expert_args=()
 if [[ -n "${EXPERT_DATASET:-}" ]]; then
-  expert_args+=(--expert-dataset "$EXPERT_DATASET")
+  IFS=: read -r -a expert_array <<<"$EXPERT_DATASET"
+  expert_args+=(--expert-dataset "${expert_array[@]}")
 fi
 if [[ -n "${VALIDATION_DATASET:-}" ]]; then
-  expert_args+=(--validation-dataset "$VALIDATION_DATASET")
+  IFS=: read -r -a validation_array <<<"$VALIDATION_DATASET"
+  expert_args+=(--validation-dataset "${validation_array[@]}")
 fi
 cd "$REPOSITORY_DIR"
 "$PYTHON_BIN" -m tools.crazysim_mujoco.rl.train_mbpo \

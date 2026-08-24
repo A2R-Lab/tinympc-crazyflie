@@ -226,9 +226,19 @@ def concatenate_datasets(datasets: list[RunTransitions]) -> RunTransitions:
                             for field in RunTransitions.__dataclass_fields__))
 
 
+def load_expert_shards(paths: list[Path]) -> RunTransitions:
+    """Concatenate shards while retaining provenance episode-group identity.
+
+    A repeated episode ID in two augmentation shards intentionally stays the
+    same group so an automatic episode split cannot leak related variants.
+    Independent generators must therefore use source-stable episode IDs.
+    """
+    return concatenate_datasets([load_expert_npz(path) for path in paths])
+
+
 def _derived_reward(latent, next_latent, behavior_action, done, episode_id):
     previous_action = behavior_action.copy()
-    same_episode = episode_id[1:] == episode_id[:-1]
+    same_episode = (episode_id[1:] == episode_id[:-1]) & (done[:-1] < 0.5)
     previous_action[1:] = np.where(
         same_episode, behavior_action[:-1], behavior_action[1:])
     return transition_reward(
