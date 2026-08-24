@@ -1,0 +1,31 @@
+{
+  "format": "tinympc-combined-gate-rl-poc-v1",
+  "runtime_adapter": "combined_gate_rl",
+  "description": "Proof-of-concept composition: unchanged RL obstacle action plus existing ESPNet gate geometry.",
+  "input": {
+    "shape": [1, 2, 160, 160],
+    "dtype": "float32",
+    "range": [0.0, 1.0],
+    "temporal_order": ["previous", "current"],
+    "poc_camera_domain": "Isaac-calibrated HM01B0 160x160 mono; exact transform provenance is recorded per run"
+  },
+  "teacher_models": {
+    "obstacle_rl": {
+      "runtime_adapter": "hybrid_rl",
+      "path": "../vision_rl_mpc_balanced_v2/policy.onnx",
+      "sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e",
+      "output": "action_logits [TRACK, LEFT, RIGHT]"
+    },
+    "gate_espnet": {
+      "runtime_adapter": "espnet",
+      "path": "../espnet_dronet_gate_v1/espnet_dronet_gate_seed2027_float.onnx",
+      "sha256": "6e9fc06581e29f0681ca63e8630ab21c16c72b9ad9dbfa8646234edee967c7a2",
+      "output": "gate corners, confidence, validity, and calibrated intrinsics"
+    }
+  },
+  "safety_contract": {
+    "navigation_source": "obstacle_rl only",
+    "gate_source": "gate_espnet only",
+    "controller_arbitration": "unchanged; this bundle does not enable gate steering by itself"
+  }
+}

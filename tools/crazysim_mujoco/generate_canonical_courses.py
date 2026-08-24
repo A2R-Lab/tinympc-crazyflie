@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 
 
 HERE = Path(__file__).resolve().parent
@@ -163,6 +164,47 @@ COURSES = {
             "trials_per_speed": 5,
         },
     },
+    "gate_obstacle_poc": {
+        "trajectory": "straight_9m",
+        "description": (
+            "Isolated 12 m corridor proof of concept: a hardware-scale 0.45 m "
+            "square gate followed by a floor-mounted side-intruding obstacle "
+            "with the same camera-relative top elevation as the avoidance "
+            "policy's training family. The gate must be "
+            "crossed before the avoidance decision is evaluated."
+        ),
+        "obstacles": [
+            {"name": "post_gate_box", "shape": "box",
+             "center": [6.20, 0.50], "half_size": [0.15, 0.50],
+             "height": 2.20, "center_z": 1.10},
+        ],
+        "gates": [
+            {"name": "expected_gate", "center": [4.0, 0.30, 1.50],
+             "normal": [1.0, 0.0], "opening": [0.45, 0.45]},
+        ],
+        "corridor_y": [-2.0, 2.0],
+        "pass_point": [8.5, 0.0], "pass_radius_m": 0.45,
+        "minimum_dodge_encounters": 1, "maximum_final_cross_track_m": 0.30,
+        "required_heading_change_deg": 0.0, "duration_s": 24.0,
+    },
+    "gate_obstacle_poc_obstacle_only": {
+        "trajectory": "straight_9m",
+        "description": (
+            "Matched obstacle-only control for the gate/obstacle proof of "
+            "concept: identical corridor and tall side-intruding obstacle geometry, "
+            "with the gate removed."
+        ),
+        "obstacles": [
+            {"name": "post_gate_box", "shape": "box",
+             "center": [6.20, 0.50], "half_size": [0.15, 0.50],
+             "height": 2.20, "center_z": 1.10},
+        ],
+        "gates": [],
+        "corridor_y": [-2.0, 2.0],
+        "pass_point": [8.5, 0.0], "pass_radius_m": 0.45,
+        "minimum_dodge_encounters": 1, "maximum_final_cross_track_m": 0.30,
+        "required_heading_change_deg": 0.0, "duration_s": 24.0,
+    },
 }
 
 
@@ -208,6 +250,8 @@ def wall_xml(wall: dict) -> str:
 
 
 def scene_xml(name: str, course: dict) -> str:
+    if name in ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only"):
+        return gate_obstacle_poc_scene_xml(course)
     geometry = [wall_xml(wall) for wall in course.get("walls", [])]
     geometry += [obstacle_xml(obstacle) for obstacle in course["obstacles"]]
     if "corridor_y" in course:
@@ -230,17 +274,101 @@ def scene_xml(name: str, course: dict) -> str:
 """
 
 
+def gate_obstacle_poc_scene_xml(course: dict) -> str:
+    """Render the POC with the same 12 m textured corridor/gate assets.
+
+    The gate's invisible colliders deliberately leave exactly the real gate's
+    0.45 by 0.45 m opening; the photo mesh is visual-only so image labels and
+    physical pass/fail geometry cannot silently disagree.
+    """
+    gate = course["gates"][0] if course["gates"] else None
+    if gate is not None:
+        gx, gy, gz = gate["center"]
+        gate_body = f'''    <body name="expected_gate" pos="{gx} {gy} {gz}">
+      <geom type="mesh" mesh="newbeedrone_gate_top" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_bottom" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_left" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_right" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <!-- Real NewBeeDrone dimensions: 0.45 m clear opening, 0.555 m rail-center span. -->
+      <geom name="expected_gate_left" type="box" pos="0 -0.279 0" size="0.025 0.054 0.225" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="expected_gate_right" type="box" pos="0 0.279 0" size="0.025 0.054 0.225" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="expected_gate_top" type="box" pos="0 0 0.279" size="0.025 0.333 0.054" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="expected_gate_bottom" type="box" pos="0 0 -0.279" size="0.025 0.333 0.054" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+    </body>'''
+    else:
+        gate_body = ""
+    obstacle = obstacle_xml(course["obstacles"][0])
+    return f'''<mujoco model="TinyRacer gate-obstacle proof of concept">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="6 0 1.5" extent="7"/>
+  <visual>
+    <headlight diffuse="0.12 0.12 0.12" ambient="0.08 0.08 0.08" specular="0 0 0"/>
+    <rgba haze="0.03 0.03 0.03 0" fog="1 1 1 0"/>
+    <map fogstart="0" fogend="0"/>
+    <global azimuth="135" elevation="-18" ellipsoidinertia="true"/>
+  </visual>
+  <asset>
+    <texture name="corridor_floor_texture" type="2d" builtin="checker"
+             rgb1="0.31 0.31 0.30" rgb2="0.23 0.23 0.22" width="512" height="512"/>
+    <texture name="corridor_wall_texture" type="2d" file="textures/off_white_painted_plaster.png"/>
+    <material name="corridor_floor" texture="corridor_floor_texture" texrepeat="12 4"
+              texuniform="true" reflectance="0.12" specular="0.18" shininess="0.25"/>
+    <material name="corridor_wall" texture="corridor_wall_texture" texrepeat="6 2"
+              texuniform="true" rgba="1 1 1 1" specular="0.08" shininess="0.12"/>
+    <material name="corridor_ceiling" rgba="0.82 0.82 0.79 1" specular="0.04" shininess="0.08"/>
+    <material name="strip_light" rgba="1 0.98 0.86 1" emission="1" specular="0" shininess="0"/>
+    <texture type="2d" name="newbeedrone_gate_texture" file="textures/newbeedrone_gate_front_rgba_v1.png"/>
+    <material name="newbeedrone_gate" texture="newbeedrone_gate_texture" texuniform="false"
+              rgba="1 1 1 1" specular="0.08" shininess="0.12"/>
+    <mesh name="newbeedrone_gate_top" file="meshes/newbeedrone_gate_top.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_bottom" file="meshes/newbeedrone_gate_bottom.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_left" file="meshes/newbeedrone_gate_left.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_right" file="meshes/newbeedrone_gate_right.obj" scale="1 0.9 0.9"/>
+  </asset>
+  <worldbody>
+    <camera name="crazyflie_corridor_preview" pos="0 0 1.5" xyaxes="0 -1 0 0 0 1" fovy="47.168554"/>
+    <geom name="corridor_floor" type="box" pos="6 0 -0.05" size="6 2.05 0.05"
+          material="corridor_floor" contype="1" conaffinity="1"/>
+    <geom name="corridor_left_wall" type="box" pos="6 2.05 1.5" size="6 1.5 0.05"
+          euler="90 0 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_right_wall" type="box" pos="6 -2.05 1.5" size="6 1.5 0.05"
+          euler="90 0 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_end_wall" type="box" pos="12.05 0 1.5" size="1.5 2.05 0.05"
+          euler="0 90 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_ceiling" type="box" pos="6 0 3.05" size="6 2.05 0.05"
+          material="corridor_ceiling" contype="1" conaffinity="1"/>
+{gate_body}
+{obstacle}
+    <geom name="ceiling_strip_light" type="box" pos="6 0 2.985" size="5.5 0.055 0.015"
+          material="strip_light" contype="0" conaffinity="0"/>
+    <light name="strip_light_1" pos="1 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_2" pos="3.5 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_3" pos="6 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_4" pos="8.5 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_5" pos="11 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+  </worldbody>
+</mujoco>
+'''
+
+
 def main() -> None:
+    selected = sys.argv[1:]
+    unknown = sorted(set(selected) - set(COURSES))
+    if unknown:
+        raise SystemExit(f"unknown course(s): {', '.join(unknown)}")
+    names = selected or COURSES.keys()
     course_dir = HERE / "courses"
     scene_dir = HERE / "scenes"
-    for name, fields in COURSES.items():
+    for name in names:
+        fields = COURSES[name]
         course = {
             "format": "tinympc-crazysim-course-v2",
             "name": name,
             "scene": f"vision_{name}.xml",
             **fields,
             "centerline": trajectory_points(fields["trajectory"]),
-            "gate_order_required": False,
+            "gate_order_required": bool(fields["gates"]),
         }
         (course_dir / f"{name}.json").write_text(json.dumps(course, indent=2) + "\n")
         (scene_dir / f"vision_{name}.xml").write_text(scene_xml(name, course))

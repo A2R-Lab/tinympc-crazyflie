@@ -1,0 +1,14 @@
+diff --git a/drone_models/data/cf21B_500.xml b/drone_models/data/cf21B_500.xml
+index f9b8d96..982f6f7 100644
+--- a/drone_models/data/cf21B_500.xml
++++ b/drone_models/data/cf21B_500.xml
+@@ -79,5 +79,8 @@
+       <!-- Cameras -->
+       <camera name="track_cam" pos="-1 0 .5" xyaxes="0 -1 0 1 0 2" mode="trackcom" />
+-      <camera name="fpv_cam" pos="0.03 0 0" euler="0 -90 -90" fovy="70" resolution="640 480" />
++      <!-- AI-deck HM01B0 optical center: 10 mm above the body origin.
++           Keep the existing forward-looking axis convention; the gate POC
++           applies calibrated K and lens distortion in its camera bridge. -->
++      <camera name="fpv_cam" pos="0 0 0.01" euler="0 -90 -90" fovy="70" resolution="640 480" />
+     </body>
+   </worldbody>

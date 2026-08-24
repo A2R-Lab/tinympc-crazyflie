@@ -202,6 +202,14 @@ static_assert(MAX_HS >= 5, "path tunnel and perception require five halfspaces")
 #ifndef TINYMPC_GATE_CENTER_BEARING_FUSION_ENABLE
 #define TINYMPC_GATE_CENTER_BEARING_FUSION_ENABLE 0
 #endif
+/* This is an intentionally narrow combined gate/obstacle POC.  It is off in
+ * every normal firmware build.  It has no gate map or pose: a short-lived
+ * visual association may make only a bounded center-bearing reference shift.
+ * It does not enable pose fusion or give a generic gate detection authority
+ * over collision avoidance. */
+#ifndef TINYMPC_GATE_OBSTACLE_POC_ENABLE
+#define TINYMPC_GATE_OBSTACLE_POC_ENABLE 0
+#endif
 #ifndef TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED
 #define TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED 1.14531138f
 #endif
@@ -592,22 +600,16 @@ static TinyRacerNavigationIntent navigation_intent;
 static TinyRacerDodgeState dodge_state;
 static TinyRacerDodgeIntent dodge_intent;
 static uint16_t navigation_warmup_steps = 0;
-static bool gate_priority_latched = false;
-static uint8_t gate_priority_clear_samples = 0;
-static uint16_t gate_priority_hold_steps = 0;
-static bool gate_priority_rearm_ready = true;
-static TinyRacerGateProgress course_gate_progress;
-static bool course_gate_approach_active = false;
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+static bool gate_poc_collision_suppressed = false;
+static bool gate_poc_associated = false;
+static uint8_t gate_poc_consecutive_samples = 0u;
+static uint8_t gate_poc_dropout_steps = 0u;
+static uint32_t gate_poc_last_sample = UINT32_MAX;
+#endif
 #if defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8)
 static bool figure8_midcourse_dual_reset_complete = false;
 #endif
-#if defined(TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR)
-#define TINYMPC_GATE_PRIORITY_CLEAR_STEPS 20u
-#else
-#define TINYMPC_GATE_PRIORITY_CLEAR_STEPS 75u
-#endif
-#define TINYMPC_GATE_PRIORITY_MAX_STEPS 125u
-
 #if defined(TINYMPC_USE_ACTUATOR_LTI)
 static void resetLevelActuatorDuals(void);
 #endif
@@ -1509,56 +1511,6 @@ static void rejoinTrajectory(
               (unsigned long)step, (double)nearest_forward_distance);
 }
 
-/* Gate perception/control is deliberately detached while the avoidance head
- * is validated. Course scenes and acceptance manifests contain no gates. */
-#define TINYMPC_COURSE_GATE_COUNT 0u
-static const TinyRacerGateDefinition course_gates[] = {
-  {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
-};
-static const uint8_t course_gate_count = TINYMPC_COURSE_GATE_COUNT;
-
-static void updateCourseGateProgress(const state_t *state) {
-  if (course_gate_count == 0u || course_gate_progress.next_gate >= course_gate_count) {
-    course_gate_approach_active = false;
-    return;
-  }
-  const float dx = state->position.x - trajectory_origin_world.x();
-  const float dy = state->position.y - trajectory_origin_world.y();
-  const float local_x = trajectory_cos_yaw * dx + trajectory_sin_yaw * dy;
-  const float local_y = -trajectory_sin_yaw * dx + trajectory_cos_yaw * dy;
-  const float local_z = state->position.z - trajectory_origin_world.z();
-  const TinyRacerGateDefinition *gate =
-      &course_gates[course_gate_progress.next_gate];
-  const float gate_dx = local_x - gate->center_x_m;
-  const float gate_dy = local_y - gate->center_y_m;
-  const float signed_distance =
-      gate->normal_x * gate_dx + gate->normal_y * gate_dy;
-  /* The course planner knows which physical gate comes next. Reserve only its
-   * final one-metre approach so a momentary gate-head dropout cannot make the
-   * collision head steer around the frame. Vision still supplies centering. */
-  if (!course_gate_approach_active && signed_distance <= 0.15f &&
-      gate_dx * gate_dx + gate_dy * gate_dy <= 0.75f * 0.75f) {
-    course_gate_approach_active = true;
-  } else if (course_gate_approach_active && signed_distance > 0.20f) {
-    /* The plane was crossed outside the usable opening. Release the latch so
-     * the controller can recover, but do not advance ordered gate progress. */
-    course_gate_approach_active = false;
-  }
-  if (!tinyRacerGateProgressUpdate(
-      &course_gate_progress, course_gates, course_gate_count,
-      local_x, local_y, local_z)) {
-    return;
-  }
-  DEBUG_PRINT("Course gate crossed index=%u/%u\n",
-              (unsigned int)course_gate_progress.next_gate,
-              (unsigned int)course_gate_count);
-  gate_priority_latched = false;
-  gate_priority_rearm_ready = false;
-  gate_priority_clear_samples = 0;
-  gate_priority_hold_steps = 0;
-  course_gate_approach_active = false;
-}
-
 static void updateObstacleTangent(const Eigen::Vector3f& position_world) {
   Eigen::Vector3f toward_center = perception_obstacle_center_world - position_world;
   toward_center.z() = 0.0f;
@@ -1738,11 +1690,131 @@ static void resetPerceptionFilter() {
   tinyRacerDodgeReset(&dodge_state);
   memset(&dodge_intent, 0, sizeof(dodge_intent));
   navigation_warmup_steps = 0;
-  gate_priority_latched = false;
-  gate_priority_clear_samples = 0;
-  gate_priority_hold_steps = 0;
-  gate_priority_rearm_ready = true;
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+  gate_poc_collision_suppressed = false;
+  gate_poc_associated = false;
+  gate_poc_consecutive_samples = 0u;
+  gate_poc_dropout_steps = 0u;
+  gate_poc_last_sample = UINT32_MAX;
+#endif
 }
+
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+/* The transport layer range-checks normalized corners.  This POC additionally
+ * accepts only a plausible upright quadrilateral: convex ordered corners,
+ * non-degenerate area, nearly parallel opposite edges, and vertical/horizontal
+ * edge directions with up to about 33 degrees of camera roll. */
+static bool gateObservationFreshAndGeometric(
+    const TinyRacerPerceptionObservation& observation) {
+  constexpr float gate_confidence_threshold = 0.6174671283f;
+  if (!observation.valid || !observation.gate_valid ||
+      observation.received_age_ms > race_config.maximum_age_ms ||
+      observation.gate_confidence < gate_confidence_threshold) {
+    return false;
+  }
+  const float *corner = observation.gate_corners_xy;
+  float signed_area_twice = 0.0f;
+  for (int i = 0; i < 4; ++i) {
+    const int next = (i + 1) % 4;
+    signed_area_twice += corner[2 * i] * corner[2 * next + 1] -
+        corner[2 * i + 1] * corner[2 * next];
+  }
+  const Eigen::Vector2f top(corner[2] - corner[0], corner[3] - corner[1]);
+  const Eigen::Vector2f right(corner[4] - corner[2], corner[5] - corner[3]);
+  const Eigen::Vector2f bottom(corner[4] - corner[6], corner[5] - corner[7]);
+  const Eigen::Vector2f left(corner[6] - corner[0], corner[7] - corner[1]);
+  const Eigen::Vector2f bottom_loop(-bottom.x(), -bottom.y());
+  const Eigen::Vector2f left_loop(-left.x(), -left.y());
+  const Eigen::Vector2f diagonal_tl_br(
+      corner[4] - corner[0], corner[5] - corner[1]);
+  const Eigen::Vector2f diagonal_tr_bl(
+      corner[6] - corner[2], corner[7] - corner[3]);
+  constexpr float minimum_edge = 0.05f;
+  constexpr float maximum_roll_slope = 0.65f;
+  if (!isfinite(signed_area_twice) || fabsf(signed_area_twice) < 0.01f ||
+      top.norm() < minimum_edge || bottom.norm() < minimum_edge ||
+      left.norm() < minimum_edge || right.norm() < minimum_edge ||
+      diagonal_tl_br.norm() < minimum_edge ||
+      diagonal_tr_bl.norm() < minimum_edge ||
+      fabsf(top.y()) > maximum_roll_slope * fabsf(top.x()) ||
+      fabsf(bottom.y()) > maximum_roll_slope * fabsf(bottom.x()) ||
+      fabsf(left.x()) > maximum_roll_slope * fabsf(left.y()) ||
+      fabsf(right.x()) > maximum_roll_slope * fabsf(right.y())) {
+    return false;
+  }
+  const float parallel_top_bottom = fabsf(top.normalized().dot(bottom.normalized()));
+  const float parallel_left_right = fabsf(left.normalized().dot(right.normalized()));
+  const float top_bottom_ratio = top.norm() / bottom.norm();
+  const float left_right_ratio = left.norm() / right.norm();
+  const float diagonal_ratio = diagonal_tl_br.norm() / diagonal_tr_bl.norm();
+  const float turn_0 = top.x() * right.y() - top.y() * right.x();
+  const float turn_1 = right.x() * bottom_loop.y() - right.y() * bottom_loop.x();
+  const float turn_2 = bottom_loop.x() * left_loop.y() -
+      bottom_loop.y() * left_loop.x();
+  const float turn_3 = left_loop.x() * top.y() - left_loop.y() * top.x();
+  const bool consistently_convex =
+      ((turn_0 > 0.0f && turn_1 > 0.0f && turn_2 > 0.0f && turn_3 > 0.0f) ||
+       (turn_0 < 0.0f && turn_1 < 0.0f && turn_2 < 0.0f && turn_3 < 0.0f));
+  return parallel_top_bottom >= 0.75f && parallel_left_right >= 0.75f &&
+      top_bottom_ratio >= 0.35f && top_bottom_ratio <= 2.85f &&
+      left_right_ratio >= 0.35f && left_right_ratio <= 2.85f &&
+      diagonal_ratio >= 0.35f && diagonal_ratio <= 2.85f &&
+      consistently_convex;
+}
+
+static bool gateObservationFreshPresence(
+    const TinyRacerPerceptionObservation& observation) {
+  constexpr float gate_confidence_threshold = 0.6174671283f;
+  return observation.valid &&
+      observation.received_age_ms <= race_config.maximum_age_ms &&
+      observation.gate_confidence >= gate_confidence_threshold;
+}
+
+static void updateGatePocAssociation(
+    const TinyRacerPerceptionObservation& observation) {
+  constexpr uint8_t required_consecutive_samples = 2u;
+  /* Four low-presence samples (or stale MPC cycles after transport expiry)
+   * release the retained bearing. Corner-only postprocessor failures may keep
+   * that bearing while presence remains fresh, but obstacle authority is
+   * restored immediately because scalar suppression requires geometry. */
+  constexpr uint8_t maximum_dropout_steps = 4u;
+  const bool geometric = gateObservationFreshAndGeometric(observation);
+  const bool fresh_presence = gateObservationFreshPresence(observation);
+  const bool new_sample = observation.sample != gate_poc_last_sample;
+  if (geometric) {
+    gate_poc_dropout_steps = 0u;
+    if (new_sample && gate_poc_consecutive_samples < UINT8_MAX) {
+      ++gate_poc_consecutive_samples;
+    }
+    if (gate_poc_consecutive_samples >= required_consecutive_samples &&
+        !gate_poc_associated) {
+      gate_poc_associated = true;
+      DEBUG_PRINT("Gate POC visual association acquired sample=%lu confidence=%.2f\n",
+                  (unsigned long)observation.sample,
+                  (double)observation.gate_confidence);
+    }
+  } else if (gate_poc_associated && fresh_presence) {
+    /* The corner/mask postprocessor can reject a still-visible gate after a
+     * successful acquisition. Keep its last bounded bearing correction, but
+     * never update that correction or treat this weaker evidence as an open
+     * passage for collision suppression. */
+    gate_poc_dropout_steps = 0u;
+  } else if (new_sample ||
+             observation.received_age_ms > race_config.maximum_age_ms) {
+    gate_poc_consecutive_samples = 0u;
+    if (gate_poc_dropout_steps < UINT8_MAX) {
+      ++gate_poc_dropout_steps;
+    }
+    if (gate_poc_dropout_steps >= maximum_dropout_steps && gate_poc_associated) {
+      gate_poc_associated = false;
+      DEBUG_PRINT("Gate POC visual association released after low presence\n");
+    }
+  }
+  if (new_sample) {
+    gate_poc_last_sample = observation.sample;
+  }
+}
+#endif
 
 static void setLocalReferenceState(
     VectorNf& target, const Eigen::Vector3f& position_world,
@@ -1775,43 +1847,30 @@ static void applyVisionNavigation(
    * starts one encounter; after a clear pass and short re-arm distance the
    * same state machine can respond to the next obstacle. No course obstacle
    * positions or encounter indices are stored in firmware. */
-  /* Gate-priority suppression is disabled with gate control: a false gate
-   * detection must never mask the collision output during avoidance tests.
-   * A calibrated gate candidate is the immediate target, not an obstacle.
-   * Use the deployment's structured-confidence threshold even when a corner
-   * is temporarily geometrically invalid, so one flickering heatmap cannot
-   * launch a dodge through the gate frame. */
-  if (false && !gate_priority_latched && gate_priority_rearm_ready &&
-      observation.gate_confidence >= 0.6174671283f) {
-    gate_priority_latched = true;
-    gate_priority_clear_samples = 0;
-    gate_priority_hold_steps = 0;
-  } else if (gate_priority_latched && observation.gate_confidence < 0.20f) {
-    if (gate_priority_clear_samples < UINT8_MAX) {
-      ++gate_priority_clear_samples;
-    }
-    if (gate_priority_clear_samples >= TINYMPC_GATE_PRIORITY_CLEAR_STEPS) {
-      gate_priority_latched = false;
-      gate_priority_clear_samples = 0;
-      gate_priority_hold_steps = 0;
-    }
-  }
-  if (gate_priority_latched) {
-    if (gate_priority_hold_steps < UINT16_MAX) {
-      ++gate_priority_hold_steps;
-    }
-    if (gate_priority_hold_steps >= TINYMPC_GATE_PRIORITY_MAX_STEPS) {
-      gate_priority_latched = false;
-      gate_priority_rearm_ready = false;
-      gate_priority_clear_samples = 0;
-      gate_priority_hold_steps = 0;
-    }
-  } else if (!gate_priority_rearm_ready && observation.gate_confidence < 0.20f) {
-    gate_priority_rearm_ready = true;
-  }
-  if (gate_priority_latched || course_gate_approach_active) {
+  /* Ordinary builds never let a gate detection affect collision avoidance.
+   * The POC associates an upright gate from vision alone; it has no map, gate
+   * pose, expected ordering, or route-dependent exception. */
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+  updateGatePocAssociation(observation);
+  /* Retained bearing may steer the reference, but an open-passage exception
+   * requires current—not merely latched—geometric gate evidence. */
+  const bool visual_gate_authority = gate_poc_associated &&
+      gateObservationFreshAndGeometric(observation) &&
+      !race_intent.constraint_active &&
+      tinyRacerGateServoAllowed(
+          race_intent.mode, dodge_state.phase, perception_halfspace_active,
+          perception_recovery_active);
+  if (visual_gate_authority) {
     navigation_observation.collision_probability = 0.0f;
+    if (!gate_poc_collision_suppressed) {
+      gate_poc_collision_suppressed = true;
+      DEBUG_PRINT("Gate POC suppressing scalar collision for visual gate\n");
+    }
+  } else if (gate_poc_collision_suppressed) {
+    gate_poc_collision_suppressed = false;
+    DEBUG_PRINT("Gate POC restoring scalar collision authority\n");
   }
+#endif
   /* Once the finite course is complete, do not launch a new avoidance
    * encounter from scenery outside the reference. Existing dodge state still
    * receives clear samples and returns to TRACK normally. */
@@ -1897,10 +1956,7 @@ static void applyVisionNavigation(
   } else {
     path_local.normalize();
   }
-  const float requested_avoidance_speed_mps =
-      (gate_priority_latched || course_gate_approach_active)
-      ? T_MIN(dodge_intent.forward_speed_mps, 0.18f)
-      : dodge_intent.forward_speed_mps;
+  const float requested_avoidance_speed_mps = dodge_intent.forward_speed_mps;
   /* Preserve the progress controller's curvature and terminal speed limits.
    * Avoidance may slow the route, but it must never overwrite a lower nominal
    * speed—especially the finite-route braking ramp—with its pass speed. */
@@ -1995,54 +2051,64 @@ static void __attribute__((unused)) applyGateVisualServo(
   const bool fresh_gate = observation.valid && observation.gate_valid &&
       observation.received_age_ms <= race_config.maximum_age_ms &&
       observation.gate_confidence >= 0.25f;
-  if (!fresh_gate || !tinyRacerGateServoAllowed(
+  if (!tinyRacerGateServoAllowed(
       race_intent.mode, dodge_intent.phase,
       perception_halfspace_active, perception_recovery_active)) {
     return;
   }
-
-  const float *corner = observation.gate_corners_xy;
-  const float width = 0.5f * ((corner[2] - corner[0]) +
-                              (corner[4] - corner[6]));
-  const float height = 0.5f * ((corner[7] - corner[1]) +
-                               (corner[5] - corner[3]));
-  if (width < 0.05f || height < 0.05f || width * height < 0.01f) {
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+  if (!gate_poc_associated) {
     return;
   }
-  if (observation.sample != gate_filter_sample) {
-    const float center_x = 0.25f *
-        (corner[0] + corner[2] + corner[4] + corner[6]);
-    const float center_y = 0.25f *
-        (corner[1] + corner[3] + corner[5] + corner[7]);
+#else
+  if (!fresh_gate) {
+    return;
+  }
+#endif
+  if (fresh_gate) {
+    const float *corner = observation.gate_corners_xy;
+    const float width = 0.5f * ((corner[2] - corner[0]) +
+                                (corner[4] - corner[6]));
+    const float height = 0.5f * ((corner[7] - corner[1]) +
+                                 (corner[5] - corner[3]));
     const float fx_normalized = observation.gate_fx_normalized;
     const float fy_normalized = observation.gate_fy_normalized;
     const float cx_normalized = observation.gate_cx_normalized;
     const float cy_normalized = observation.gate_cy_normalized;
-    if (fx_normalized < 0.05f || fy_normalized < 0.05f ||
-        cx_normalized < 0.0f || cx_normalized > 1.0f ||
-        cy_normalized < 0.0f || cy_normalized > 1.0f) {
-      return;
-    }
-    const float gate_opening_width_m = 0.45f;
-    const float estimated_depth_m = T_MIN(T_MAX(
-        gate_opening_width_m * fx_normalized / width, 0.4f), 4.0f);
-    const float requested_lateral_m = T_MIN(T_MAX(
-        -(center_x - cx_normalized) * estimated_depth_m / fx_normalized,
-        -0.35f), 0.35f);
-    const float requested_vertical_m = T_MIN(T_MAX(
-        -(center_y - cy_normalized) * estimated_depth_m / fy_normalized,
-        -0.25f), 0.25f);
-    gate_lateral_offset_m +=
-        0.25f * (requested_lateral_m - gate_lateral_offset_m);
-    gate_vertical_offset_m +=
-        0.25f * (requested_vertical_m - gate_vertical_offset_m);
-    gate_filter_sample = observation.sample;
-    if ((observation.sample % 10u) == 0u) {
-      DEBUG_PRINT("Vision gate confidence=%.2f offset=(%.2f,%.2f) depth=%.2f\n",
-                  (double)observation.gate_confidence,
-                  (double)gate_lateral_offset_m,
-                  (double)gate_vertical_offset_m,
-                  (double)estimated_depth_m);
+    if (width >= 0.05f && height >= 0.05f && width * height >= 0.01f &&
+        fx_normalized >= 0.05f && fy_normalized >= 0.05f &&
+        cx_normalized >= 0.0f && cx_normalized <= 1.0f &&
+        cy_normalized >= 0.0f && cy_normalized <= 1.0f &&
+        observation.sample != gate_filter_sample) {
+      const float center_x = 0.25f *
+          (corner[0] + corner[2] + corner[4] + corner[6]);
+      const float center_y = 0.25f *
+          (corner[1] + corner[3] + corner[5] + corner[7]);
+      /* Corners supervise real gate rail centers, not its collision-free
+       * opening. Isaac training metadata specifies their 0.555 m span; use
+       * that fixed detected-class dimension only to scale image bearing into
+       * a bounded reference offset, never as a world gate pose. */
+      constexpr float gate_corner_span_m = 0.555f;
+      const float estimated_depth_m = T_MIN(T_MAX(
+          gate_corner_span_m * fx_normalized / width, 0.4f), 4.0f);
+      const float requested_lateral_m = T_MIN(T_MAX(
+          -(center_x - cx_normalized) * estimated_depth_m / fx_normalized,
+          -0.35f), 0.35f);
+      const float requested_vertical_m = T_MIN(T_MAX(
+          -(center_y - cy_normalized) * estimated_depth_m / fy_normalized,
+          -0.25f), 0.25f);
+      gate_lateral_offset_m +=
+          0.25f * (requested_lateral_m - gate_lateral_offset_m);
+      gate_vertical_offset_m +=
+          0.25f * (requested_vertical_m - gate_vertical_offset_m);
+      gate_filter_sample = observation.sample;
+      if ((observation.sample % 10u) == 0u) {
+        DEBUG_PRINT("Vision gate confidence=%.2f offset=(%.2f,%.2f) depth=%.2f\n",
+                    (double)observation.gate_confidence,
+                    (double)gate_lateral_offset_m,
+                    (double)gate_vertical_offset_m,
+                    (double)estimated_depth_m);
+      }
     }
   }
   for (int k = 0; k < NHORIZON; ++k) {
@@ -2090,10 +2156,9 @@ static void maybeFuseGatePose(
     return;
   }
 
-  /* The network's corner labels lie on the rail centerlines. The scene scales
-   * the original 0.62 m label square by 1.5, giving a 0.93 m square even
-   * though the collision-free opening itself is 0.75 m. */
-  constexpr float gate_corner_span_m = 0.93f;
+  /* Isaac training metadata defines network corner supervision on the real
+   * rail centers: a 0.555 m square, distinct from the clear opening. */
+  constexpr float gate_corner_span_m = 0.555f;
   constexpr float half_span_m = 0.5f * gate_corner_span_m;
   const float object_xy[8] = {
       -half_span_m, -half_span_m,
@@ -2480,49 +2545,6 @@ static void maybeFuseGateCenterBearing(
   (void)observation;
   (void)estimated_state;
 #endif
-}
-
-static void __attribute__((unused)) applyCourseGateTransitReference() {
-  if (!course_gate_approach_active ||
-      course_gate_progress.next_gate >= course_gate_count) {
-    return;
-  }
-  const TinyRacerGateDefinition *gate =
-      &course_gates[course_gate_progress.next_gate];
-  const Eigen::Vector3f center_world = trajectory_origin_world +
-      Eigen::Vector3f(
-          trajectory_cos_yaw * gate->center_x_m -
-              trajectory_sin_yaw * gate->center_y_m,
-          trajectory_sin_yaw * gate->center_x_m +
-              trajectory_cos_yaw * gate->center_y_m,
-          gate->center_z_m);
-  const Eigen::Vector3f normal_world(
-      trajectory_cos_yaw * gate->normal_x -
-          trajectory_sin_yaw * gate->normal_y,
-      trajectory_sin_yaw * gate->normal_x +
-          trajectory_cos_yaw * gate->normal_y,
-      0.0f);
-  const Eigen::Vector3f center_local = worldVectorToLocal(
-      active_local_frame,
-      center_world - Eigen::Vector3f(
-          active_local_frame.origin_x, active_local_frame.origin_y,
-          active_local_frame.origin_z));
-  const Eigen::Vector3f normal_local = worldVectorToLocal(
-      active_local_frame, normal_world).normalized();
-  const Eigen::Vector3f lateral_local(
-      -normal_local.y(), normal_local.x(), 0.0f);
-  for (int k = 0; k < NHORIZON; ++k) {
-    const float blend = (float)k / (float)(NHORIZON - 1);
-    const Eigen::Vector3f offset = Xref[k].head(3) - center_local;
-    Xref[k].head(3) -= blend * lateral_local * lateral_local.dot(offset);
-    Xref[k](2) += blend * (center_local.z() - Xref[k](2));
-    const float requested_speed = T_MIN(
-        Xref[k].segment(6, 2).norm(), 0.18f);
-    Xref[k](6) = (1.0f - blend) * Xref[k](6) +
-        blend * normal_local.x() * requested_speed;
-    Xref[k](7) = (1.0f - blend) * Xref[k](7) +
-        blend * normal_local.y() * requested_speed;
-  }
 }
 
 static void createDangerStopPlane(
@@ -3693,8 +3715,16 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
       observation, path_world.dot(velocity_world), position_world,
       heading_world);
 #endif
-  /* Gate transit and visual servo are intentionally detached for the
-   * obstacle-only validation phase. */
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+  /* A visual gate is only a bounded center-bearing correction.  A dodge,
+   * halfspace, or recovery immediately takes the horizon back. */
+  if (gate_poc_associated && !race_intent.constraint_active &&
+      tinyRacerGateServoAllowed(
+          race_intent.mode, dodge_state.phase, perception_halfspace_active,
+          perception_recovery_active)) {
+    applyGateVisualServo(observation);
+  }
+#endif
   if (perception_recovery_active && !race_intent.constraint_active &&
       race_state.clear_samples >= race_config.clear_samples_required &&
       perception_recovery_distance_m >= perception_pass_distance_m) {
@@ -5000,8 +5030,6 @@ static void tinympcControllerTask(void *parameters) {
           (double)(float)TINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2,
           (double)(float)TINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2,
           (unsigned long)(progress_path.virtual_count - 1u));
-      tinyRacerGateProgressReset(&course_gate_progress);
-      course_gate_approach_active = false;
       DEBUG_PRINT("Trajectory origin=(%.2f,%.2f,%.2f) yaw=%.1fdeg hold=%.1fs\n",
                   (double)trajectory_origin_world.x(),
                   (double)trajectory_origin_world.y(),
@@ -5019,7 +5047,6 @@ static void tinympcControllerTask(void *parameters) {
       tiny_ClearPositionHalfspaces(&work);
     }
 
-    updateCourseGateProgress(&state_task);
     updateInitialState(&sensors_task, &state_task);
 #if TINYMPC_RATE_CASCADE
     /* The level outer chart is expressed in the solve's yaw-aligned local

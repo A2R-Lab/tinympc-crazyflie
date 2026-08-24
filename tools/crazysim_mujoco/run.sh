@@ -114,8 +114,9 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --firmware-time-factor RATE  Measured simulator/wall rate (default: 0.8)
   --out DIRECTORY         Output directory
   --vision-model PATH     Model path, or bundled tinyracer/espnet, dronet-v3,
-                          sequential, or stdc
-  --vision-adapter NAME   auto, espnet, sequential, stdc, dronet, or hybrid_rl (default: auto)
+                          sequential, stdc, vision-rl, or combined-gate-rl
+  --vision-adapter NAME   auto, espnet, sequential, stdc, dronet, hybrid_rl,
+                          or combined_gate_rl (default: auto)
   --vision-scene NAME     obstacle, gate, corridor, corridor_obstacles,
                           circle_obstacles, figure8_obstacles, or none
                           (default: obstacle)
@@ -382,9 +383,9 @@ if [[ "$LEVEL_COST_MODE" != baseline && "$ACTUATOR_LTI" != 1 ]]; then
   echo "non-baseline --level-cost-mode requires --actuator-lti 1" >&2
   exit 2
 fi
-case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet|rl|hybrid_rl) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
+case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet|rl|hybrid_rl|combined_gate_rl) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
 [[ "$VISION_ADAPTER" != rl ]] || VISION_ADAPTER=hybrid_rl
-case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
   echo "--camera-only and --vision-model are mutually exclusive" >&2
@@ -442,6 +443,11 @@ if [[ -n "$VISION_MODEL" ]]; then
     vision-rl|rl-poc)
       VISION_MODEL="$SCRIPT_DIR/models/vision_rl_mpc_poc/policy.onnx"
       VISION_ADAPTER=hybrid_rl ;;
+    combined-gate-rl|combined_gate_rl)
+      # Manifest bundle: the bridge resolves its two frozen teachers relative
+      # to this directory, preserving the existing obstacle policy exactly.
+      VISION_MODEL="$SCRIPT_DIR/models/vision_rl_gate_poc"
+      VISION_ADAPTER=combined_gate_rl ;;
     tinyracer|espnet)
       VISION_MODEL="$SCRIPT_DIR/models/espnet_dronet_gate_v1/espnet_dronet_gate_seed2027_float.onnx"
       VISION_ADAPTER=espnet ;;
@@ -461,7 +467,13 @@ if [[ -n "$VISION_MODEL" ]]; then
     straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
     *) echo "Vision requires a supported level-flight trajectory." >&2; exit 2 ;;
   esac
-  if [[ -d "$VISION_MODEL" ]]; then
+  if [[ "$VISION_ADAPTER" == combined_gate_rl ]]; then
+    # The manifest intentionally points to sibling model bundles. Mount the
+    # common models root so those relative teacher paths remain valid inside
+    # the container instead of exposing only the manifest leaf directory.
+    VISION_MODEL_MOUNT="$SCRIPT_DIR/models"
+    VISION_MODEL_CONTAINER="/vision_model/$(basename "$VISION_MODEL")"
+  elif [[ -d "$VISION_MODEL" ]]; then
     VISION_MODEL_MOUNT="$VISION_MODEL"
     VISION_MODEL_CONTAINER=/vision_model
   else
@@ -586,8 +598,11 @@ if vision_model:
     path = Path(vision_model)
     if path.is_dir():
         manifest = path / "bundle_manifest.json"
+        if not manifest.is_file():
+            manifest = path / "bundle.json"
         vision_identity = {
             "path": str(path),
+            "bundle_manifest": manifest.name,
             "bundle_manifest_sha256": sha256(manifest),
         }
     else:
@@ -679,12 +694,69 @@ config = {
         "distortion_coefficients": [-0.0176448766, 0.0994132451,
                                     0.0054432154, -0.0060400120,
                                     -0.1900189875],
-        "mujoco_vertical_fov_deg": 83.6091095,
+        "simulation_distortion_coefficients": [-0.0176448766, 0.0994132451,
+                                                0.0054432154, -0.0060400120,
+                                                -0.055],
+        "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": False,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [0.0, 0.0, 0.010],
+        },
+        "mujoco_vertical_fov_deg": (94.0387229678 if course_name in
+                                      ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only")
+                                      and vision_adapter in ("hybrid_rl", "combined_gate_rl")
+                                      else 83.6091095),
         "distortion_applied_in_mujoco": False,
-        "source_repository": "tinympc-perception",
-        "source_commit": "890bbd6923a9459d4d7ab7bee92542e4cb61c64d",
-        "source_file": "gap8_perception/configs/hm01b0_calibration.json",
-    } if vision_adapter in ("dronet", "hybrid_rl") else None),
+        "bridge_calibration_transform_enabled": course_name in
+            ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl"),
+        "poc_overscan_render_resolution": ([192, 192] if course_name in
+            ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl") else None),
+        "poc_source_focal_px": (89.4608171623 if course_name in
+            ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl") else None),
+        "poc_transform": ("principal_point+plumb_bob+isaac_gray_response+seeded_noise"
+            if course_name in ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl") else None),
+        "poc_sensor_seed": (int(random_seed) if course_name in
+            ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl") else None),
+        "poc_sensor_response_note": (
+            "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response"
+            if course_name in ("gate_obstacle_poc", "gate_obstacle_poc_obstacle_only") and
+            vision_adapter in ("hybrid_rl", "combined_gate_rl") else None),
+        "source_repository": "isaacsim-workspace shared-home working tree",
+        "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+        "source_note": (
+            "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative"
+        ),
+        "source_files": {
+            "calibration": {
+                "path": "gap8_perception/configs/hm01b0_calibration.json",
+                "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2",
+            },
+            "isaac_sensor_pipeline": {
+                "path": "user_workflows/generate_course_shard.py",
+                "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27",
+            },
+            "isaac_gate_example": {
+                "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+                "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940",
+            },
+            "hardware_acquisition_config": {
+                "repository": "tinympc-nanocockpit",
+                "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+                "path": "src/gap/examples/tiny-racer/config.h",
+                "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b",
+            },
+        },
+    } if vision_adapter in ("dronet", "hybrid_rl", "combined_gate_rl") else None),
     "camera_only_enabled": bool(int(camera_only)),
     "camera_capture_enabled": bool(int(camera_only)) or bool(int(vision_enabled)),
     "camera_inference_enabled": bool(int(vision_enabled)),
@@ -760,7 +832,9 @@ docker_args=(--rm --interactive \
   --volume "$REPO_DIR:/workspace" \
   --workdir /workspace)
 if [[ "$VISION_ENABLED" == 1 ]]; then
-  if [[ -d "$VISION_MODEL" ]]; then
+  if [[ "$VISION_ADAPTER" == combined_gate_rl ]]; then
+    docker_args+=(--volume "$VISION_MODEL_MOUNT:/vision_model:ro")
+  elif [[ -d "$VISION_MODEL" ]]; then
     docker_args+=(--volume "$VISION_MODEL_MOUNT:$VISION_MODEL_CONTAINER:ro")
   else
     docker_args+=(--volume "$VISION_MODEL_MOUNT:/vision_bundle:ro")
@@ -810,6 +884,17 @@ direct_plan_replay="${47}"; mpc_diag_mode="${48}"
 shift 48
 camera_fps=30
 course_build="${course:-none}"
+hm01b0_poc_camera=0
+if [[ "$course" == gate_obstacle_poc || "$course" == gate_obstacle_poc_obstacle_only ]]; then
+  if [[ "$vision_enabled" != 1 || ( "$vision_adapter" != hybrid_rl && "$vision_adapter" != combined_gate_rl ) ]]; then
+    echo "The gate-obstacle POC requires vision-rl or combined-gate-rl vision." >&2
+    exit 2
+  fi
+  # Keep the normal camera path unchanged.  The POC alone renders a compact
+  # overscan image so the bridge can apply the Isaac-calibrated K/distortion
+  # transform before either frozen teacher sees a 160x160 frame.
+  hm01b0_poc_camera=1
+fi
 
 crazysim=/workspace/tools/crazysim_mujoco/.deps/CrazySim
 firmware="$crazysim/crazyflie-firmware"
@@ -818,7 +903,7 @@ app=/workspace/apps/controller_tinympc_eigen
 support=/workspace/tools/crazysim_mujoco/sitl
 diagnostic_path=""
 [[ "$mpc_diag_mode" != taskless ]] || diagnostic_path="$out/mpc_diag.mmap"
-build="$firmware/sitl_make/build-tinympc-${trajectory}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}"
+build="$firmware/sitl_make/build-tinympc-${trajectory}-course${course_build}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}"
 actuator_lti_flag=OFF
 [[ "$actuator_lti" == 1 ]] && actuator_lti_flag=ON
 cost_compile_flag=""
@@ -840,6 +925,14 @@ if [[ "$vision_enabled" == 1 && "$vision_adapter" == espnet && \
       "$vision_scene" == corridor ]]; then
   gate_position_compile_flag="-DTINYMPC_GATE_POSITION_FUSION_ENABLE=1 -DTINYMPC_GATE_CENTER_BEARING_FUSION_ENABLE=1 -DTINYMPC_GATE_CAMERA_FOCAL_NORMALIZED=1.14531138f -DTINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED=0.5f -DTINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED=0.5f -DTINYMPC_GATE_WORLD_X_M=4.0f -DTINYMPC_GATE_WORLD_Y_M=0.0f -DTINYMPC_GATE_WORLD_Z_M=1.5f"
 fi
+course_compile_flag=""
+if [[ "$course" == gate_obstacle_poc || \
+      "$course" == gate_obstacle_poc_obstacle_only ]]; then
+  # The matched obstacle-only control keeps the visual-association code active
+  # so false gates can be measured as a real regression. Every normal course
+  # remains on the unchanged controller path.
+  course_compile_flag="-DTINYMPC_GATE_OBSTACLE_POC_ENABLE=1"
+fi
 trajectory_compile_flag=""
 [[ "$trajectory" == circle ]] && \
   trajectory_compile_flag="-DTINYMPC_TRAJECTORY_CIRCLE=1"
@@ -851,7 +944,7 @@ cmake -S "$firmware/sitl_make" -B "$build" \
   -DTINYMPC_TRAJECTORY="$trajectory" \
   -DTINYMPC_COURSE="$course_build" \
   -DTINYMPC_ACTUATOR_LTI="$actuator_lti_flag" \
-  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $gate_position_compile_flag $trajectory_compile_flag -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
+  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $gate_position_compile_flag $course_compile_flag $trajectory_compile_flag -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
   -DTINYMPC_SITL_START_DELAY_MS="$delay_ms" \
   -DTINYMPC_SITL_TICK_US="$tick_us" \
   >"$out/configure.log" 2>&1
@@ -911,7 +1004,13 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
   scene=/workspace/tools/crazysim_mujoco/scenes/vision_${vision_scene}.xml
   camera_width=160; camera_height=120
   camera_fovy=""
-  if [[ "$vision_adapter" == dronet || "$vision_adapter" == hybrid_rl ]]; then
+  if [[ "$hm01b0_poc_camera" == 1 ]]; then
+    camera_width=192; camera_height=192
+    # 192/2 divided by the calibrated fy gives this source FOV.  It is under
+    # one UDP datagram (36,864 bytes) and leaves a bounded overscan margin.
+    camera_fovy=94.0387229678
+  elif [[ "$vision_adapter" == dronet || "$vision_adapter" == hybrid_rl ||
+        "$vision_adapter" == combined_gate_rl ]]; then
     # Use one raw HM01B0/Isaac-calibrated camera stream for the baseline and
     # learned policy. DroNet is resized to its legacy 200x200 network input;
     # the RL policy consumes two consecutive raw 160x160 frames.
@@ -936,10 +1035,15 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
   else
     passive_arg=()
     [[ "$vision_passive" != 1 ]] || passive_arg=(--passive)
+    hm01b0_poc_args=()
+    if [[ "$hm01b0_poc_camera" == 1 ]]; then
+      hm01b0_poc_args=(--hm01b0-poc --sensor-seed "$random_seed")
+    fi
     python3 -u /workspace/tools/crazysim_mujoco/vision_bridge.py \
       --model "$vision_model" --adapter "$vision_adapter" \
       --camera-port 5200 --camera-fps "$camera_fps" --firmware-port 19960 --log "$out/vision.csv" \
       --delivery-latency-frames "$vision_latency_frames" \
+      "${hm01b0_poc_args[@]}" \
       "${passive_arg[@]}" \
       --frames-dir "$out/vision_frames" \
       --camera-video "$out/fpv_camera.mp4" \

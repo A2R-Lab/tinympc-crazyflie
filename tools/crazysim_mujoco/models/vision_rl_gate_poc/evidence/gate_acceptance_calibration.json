@@ -1,0 +1,52 @@
+{
+  "format": "tinympc-gate-acceptance-calibration-evidence-v1",
+  "canonical_slurm_job": {
+    "job_id": 5891,
+    "partition": "debug",
+    "node": "a2r-tiger",
+    "state": "COMPLETED",
+    "exit_code": "0:0",
+    "elapsed_s": 7,
+    "resources": {
+      "cpus": 4,
+      "memory": "8G",
+      "time_limit": "00:10:00",
+      "gpu": false
+    }
+  },
+  "training_scope": "Logistic confidence fusion only; the gate backbone and obstacle policy remain frozen.",
+  "data": {
+    "source": "/home/cchen/isaacsim-workspace/workspace/newbeedrone_multi_course_confidence_v2",
+    "train_episodes": 20,
+    "validation_episodes": 4,
+    "test_episodes": 4,
+    "episode_overlap": false
+  },
+  "candidate": {
+    "threshold": 0.2965505622906905,
+    "validation_auroc": 0.9541283752507329,
+    "validation_precision": 0.9600433637912343,
+    "validation_recall": 0.9564881962660083,
+    "test_auroc": 0.9501941816883812,
+    "test_precision": 0.9452103849597135,
+    "test_recall": 0.9421738354452972,
+    "test_false_positives": 306
+  },
+  "retained_runtime_fallback": {
+    "threshold": 0.6174671283211735,
+    "approximate_test_precision": 0.9938339572781326,
+    "approximate_test_recall": 0.8054613599857219,
+    "approximate_test_false_positives": 28,
+    "decision": "retain",
+    "reason": "The candidate's recall gain does not justify its substantially higher false-gate rate for collision suppression."
+  },
+  "reproducibility": {
+    "pilot_job_id": 5890,
+    "canonical_job_id": 5891,
+    "numeric_outputs_exactly_equal": true,
+    "calibration_json_sha256": "79c92b28b2422d998b4bb736b75132e5890dfd8e715f53434043cbea24bb506e",
+    "submitted_sbatch_sha256": "ea52ad36218989c51428a88d32c6741358eb7f27bf74a8458c44e677d0e63205",
+    "trainer_sha256": "cf66b4f41d2ceba5cc7ad1596f8d60af0fdb49dbae7bb58dfa7c8eb5663a7c27"
+  },
+  "full_local_artifact": "apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/training/job_5891/calibration/calibration.json"
+}

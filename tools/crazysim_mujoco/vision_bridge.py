@@ -27,6 +27,8 @@ from pathlib import Path
 
 import numpy as np
 
+from hm01b0_poc_camera import Hm01b0PocCamera
+
 
 CAMERA_HEADER = struct.Struct("<HHHH")
 VISION_BODY = struct.Struct("<4sIHH4f4f4f2f8f1f4f")
@@ -1042,9 +1044,103 @@ class VisionRlAdapter:
         )
 
 
+def _combined_gate_rl_teacher_paths(bundle: Path) -> tuple[Path, Path]:
+    """Resolve the two existing teachers named by a combined POC manifest.
+
+    The POC deliberately contains no copied ONNX artifact.  Keeping the
+    paths relative to the manifest makes the combination explicit while
+    retaining the independently-versioned obstacle and gate teachers.
+    """
+    manifest_path = bundle / "bundle.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"missing combined model manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("runtime_adapter") != "combined_gate_rl":
+        raise ValueError("bundle is not a combined_gate_rl manifest")
+    teachers = manifest.get("teacher_models", {})
+    try:
+        obstacle_entry = teachers["obstacle_rl"]
+        gate_entry = teachers["gate_espnet"]
+        obstacle_relative = Path(obstacle_entry["path"])
+        gate_relative = Path(gate_entry["path"])
+    except (KeyError, TypeError) as error:
+        raise ValueError("combined model manifest has incomplete teacher paths") from error
+    if obstacle_relative.is_absolute() or gate_relative.is_absolute():
+        raise ValueError("combined model teacher paths must be manifest-relative")
+    obstacle = (bundle / obstacle_relative).resolve()
+    gate = (bundle / gate_relative).resolve()
+    if not obstacle.is_file() or not gate.is_file():
+        raise FileNotFoundError(
+            "combined model teacher artifact missing: "
+            f"obstacle={obstacle}, gate={gate}")
+    for label, path, entry in (("obstacle", obstacle, obstacle_entry),
+                               ("gate", gate, gate_entry)):
+        expected = entry.get("sha256")
+        if expected is not None and file_sha256(path) != expected:
+            raise ValueError(f"combined {label} teacher hash mismatch: {path}")
+    return obstacle, gate
+
+
+class CombinedGateRlAdapter:
+    """Pair the unchanged RL obstacle action with ESPNet gate geometry.
+
+    This is intentionally an adapter composition rather than a fused model:
+    the navigation packet remains byte-for-byte the existing RL policy's
+    decision, while gate fields and camera intrinsics come solely from the
+    existing ESPNet gate detector.  Both teachers receive the same camera
+    frame on each call and maintain their own identical two-frame history.
+    """
+
+    def __init__(self, bundle: Path):
+        obstacle_model, gate_model = _combined_gate_rl_teacher_paths(bundle)
+        self.obstacle = VisionRlAdapter(obstacle_model)
+        self.gate = EspnetDronetGateAdapter(gate_model)
+        self.last_input = None
+        self.last_input_raw = None
+
+    def reset(self) -> None:
+        self.obstacle.reset()
+        # ESPNet has no public reset because it was previously process-scoped.
+        # Clear only its temporal image and gate filter state for deterministic
+        # reuse in host tests without changing the established ESPNet decoder.
+        self.gate.previous_frame = None
+        self.gate.last_input = None
+        self.gate.last_input_raw = None
+        self.gate.gate_mask_center_px = None
+        self.gate.gate_mask_span_px = None
+        self.gate.gate_mask_streak = 0
+        self.gate.gate_filtered_corners_px = None
+        self.gate.gate_corner_velocity_px_per_frame = None
+        self.gate.gate_frames_since_valid = 0
+        self.last_input = None
+        self.last_input_raw = None
+
+    def predict(self, frame: np.ndarray) -> Prediction:
+        navigation = self.obstacle.predict(frame)
+        gate = self.gate.predict(frame)
+        self.last_input = self.obstacle.last_input
+        self.last_input_raw = self.obstacle.last_input_raw
+        return Prediction(
+            navigation.metric, navigation.sector_danger, navigation.navigation,
+            navigation.clearance, navigation.confidence, navigation.danger,
+            navigation.steering, navigation.collision, gate.gate_valid,
+            gate.corners, gate.gate_confidence, gate.gate_reason,
+            raw_danger=navigation.raw_danger,
+            danger_threshold=navigation.danger_threshold,
+            gate_intrinsics=gate.gate_intrinsics,
+            action=navigation.action,
+            action_logits=navigation.action_logits,
+        )
+
+
 def make_adapter(kind: str, model: Path, threshold: float):
     if kind == "auto":
-        if model.is_dir() and (model / "espnet_two_frame_float.onnx").is_file():
+        manifest = model / "bundle.json" if model.is_dir() else None
+        if (manifest is not None and manifest.is_file() and
+                json.loads(manifest.read_text()).get("runtime_adapter") ==
+                "combined_gate_rl"):
+            kind = "combined_gate_rl"
+        elif model.is_dir() and (model / "espnet_two_frame_float.onnx").is_file():
             kind = "espnet"
         else:
             kind = "stdc" if model.is_dir() else "sequential"
@@ -1064,6 +1160,8 @@ def make_adapter(kind: str, model: Path, threshold: float):
         return DronetAdapter(model), kind
     if kind in ("rl", "hybrid_rl"):
         return VisionRlAdapter(model), kind
+    if kind == "combined_gate_rl":
+        return CombinedGateRlAdapter(model), kind
     raise ValueError(kind)
 
 
@@ -1165,11 +1263,15 @@ def main() -> int:
                       help="Capture/log frames without inference or firmware I/O")
     parser.add_argument("--adapter",
                         choices=("auto", "espnet", "sequential", "stdc", "dronet",
-                                 "rl", "hybrid_rl"),
+                                 "rl", "hybrid_rl", "combined_gate_rl"),
                         default="auto")
     parser.add_argument("--camera-port", type=int, default=5200)
     parser.add_argument("--firmware-port", type=int, default=19960)
     parser.add_argument("--camera-fps", type=float, default=20.0)
+    parser.add_argument("--hm01b0-poc", action="store_true",
+                        help="apply the calibrated HM01B0 path used only by the gate POC")
+    parser.add_argument("--sensor-seed", type=int,
+                        help="deterministic HM01B0 sensor-noise seed (requires --hm01b0-poc)")
     parser.add_argument("--delivery-latency-frames", type=int, default=1,
                         help="Fixed capture-to-firmware latency in camera frames")
     parser.add_argument("--passive", action="store_true",
@@ -1185,10 +1287,15 @@ def main() -> int:
         parser.error("--camera-fps must be positive")
     if args.delivery_latency_frames < 0:
         parser.error("--delivery-latency-frames must be nonnegative")
+    if args.sensor_seed is not None and not args.hm01b0_poc:
+        parser.error("--sensor-seed requires --hm01b0-poc")
+    if args.hm01b0_poc and args.sensor_seed is None:
+        parser.error("--hm01b0-poc requires --sensor-seed")
     if args.camera_only:
         return record_camera_only(args)
     adapter, adapter_name = make_adapter(args.adapter, args.model.resolve(),
                                          args.clearance_threshold)
+    hm01b0_camera = Hm01b0PocCamera(args.sensor_seed) if args.hm01b0_poc else None
 
     camera = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     camera.bind(("127.0.0.1", args.camera_port))
@@ -1241,6 +1348,11 @@ def main() -> int:
             frame = assembler.feed(datagram)
             if frame is None:
                 continue
+            if hm01b0_camera is not None:
+                # Transform exactly once per captured frame.  The resulting
+                # uint8 frame is then handed unchanged to both teachers, so
+                # their temporal histories are exactly identical.
+                frame = hm01b0_camera.transform(frame)
             video.write(frame)
             inference_start = time.perf_counter()
             prediction = adapter.predict(frame)

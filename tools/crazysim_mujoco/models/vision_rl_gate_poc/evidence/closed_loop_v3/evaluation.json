@@ -1,0 +1,862 @@
+{
+  "format": "tinympc-gate-obstacle-poc-evaluation-v2",
+  "ground_truth_gate_definition": "analyze_run summary.course_gate_results and summary.course_gates_passed_in_order",
+  "groups": {
+    "candidate_gate_obstacle": {
+      "runs": [
+        {
+          "group": "candidate_gate_obstacle",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_gate_obstacle_seed2001",
+          "status": "complete",
+          "random_seed": 2001,
+          "course": "gate_obstacle_poc",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": true,
+          "contact_or_crash": true,
+          "contact_before_completion": true,
+          "contact_count_max": 1.0,
+          "first_crash_time_s": 10.632999999999546,
+          "first_crash_after_launch_s": 9.628999999999547,
+          "minimum_obstacle_clearance_m": 2.0458015770595472,
+          "ground_truth_gate": {
+            "declared_gate_count": 1,
+            "passed_in_order": false,
+            "results": [
+              {
+                "name": "expected_gate",
+                "crossed": false,
+                "time_s": null,
+                "lateral_error_m": null,
+                "vertical_error_m": null,
+                "clearance_margin_m": null
+              }
+            ],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "truncated_before_obstacle",
+          "vision_gate_association": {
+            "samples": 319,
+            "gate_valid_samples": 2,
+            "gate_valid_fraction": 0.006269592476489028,
+            "gate_confidence_mean": 0.3235069601952665,
+            "gate_confidence_max": 0.990053099201245,
+            "gate_reason_counts": {
+              "accepted": 2,
+              "aspect": 2,
+              "mask_component": 19,
+              "nonconvex": 15,
+              "ordering": 256,
+              "square_pose": 25
+            },
+            "rl_action_counts": {
+              "track": 315,
+              "left": 0,
+              "right": 4
+            },
+            "inference_latency_ms": {
+              "sample_count": 319,
+              "mean": 1.4830214514464233,
+              "p50": 1.3822559267282486,
+              "p95": 4.338461533188817,
+              "maximum": 5.101483780890703
+            },
+            "first_gate_valid_time_s": 8.2,
+            "last_gate_valid_time_s": 8.267
+          },
+          "rl_action_counts": {
+            "track": 315,
+            "left": 0,
+            "right": 4
+          },
+          "inference_latency_ms": {
+            "sample_count": 288,
+            "mean": 1.4997598708658997,
+            "p50": 1.3822789769619703,
+            "p95": 4.381827218458055,
+            "p99": 4.996399553492665,
+            "maximum": 5.101483780890703,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              285,
+              0,
+              3
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9895833333333334,
+              0.0,
+              0.010416666666666666
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "candidate_gate_obstacle",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_gate_obstacle_seed2002",
+          "status": "complete",
+          "random_seed": 2002,
+          "course": "gate_obstacle_poc",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": true,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.7409265823832578,
+          "ground_truth_gate": {
+            "declared_gate_count": 1,
+            "passed_in_order": false,
+            "results": [
+              {
+                "name": "expected_gate",
+                "crossed": false,
+                "time_s": 11.300173538574462,
+                "lateral_error_m": 1.1057405563311462,
+                "vertical_error_m": 0.17064534227821415,
+                "clearance_margin_m": -0.9807405563311462
+              }
+            ],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 4,
+            "gate_valid_fraction": 0.005555555555555556,
+            "gate_confidence_mean": 0.21125401220071913,
+            "gate_confidence_max": 0.9860937236950845,
+            "gate_reason_counts": {
+              "accepted": 4,
+              "area": 1,
+              "aspect": 20,
+              "mask_component": 21,
+              "nonconvex": 12,
+              "ordering": 567,
+              "square_pose": 95
+            },
+            "rl_action_counts": {
+              "track": 700,
+              "left": 0,
+              "right": 20
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 1.5581558781882956,
+              "p50": 1.3770137447863817,
+              "p95": 4.427397693507373,
+              "maximum": 7.786576170474291
+            },
+            "first_gate_valid_time_s": 7.167,
+            "last_gate_valid_time_s": 7.733
+          },
+          "rl_action_counts": {
+            "track": 700,
+            "left": 0,
+            "right": 20
+          },
+          "inference_latency_ms": {
+            "sample_count": 654,
+            "mean": 1.571342633860556,
+            "p50": 1.3777308631688356,
+            "p95": 4.435295471921564,
+            "p99": 4.9063749611377725,
+            "maximum": 7.786576170474291,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              634,
+              0,
+              20
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9694189602446484,
+              0.0,
+              0.03058103975535168
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "candidate_gate_obstacle",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_gate_obstacle_seed2003",
+          "status": "complete",
+          "random_seed": 2003,
+          "course": "gate_obstacle_poc",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": true,
+          "contact_or_crash": true,
+          "contact_before_completion": true,
+          "contact_count_max": 4.0,
+          "first_crash_time_s": 10.533999999999601,
+          "first_crash_after_launch_s": 9.5399999999996,
+          "minimum_obstacle_clearance_m": 2.0460343433104824,
+          "ground_truth_gate": {
+            "declared_gate_count": 1,
+            "passed_in_order": false,
+            "results": [
+              {
+                "name": "expected_gate",
+                "crossed": false,
+                "time_s": null,
+                "lateral_error_m": null,
+                "vertical_error_m": null,
+                "clearance_margin_m": null
+              }
+            ],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "truncated_before_obstacle",
+          "vision_gate_association": {
+            "samples": 316,
+            "gate_valid_samples": 4,
+            "gate_valid_fraction": 0.012658227848101266,
+            "gate_confidence_mean": 0.34522301290606144,
+            "gate_confidence_max": 0.9803667444448776,
+            "gate_reason_counts": {
+              "accepted": 4,
+              "area": 1,
+              "aspect": 3,
+              "mask_component": 18,
+              "nonconvex": 7,
+              "ordering": 219,
+              "square_pose": 64
+            },
+            "rl_action_counts": {
+              "track": 315,
+              "left": 0,
+              "right": 1
+            },
+            "inference_latency_ms": {
+              "sample_count": 316,
+              "mean": 1.4998336378602852,
+              "p50": 1.3769397046416998,
+              "p95": 4.577707848511636,
+              "maximum": 5.0569199956953526
+            },
+            "first_gate_valid_time_s": 7.433,
+            "last_gate_valid_time_s": 7.967
+          },
+          "rl_action_counts": {
+            "track": 315,
+            "left": 0,
+            "right": 1
+          },
+          "inference_latency_ms": {
+            "sample_count": 287,
+            "mean": 1.5089201500788592,
+            "p50": 1.3767140917479992,
+            "p95": 4.578508948907256,
+            "p99": 4.839656883850693,
+            "maximum": 5.0569199956953526,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              286,
+              0,
+              1
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9965156794425087,
+              0.0,
+              0.003484320557491289
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        }
+      ],
+      "aggregate": {
+        "trials": 3,
+        "incomplete_trials": 0,
+        "course_completions": 0,
+        "course_completion_rate_all_trials": 0.0,
+        "contacts_or_crashes": 2,
+        "contact_or_crash_rate_all_trials": 0.6666666666666666,
+        "sum_contact_count_max": 5.0,
+        "maximum_contact_count_max": 4.0,
+        "runs_with_contact_count": 3,
+        "minimum_obstacle_clearance_m": 0.7409265823832578,
+        "runs_with_clearance": 3,
+        "runs_with_declared_gates": 3,
+        "ground_truth_gate_ordered_passes": 0,
+        "ground_truth_gate_ordered_pass_rate_declared_gate_runs": 0.0
+      }
+    },
+    "candidate_obstacle_only": {
+      "runs": [
+        {
+          "group": "candidate_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_obstacle_only_seed2001",
+          "status": "complete",
+          "random_seed": 2001,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.92610472015079,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.047470245459048065,
+            "gate_confidence_max": 0.672079737979499,
+            "gate_reason_counts": {
+              "area": 1,
+              "aspect": 8,
+              "mask_component": 2,
+              "nonconvex": 24,
+              "ordering": 626,
+              "square_pose": 59
+            },
+            "rl_action_counts": {
+              "track": 664,
+              "left": 0,
+              "right": 56
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 1.4682367372895695,
+              "p50": 1.1974950321018696,
+              "p95": 4.270602413453161,
+              "maximum": 8.046344853937626
+            }
+          },
+          "rl_action_counts": {
+            "track": 664,
+            "left": 0,
+            "right": 56
+          },
+          "inference_latency_ms": {
+            "sample_count": 689,
+            "mean": 1.4687969345269598,
+            "p50": 1.1969818733632565,
+            "p95": 4.2802417650818825,
+            "p99": 4.882002752274275,
+            "maximum": 5.1878090016543865,
+            "emulated_delivery_mean": 33.33333333333333,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              633,
+              0,
+              56
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.918722786647315,
+              0.0,
+              0.08127721335268505
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "candidate_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_obstacle_only_seed2002",
+          "status": "complete",
+          "random_seed": 2002,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.7542261701156194,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.03577259571793286,
+            "gate_confidence_max": 0.6084004219418525,
+            "gate_reason_counts": {
+              "area": 4,
+              "aspect": 11,
+              "mask_component": 2,
+              "nonconvex": 21,
+              "ordering": 628,
+              "square_pose": 54
+            },
+            "rl_action_counts": {
+              "track": 673,
+              "left": 3,
+              "right": 44
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 1.5045609545066125,
+              "p50": 1.2103975750505924,
+              "p95": 4.519593203440309,
+              "maximum": 7.559684105217457
+            }
+          },
+          "rl_action_counts": {
+            "track": 673,
+            "left": 3,
+            "right": 44
+          },
+          "inference_latency_ms": {
+            "sample_count": 689,
+            "mean": 1.513544810024808,
+            "p50": 1.2110723182559013,
+            "p95": 4.535094089806081,
+            "p99": 4.851782377809286,
+            "maximum": 7.559684105217457,
+            "emulated_delivery_mean": 33.33333333333333,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              642,
+              3,
+              44
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9317851959361393,
+              0.0043541364296081275,
+              0.06386066763425254
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "candidate_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/candidate_obstacle_only_seed2003",
+          "status": "complete",
+          "random_seed": 2003,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "combined_gate_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.8451105228483884,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.03702383009590889,
+            "gate_confidence_max": 0.5655104725205327,
+            "gate_reason_counts": {
+              "area": 3,
+              "aspect": 10,
+              "nonconvex": 17,
+              "ordering": 655,
+              "square_pose": 35
+            },
+            "rl_action_counts": {
+              "track": 676,
+              "left": 4,
+              "right": 40
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 1.5768032094153266,
+              "p50": 1.3768901117146015,
+              "p95": 4.595733294263479,
+              "maximum": 7.826264947652817
+            }
+          },
+          "rl_action_counts": {
+            "track": 676,
+            "left": 4,
+            "right": 40
+          },
+          "inference_latency_ms": {
+            "sample_count": 689,
+            "mean": 1.575223304039335,
+            "p50": 1.3764901086688042,
+            "p95": 4.670748300850392,
+            "p99": 4.969719462096691,
+            "maximum": 7.826264947652817,
+            "emulated_delivery_mean": 33.33333333333333,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              645,
+              4,
+              40
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9361393323657474,
+              0.005805515239477504,
+              0.05805515239477504
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        }
+      ],
+      "aggregate": {
+        "trials": 3,
+        "incomplete_trials": 0,
+        "course_completions": 0,
+        "course_completion_rate_all_trials": 0.0,
+        "contacts_or_crashes": 0,
+        "contact_or_crash_rate_all_trials": 0.0,
+        "sum_contact_count_max": 0.0,
+        "maximum_contact_count_max": 0.0,
+        "runs_with_contact_count": 3,
+        "minimum_obstacle_clearance_m": 0.7542261701156194,
+        "runs_with_clearance": 3,
+        "runs_with_declared_gates": 0,
+        "ground_truth_gate_ordered_passes": 0,
+        "ground_truth_gate_ordered_pass_rate_declared_gate_runs": null
+      }
+    },
+    "baseline_obstacle_only": {
+      "runs": [
+        {
+          "group": "baseline_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/baseline_obstacle_only_seed2001",
+          "status": "complete",
+          "random_seed": 2001,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "hybrid_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.8455969427472444,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.0,
+            "gate_confidence_max": 0.0,
+            "gate_reason_counts": {
+              "not_provided": 720
+            },
+            "rl_action_counts": {
+              "track": 669,
+              "left": 4,
+              "right": 47
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 0.3306917781527672,
+              "p50": 0.3288714215159416,
+              "p95": 0.36739944480359554,
+              "maximum": 3.72909102588892
+            }
+          },
+          "rl_action_counts": {
+            "track": 669,
+            "left": 4,
+            "right": 47
+          },
+          "inference_latency_ms": {
+            "sample_count": 690,
+            "mean": 0.3261039215747429,
+            "p50": 0.32960856333374977,
+            "p95": 0.3665323369204998,
+            "p99": 0.3972677141427994,
+            "maximum": 0.41001616045832634,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              639,
+              4,
+              47
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9260869565217391,
+              0.005797101449275362,
+              0.06811594202898551
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "baseline_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/baseline_obstacle_only_seed2002",
+          "status": "complete",
+          "random_seed": 2002,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "hybrid_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.9109490119772713,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.0,
+            "gate_confidence_max": 0.0,
+            "gate_reason_counts": {
+              "not_provided": 720
+            },
+            "rl_action_counts": {
+              "track": 680,
+              "left": 10,
+              "right": 30
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 0.3285084838151104,
+              "p50": 0.3377753309905529,
+              "p95": 0.37179833743721247,
+              "maximum": 1.3591600582003593
+            }
+          },
+          "rl_action_counts": {
+            "track": 680,
+            "left": 10,
+            "right": 30
+          },
+          "inference_latency_ms": {
+            "sample_count": 690,
+            "mean": 0.3277134588933077,
+            "p50": 0.33739255741238594,
+            "p95": 0.37026817444711924,
+            "p99": 0.3994325874373318,
+            "maximum": 1.3591600582003593,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              650,
+              10,
+              30
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9420289855072463,
+              0.014492753623188406,
+              0.043478260869565216
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        },
+        {
+          "group": "baseline_obstacle_only",
+          "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/baseline_obstacle_only_seed2003",
+          "status": "complete",
+          "random_seed": 2003,
+          "course": "gate_obstacle_poc_obstacle_only",
+          "vision_adapter": "hybrid_rl",
+          "course_completion": false,
+          "pass_point_reached": false,
+          "crashed": false,
+          "contact_or_crash": false,
+          "contact_before_completion": false,
+          "contact_count_max": 0.0,
+          "first_crash_time_s": null,
+          "first_crash_after_launch_s": null,
+          "minimum_obstacle_clearance_m": 0.9082784582666769,
+          "ground_truth_gate": {
+            "declared_gate_count": 0,
+            "passed_in_order": true,
+            "results": [],
+            "source": "analyzer_summary"
+          },
+          "obstacle_clearance_scope": "observed_course_window",
+          "vision_gate_association": {
+            "samples": 720,
+            "gate_valid_samples": 0,
+            "gate_valid_fraction": 0.0,
+            "gate_confidence_mean": 0.0,
+            "gate_confidence_max": 0.0,
+            "gate_reason_counts": {
+              "not_provided": 720
+            },
+            "rl_action_counts": {
+              "track": 677,
+              "left": 6,
+              "right": 37
+            },
+            "inference_latency_ms": {
+              "sample_count": 720,
+              "mean": 0.33307843518236446,
+              "p50": 0.33803912810981274,
+              "p95": 0.3764994675293565,
+              "maximum": 3.3534090034663677
+            }
+          },
+          "rl_action_counts": {
+            "track": 677,
+            "left": 6,
+            "right": 37
+          },
+          "inference_latency_ms": {
+            "sample_count": 690,
+            "mean": 0.33273436871451745,
+            "p50": 0.3320008981972933,
+            "p95": 0.3763436106964946,
+            "p99": 0.41092390194535255,
+            "maximum": 3.3534090034663677,
+            "emulated_delivery_mean": 33.333333333333336,
+            "emulated_delivery_p95": 33.333333333333336,
+            "rl_action_counts_track_left_right": [
+              647,
+              6,
+              37
+            ],
+            "rl_action_fractions_track_left_right": [
+              0.9376811594202898,
+              0.008695652173913044,
+              0.0536231884057971
+            ]
+          },
+          "firmware_gate_log_line_count": null,
+          "errors": []
+        }
+      ],
+      "aggregate": {
+        "trials": 3,
+        "incomplete_trials": 0,
+        "course_completions": 0,
+        "course_completion_rate_all_trials": 0.0,
+        "contacts_or_crashes": 0,
+        "contact_or_crash_rate_all_trials": 0.0,
+        "sum_contact_count_max": 0.0,
+        "maximum_contact_count_max": 0.0,
+        "runs_with_contact_count": 3,
+        "minimum_obstacle_clearance_m": 0.8455969427472444,
+        "runs_with_clearance": 3,
+        "runs_with_declared_gates": 0,
+        "ground_truth_gate_ordered_passes": 0,
+        "ground_truth_gate_ordered_pass_rate_declared_gate_runs": null
+      }
+    }
+  },
+  "matrix_status": {
+    "verified": true,
+    "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_poc/fresh_matrix_v3/matrix_status.tsv",
+    "rows": 9,
+    "errors": []
+  },
+  "obstacle_only_regression": {
+    "comparison": "candidate_obstacle_only_minus_baseline_obstacle_only",
+    "candidate_aggregate": {
+      "trials": 3,
+      "incomplete_trials": 0,
+      "course_completions": 0,
+      "course_completion_rate_all_trials": 0.0,
+      "contacts_or_crashes": 0,
+      "contact_or_crash_rate_all_trials": 0.0,
+      "sum_contact_count_max": 0.0,
+      "maximum_contact_count_max": 0.0,
+      "runs_with_contact_count": 3,
+      "minimum_obstacle_clearance_m": 0.7542261701156194,
+      "runs_with_clearance": 3,
+      "runs_with_declared_gates": 0,
+      "ground_truth_gate_ordered_passes": 0,
+      "ground_truth_gate_ordered_pass_rate_declared_gate_runs": null
+    },
+    "baseline_aggregate": {
+      "trials": 3,
+      "incomplete_trials": 0,
+      "course_completions": 0,
+      "course_completion_rate_all_trials": 0.0,
+      "contacts_or_crashes": 0,
+      "contact_or_crash_rate_all_trials": 0.0,
+      "sum_contact_count_max": 0.0,
+      "maximum_contact_count_max": 0.0,
+      "runs_with_contact_count": 3,
+      "minimum_obstacle_clearance_m": 0.8455969427472444,
+      "runs_with_clearance": 3,
+      "runs_with_declared_gates": 0,
+      "ground_truth_gate_ordered_passes": 0,
+      "ground_truth_gate_ordered_pass_rate_declared_gate_runs": null
+    },
+    "paired_seeds": [
+      2001,
+      2002,
+      2003
+    ],
+    "candidate_only_seeds": [],
+    "baseline_only_seeds": [],
+    "paired_runs": [
+      {
+        "random_seed": 2001,
+        "candidate_completion": false,
+        "baseline_completion": false,
+        "candidate_contact_or_crash": false,
+        "baseline_contact_or_crash": false,
+        "clearance_delta_m_candidate_minus_baseline": 0.08050777740354564
+      },
+      {
+        "random_seed": 2002,
+        "candidate_completion": false,
+        "baseline_completion": false,
+        "candidate_contact_or_crash": false,
+        "baseline_contact_or_crash": false,
+        "clearance_delta_m_candidate_minus_baseline": -0.15672284186165186
+      },
+      {
+        "random_seed": 2003,
+        "candidate_completion": false,
+        "baseline_completion": false,
+        "candidate_contact_or_crash": false,
+        "baseline_contact_or_crash": false,
+        "clearance_delta_m_candidate_minus_baseline": -0.06316793541828847
+      }
+    ],
+    "note": "All supplied trials remain in aggregates; paired deltas are supplemental."
+  }
+}

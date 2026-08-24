@@ -44,5 +44,7 @@ apply_once "$CRAZYSIM_DIR/crazyflie-firmware/vendor/FreeRTOS" \
   "$SCRIPT_DIR/patches/freertos-posix-sim-time.patch"
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation" \
   "$SCRIPT_DIR/patches/crazysim-mujoco-logging.patch"
+apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation/simulator_files/mujoco/drone-models" \
+  "$SCRIPT_DIR/patches/crazysim-drone-models-hm01b0-camera.patch"
 
 echo "CrazySim is ready at $CRAZYSIM_DIR"
