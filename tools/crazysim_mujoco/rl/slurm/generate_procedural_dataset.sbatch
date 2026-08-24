@@ -36,7 +36,7 @@ nvidia-smi >"$DATASET_DIR/nvidia-smi.txt"
 
 cd "$REPOSITORY_DIR"
 export MUJOCO_GL=egl
-srun "$PYTHON_BIN" -m tools.crazysim_mujoco.rl.generate_procedural_avoidance_dataset \
+"$PYTHON_BIN" -m tools.crazysim_mujoco.rl.generate_procedural_avoidance_dataset \
   --output "$DATASET_DIR" \
   --seed "$DATASET_SEED" \
   --episodes 60 \
@@ -45,6 +45,6 @@ srun "$PYTHON_BIN" -m tools.crazysim_mujoco.rl.generate_procedural_avoidance_dat
   --layout-variants 12 \
   --appearance-variants 6 \
   --noise-variants 3
-srun "$PYTHON_BIN" -m tools.crazysim_mujoco.rl.validate_procedural_dataset \
+"$PYTHON_BIN" -m tools.crazysim_mujoco.rl.validate_procedural_dataset \
   --manifest "$DATASET_DIR/manifest.json" \
   --out "$DATASET_DIR/validation_report.json"

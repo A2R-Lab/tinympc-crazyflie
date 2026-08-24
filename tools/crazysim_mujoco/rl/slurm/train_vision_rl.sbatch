@@ -45,7 +45,7 @@ if [[ -n "${VALIDATION_DATASET:-}" ]]; then
   expert_args+=(--validation-dataset "$VALIDATION_DATASET")
 fi
 cd "$REPOSITORY_DIR"
-srun "$PYTHON_BIN" -m tools.crazysim_mujoco.rl.train_mbpo \
+"$PYTHON_BIN" -m tools.crazysim_mujoco.rl.train_mbpo \
   --runs "${run_array[@]}" \
   --course "$COURSE_FILE" \
   --config "$CONFIG_FILE" \
