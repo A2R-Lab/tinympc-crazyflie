@@ -11,7 +11,8 @@ import torch.nn.functional as functional
 from tools.crazysim_mujoco.rl.data import (
     RunTransitions, load_expert_npz, load_expert_shards, split_by_episode)
 from tools.crazysim_mujoco.rl.model import TemporalPolicy
-from tools.crazysim_mujoco.rl.train_mbpo import balanced_expert_indices
+from tools.crazysim_mujoco.rl.train_mbpo import (
+    balanced_domain_expert_indices, balanced_expert_indices)
 
 
 def dataset(count=12):
@@ -72,6 +73,24 @@ class TrainerRedesignTest(unittest.TestCase):
         selected = source.expert_action[index]
         np.testing.assert_array_equal(np.bincount(selected, minlength=3), [4, 4, 4])
         self.assertTrue(np.any(source.hard_track_mask[index]))
+
+    def test_domain_balanced_sampler_does_not_dilute_small_shard(self):
+        source = dataset(60)
+        domain = np.concatenate((np.zeros(54, dtype=np.int64),
+                                 np.ones(6, dtype=np.int64)))
+        # Give both domains all three actions despite their unequal sizes.
+        source.expert_action[:54] = np.resize([0, 1, 2], 54)
+        source.expert_action[54:] = np.resize([0, 1, 2], 6)
+        index = balanced_domain_expert_indices(
+            source, domain, 60, torch.Generator().manual_seed(7)).numpy()
+        selected_domain = domain[index]
+        selected_action = source.expert_action[index]
+        np.testing.assert_array_equal(
+            np.bincount(selected_domain, minlength=2), [30, 30])
+        for value in (0, 1):
+            np.testing.assert_array_equal(
+                np.bincount(selected_action[selected_domain == value], minlength=3),
+                [10, 10, 10])
 
     def test_actor_supervision_reaches_encoder(self):
         torch.manual_seed(3)

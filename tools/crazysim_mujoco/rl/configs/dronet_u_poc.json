@@ -8,6 +8,7 @@
   "imagined_horizon": 3,
   "gamma": 0.98,
   "validation_fraction": 0.20,
+  "balance_expert_domains": true,
   "latent_weight": 1.0,
   "behavior_cloning_weight": 1.0,
   "counterfactual_ranking_weight": 0.5,

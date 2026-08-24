@@ -15,8 +15,9 @@ import torch
 import torch.nn.functional as functional
 
 from . import ACTION_COUNT
-from .data import (LATENT_NAMES, RunTransitions, concatenate_runs,
-                   load_expert_shards, split_by_episode)
+from .data import (LATENT_NAMES, RunTransitions, concatenate_datasets,
+                   concatenate_runs, load_expert_npz, load_expert_shards,
+                   split_by_episode)
 from .export_onnx import export
 from .model import LatentDynamics, QNetwork, TemporalPolicy
 
@@ -73,6 +74,56 @@ def balanced_expert_indices(dataset: RunTransitions, batch_size: int,
     track_parts.append(sample(easy_track if easy_track.size else pools[0], easy_count))
     indices = np.concatenate((np.concatenate(track_parts), sample(pools[1], counts[1]),
                               sample(pools[2], counts[2])))
+    permutation = torch.randperm(len(indices), generator=generator).numpy()
+    return torch.from_numpy(indices[permutation]).long()
+
+
+def balanced_domain_expert_indices(dataset: RunTransitions, domain: np.ndarray,
+                                   batch_size: int,
+                                   generator: torch.Generator) -> torch.Tensor:
+    """Sample every source-domain/action pair equally.
+
+    This prevents a large procedural shard from overwhelming a smaller shard
+    containing camera images from the deployment simulator. TRACK samples in
+    each domain retain the same hard/easy split used by the class-only sampler.
+    """
+    domain = np.asarray(domain)
+    if domain.shape != dataset.expert_action.shape:
+        raise ValueError("expert domain labels must match the dataset length")
+    domains = np.unique(domain)
+    cells = [(value, action) for value in domains
+             for action in range(ACTION_COUNT)]
+    pools = {
+        cell: np.flatnonzero((domain == cell[0]) &
+                             (dataset.expert_action == cell[1]))
+        for cell in cells
+    }
+    missing = [cell for cell, pool in pools.items() if pool.size == 0]
+    if missing:
+        raise ValueError(f"domain-balanced batches require all actions: {missing}")
+    counts = [batch_size // len(cells)] * len(cells)
+    for index in range(batch_size % len(cells)):
+        counts[index] += 1
+
+    def sample(pool, count):
+        selected = torch.randint(
+            len(pool), (count,), generator=generator).numpy()
+        return pool[selected]
+
+    parts = []
+    hard_mask = np.asarray(dataset.hard_track_mask, dtype=bool)
+    for count, (value, action) in zip(counts, cells):
+        pool = pools[(value, action)]
+        if action != 0:
+            parts.append(sample(pool, count))
+            continue
+        hard = pool[hard_mask[pool]]
+        easy = pool[~hard_mask[pool]]
+        hard_count = count // 2 if hard.size else 0
+        if hard_count:
+            parts.append(sample(hard, hard_count))
+        parts.append(sample(easy if easy.size else pool, count - hard_count))
+    indices = np.concatenate(parts)
     permutation = torch.randperm(len(indices), generator=generator).numpy()
     return torch.from_numpy(indices[permutation]).long()
 
@@ -173,12 +224,23 @@ def train(args) -> dict:
             f"observed={sorted(observed_training_seeds)} "
             f"expected={sorted(expected_training_seeds)}")
     dataset = concatenate_runs(args.runs, args.course)
-    expert_dataset = load_expert_shards(args.expert_dataset) \
-        if args.expert_dataset is not None else dataset
+    expert_domain = None
+    if args.expert_dataset is not None:
+        expert_shards = [load_expert_npz(path) for path in args.expert_dataset]
+        expert_domain = np.concatenate([
+            np.full(len(shard.expert_action), index, dtype=np.int64)
+            for index, shard in enumerate(expert_shards)
+        ])
+        expert_dataset = concatenate_datasets(expert_shards)
+    else:
+        expert_dataset = dataset
     validation_dataset = None
     if args.validation_dataset is not None:
         validation_dataset = load_expert_shards(args.validation_dataset)
     elif args.expert_dataset is not None:
+        if config.get("balance_expert_domains", False):
+            raise ValueError(
+                "balance_expert_domains requires an explicit validation dataset")
         expert_dataset, validation_dataset = split_by_episode(
             expert_dataset, float(config.get("validation_fraction", 0.20)), seed)
     # The deployed encoder is supervised primarily by the expert images.  Use
@@ -281,14 +343,18 @@ def train(args) -> dict:
             critic_loss.backward()
             critic_optimizer.step()
 
-            try:
-                expert_index = balanced_expert_indices(
-                    expert_dataset, expert_batch_size, generator)
-            except ValueError:
-                expert_index = torch.randint(
-                    len(expert_dataset.expert_action),
-                    (min(expert_batch_size, len(expert_dataset.expert_action)),),
-                    generator=generator)
+            if config.get("balance_expert_domains", False) and expert_domain is not None:
+                expert_index = balanced_domain_expert_indices(
+                    expert_dataset, expert_domain, expert_batch_size, generator)
+            else:
+                try:
+                    expert_index = balanced_expert_indices(
+                        expert_dataset, expert_batch_size, generator)
+                except ValueError:
+                    expert_index = torch.randint(
+                        len(expert_dataset.expert_action),
+                        (min(expert_batch_size, len(expert_dataset.expert_action)),),
+                        generator=generator)
             expert_frames = torch.from_numpy(expert_dataset.frames[expert_index]).float()
             expert_frames = expert_frames.div_(255.0).to(device)
             expert_latent = torch.from_numpy(
