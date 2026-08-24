@@ -202,12 +202,15 @@ def render_figure8_track(output: Path) -> None:
         * np.sin(math.pi * mirrored / ramp_fraction)
     ) / normalization
     theta = 2.0 * math.pi * progress
-    raw_x = 0.5 * np.sin(theta)
+    # Equal lateral amplitudes produce broad, rounded lobes.  The former
+    # 0.5:1 ratio pinched each turnaround and produced a much sharper local
+    # curvature peak even though the Gerono curve was position-continuous.
+    raw_x = np.sin(theta)
     raw_y = np.sin(2.0 * theta)
-    # Align the initial path tangent (0.5, 2.0) with launch +x. This lets the
+    # Align the initial path tangent (1.0, 2.0) with launch +x. This lets the
     # stored yaw be relative to the handoff yaw, as it is for every other
     # tangent-heading racing trajectory.
-    initial_tangent_yaw = math.atan2(2.0, 0.5)
+    initial_tangent_yaw = math.atan2(2.0, 1.0)
     rotate_cos = math.cos(initial_tangent_yaw)
     rotate_sin = math.sin(initial_tangent_yaw)
     x = rotate_cos * raw_x + rotate_sin * raw_y
@@ -226,7 +229,7 @@ def render_figure8_track(output: Path) -> None:
         np.diff(x), np.diff(y)))))
     # Keep the obstacle on the nominal path, but place it before the lobe's
     # tight turnaround so the vision bypass is a realizable parallel lane.
-    obstacle_center = np.asarray([0.2599, -0.4491])
+    obstacle_center = np.asarray([0.5742, -0.8280])
     nearest = int(np.argmin(np.hypot(
         x - obstacle_center[0], y - obstacle_center[1])))
     approach_start = int(np.argmin(np.abs(

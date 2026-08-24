@@ -55,6 +55,13 @@ COURSES = {
     "canonical_circle": {
         "trajectory": "canonical_circle",
         "description": "Closed oval with a tangent-heading obstacle encounter",
+        # Measured together on the rootless-Docker validation host with the
+        # canonical-circle camera scene. Keeping the pair in the manifest
+        # avoids silently running the 50 Hz firmware schedule about 15% fast.
+        "sitl_timing_profile": {
+            "realtime_factor": 0.2,
+            "firmware_time_factor": 0.1600,
+        },
         "obstacles": [
             {"name": "turn_box", "shape": "box", "center": [-0.50, 1.20],
              "half_size": [0.16, 0.25], "height": 0.76},
@@ -66,10 +73,10 @@ COURSES = {
     },
     "canonical_figure8": {
         "trajectory": "canonical_figure8",
-        "description": "Figure-eight with an obstacle on the second lobe",
+        "description": "Broad-lobed smooth figure-eight with an obstacle on the second lobe",
         "obstacles": [
             {"name": "lower_lobe_box", "shape": "box",
-             "center": [0.2599, -0.4491],
+             "center": [0.5742, -0.8280],
              "half_size": [0.16, 0.10], "height": 0.72},
         ],
         "gates": [],

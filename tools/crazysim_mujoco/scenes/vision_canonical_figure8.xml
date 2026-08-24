@@ -11,6 +11,6 @@
   <worldbody>
     <light pos="1 0 5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
-    <geom name="lower_lobe_box" type="box" pos="0.2599 -0.4491 1.5" size="0.16 0.1 0.36" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="lower_lobe_box" type="box" pos="0.5742 -0.828 1.5" size="0.16 0.1 0.36" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
   </worldbody>
 </mujoco>

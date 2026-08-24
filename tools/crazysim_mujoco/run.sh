@@ -43,6 +43,8 @@ MOTOR_TAU_SCALE="1.0"
 THRUST_SCALE="1.0"
 REALTIME_FACTOR="1.0"
 FIRMWARE_TIME_FACTOR="0.8"
+REALTIME_FACTOR_EXPLICIT=0
+FIRMWARE_TIME_FACTOR_EXPLICIT=0
 OUT=""
 OVERWRITE=0
 STOP_ON_CONTACT=1
@@ -173,8 +175,10 @@ while [[ $# -gt 0 ]]; do
     --inertia-scale) INERTIA_SCALE="$2"; shift 2 ;;
     --motor-tau-scale) MOTOR_TAU_SCALE="$2"; shift 2 ;;
     --thrust-scale) THRUST_SCALE="$2"; shift 2 ;;
-    --realtime-factor) REALTIME_FACTOR="$2"; shift 2 ;;
-    --firmware-time-factor) FIRMWARE_TIME_FACTOR="$2"; shift 2 ;;
+    --realtime-factor)
+      REALTIME_FACTOR="$2"; REALTIME_FACTOR_EXPLICIT=1; shift 2 ;;
+    --firmware-time-factor)
+      FIRMWARE_TIME_FACTOR="$2"; FIRMWARE_TIME_FACTOR_EXPLICIT=1; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --vision-model) VISION_MODEL="$2"; shift 2 ;;
     --vision-adapter) VISION_ADAPTER="$2"; shift 2 ;;
@@ -401,10 +405,14 @@ COURSE_MANIFEST=""
 if [[ -n "$COURSE" ]]; then
   COURSE_MANIFEST="$SCRIPT_DIR/courses/${COURSE}.json"
   [[ -f "$COURSE_MANIFEST" ]] || { echo "Unknown course: $COURSE" >&2; exit 2; }
-  read -r course_trajectory course_scene < <(python3 - "$COURSE_MANIFEST" <<'PY'
+  read -r course_trajectory course_scene course_realtime_factor \
+      course_firmware_time_factor < <(python3 - "$COURSE_MANIFEST" <<'PY'
 import json, sys
 course = json.load(open(sys.argv[1]))
-print(course["trajectory"], course["scene"])
+timing = course.get("sitl_timing_profile", {})
+print(course["trajectory"], course["scene"],
+      timing.get("realtime_factor", "-"),
+      timing.get("firmware_time_factor", "-"))
 PY
 )
   [[ "$TRAJECTORY" == "$course_trajectory" ]] || {
@@ -412,6 +420,16 @@ PY
   }
   VISION_SCENE="${course_scene#vision_}"
   VISION_SCENE="${VISION_SCENE%.xml}"
+  # Camera rendering changes the simulator/wall-time ratio. Apply the
+  # measured course pair only when neither half was explicitly supplied, so
+  # an intentional host-specific calibration always wins as a complete pair.
+  if [[ "$REALTIME_FACTOR_EXPLICIT" == 0 \
+      && "$FIRMWARE_TIME_FACTOR_EXPLICIT" == 0 \
+      && "$course_realtime_factor" != - \
+      && "$course_firmware_time_factor" != - ]]; then
+    REALTIME_FACTOR="$course_realtime_factor"
+    FIRMWARE_TIME_FACTOR="$course_firmware_time_factor"
+  fi
 fi
 VISION_ENABLED=0
 VISION_MODEL_CONTAINER=__none__

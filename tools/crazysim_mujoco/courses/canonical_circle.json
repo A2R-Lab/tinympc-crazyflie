@@ -4,6 +4,10 @@
   "scene": "vision_canonical_circle.xml",
   "trajectory": "canonical_circle",
   "description": "Closed oval with a tangent-heading obstacle encounter",
+  "sitl_timing_profile": {
+    "realtime_factor": 0.2,
+    "firmware_time_factor": 0.16
+  },
   "obstacles": [
     {
       "name": "turn_box",

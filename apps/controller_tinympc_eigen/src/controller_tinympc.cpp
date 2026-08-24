@@ -421,11 +421,16 @@ static const TinyRacerNavigationConfig navigation_config = {
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CHICANE)
-#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.46f
+/* The hybrid policy first sees the post-turn cylinder about 0.75 m away.
+ * Commit on that first decision and build the outside-lane offset quickly;
+ * the previous 0.46 m / 0.35 m/s profile clipped the envelope by 14 mm. */
+#define TINYRACER_DODGE_LATERAL_OFFSET_M 0.55f
 #define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
 #define TINYRACER_DODGE_PASS_SIDE (-TRAJECTORY_TURN_DIRECTION)
-#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.35f
-#define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
+#define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.60f
+#define TINYRACER_DODGE_LATERAL_ACCELERATION_MPS2 1.50f
+#define TINYRACER_DODGE_PASS_SPEED_MPS 0.20f
+#define TINYRACER_DODGE_TRIGGER_SAMPLES 1
 #define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.70f

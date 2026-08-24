@@ -77,6 +77,14 @@ retained for deliberate motor-start stress tests. Camera rendering changes the
 simulator/wall-time ratio; calibrate `--firmware-time-factor` if the run's
 automatic launch-time check fails.
 
+Manifest-backed courses may carry a measured `sitl_timing_profile`. When
+neither timing option is supplied, `run.sh` applies that simulator/firmware
+factor pair together. Supplying either timing option opts out of the course
+profile so host-specific calibration remains authoritative. The canonical
+circle profile is measured with its camera scene; using the older camera-light
+factor makes the nominal 50 Hz controller schedule run too fast and destabilizes
+the turn before the obstacle.
+
 DroNet provides only steering and one collision-risk score. The paper warns
 that the latter is not a calibrated Bayesian probability. The firmware keeps
 the published speed/yaw filtering, then uses those signals as evidence for a
