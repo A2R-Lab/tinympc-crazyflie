@@ -155,6 +155,13 @@ void appMain() {
 #define MPC_RATE TINYMPC_GENERATED_SOLVE_RATE_HZ
 #define LQR_RATE RATE_500_HZ  // control frequency
 
+#ifndef TINYMPC_RATE_CASCADE
+#define TINYMPC_RATE_CASCADE 0
+#endif
+#if TINYMPC_RATE_CASCADE && defined(TINYMPC_DIRECT_PLAN_REPLAY)
+#error "TINYMPC rate cascade and direct plan replay are mutually exclusive"
+#endif
+
 // A direct command may be held briefly while the next asynchronous solve
 // finishes. Past this deadline, command model-derived hover rather than flying
 // indefinitely on a stale open-loop command.
@@ -255,9 +262,21 @@ static_assert(1000U % MPC_RATE == 0U,
 #define TRAJECTORY_OBSTACLE_INDEX 0U
 #define TRAJECTORY_OBSTACLE_APPROACH_END_INDEX UINT32_MAX
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
 #include "tinympc_level_actuator_lti.h"
 #include "tinympc_banked_model_bank.h"
+#if TINYMPC_RATE_CASCADE
+#include "tinympc_outer_loop_model_bank.h"
+static_assert(TINYMPC_OUTER_LOOP_STATE_DIM == NSTATES,
+              "outer-loop model state dimension mismatch");
+static_assert(TINYMPC_OUTER_LOOP_INPUT_DIM == NINPUTS,
+              "outer-loop model input dimension mismatch");
+static_assert(TINYMPC_OUTER_LOOP_MODEL_COUNT >=
+                  TINYMPC_BANK_MODEL_RIGHT_VERY_HIGH + 1,
+              "outer-loop model bank must cover the 2.5m/s tier");
+static_assert(TINYMPC_OUTER_LOOP_IDENTIFIED == 1,
+              "outer-loop rate response must be identified");
+#endif
+#if defined(TINYMPC_USE_ACTUATOR_LTI)
 static_assert(TINYMPC_LEVEL_ACTUATOR_STATE_DIM == NSTATES + NINPUTS,
               "level actuator model must add one state per motor");
 static_assert(TINYMPC_LEVEL_ACTUATOR_DT_S == TINYMPC_GENERATED_MODEL_DT_S,
@@ -364,43 +383,49 @@ static const TinyRacerNavigationConfig navigation_config = {
   250, 0.50f, 2.09439510239f, 0.30f
 };
 /* Tangent-heading curves revisit scenery and already consume lateral
- * acceleration. Keep their smaller dodge envelope and longer re-arm distance.
- * On a known curve, use the outside passing lane instead of allowing small
- * frame/timing changes in DroNet steering to flip the chosen side. */
+ * acceleration. Keep their smaller dodge envelope and use the outside passing
+ * lane instead of allowing small frame/timing changes in DroNet steering to
+ * flip the chosen side. A short clear-distance re-arm permits multiple
+ * independently detected obstacles without a course map. */
 #if defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.50f
-#define TINYRACER_DODGE_REARM_DISTANCE_M 100.0f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
 #define TINYRACER_DODGE_PASS_SIDE (-1)
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.20f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.20f
 #define TINYRACER_DODGE_REJOIN_RATE_MPS 0.15f
 #define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.10f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.35f
-#define TINYRACER_DODGE_REARM_DISTANCE_M 100.0f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
 #define TINYRACER_DODGE_PASS_SIDE (-1)
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.25f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
 #define TINYRACER_DODGE_REJOIN_RATE_MPS 0.08f
 #define TINYRACER_DODGE_REJOIN_SPEED_MPS 0.15f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CIRCLE)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.50f
-#define TINYRACER_DODGE_REARM_DISTANCE_M 100.0f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
 #define TINYRACER_DODGE_PASS_SIDE (-TRAJECTORY_TURN_DIRECTION)
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.35f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CHICANE)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.46f
-#define TINYRACER_DODGE_REARM_DISTANCE_M 100.0f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
 #define TINYRACER_DODGE_PASS_SIDE (-TRAJECTORY_TURN_DIRECTION)
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.35f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.30f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR)
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.70f
-#define TINYRACER_DODGE_REARM_DISTANCE_M 100.0f
+#define TINYRACER_DODGE_REARM_DISTANCE_M 0.40f
 #define TINYRACER_DODGE_PASS_SIDE 0
 #define TINYRACER_DODGE_SIDESTEP_RATE_MPS 0.50f
 #define TINYRACER_DODGE_PASS_SPEED_MPS 0.45f
+#define TINYRACER_DODGE_ALLOW_REJOIN_REDIRECT true
 #elif TRAJECTORY_TANGENT_HEADING
 #define TINYRACER_DODGE_LATERAL_OFFSET_M 0.30f
 #define TINYRACER_DODGE_REARM_DISTANCE_M 0.25f
@@ -477,9 +502,6 @@ static TinyRacerNavigationIntent navigation_intent;
 static TinyRacerDodgeState dodge_state;
 static TinyRacerDodgeIntent dodge_intent;
 static uint16_t navigation_warmup_steps = 0;
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-static int mapped_dodge_obstacle_index = -1;
-#endif
 static bool gate_priority_latched = false;
 static uint8_t gate_priority_clear_samples = 0;
 static uint16_t gate_priority_hold_steps = 0;
@@ -499,15 +521,8 @@ static bool figure8_midcourse_dual_reset_complete = false;
 #if defined(TINYMPC_USE_ACTUATOR_LTI)
 static void resetLevelActuatorDuals(void);
 #endif
-
-#if defined(TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR) || \
-    defined(TINYMPC_TRAJECTORY_CANONICAL_CIRCLE) || \
-    defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8) || \
-    defined(TINYMPC_TRAJECTORY_CANONICAL_CHICANE) || \
-    defined(TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN)
-#define TINYMPC_SINGLE_OBSTACLE_COURSE 1
-#else
-#define TINYMPC_SINGLE_OBSTACLE_COURSE 0
+#if TINYMPC_RATE_CASCADE
+static void resetOuterLoopDuals(void);
 #endif
 
 // Create TinyMPC struct
@@ -568,10 +583,10 @@ static const uint32_t traj_length = T_ARRAY_SIZE(trajectory_reference_data);
 #define TINYMPC_POWER_LOOP_TRIGGER_WINDOW_M 0.25f
 #endif
 #if !defined(TINYMPC_POWER_LOOP_RADIUS_M)
-#define TINYMPC_POWER_LOOP_RADIUS_M 1.0f
+#define TINYMPC_POWER_LOOP_RADIUS_M 1.2f
 #endif
 #if !defined(TINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS)
-#define TINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS 1.8f
+#define TINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS 2.2f
 #endif
 #if !defined(TINYMPC_POWER_LOOP_TOP_SPEED_MPS)
 #define TINYMPC_POWER_LOOP_TOP_SPEED_MPS 4.0f
@@ -826,6 +841,59 @@ static void resetUncappedProgressDiagnostics(void) {
   progress_diag_pending_max_log = false;
   progress_diag_has_max_log = false;
 }
+#if TINYMPC_RATE_CASCADE
+static const TinyMpcOuterLoopModelData *active_outer_loop_model =
+    &tinympc_outer_loop_models[TINYMPC_BANK_MODEL_LEVEL];
+static VectorNf outer_Xhrz[NHORIZON];
+static VectorNf outer_p[NHORIZON];
+static VectorNf outer_ZX_new[NHORIZON];
+static VectorNf outer_YX[NHORIZON];
+static VectorMf outer_Uref[NHORIZON - 1];
+static VectorMf outer_Uhrz[NHORIZON - 1];
+static VectorMf outer_d[NHORIZON - 1];
+static VectorMf outer_ZU_new[NHORIZON - 1];
+static VectorMf outer_YU[NHORIZON - 1];
+static const TinyMpcBankSelectorConfig outer_bank_selector_config = {
+    TINYMPC_BANK_MODEL_RIGHT_LOW_ROLL_RAD,
+    TINYMPC_BANK_MODEL_RIGHT_MEDIUM_ROLL_RAD,
+    TINYMPC_BANK_MODEL_RIGHT_HIGH_ROLL_RAD,
+    TINYMPC_BANK_MODEL_RIGHT_VERY_HIGH_ROLL_RAD,
+    TINYMPC_BANK_MODEL_RIGHT_MAXIMUM_ROLL_RAD,
+    0.067f, 0.045f, 0.020f, 5u,
+};
+static TinyMpcBankSelector outer_bank_selector;
+static TinyMpcBankSelection outer_bank_selection = {
+    TINYMPC_BANK_MODEL_LEVEL, 0.0f, false, false, false};
+static float outer_warm_start_yaw_rad = 0.0f;
+static bool outer_warm_start_yaw_initialized = false;
+static bool outer_frame_reseed_requested = false;
+#if defined(CONFIG_PLATFORM_SITL)
+/* Emit a short, solve-rate trace around each bundle handoff.  The ordinary
+ * 10 Hz rate-loop trace shows the downstream command but cannot distinguish a
+ * bad chart state from an ADMM projection transient. */
+static uint8_t outer_model_transition_diag_steps = 0u;
+#endif
+/* First-action slew constraints make model-bundle changes bumpless at 50 Hz.
+ * They constrain the actual outer input seen by the identified closed-loop
+ * plant, not a post-solve command that the optimizer cannot observe. */
+static const float outer_input_slew_per_solve[NINPUTS] = {
+  0.025f, 0.25f, 0.25f, 0.30f,
+};
+/* The stored flip/power-loop primitive previously needed body rates well above
+ * the small-signal racing envelope (the golden direct-MPC loop reached about
+ * 16.5 rad/s).  Keep ordinary banked racing inside the identified +/-6 rad/s
+ * range, but let the optimizer request the physically necessary maneuver rate
+ * through the same 500 Hz stock rate PID. */
+static constexpr float outer_maneuver_roll_pitch_rate_limit_rad_s = 18.0f;
+static constexpr float outer_maneuver_rate_slew_per_solve_rad_s = 0.75f;
+/* A single level linearization cannot supply trustworthy large corrections at
+ * the pi-radian chart singularity.  During a stored maneuver primitive, retain
+ * its phase-dependent thrust/rate feedforward and allow only local MPC trim.
+ * Ordinary racing continues to publish the unrestricted optimized action. */
+static const float outer_maneuver_trim_limit[NINPUTS] = {
+  0.08f, 1.0f, 1.0f, 1.0f,
+};
+#endif
 #if defined(TINYMPC_USE_ACTUATOR_LTI)
 static float level_motor_rotor_state_estimate[NINPUTS] = {0.0f};
 static float planner_level_motor_rotor_state_estimate[NINPUTS] = {0.0f};
@@ -854,6 +922,39 @@ static uint32_t last_controller_tick = 0;
 static uint32_t plan_start_tick = 0;
 static bool motors_were_allowed = false;
 static float active_motor_commands[NINPUTS];
+#if TINYMPC_RATE_CASCADE
+typedef struct {
+  float collective_thrust_n;
+  float body_rate_rad_s[3];
+} TinyMpcRateCommand;
+static TinyMpcRateCommand active_rate_command = {};
+static TinyMpcRateCommand cached_rate_command = {};
+static bool cached_rate_command_valid = false;
+static uint32_t cached_rate_command_tick = 0u;
+static bool rate_pid_was_tracking_fresh_command = false;
+/* The MPC task raises a pending reset at maneuver authority boundaries.  It is
+ * transferred with the next published command and consumed exactly once by
+ * the 500 Hz callback under dataMutex. */
+static bool planner_rate_pid_reset_pending = false;
+static bool active_rate_pid_reset_requested = false;
+
+static float hoverCollectiveThrustN(void) {
+  float collective_thrust_n = 0.0f;
+  for (int motor = 0; motor < NINPUTS; ++motor) {
+    collective_thrust_n += tinympc_generated_physical_hover_thrust[motor];
+  }
+  return collective_thrust_n;
+}
+
+static float collectiveThrustToLegacyCommand(float collective_thrust_n) {
+  const float per_motor_thrust_n = T_MAX(
+      collective_thrust_n / (float)STABILIZER_NR_OF_MOTORS, 0.0f);
+  const float normalized_command = T_MIN(T_MAX(
+      tinympc_generated_thrust_to_normalized_command(per_motor_thrust_n),
+      0.0f), 1.0f);
+  return normalized_command * (float)UINT16_MAX;
+}
+#endif
 #if defined(TINYMPC_DIRECT_PLAN_REPLAY)
 static float active_motor_plan[TINYMPC_DIRECT_PLAN_INPUT_KNOTS][NINPUTS];
 static bool cached_motor_plan_valid = false;
@@ -1546,9 +1647,6 @@ static void resetPerceptionFilter() {
   memset(&navigation_intent, 0, sizeof(navigation_intent));
   tinyRacerDodgeReset(&dodge_state);
   memset(&dodge_intent, 0, sizeof(dodge_intent));
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-  mapped_dodge_obstacle_index = -1;
-#endif
   navigation_warmup_steps = 0;
   gate_priority_latched = false;
   gate_priority_clear_samples = 0;
@@ -1567,78 +1665,6 @@ static void setPathTunnelHalfspaces(
     const TinyMpcTunnelFrame& frame_world);
 #endif
 
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-typedef struct {
-  float x_m;
-  float y_m;
-  float half_x_m;
-  float half_y_m;
-} TinyMpcMappedCorridorObstacle;
-
-static const TinyMpcMappedCorridorObstacle mapped_corridor_obstacles[] = {
-  {2.5f, 0.35f, 0.15f, 0.55f},
-  {4.4f, -0.35f, 0.15f, 0.55f},
-  {6.3f, 0.35f, 0.15f, 0.55f},
-  {8.2f, -0.35f, 0.15f, 0.55f},
-};
-
-static int8_t mappedCorridorPassSide(
-    const Eigen::Vector3f& position_world, int *obstacle_index,
-    float *forward_distance_m) {
-  const Eigen::Vector3f relative = position_world - trajectory_origin_world;
-  const float vehicle_x = trajectory_cos_yaw * relative.x()
-      + trajectory_sin_yaw * relative.y();
-  const float inflated_vehicle_radius_m =
-      perception_drone_radius_m + race_config.safety_margin_m;
-  constexpr float corridor_min_y_m = -2.0f;
-  constexpr float corridor_max_y_m = 2.0f;
-  const float usable_min_y = corridor_min_y_m + inflated_vehicle_radius_m;
-  const float usable_max_y = corridor_max_y_m - inflated_vehicle_radius_m;
-  int selected = -1;
-  float nearest_forward_m = INFINITY;
-  for (unsigned int index = 0;
-       index < sizeof(mapped_corridor_obstacles)
-           / sizeof(mapped_corridor_obstacles[0]); ++index) {
-    const TinyMpcMappedCorridorObstacle& obstacle =
-        mapped_corridor_obstacles[index];
-    const float passed_x = obstacle.x_m + obstacle.half_x_m
-        + inflated_vehicle_radius_m;
-    if (vehicle_x > passed_x) {
-      continue;
-    }
-    const float forward_m = obstacle.x_m - vehicle_x;
-    if (forward_m < nearest_forward_m) {
-      nearest_forward_m = forward_m;
-      selected = (int)index;
-    }
-  }
-  if (selected < 0) {
-    if (obstacle_index != NULL) {
-      *obstacle_index = -1;
-    }
-    if (forward_distance_m != NULL) {
-      *forward_distance_m = INFINITY;
-    }
-    return 0;
-  }
-  const TinyMpcMappedCorridorObstacle& obstacle =
-      mapped_corridor_obstacles[selected];
-  const float obstacle_min_y = obstacle.y_m - obstacle.half_y_m
-      - inflated_vehicle_radius_m;
-  const float obstacle_max_y = obstacle.y_m + obstacle.half_y_m
-      + inflated_vehicle_radius_m;
-  const float right_gap_m = obstacle_min_y - usable_min_y;
-  const float left_gap_m = usable_max_y - obstacle_max_y;
-  if (obstacle_index != NULL) {
-    *obstacle_index = selected;
-  }
-  if (forward_distance_m != NULL) {
-    *forward_distance_m = obstacle.x_m - vehicle_x;
-  }
-  return right_gap_m >= left_gap_m ? -1 : 1;
-}
-#endif
-
 static void applyVisionNavigation(
     const TinyRacerPerceptionObservation& observation,
     float measured_forward_speed_mps,
@@ -1655,41 +1681,10 @@ static void applyVisionNavigation(
       tinyRacerNavigationReset(&navigation_state);
     }
   }
-#if TINYMPC_SINGLE_OBSTACLE_COURSE
-  /* A canonical course carries a coarse route-level encounter window. The
-   * neural output still decides whether and when to dodge inside the window;
-   * this only prevents a background-high logit elsewhere on the route from
-   * consuming the course's sole obstacle encounter. Keep an in-progress
-   * dodge active if its reference advancement crosses the window boundary. */
-#if TRAJECTORY_OBSTACLE_APPROACH_WINDOW
-  if (dodge_state.phase == TINYRACER_DODGE_TRACK && dodge_state.armed &&
-      (step < TRAJECTORY_OBSTACLE_APPROACH_START_INDEX ||
-       step > TRAJECTORY_OBSTACLE_APPROACH_END_INDEX)) {
-    navigation_observation.collision_probability = 0.0f;
-    navigation_observation.steering_command = 0.0f;
-  }
-  /* Once vision initiates the declared encounter, hold the established pass
-   * lane through the obstacle's route station. Clear logits may begin while
-   * the obstacle leaves the camera but must not rejoin the centerline early. */
-#if defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8)
-  if (dodge_state.phase == TINYRACER_DODGE_PASS &&
-      step <= TRAJECTORY_OBSTACLE_APPROACH_END_INDEX) {
-    navigation_observation.collision_probability = 1.0f;
-  }
-#elif defined(TINYMPC_TRAJECTORY_CANONICAL_HAIRPIN)
-  if (dodge_state.phase == TINYRACER_DODGE_PASS &&
-      step <= TRAJECTORY_OBSTACLE_INDEX) {
-    navigation_observation.collision_probability = 1.0f;
-  }
-#endif
-#endif
-  /* These bounded demos declare exactly one physical obstacle. Continue
-   * logging perception after the completed encounter, but do not let a
-   * background-high collision output launch another dodge. */
-  if (dodge_state.phase == TINYRACER_DODGE_TRACK && !dodge_state.armed) {
-    return;
-  }
-#endif
+  /* Avoidance is deliberately reactive. Each sustained threshold crossing
+   * starts one encounter; after a clear pass and short re-arm distance the
+   * same state machine can respond to the next obstacle. No course obstacle
+   * positions or encounter indices are stored in firmware. */
   /* Gate-priority suppression is disabled with gate control: a false gate
    * detection must never mask the collision output during avoidance tests.
    * A calibrated gate candidate is the immediate target, not an obstacle.
@@ -1738,65 +1733,6 @@ static void applyVisionNavigation(
       active_local_frame.yaw_world, &navigation_intent);
   const TinyRacerDodgePhase previous_phase = dodge_state.phase;
   TinyRacerDodgeConfig active_dodge_config = dodge_config;
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-  int mapped_obstacle_index = -1;
-  float mapped_obstacle_forward_m = INFINITY;
-  const int8_t mapped_pass_side = mappedCorridorPassSide(
-      position_world, &mapped_obstacle_index, &mapped_obstacle_forward_m);
-  if (mapped_pass_side != 0) {
-    active_dodge_config.preferred_pass_side = mapped_pass_side;
-  }
-  /* The network has only scalar collision/steering outputs; the mapped course
-   * distinguishes a new obstacle from persistent collision logits belonging
-   * to the obstacle just passed. A fresh mapped encounter may redirect any
-   * active lateral phase, but only after vision independently confirms risk. */
-  const bool mapped_retarget = mapped_dodge_obstacle_index >= 0
-      && mapped_obstacle_index > mapped_dodge_obstacle_index
-      && mapped_obstacle_forward_m <= 1.50f
-      && navigation_intent.active
-      && navigation_intent.collision_probability
-          >= dodge_config.trigger_probability;
-  if (mapped_retarget) {
-    dodge_state.phase = TINYRACER_DODGE_SIDESTEP;
-    dodge_state.pass_side = mapped_pass_side;
-    dodge_state.forward_distance_m = 0.0f;
-    dodge_state.trigger_samples = 0;
-    dodge_state.clear_samples = 0;
-    mapped_dodge_obstacle_index = mapped_obstacle_index;
-    active_dodge_config.allow_rejoin_redirect = false;
-    DEBUG_PRINT(
-        "DroNet mapped retarget obstacle=%d side=%s forward=%.2fm\n",
-        mapped_obstacle_index,
-        mapped_pass_side > 0 ? "left" : "right",
-        (double)mapped_obstacle_forward_m);
-  } else if (mapped_dodge_obstacle_index >= 0) {
-    /* Rejoin redirects based on the same obstacle's persistent logit caused
-     * duplicate sidesteps in the first test. Map association owns re-arming. */
-    active_dodge_config.allow_rejoin_redirect = false;
-  }
-  if (mapped_dodge_obstacle_index >= 0
-      && mapped_obstacle_index == mapped_dodge_obstacle_index) {
-    /* Do not let the generic fixed pass distance start a centerline rejoin
-     * while the vehicle still overlaps the mapped obstacle's inflated
-     * longitudinal slab. Different lateral transients can otherwise produce
-     * an early rejoin even when both the selected side and target lane are
-     * correct. mappedCorridorPassSide() advances to the next obstacle only
-     * after the current far face plus vehicle/safety radius is behind us. */
-    active_dodge_config.minimum_pass_distance_m = INFINITY;
-  }
-  const float mapped_target_offset_m =
-      (float)mapped_pass_side * active_dodge_config.lateral_offset_m;
-  if (mapped_dodge_obstacle_index > 0
-      && dodge_state.phase == TINYRACER_DODGE_SIDESTEP) {
-    /* Entry into the first lane should be gentle, but adjacent alternating
-     * obstacles leave less longitudinal room for a complete lane reversal.
-     * Compensate for tinyRacerDodgeUpdate's opposite-side multiplier so the
-     * complete reversal remains 0.40 m/s, while first-entry remains 0.15. */
-    active_dodge_config.sidestep_rate_mps =
-        dodge_state.lateral_offset_m * mapped_target_offset_m < 0.0f
-            ? 0.20f : 0.40f;
-  }
-#endif
   const int8_t outside_side = trajectoryOutsidePassSide();
 #if TRAJECTORY_TANGENT_HEADING
   const bool prefer_geometry_side = true;
@@ -1815,13 +1751,6 @@ static void applyVisionNavigation(
   tinyRacerDodgeUpdate(
       &dodge_state, &navigation_intent, &active_dodge_config, DT,
       measured_forward_speed_mps, &dodge_intent);
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-  if (mapped_dodge_obstacle_index < 0
-      && previous_phase == TINYRACER_DODGE_TRACK
-      && dodge_state.phase == TINYRACER_DODGE_SIDESTEP) {
-    mapped_dodge_obstacle_index = mapped_obstacle_index;
-  }
-#endif
   if (previous_phase == TINYRACER_DODGE_REJOIN &&
       dodge_state.phase == TINYRACER_DODGE_TRACK) {
 #if TRAJECTORY_TANGENT_HEADING || \
@@ -1836,7 +1765,11 @@ static void applyVisionNavigation(
 #else
     rejoinTrajectory(position_world, heading_world);
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+    /* The shifted avoidance horizon is obsolete after rejoin. Do not retain
+     * its state/dual bias in the collective-and-rate outer solve. */
+    resetOuterLoopDuals();
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
     /* The shifted avoidance horizon is now obsolete. Cold-start the five-step
      * ADMM solve from the nominal track instead of retaining its lateral dual
      * bias for the rest of a long curved course. */
@@ -1920,18 +1853,10 @@ static void applyVisionNavigation(
   }
 #if defined(CONFIG_PLATFORM_SITL)
   if (previous_phase != dodge_state.phase) {
-    DEBUG_PRINT("DroNet banked dodge phase=%d side=%s offset=%.2f"
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-                " mapped_obstacle=%d"
-#endif
-                "\n",
+    DEBUG_PRINT("DroNet banked dodge phase=%d side=%s offset=%.2f\n",
                 (int)dodge_state.phase,
                 dodge_state.pass_side > 0 ? "left" : "right",
-                (double)dodge_state.lateral_offset_m
-#if defined(TINYMPC_VISION_CORRIDOR_OBSTACLES)
-                , mapped_obstacle_index
-#endif
-                );
+                (double)dodge_state.lateral_offset_m);
   }
 #endif
 }
@@ -2820,6 +2745,9 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
         flip_recovery_active = true;
         flip_recovery_settle_steps = 0u;
         flip_recovery_elapsed_steps = 0u;
+#if TINYMPC_RATE_CASCADE
+        planner_rate_pid_reset_pending = true;
+#endif
       }
       if (flip_recovery_active) {
         const struct quat measured_attitude = qnormalize(attitude);
@@ -2842,6 +2770,9 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
         }
         if (flip_recovery_settle_steps >= required_recovery_settle_steps) {
           flip_recovery_active = false;
+#if TINYMPC_RATE_CASCADE
+          planner_rate_pid_reset_pending = true;
+#endif
           DEBUG_PRINT(
               "FLIP recovery complete elapsed_s=%.3f body_z_dot_world_z=%.4f body_rate=%.3frad/s\n",
               (double)flip_recovery_elapsed_steps * DT,
@@ -2939,6 +2870,9 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
         power_loop_recovery_anchor_world = vehicle_world;
         power_loop_recovery_settle_steps = 0u;
         power_loop_recovery_elapsed_steps = 0u;
+#if TINYMPC_RATE_CASCADE
+        planner_rate_pid_reset_pending = true;
+#endif
       }
       if (power_loop_recovery_active) {
         const struct quat measured_attitude = qnormalize(attitude);
@@ -2952,7 +2886,12 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
         const bool recovered = tinyMpcFlipRecoveryReady(
                 body_z_world_z, body_rate_norm_rad_s,
                 0.9396926208f, 2.0f)
-            && position_error_m <= 0.30f && velocity_error_mps <= 1.0f;
+            /* Braking a full loop can displace the vehicle from the phase-end
+             * anchor even after attitude and velocity have settled.  The
+             * completion path immediately rebases the course at the measured
+             * vehicle position, so do not keep exciting the recovery model
+             * merely to return to an obsolete inertial anchor. */
+            && position_error_m <= 1.25f && velocity_error_mps <= 1.0f;
         ++power_loop_recovery_elapsed_steps;
         if (recovered) {
           ++power_loop_recovery_settle_steps;
@@ -2977,6 +2916,9 @@ void updateHorizonReference(const setpoint_t *setpoint, bool advance) {
           progress_reference_acceleration_mps2 = 0.0f;
           trajectory_handoff_hold_steps = (uint16_t)(MPC_RATE / 5);
           power_loop_recovery_active = false;
+#if TINYMPC_RATE_CASCADE
+          planner_rate_pid_reset_pending = true;
+#endif
           DEBUG_PRINT(
               "POWER_LOOP recovery complete elapsed_s=%.3f position_error=%.3fm velocity_error=%.3fm/s body_rate=%.3frad/s\n",
               (double)power_loop_recovery_elapsed_steps * DT,
@@ -3631,6 +3573,7 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
     perception_recovery_active = false;
     perception_halfspace_active = false;
     perception_binary_constraint = false;
+    perception_obstacle_active = false;
     DEBUG_PRINT("Vision avoidance complete; constraint disabled\n");
     return;
   }
@@ -4183,6 +4126,554 @@ static void solveLevelActuatorLti(void) {
 }
 #endif
 
+#if TINYMPC_RATE_CASCADE
+static bool outerModelErrorCoordinatesActive(
+    const TinyMpcOuterLoopModelData& model) {
+  return flip_reference_active || power_loop_reference_active ||
+      model.model_id != TINYMPC_BANK_MODEL_LEVEL;
+}
+
+static bool outerManeuverPrimitiveActive(void) {
+  return flip_state.mode == TINYMPC_FLIP_ACTIVE
+      || power_loop_state.mode == TINYMPC_POWER_LOOP_ACTIVE;
+}
+
+static float outerInputLower(
+    const TinyMpcOuterLoopModelData& model, int input) {
+  if (outerManeuverPrimitiveActive()
+      && (input == 1 || input == 2)) {
+    return -outer_maneuver_roll_pitch_rate_limit_rad_s;
+  }
+  return model.input_lower[input];
+}
+
+static float outerInputUpper(
+    const TinyMpcOuterLoopModelData& model, int input) {
+  if (outerManeuverPrimitiveActive()
+      && (input == 1 || input == 2)) {
+    return outer_maneuver_roll_pitch_rate_limit_rad_s;
+  }
+  return model.input_upper[input];
+}
+
+static float outerInputSlewPerSolve(int input) {
+  if (outerManeuverPrimitiveActive()
+      && (input == 1 || input == 2)) {
+    return outer_maneuver_rate_slew_per_solve_rad_s;
+  }
+  return outer_input_slew_per_solve[input];
+}
+
+static float outerStateRollRad(const VectorNf& state) {
+  const float rx = state(3);
+  const float ry = state(4);
+  const float rz = state(5);
+  const float inverse_norm = 1.0f / sqrtf(
+      1.0f + rx * rx + ry * ry + rz * rz);
+  const float qw = inverse_norm;
+  const float qx = rx * inverse_norm;
+  const float qy = ry * inverse_norm;
+  const float qz = rz * inverse_norm;
+  return atan2f(
+      2.0f * (qw * qx + qy * qz),
+      1.0f - 2.0f * (qx * qx + qy * qy));
+}
+
+static float outerStateYawRad(const VectorNf& state) {
+  const float rx = state(3);
+  const float ry = state(4);
+  const float rz = state(5);
+  const float inverse_norm = 1.0f / sqrtf(
+      1.0f + rx * rx + ry * ry + rz * rz);
+  const float qw = inverse_norm;
+  const float qx = rx * inverse_norm;
+  const float qy = ry * inverse_norm;
+  const float qz = rz * inverse_norm;
+  return atan2f(
+      2.0f * (qw * qz + qx * qy),
+      1.0f - 2.0f * (qy * qy + qz * qz));
+}
+
+static float outerReferenceState(
+    const TinyMpcOuterLoopModelData& model, int knot, int state) {
+  return outerModelErrorCoordinatesActive(model)
+      ? 0.0f : Xref[knot](state);
+}
+
+static float outerProgressLinearCost(
+    const TinyMpcOuterLoopModelData& model, int knot, int state) {
+  if (state < 6 || state > 8) {
+    return 0.0f;
+  }
+  if (!outerModelErrorCoordinatesActive(model) || state == 8) {
+    return progress_state_linear_cost[knot](state);
+  }
+  const float yaw = outerStateYawRad(Xref[knot]);
+  const float cosine = cosf(yaw);
+  const float sine = sinf(yaw);
+  const float qx = progress_state_linear_cost[knot](6);
+  const float qy = progress_state_linear_cost[knot](7);
+  return state == 6
+      ? cosine * qx + sine * qy
+      : -sine * qx + cosine * qy;
+}
+
+static void resetOuterLoopDuals(void) {
+  for (int knot = 0; knot < NHORIZON; ++knot) {
+    outer_Xhrz[knot].setZero();
+    outer_p[knot].setZero();
+    outer_ZX_new[knot].setZero();
+    outer_YX[knot].setZero();
+    if (knot < NHORIZON - 1) {
+      outer_Uref[knot].setZero();
+      outer_Uhrz[knot].setZero();
+      outer_d[knot].setZero();
+      outer_ZU_new[knot].setZero();
+      outer_YU[knot].setZero();
+    }
+  }
+}
+
+static void outerInitialState(
+    const TinyMpcOuterLoopModelData& model, VectorNf& state) {
+  if (!outerModelErrorCoordinatesActive(model)) {
+    state = x0;
+    return;
+  }
+  float actual[NSTATES];
+  float reference[NSTATES];
+  float error[NSTATES];
+  for (int index = 0; index < NSTATES; ++index) {
+    actual[index] = x0(index);
+    reference[index] = Xref[0](index);
+  }
+  tinyMpcFrenetErrorEncode(actual, reference, error);
+  for (int index = 0; index < NSTATES; ++index) {
+    state(index) = error[index];
+  }
+}
+
+static int outerBundleIndexForSelection(TinyMpcBankModelId selection) {
+  const int selected = (int)selection;
+  if (selected < TINYMPC_OUTER_LOOP_MODEL_COUNT) {
+    return selected;
+  }
+  /* The identified bank currently ends at the verified 2.5m/s tier. Keep the
+   * same turn side if the reference requests the not-yet-identified 3m/s
+   * chart; collective/rate bounds still prevent extrapolation. */
+  return tinyMpcBankModelSide(selection) < 0
+      ? TINYMPC_BANK_MODEL_LEFT_VERY_HIGH
+      : TINYMPC_BANK_MODEL_RIGHT_VERY_HIGH;
+}
+
+static void updateOuterLoopModelSelection(void) {
+  static bool maneuver_override_active = false;
+  const bool aggressive_maneuver_active =
+      flip_reference_active || power_loop_reference_active;
+  if (aggressive_maneuver_active) {
+    if (!maneuver_override_active) {
+      tinyMpcBankSelectorReset(
+          &outer_bank_selector, &outer_bank_selector_config);
+      outer_bank_selection = {
+          TINYMPC_BANK_MODEL_LEVEL, 0.0f, false, false, false};
+      active_outer_loop_model =
+          &tinympc_outer_loop_models[TINYMPC_BANK_MODEL_LEVEL];
+      resetOuterLoopDuals();
+      maneuver_override_active = true;
+      DEBUG_PRINT(
+          "MANEUVER outer model=identified_level reference_coordinates=relative kind=%s\n",
+          power_loop_reference_active ? "power_loop" : "flip");
+    }
+    return;
+  }
+  if (maneuver_override_active) {
+    tinyMpcBankSelectorReset(
+        &outer_bank_selector, &outer_bank_selector_config);
+    outer_bank_selection = {
+        TINYMPC_BANK_MODEL_LEVEL, 0.0f, false, false, false};
+    active_outer_loop_model =
+        &tinympc_outer_loop_models[TINYMPC_BANK_MODEL_LEVEL];
+    resetOuterLoopDuals();
+    maneuver_override_active = false;
+  }
+
+  const float reference_bank_rad = outerStateRollRad(Xref[0]);
+  const float measured_bank_rad = outerStateRollRad(x0);
+  const bool terminal_transition_active =
+      tinyMpcProgressPathCompletedLaps(
+          &progress_path, progress_path.progress)
+          >= (uint16_t)TINYMPC_PROGRESS_LAPS;
+  const float selector_measured_bank_rad = terminal_transition_active
+      ? tinyMpcBankMeasuredDemandForReference(
+          reference_bank_rad, measured_bank_rad,
+          outer_bank_selector_config.exit_bank_rad)
+      : measured_bank_rad;
+  const Eigen::Vector3f reference_velocity = Xref[0].segment<3>(6);
+  const float reference_speed_mps = reference_velocity.norm();
+  const float measured_tangent_speed_mps = reference_speed_mps > 1.0e-5f
+      ? x0.segment<3>(6).dot(reference_velocity / reference_speed_mps)
+      : 0.0f;
+  const TinyMpcBankModelId current_model =
+      outer_bank_selector.active_model;
+  const TinyMpcBankModelId requested_model = tinyMpcRequestedBankModel(
+      current_model, reference_bank_rad, &outer_bank_selector_config);
+  const uint8_t current_tier = tinyMpcBankModelTier(current_model);
+  const uint8_t requested_tier = tinyMpcBankModelTier(requested_model);
+  const bool side_change = requested_tier > 0u && current_tier > 0u
+      && tinyMpcBankModelSide(requested_model)
+          != tinyMpcBankModelSide(current_model);
+  const bool more_aggressive_transition = requested_model != current_model
+      && (requested_tier > current_tier || side_change);
+  bool transition_supported = true;
+  bool motion_supported = true;
+  bool nominal_speed_supported = true;
+  bool chart_error_supported = true;
+  float chart_error[NSTATES] = {0.0f};
+  float minimum_nominal_fraction = 0.0f;
+  if (more_aggressive_transition) {
+    float actual[NSTATES];
+    float reference[NSTATES];
+    for (int state = 0; state < NSTATES; ++state) {
+      actual[state] = x0(state);
+      reference[state] = Xref[0](state);
+    }
+    tinyMpcFrenetErrorEncode(actual, reference, chart_error);
+    const TinyMpcOuterLoopModelData& requested_bundle =
+        tinympc_outer_loop_models[
+            outerBundleIndexForSelection(requested_model)];
+    const bool low_demand_entry =
+        current_tier == 0u && requested_tier == 1u;
+    const bool high_tier_promotion =
+        current_tier > 0u && requested_tier > current_tier;
+    minimum_nominal_fraction = tinyMpcBankCandidateSpeedLocalityFraction(
+        low_demand_entry, high_tier_promotion, requested_tier);
+    if (current_tier == 0u && requested_tier > 1u) {
+      /* The level chart cannot close the remaining coordinated-turn yaw-rate
+       * error by itself. Enter an already-local higher tier at 60% nominal
+       * speed, then let the bumpless input constraints complete the transfer. */
+      minimum_nominal_fraction = 0.60f;
+    }
+    motion_supported = tinyMpcBankEntrySupportedByMotion(
+        reference_bank_rad, measured_bank_rad,
+        reference_speed_mps, measured_tangent_speed_mps);
+    nominal_speed_supported = tinyMpcBankEntrySupportedByNominalSpeed(
+        requested_bundle.nominal_speed_mps,
+        reference_speed_mps, measured_tangent_speed_mps,
+        minimum_nominal_fraction);
+    chart_error_supported = tinyMpcBankEntrySupportedByChartError(
+        chart_error, 0.15f, 0.40f, 0.15f, 1.00f);
+    transition_supported = motion_supported && nominal_speed_supported
+        && chart_error_supported;
+  }
+  const float held_bank_rad = current_tier == 0u ? 0.0f
+      : (float)tinyMpcBankModelSide(current_model)
+          * tinyMpcBankNominalForTier(
+              current_tier, &outer_bank_selector_config);
+  const float selector_reference_bank_rad =
+      more_aggressive_transition && !transition_supported
+      ? held_bank_rad : reference_bank_rad;
+  outer_bank_selection = tinyMpcBankSelectorUpdate(
+      &outer_bank_selector, &outer_bank_selector_config,
+      selector_reference_bank_rad, selector_measured_bank_rad);
+  const int bundle_index = outerBundleIndexForSelection(
+      outer_bank_selection.active_model);
+  const TinyMpcOuterLoopModelData *selected_bundle =
+      &tinympc_outer_loop_models[bundle_index];
+  if (outer_bank_selection.switched) {
+    active_outer_loop_model = selected_bundle;
+    if (outer_bank_selection.reset_optimizer) {
+      resetOuterLoopDuals();
+    }
+#if defined(CONFIG_PLATFORM_SITL)
+    outer_model_transition_diag_steps = 30u;
+#endif
+    DEBUG_PRINT(
+        "OUTER model switch requested=%d bundle=%d demand=%.4frad reference=%.4frad measured=%.4frad nominal=%.4frad speed=%.2fm/s count=%lu\n",
+        (int)outer_bank_selection.active_model, bundle_index,
+        (double)outer_bank_selection.signed_bank_demand_rad,
+        (double)reference_bank_rad, (double)measured_bank_rad,
+        (double)selected_bundle->nominal_roll_rad,
+        (double)selected_bundle->nominal_speed_mps,
+        (unsigned long)outer_bank_selector.switch_count);
+  } else {
+    active_outer_loop_model = selected_bundle;
+  }
+  if (more_aggressive_transition && !transition_supported) {
+    static uint16_t locality_wait_log_divider = 0u;
+    if ((locality_wait_log_divider++ % 25u) == 0u) {
+      DEBUG_PRINT(
+          "OUTER entry wait requested=%d current=%d reference_bank=%.4f measured_bank=%.4f reference_speed=%.3f measured_tangent=%.3f fraction=%.2f error=(lat_p=%.3f lat_v=%.3f yaw=%.3f yaw_rate=%.3f) support=(motion=%d speed=%d chart=%d)\n",
+          (int)requested_model, (int)current_model,
+          (double)reference_bank_rad, (double)measured_bank_rad,
+          (double)reference_speed_mps, (double)measured_tangent_speed_mps,
+          (double)minimum_nominal_fraction,
+          (double)chart_error[1], (double)chart_error[7],
+          (double)chart_error[5], (double)chart_error[11],
+          motion_supported, nominal_speed_supported, chart_error_supported);
+    }
+  }
+}
+
+static void prepareOuterInputReference(
+    const TinyMpcOuterLoopModelData& model) {
+  for (int knot = 0; knot < NHORIZON - 1; ++knot) {
+    float collective_thrust_n = 0.0f;
+    for (int motor = 0; motor < NINPUTS; ++motor) {
+      collective_thrust_n += T_MAX(
+          tinympc_generated_physical_hover_thrust[motor]
+              + Uref[knot](motor),
+          0.0f);
+    }
+    const float physical_input[NINPUTS] = {
+      collective_thrust_n,
+      Xref[knot](9), Xref[knot](10), Xref[knot](11),
+    };
+    for (int input = 0; input < NINPUTS; ++input) {
+      outer_Uref[knot](input) = T_MIN(T_MAX(
+          physical_input[input] - model.input_origin[input],
+          outerInputLower(model, input)), outerInputUpper(model, input));
+    }
+  }
+}
+
+static void solveOuterLoopRateModel(void) {
+  const TinyMpcOuterLoopModelData& active_model =
+      *active_outer_loop_model;
+  prepareOuterInputReference(active_model);
+  info.pri_res = 0.0f;
+  info.dua_res = 0.0f;
+  for (int iteration = 0; iteration < 5; ++iteration) {
+    for (int row = 0; row < NSTATES; ++row) {
+      float terminal = 0.0f;
+      for (int column = 0; column < NSTATES; ++column) {
+        terminal -= active_model.P[row * NSTATES + column]
+            * outerReferenceState(
+                active_model, NHORIZON - 1, column);
+      }
+      terminal += outerProgressLinearCost(
+          active_model, NHORIZON - 1, row);
+      outer_p[NHORIZON - 1](row) = terminal;
+    }
+
+    for (int knot = NHORIZON - 2; knot >= 0; --knot) {
+      float r_tilde[NINPUTS];
+      float rhs[NINPUTS];
+      for (int input = 0; input < NINPUTS; ++input) {
+        r_tilde[input] = -TINYMPC_OUTER_LOOP_RHO
+            * (outer_ZU_new[knot](input) - outer_YU[knot](input));
+        for (int column = 0; column < NINPUTS; ++column) {
+          r_tilde[input] -= active_model.R[input * NINPUTS + column]
+              * outer_Uref[knot](column);
+        }
+        float value = r_tilde[input] + active_model.BPf[input];
+        for (int state = 0; state < NSTATES; ++state) {
+          value += active_model.B[state * NINPUTS + input]
+              * outer_p[knot + 1](state);
+        }
+        rhs[input] = value;
+      }
+      for (int input = 0; input < NINPUTS; ++input) {
+        float value = 0.0f;
+        for (int column = 0; column < NINPUTS; ++column) {
+          value += active_model.Quu_inv[input * NINPUTS + column]
+              * rhs[column];
+        }
+        outer_d[knot](input) = value;
+      }
+      for (int state = 0; state < NSTATES; ++state) {
+        float value = -active_model.Q_diagonal[state]
+            * outerReferenceState(active_model, knot, state)
+            + outerProgressLinearCost(active_model, knot, state)
+            - TINYMPC_OUTER_LOOP_RHO
+                * (outer_ZX_new[knot](state) - outer_YX[knot](state))
+            + active_model.APf[state];
+        for (int column = 0; column < NSTATES; ++column) {
+          value += active_model.AmBKt[state * NSTATES + column]
+              * outer_p[knot + 1](column);
+        }
+        for (int input = 0; input < NINPUTS; ++input) {
+          value -= active_model.K[input * NSTATES + state]
+              * r_tilde[input];
+          /* The generated cache stores the upstream, unaugmented
+           * K'R-(A-BK)'PB coefficient. This ADMM recursion solves with
+           * R+rho*I, so add rho*K' here. Omitting it destroys nonzero-input
+           * reference fixed points even though every zero-correction bundle
+           * still appears valid. */
+          const float augmented_coeff_d2p =
+              active_model.coeff_d2p[state * NINPUTS + input]
+              + TINYMPC_OUTER_LOOP_RHO
+                  * active_model.K[input * NSTATES + state];
+          value += augmented_coeff_d2p * outer_d[knot](input);
+        }
+        outer_p[knot](state) = value;
+      }
+    }
+
+    outerInitialState(active_model, outer_Xhrz[0]);
+    for (int knot = 0; knot < NHORIZON - 1; ++knot) {
+      for (int input = 0; input < NINPUTS; ++input) {
+        float value = -outer_d[knot](input);
+        for (int state = 0; state < NSTATES; ++state) {
+          value -= active_model.K[input * NSTATES + state]
+              * outer_Xhrz[knot](state);
+        }
+        outer_Uhrz[knot](input) = value;
+      }
+      for (int state = 0; state < NSTATES; ++state) {
+        float value = active_model.affine[state];
+        for (int column = 0; column < NSTATES; ++column) {
+          value += active_model.A[state * NSTATES + column]
+              * outer_Xhrz[knot](column);
+        }
+        for (int input = 0; input < NINPUTS; ++input) {
+          value += active_model.B[state * NINPUTS + input]
+              * outer_Uhrz[knot](input);
+        }
+        outer_Xhrz[knot + 1](state) = value;
+      }
+    }
+
+    for (int knot = 0; knot < NHORIZON - 1; ++knot) {
+      for (int input = 0; input < NINPUTS; ++input) {
+        float input_lower = outerInputLower(active_model, input);
+        float input_upper = outerInputUpper(active_model, input);
+        if (knot == 0 && mpc_has_run) {
+          const float previous_physical_input = input == 0
+              ? active_rate_command.collective_thrust_n
+              : active_rate_command.body_rate_rad_s[input - 1];
+          const float previous_correction = previous_physical_input
+              - active_model.input_origin[input];
+          input_lower = T_MAX(
+              input_lower,
+              previous_correction - outerInputSlewPerSolve(input));
+          input_upper = T_MIN(
+              input_upper,
+              previous_correction + outerInputSlewPerSolve(input));
+        }
+        outer_YU[knot](input) += outer_Uhrz[knot](input);
+        outer_ZU_new[knot](input) = T_MIN(T_MAX(
+            outer_YU[knot](input), input_lower), input_upper);
+        outer_YU[knot](input) -= outer_ZU_new[knot](input);
+      }
+    }
+    for (int knot = 0; knot < NHORIZON; ++knot) {
+      outer_YX[knot] += outer_Xhrz[knot];
+      outer_ZX_new[knot] = outer_YX[knot];
+      for (int halfspace = 0; halfspace < MAX_HS; ++halfspace) {
+        if (!data.en_hs[knot][halfspace]) {
+          continue;
+        }
+        Eigen::Vector3f a_position = data.a_pos_hs[knot][halfspace];
+        Eigen::Vector3f a_velocity = data.a_vel_hs[knot][halfspace];
+        float boundary = data.b_hs[knot][halfspace];
+        if (outerModelErrorCoordinatesActive(active_model)) {
+          const float yaw = outerStateYawRad(Xref[knot]);
+          const float cosine = cosf(yaw);
+          const float sine = sinf(yaw);
+          a_position = Eigen::Vector3f(
+              cosine * data.a_pos_hs[knot][halfspace].x()
+                  + sine * data.a_pos_hs[knot][halfspace].y(),
+              -sine * data.a_pos_hs[knot][halfspace].x()
+                  + cosine * data.a_pos_hs[knot][halfspace].y(),
+              data.a_pos_hs[knot][halfspace].z());
+          a_velocity = Eigen::Vector3f(
+              cosine * data.a_vel_hs[knot][halfspace].x()
+                  + sine * data.a_vel_hs[knot][halfspace].y(),
+              -sine * data.a_vel_hs[knot][halfspace].x()
+                  + cosine * data.a_vel_hs[knot][halfspace].y(),
+              data.a_vel_hs[knot][halfspace].z());
+          boundary -= data.a_pos_hs[knot][halfspace].dot(
+              Xref[knot].head(3))
+              + data.a_vel_hs[knot][halfspace].dot(
+                  Xref[knot].segment(6, 3));
+        }
+        const float violation =
+            a_position.dot(outer_ZX_new[knot].head(3))
+            + a_velocity.dot(outer_ZX_new[knot].segment(6, 3))
+            - boundary;
+        const float positive_violation = T_MAX(violation, 0.0f);
+        const float penalty = data.slack_penalty_hs[knot][halfspace];
+        const float slack = penalty > 0.0f
+            ? positive_violation / (1.0f + penalty) : 0.0f;
+        data.slack_used_hs[knot][halfspace] = slack;
+        const float correction = positive_violation - slack;
+        if (correction > 0.0f) {
+          outer_ZX_new[knot].head(3) -= correction * a_position;
+          outer_ZX_new[knot].segment(6, 3) -= correction * a_velocity;
+        }
+      }
+      outer_YX[knot] -= outer_ZX_new[knot];
+    }
+  }
+
+  for (int knot = 0; knot < NHORIZON; ++knot) {
+    if (!outerModelErrorCoordinatesActive(active_model)) {
+      Xhrz[knot] = outer_Xhrz[knot];
+      ZX_new[knot] = outer_ZX_new[knot];
+    } else {
+      float reference[NSTATES];
+      float predicted_error[NSTATES];
+      float projected_error[NSTATES];
+      float predicted[NSTATES];
+      float projected[NSTATES];
+      for (int state = 0; state < NSTATES; ++state) {
+        reference[state] = Xref[knot](state);
+        predicted_error[state] = outer_Xhrz[knot](state);
+        projected_error[state] = outer_ZX_new[knot](state);
+      }
+      tinyMpcFrenetErrorDecode(predicted_error, reference, predicted);
+      tinyMpcFrenetErrorDecode(projected_error, reference, projected);
+      for (int state = 0; state < NSTATES; ++state) {
+        Xhrz[knot](state) = predicted[state];
+        ZX_new[knot](state) = projected[state];
+      }
+    }
+    if (knot < NHORIZON - 1) {
+      Uhrz[knot] = outer_Uhrz[knot];
+      ZU_new[knot] = outer_ZU_new[knot];
+      for (int input = 0; input < NINPUTS; ++input) {
+        info.pri_res = T_MAX(info.pri_res, fabsf(
+            outer_Uhrz[knot](input) - outer_ZU_new[knot](input)));
+      }
+    }
+    for (int state = 0; state < NSTATES; ++state) {
+      info.pri_res = T_MAX(info.pri_res, fabsf(
+          outer_Xhrz[knot](state) - outer_ZX_new[knot](state)));
+    }
+  }
+  info.iter = 5;
+#if defined(CONFIG_PLATFORM_SITL)
+  if (outer_model_transition_diag_steps > 0u) {
+    const float reference_roll_rad = outerStateRollRad(Xref[0]);
+    const float measured_roll_rad = outerStateRollRad(x0);
+    DEBUG_PRINT(
+        "OUTER handoff model=%d remaining=%u roll=(ref=%.4f actual=%.4f error=%.4f) error=(p=%.3f,%.3f,%.3f r=%.3f,%.3f,%.3f) uref_phys=(%.4f,%.3f,%.3f,%.3f) primal_phys=(%.4f,%.3f,%.3f,%.3f) projected_phys=(%.4f,%.3f,%.3f,%.3f) residual=%.4f\n",
+        active_model.model_id,
+        (unsigned int)outer_model_transition_diag_steps,
+        (double)reference_roll_rad, (double)measured_roll_rad,
+        (double)(measured_roll_rad - reference_roll_rad),
+        (double)outer_Xhrz[0](0), (double)outer_Xhrz[0](1),
+        (double)outer_Xhrz[0](2), (double)outer_Xhrz[0](9),
+        (double)outer_Xhrz[0](10), (double)outer_Xhrz[0](11),
+        (double)(active_model.input_origin[0] + outer_Uref[0](0)),
+        (double)(active_model.input_origin[1] + outer_Uref[0](1)),
+        (double)(active_model.input_origin[2] + outer_Uref[0](2)),
+        (double)(active_model.input_origin[3] + outer_Uref[0](3)),
+        (double)(active_model.input_origin[0] + outer_Uhrz[0](0)),
+        (double)(active_model.input_origin[1] + outer_Uhrz[0](1)),
+        (double)(active_model.input_origin[2] + outer_Uhrz[0](2)),
+        (double)(active_model.input_origin[3] + outer_Uhrz[0](3)),
+        (double)(active_model.input_origin[0] + outer_ZU_new[0](0)),
+        (double)(active_model.input_origin[1] + outer_ZU_new[0](1)),
+        (double)(active_model.input_origin[2] + outer_ZU_new[0](2)),
+        (double)(active_model.input_origin[3] + outer_ZU_new[0](3)),
+        (double)info.pri_res);
+    --outer_model_transition_diag_steps;
+  }
+#endif
+}
+#endif
+
 
 
 static void tinympcControllerTask(void *parameters) {
@@ -4214,7 +4705,7 @@ static void tinympcControllerTask(void *parameters) {
     uint32_t diagnostic_release_mutex_miss_count;
     uint32_t diagnostic_semaphore_coalesced_count;
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
     float level_motor_rotor_state_estimate_task[NINPUTS];
 #endif
     xSemaphoreTake(dataMutex, portMAX_DELAY);
@@ -4245,7 +4736,7 @@ static void tinympcControllerTask(void *parameters) {
           &planner_diag_semaphore_coalesced_count, __ATOMIC_RELAXED);
     }
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
     memcpy(level_motor_rotor_state_estimate_task,
            planner_level_motor_rotor_state_estimate,
            sizeof(level_motor_rotor_state_estimate_task));
@@ -4298,7 +4789,18 @@ static void tinympcControllerTask(void *parameters) {
 #if defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8)
       figure8_midcourse_dual_reset_complete = false;
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+      resetOuterLoopDuals();
+      tinyMpcBankSelectorReset(
+          &outer_bank_selector, &outer_bank_selector_config);
+      outer_bank_selection = {
+          TINYMPC_BANK_MODEL_LEVEL, 0.0f, false, false, false};
+      active_outer_loop_model =
+          &tinympc_outer_loop_models[TINYMPC_BANK_MODEL_LEVEL];
+      outer_warm_start_yaw_rad = 0.0f;
+      outer_warm_start_yaw_initialized = false;
+      outer_frame_reseed_requested = false;
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
       resetLevelActuatorDuals();
       tinyMpcBankSelectorReset(
           &level_bank_selector, &level_bank_selector_config);
@@ -4390,7 +4892,29 @@ static void tinympcControllerTask(void *parameters) {
 
     updateCourseGateProgress(&state_task);
     updateInitialState(&sensors_task, &state_task);
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+    /* The level outer chart is expressed in the solve's yaw-aligned local
+     * frame. Cold-start its auxiliaries after 5 deg of accumulated chart
+     * rotation. Banked bundles use reference-relative coordinates and need no
+     * such reseed. */
+    constexpr float maximum_outer_warm_start_yaw_change_rad =
+        0.0872664626f;
+    if (!outer_warm_start_yaw_initialized) {
+      outer_warm_start_yaw_rad = active_local_frame.yaw_world;
+      outer_warm_start_yaw_initialized = true;
+    } else if (active_outer_loop_model->model_id
+                   == TINYMPC_BANK_MODEL_LEVEL
+        && fabsf(tinyMpcProgressUnwrapYawNear(
+            active_local_frame.yaw_world, outer_warm_start_yaw_rad)
+            - outer_warm_start_yaw_rad) >=
+        maximum_outer_warm_start_yaw_change_rad) {
+      outer_frame_reseed_requested = true;
+      outer_warm_start_yaw_rad = active_local_frame.yaw_world;
+    } else if (active_outer_loop_model->model_id
+                   != TINYMPC_BANK_MODEL_LEVEL) {
+      outer_warm_start_yaw_rad = active_local_frame.yaw_world;
+    }
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
     /* The level ADMM auxiliaries live in the per-solve yaw-aligned frame.
      * Reusing them after that frame has rotated materially injects an old
      * coordinate chart into the new optimization problem. Periodically cold
@@ -4415,7 +4939,7 @@ static void tinympcControllerTask(void *parameters) {
       level_warm_start_yaw_rad = active_local_frame.yaw_world;
     }
 #endif
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
     for (int motor = 0; motor < NINPUTS; ++motor) {
       level_motor_rotor_state_snapshot(motor) =
           level_motor_rotor_state_estimate_task[motor];
@@ -4461,7 +4985,15 @@ static void tinympcControllerTask(void *parameters) {
     }
     updateRaceIntent(&state_task);
     applyRaceIntent();
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+    updateOuterLoopModelSelection();
+    if (outer_frame_reseed_requested) {
+      if (!outer_bank_selection.switched) {
+        resetOuterLoopDuals();
+      }
+      outer_frame_reseed_requested = false;
+    }
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
     updateLevelActuatorModelSelection();
     if (level_frame_reseed_requested) {
       if (!level_bank_selection.switched) {
@@ -4472,7 +5004,9 @@ static void tinympcControllerTask(void *parameters) {
 #endif
 
     const uint64_t solve_start_us = usecTimestamp();
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+    solveOuterLoopRateModel();
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
     solveLevelActuatorLti();
 #else
     tiny_UpdateLinearCost(&work);
@@ -4516,7 +5050,57 @@ static void tinympcControllerTask(void *parameters) {
     }
 #endif
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-#if defined(TINYMPC_DIRECT_PLAN_REPLAY)
+#if TINYMPC_RATE_CASCADE
+    /* The identified outer model's input is physical
+     * [collective thrust N, desired body p/q/r rad/s]. Publish that optimized
+     * input directly; never reinterpret its rate channels as motor thrusts. */
+    const TinyMpcOuterLoopModelData& publication_model =
+        *active_outer_loop_model;
+    float physical_rate_input[NINPUTS];
+    for (int input = 0; input < NINPUTS; ++input) {
+      const float lower = publication_model.input_origin[input]
+          + outerInputLower(publication_model, input);
+      const float upper = publication_model.input_origin[input]
+          + outerInputUpper(publication_model, input);
+      float optimized_input = publication_model.input_origin[input]
+          + outer_ZU_new[0](input);
+      if (outerManeuverPrimitiveActive()) {
+        const float feedforward_input = publication_model.input_origin[input]
+            + outer_Uref[0](input);
+        const float trim = T_MIN(T_MAX(
+            optimized_input - feedforward_input,
+            -outer_maneuver_trim_limit[input]),
+            outer_maneuver_trim_limit[input]);
+        optimized_input = feedforward_input + trim;
+      }
+      physical_rate_input[input] = T_MIN(T_MAX(
+          optimized_input,
+          lower), upper);
+    }
+    active_rate_command.collective_thrust_n = physical_rate_input[0];
+    for (int axis = 0; axis < 3; ++axis) {
+      active_rate_command.body_rate_rad_s[axis] =
+          physical_rate_input[axis + 1];
+    }
+    if (planner_rate_pid_reset_pending) {
+      active_rate_pid_reset_requested = true;
+      planner_rate_pid_reset_pending = false;
+    }
+    const float equal_motor_command = T_MIN(T_MAX(
+        tinympc_generated_thrust_to_normalized_command(
+            active_rate_command.collective_thrust_n / (float)NINPUTS),
+        0.0f), 1.0f);
+    for (int motor = 0; motor < NINPUTS; ++motor) {
+      /* Retain a meaningful common-mode value for existing diagnostics only;
+       * the stock legacy mixer, not this array, generates motor differentials. */
+      active_motor_commands[motor] = equal_motor_command;
+#if defined(CONFIG_PLATFORM_SITL)
+      if (diagnostic_enabled) {
+        diagnostic_first_action_raw[motor] = equal_motor_command;
+      }
+#endif
+    }
+#elif defined(TINYMPC_DIRECT_PLAN_REPLAY)
     memcpy(active_motor_plan, prepared_motor_plan,
            sizeof(active_motor_plan));
     for (int motor = 0; motor < NINPUTS; ++motor) {
@@ -4638,6 +5222,10 @@ static void tinympcControllerTask(void *parameters) {
 
 void controllerOutOfTreeInit(void) { 
   /* Start MPC initialization*/
+#if TINYMPC_RATE_CASCADE
+  attitudeControllerInit(1.0f / (float)LQR_RATE);
+  rate_pid_was_tracking_fresh_command = false;
+#endif
   estimatorSetAidingInhibit(EstimatorAidingInhibitNone);
   configureFlipInputPrimitive();
   tinyMpcFlipReset(&flip_state);
@@ -4687,7 +5275,21 @@ void controllerOutOfTreeInit(void) {
     ZX_new[k].setZero();
     YX[k].setZero();
   }
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if TINYMPC_RATE_CASCADE
+  resetOuterLoopDuals();
+  tinyMpcBankSelectorReset(
+      &outer_bank_selector, &outer_bank_selector_config);
+  outer_bank_selection = {
+      TINYMPC_BANK_MODEL_LEVEL, 0.0f, false, false, false};
+  active_outer_loop_model =
+      &tinympc_outer_loop_models[TINYMPC_BANK_MODEL_LEVEL];
+  outer_warm_start_yaw_rad = 0.0f;
+  outer_warm_start_yaw_initialized = false;
+  outer_frame_reseed_requested = false;
+  DEBUG_PRINT(
+      "Outer MPC model=identified_collective_rate bundles=%d inner_rate_hz=%d input=[T_N,p,q,r]\n",
+      TINYMPC_OUTER_LOOP_MODEL_COUNT, LQR_RATE);
+#elif defined(TINYMPC_USE_ACTUATOR_LTI)
   resetLevelActuatorDuals();
   tinyMpcBankSelectorReset(
       &level_bank_selector, &level_bank_selector_config);
@@ -4793,6 +5395,15 @@ void controllerOutOfTreeInit(void) {
     cached_motor_command[motor] = 0.0f;
 #endif
   }
+#if TINYMPC_RATE_CASCADE
+  memset(&active_rate_command, 0, sizeof(active_rate_command));
+  memset(&cached_rate_command, 0, sizeof(cached_rate_command));
+  cached_rate_command_valid = false;
+  cached_rate_command_tick = 0u;
+  rate_pid_was_tracking_fresh_command = false;
+  planner_rate_pid_reset_pending = false;
+  active_rate_pid_reset_requested = false;
+#endif
 #if defined(TINYMPC_DIRECT_PLAN_REPLAY)
   cached_motor_plan_valid = false;
   cached_motor_plan_tick = 0u;
@@ -4808,7 +5419,12 @@ void controllerOutOfTreeInit(void) {
   } else {
     DEBUG_PRINT("Commander/setpoint mode enabled\n");
   }
+#if TINYMPC_RATE_CASCADE
+  DEBUG_PRINT(
+      "TinyMPC outer loop -> 500Hz body-rate PID -> legacy motor mixer enabled\n");
+#else
   DEBUG_PRINT("Exclusive TinyMPC direct motor control enabled\n");
+#endif
 }
 
 bool controllerOutOfTreeTest() {
@@ -4834,10 +5450,24 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 #else
   const bool motors_allowed = supervisorAreMotorsAllowedToRun();
 #endif
+  const bool motors_allowed_changed = motors_allowed != motors_were_allowed;
   bool has_run_snapshot = false;
   uint32_t plan_start_tick_snapshot = 0;
   float motor_command_snapshot[NINPUTS] = {0.0f};
-#if defined(TINYMPC_DIRECT_PLAN_REPLAY)
+#if TINYMPC_RATE_CASCADE
+  bool rate_pid_reset_requested_snapshot = false;
+  TinyMpcRateCommand rate_command_snapshot = cached_rate_command;
+  has_run_snapshot = cached_rate_command_valid;
+  plan_start_tick_snapshot = cached_rate_command_tick;
+  for (int motor = 0; motor < NINPUTS; ++motor) {
+    motor_command_snapshot[motor] = cached_motor_command[motor];
+  }
+  if (controller_reactivated || !motors_allowed) {
+    cached_rate_command_valid = false;
+    cached_motor_command_valid = false;
+    has_run_snapshot = false;
+  }
+#elif defined(TINYMPC_DIRECT_PLAN_REPLAY)
   bool plan_replay_fresh_snapshot = cached_motor_plan_valid;
   has_run_snapshot = cached_motor_plan_valid;
   plan_start_tick_snapshot = cached_motor_plan_tick;
@@ -4875,7 +5505,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     if (controller_reactivated || (!motors_allowed && motors_were_allowed)) {
       mpc_has_run = false;
       planner_reset_requested = true;
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
       for (int motor = 0; motor < NINPUTS; ++motor) {
         level_motor_rotor_state_estimate[motor] = 0.0f;
       }
@@ -4885,7 +5515,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       memcpy(&planner_setpoint, setpoint, sizeof(planner_setpoint));
       memcpy(&planner_sensors, sensors, sizeof(planner_sensors));
       memcpy(&planner_state, state, sizeof(planner_state));
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
       memcpy(planner_level_motor_rotor_state_estimate,
              level_motor_rotor_state_estimate,
              sizeof(planner_level_motor_rotor_state_estimate));
@@ -4923,7 +5553,20 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     }
     has_run_snapshot = mpc_has_run;
     plan_start_tick_snapshot = plan_start_tick;
-#if defined(TINYMPC_DIRECT_PLAN_REPLAY)
+#if TINYMPC_RATE_CASCADE
+    rate_command_snapshot = active_rate_command;
+    rate_pid_reset_requested_snapshot = active_rate_pid_reset_requested;
+    active_rate_pid_reset_requested = false;
+    cached_rate_command = rate_command_snapshot;
+    cached_rate_command_valid = has_run_snapshot;
+    cached_rate_command_tick = plan_start_tick_snapshot;
+    for (int motor = 0; motor < NINPUTS; ++motor) {
+      motor_command_snapshot[motor] = active_motor_commands[motor];
+      cached_motor_command[motor] = motor_command_snapshot[motor];
+    }
+    cached_motor_command_valid = has_run_snapshot;
+    cached_motor_command_tick = plan_start_tick_snapshot;
+#elif defined(TINYMPC_DIRECT_PLAN_REPLAY)
     const TinyMpcDirectPlanReplaySelection replay_selection =
         tinyMpcDirectPlanReplaySelect(
             tick, plan_start_tick_snapshot, TINYMPC_DIRECT_PLAN_KNOT_TICKS,
@@ -4961,7 +5604,10 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
   motors_were_allowed = motors_allowed;
 
   const bool command_is_fresh = has_run_snapshot &&
-#if defined(TINYMPC_DIRECT_PLAN_REPLAY)
+#if TINYMPC_RATE_CASCADE
+      (tick - plan_start_tick_snapshot <=
+       M2T(TINYMPC_RATE_COMMAND_MAX_AGE_MS));
+#elif defined(TINYMPC_DIRECT_PLAN_REPLAY)
       plan_replay_fresh_snapshot;
 #else
       (tick - plan_start_tick_snapshot <=
@@ -4974,6 +5620,14 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       diagnostic_command_finite = diagnostic_command_finite &&
           std::isfinite(motor_command_snapshot[motor]);
     }
+#if TINYMPC_RATE_CASCADE
+    diagnostic_command_finite = diagnostic_command_finite &&
+        std::isfinite(rate_command_snapshot.collective_thrust_n);
+    for (int axis = 0; axis < 3; ++axis) {
+      diagnostic_command_finite = diagnostic_command_finite &&
+          std::isfinite(rate_command_snapshot.body_rate_rad_s[axis]);
+    }
+#endif
     const uint32_t diagnostic_fallback_reason = !motors_allowed ? 1u
         : !has_run_snapshot ? 2u
         : !command_is_fresh ? 3u
@@ -5014,7 +5668,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
       record.first_action_clamped[motor] = !motors_allowed ? 0.0f
           : diagnostic_fallback_reason == 0u
               ? motor_command_snapshot[motor] : hover_command;
-#if defined(TINYMPC_USE_ACTUATOR_LTI)
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
       record.rotor_state[motor] = level_motor_rotor_state_estimate[motor];
 #endif
     }
@@ -5022,6 +5676,124 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     }
   }
 #endif
+#if TINYMPC_RATE_CASCADE
+  bool rate_command_is_finite =
+      std::isfinite(rate_command_snapshot.collective_thrust_n);
+  for (int axis = 0; axis < 3; ++axis) {
+    rate_command_is_finite = rate_command_is_finite &&
+        std::isfinite(rate_command_snapshot.body_rate_rad_s[axis]);
+  }
+  const bool track_fresh_rate_command =
+      command_is_fresh && rate_command_is_finite;
+  if (controller_reactivated || motors_allowed_changed ||
+      rate_pid_reset_requested_snapshot ||
+      track_fresh_rate_command != rate_pid_was_tracking_fresh_command) {
+    /* Reset integral memory at every authority/fallback boundary. A stale MPC
+     * plan falls back to rate-stabilized hover, never a stale rate target. */
+#if defined(CONFIG_PLATFORM_SITL)
+    /* CrazySim's pinned firmware predates the attitude-value reset API. */
+    attitudeControllerResetAllPID();
+#else
+    attitudeControllerResetAllPID(
+        state->attitude.roll, state->attitude.pitch, state->attitude.yaw);
+#endif
+    /* If the reset lands between 500 Hz rate updates, do not retain a stale
+     * torque command for the intervening 1 ms legacy-mixer cycle. */
+    control->roll = 0;
+    control->pitch = 0;
+    control->yaw = 0;
+  }
+  rate_pid_was_tracking_fresh_command = track_fresh_rate_command;
+
+  control->controlMode = controlModeLegacy;
+  if (!motors_allowed) {
+    control->thrust = 0.0f;
+    control->roll = 0;
+    control->pitch = 0;
+    control->yaw = 0;
+  } else {
+    const float collective_thrust_n = track_fresh_rate_command
+        ? rate_command_snapshot.collective_thrust_n
+        : hoverCollectiveThrustN();
+    control->thrust = collectiveThrustToLegacyCommand(collective_thrust_n);
+    if (RATE_DO_EXECUTE(LQR_RATE, tick)) {
+      const float desired_roll_rate_deg_s = track_fresh_rate_command
+          ? degrees(rate_command_snapshot.body_rate_rad_s[0]) : 0.0f;
+      /* TinyMPC stores the raw body-y gyro convention. Crazyflie's stock rate
+       * PID and legacy mixer use the opposite pitch-rate sign. */
+      const float desired_pitch_rate_deg_s = track_fresh_rate_command
+          ? -degrees(rate_command_snapshot.body_rate_rad_s[1]) : 0.0f;
+      const float desired_yaw_rate_deg_s = track_fresh_rate_command
+          ? degrees(rate_command_snapshot.body_rate_rad_s[2]) : 0.0f;
+      attitudeControllerCorrectRatePID(
+          sensors->gyro.x, -sensors->gyro.y, sensors->gyro.z,
+          desired_roll_rate_deg_s, desired_pitch_rate_deg_s,
+          desired_yaw_rate_deg_s);
+      attitudeControllerGetActuatorOutput(
+          &control->roll, &control->pitch, &control->yaw);
+      control->yaw = -control->yaw;
+#if defined(TINYMPC_USE_ACTUATOR_LTI) && !TINYMPC_RATE_CASCADE
+      /* Keep the augmented rotor state tied to what the inner loop actually
+       * sends through the legacy X mixer. This does not pretend that the old
+       * direct-motor B matrix models the closed rate loop; it only prevents
+       * the next 50 Hz solve from starting with fictitious rotor speeds. */
+      const int32_t legacy_roll = control->roll / 2.0f;
+      const int32_t legacy_pitch = control->pitch / 2.0f;
+      int32_t mixed_pwm[NINPUTS] = {
+        (int32_t)control->thrust - legacy_roll + legacy_pitch + control->yaw,
+        (int32_t)control->thrust - legacy_roll - legacy_pitch - control->yaw,
+        (int32_t)control->thrust + legacy_roll - legacy_pitch + control->yaw,
+        (int32_t)control->thrust + legacy_roll + legacy_pitch - control->yaw,
+      };
+      int32_t highest_pwm = 0;
+      for (int motor = 0; motor < NINPUTS; ++motor) {
+        highest_pwm = T_MAX(highest_pwm, mixed_pwm[motor]);
+      }
+      const int32_t common_reduction = T_MAX(
+          highest_pwm - (int32_t)UINT16_MAX, 0);
+      const float estimator_alpha = 1.0f - expf(
+          -(1.0f / (float)LQR_RATE) /
+              TINYMPC_LEVEL_MOTOR_TIME_CONSTANT_S);
+      for (int motor = 0; motor < NINPUTS; ++motor) {
+        const float normalized_command =
+            (float)T_MIN(T_MAX(
+                mixed_pwm[motor] - common_reduction, 0),
+                (int32_t)UINT16_MAX) / (float)UINT16_MAX;
+        const float target_thrust_n = T_MIN(
+            tinympc_generated_normalized_command_to_thrust(
+                normalized_command),
+            TINYMPC_LEVEL_MAX_MOTOR_THRUST_N);
+        const float target_rotor_state =
+            thrustToLevelRotorState(target_thrust_n);
+        level_motor_rotor_state_estimate[motor] += estimator_alpha *
+            (target_rotor_state - level_motor_rotor_state_estimate[motor]);
+      }
+#endif
+#if defined(CONFIG_PLATFORM_SITL)
+      static uint32_t rate_cascade_debug_counter = 0u;
+      if (rate_cascade_debug_counter < 2000u &&
+          (rate_cascade_debug_counter % 50u) == 0u) {
+        DEBUG_PRINT(
+            "RATE cascade fresh=%d T=%.4fN omega_d=(%.3f,%.3f,%.3f) gyro=(%.3f,%.3f,%.3f) legacy=(%d,%d,%d,%.0f)\n",
+            track_fresh_rate_command,
+            (double)collective_thrust_n,
+            (double)(track_fresh_rate_command
+                ? rate_command_snapshot.body_rate_rad_s[0] : 0.0f),
+            (double)(track_fresh_rate_command
+                ? rate_command_snapshot.body_rate_rad_s[1] : 0.0f),
+            (double)(track_fresh_rate_command
+                ? rate_command_snapshot.body_rate_rad_s[2] : 0.0f),
+            (double)radians(sensors->gyro.x),
+            (double)radians(sensors->gyro.y),
+            (double)radians(sensors->gyro.z),
+            (int)control->roll, (int)control->pitch, (int)control->yaw,
+            (double)control->thrust);
+      }
+      ++rate_cascade_debug_counter;
+#endif
+    }
+  }
+#else
   control->controlMode = controlModePWM;
   for (int motor = 0; motor < STABILIZER_NR_OF_MOTORS; ++motor) {
     const float hover_command =
@@ -5059,6 +5831,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     }
 #endif
   }
+#endif
 }
 
 #if defined(__cplusplus)

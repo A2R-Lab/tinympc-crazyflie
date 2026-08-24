@@ -276,6 +276,21 @@ int main(void) {
       &dodge_intent);
   assert(dodge_state.armed);
 
+  /* The next independent threshold crossing starts a second encounter. The
+   * state machine associates only the currently active obstacle and needs no
+   * route-level obstacle table or encounter index. */
+  navigation_intent.collision_probability = 0.8f;
+  navigation_intent.yaw_rate_rad_s = 0.4f;
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_TRACK);
+  tinyRacerDodgeUpdate(
+      &dodge_state, &navigation_intent, &dodge_config, 0.1f, 0.45f,
+      &dodge_intent);
+  assert(dodge_intent.phase == TINYRACER_DODGE_SIDESTEP);
+  assert(dodge_intent.pass_side == 1);
+
   /* A new sustained threat during rejoin is a distinct close-spaced slalom
    * encounter and must be allowed to reverse the selected pass side. */
   tinyRacerDodgeReset(&dodge_state);

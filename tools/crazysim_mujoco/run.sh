@@ -26,8 +26,8 @@ FLIP_PITCH_DIRECTION=1
 POWER_LOOP_ENABLE=0
 POWER_LOOP_TRIGGER_S_M="1.0"
 POWER_LOOP_TRIGGER_WINDOW_M="0.25"
-POWER_LOOP_RADIUS_M="1.0"
-POWER_LOOP_BOTTOM_SPEED_MPS="1.8"
+POWER_LOOP_RADIUS_M="1.2"
+POWER_LOOP_BOTTOM_SPEED_MPS="2.2"
 POWER_LOOP_TOP_SPEED_MPS="4.0"
 PROGRESS_REFERENCE_LIMITS_EFFECTIVE="uncapped"
 DURATION=10
@@ -66,6 +66,8 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --trajectory NAME       straight, straight_long, straight_9m, figure8, oval, circle, chicane,
                           hairpin_180, or a canonical level-flight route
   --actuator-lti 0|1      Include fixed motor-lag states in level flight (default: 1)
+  --rate-cascade 0|1      Use TinyMPC collective/body-rate output with the 500 Hz
+                          firmware rate PID and legacy mixer (default: 0)
   --direct-plan-replay 0|1  Replay successive direct-MPC horizon inputs while a solve
                           is delayed (requires direct mode, actuator LTI; default: 0)
   --rate-identification   Run bounded hover rate-response excitation (diagnostic only)
@@ -92,8 +94,8 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --power-loop 0|1        Enable the one-shot vertical spatial loop (default: 0)
   --power-loop-trigger-s-m M  Measured course distance for loop entry (default: 1.0)
   --power-loop-trigger-window-m M  Width of loop trigger window (default: 0.25)
-  --power-loop-radius-m M Vertical loop radius (default: 1.0)
-  --power-loop-bottom-speed-mps MPS  Entry/exit speed (default: 1.8)
+  --power-loop-radius-m M Vertical loop radius (default: 1.2)
+  --power-loop-bottom-speed-mps MPS  Entry/exit speed (default: 2.2)
   --power-loop-top-speed-mps MPS  Inverted-top speed (default: 4.0)
   --duration SECONDS      Simulation duration (default: 10)
   --launch-time SECONDS   Airborne handoff/controller start (default: 1)
@@ -138,7 +140,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --trajectory) TRAJECTORY="$2"; shift 2 ;;
     --actuator-lti) ACTUATOR_LTI="$2"; shift 2 ;;
-    --rate-cascade) echo "--rate-cascade is no longer supported" >&2; exit 2 ;;
+    --rate-cascade) RATE_CASCADE="$2"; shift 2 ;;
     --direct-plan-replay) DIRECT_PLAN_REPLAY="$2"; shift 2 ;;
     --rate-identification) RATE_IDENTIFICATION=1; shift ;;
     --mpc-diag-mode) MPC_DIAG_MODE="$2"; shift 2 ;;
@@ -229,10 +231,6 @@ if [[ "$DIRECT_PLAN_REPLAY" == 1 && "$RATE_CASCADE" != 0 ]]; then
 fi
 if [[ "$DIRECT_PLAN_REPLAY" == 1 && "$ACTUATOR_LTI" != 1 ]]; then
   echo "--direct-plan-replay 1 requires --actuator-lti 1" >&2
-  exit 2
-fi
-if [[ "$RATE_CASCADE" == 1 && "$ACTUATOR_LTI" != 0 ]]; then
-  echo "--rate-cascade 1 requires --actuator-lti 0" >&2
   exit 2
 fi
 if [[ "$RATE_IDENTIFICATION" == 1 && "$RATE_CASCADE" != 1 ]]; then
@@ -795,10 +793,6 @@ if [[ "$vision_enabled" == 1 && "$vision_adapter" == espnet && \
       "$vision_scene" == corridor ]]; then
   gate_position_compile_flag="-DTINYMPC_GATE_POSITION_FUSION_ENABLE=1 -DTINYMPC_GATE_CENTER_BEARING_FUSION_ENABLE=1 -DTINYMPC_GATE_CAMERA_FOCAL_NORMALIZED=1.14531138f -DTINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED=0.5f -DTINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED=0.5f -DTINYMPC_GATE_WORLD_X_M=4.0f -DTINYMPC_GATE_WORLD_Y_M=0.0f -DTINYMPC_GATE_WORLD_Z_M=1.5f"
 fi
-obstacle_course_compile_flag=""
-if [[ "$vision_scene" == corridor_obstacles ]]; then
-  obstacle_course_compile_flag="-DTINYMPC_VISION_CORRIDOR_OBSTACLES=1"
-fi
 trajectory_compile_flag=""
 [[ "$trajectory" == circle ]] && \
   trajectory_compile_flag="-DTINYMPC_TRAJECTORY_CIRCLE=1"
@@ -810,7 +804,7 @@ cmake -S "$firmware/sitl_make" -B "$build" \
   -DTINYMPC_TRAJECTORY="$trajectory" \
   -DTINYMPC_COURSE="$course_build" \
   -DTINYMPC_ACTUATOR_LTI="$actuator_lti_flag" \
-  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $gate_position_compile_flag $obstacle_course_compile_flag $trajectory_compile_flag -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
+  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $gate_position_compile_flag $trajectory_compile_flag -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
   -DTINYMPC_SITL_START_DELAY_MS="$delay_ms" \
   -DTINYMPC_SITL_TICK_US="$tick_us" \
   >"$out/configure.log" 2>&1

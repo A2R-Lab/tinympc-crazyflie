@@ -1,0 +1,384 @@
+{
+  "format": "tinympc-outer-loop-model-bank-v1",
+  "identified": true,
+  "identification_source": "CrazySim cf21B_500 stock 500 Hz rate PID; constrained least-squares y-u=F(x-u), 348 consecutive 20 ms samples from rate_response_identification_seed1",
+  "generator_bytecode_sha256": "e1c58b9a599ad275b55267aa0aaeb9c7d36cb77d5130fd3076036cbc47e3a786",
+  "profile_sha256": "8f3a0f7cb6d13f5c5562d22da945394cf5c4d99988cf35bd9a67077bd6d47687",
+  "identification_sha256": "2261017b765f272381615ed55534755d498be423bfbcf0ab5956e5f22d7bf1a6",
+  "state_order": [
+    "position_frenet_xyz",
+    "rodrigues_xyz",
+    "velocity_frenet_xyz",
+    "body_rate_pqr"
+  ],
+  "input_order": [
+    "collective_thrust_n",
+    "body_rate_sp_p",
+    "body_rate_sp_q",
+    "body_rate_sp_r"
+  ],
+  "bundle_selection": "one complete bundle per solve; no interpolation, online Riccati, or parallel solve",
+  "models": [
+    {
+      "model_id": 0,
+      "name": "level",
+      "side_sign": 0,
+      "speed_mps": 0.0,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": 0.0,
+      "yaw_rate_rad_s": 0.0,
+      "nominal_total_thrust_n": 0.42555780000000004,
+      "equilibrium_residual_max_abs": 0.0,
+      "input_origin": [
+        0.42555780000000004,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "input_lower": [
+        -0.30555780000000005,
+        -6.0,
+        -6.0,
+        -4.0
+      ],
+      "input_upper": [
+        0.22444219999999998,
+        6.0,
+        6.0,
+        4.0
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 0.0,
+        "closed_loop_spectral_radius": 0.9903880717578568,
+        "cache_identity_max_abs": {
+          "AmBKt": 1.734723475976807e-18,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 0.0,
+          "BPf": 0.0
+        }
+      }
+    },
+    {
+      "model_id": 1,
+      "name": "left_low",
+      "side_sign": 1,
+      "speed_mps": 1.0,
+      "radius_m": 0.75,
+      "roll_rad": -0.134918099922087,
+      "pitch_rad": 0.05045938906278108,
+      "yaw_rate_rad_s": 1.3333333333333333,
+      "nominal_total_thrust_n": 0.43011314687787366,
+      "equilibrium_residual_max_abs": 5.551115123125783e-17,
+      "input_origin": [
+        0.43011314687787366,
+        -0.06725063856914129,
+        -0.17911726900097438,
+        1.3195348170228223
+      ],
+      "input_lower": [
+        -0.31011314687787367,
+        -5.932749361430859,
+        -5.820882730999026,
+        -5.319534817022822
+      ],
+      "input_upper": [
+        0.21988685312212636,
+        6.067250638569141,
+        6.179117269000974,
+        2.6804651829771777
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 3.4035211314945013e-15,
+        "closed_loop_spectral_radius": 0.9897115469509793,
+        "cache_identity_max_abs": {
+          "AmBKt": 2.220446049250313e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.2609648986660666e-12,
+          "BPf": 5.048709793414476e-29
+        }
+      }
+    },
+    {
+      "model_id": 2,
+      "name": "right_low",
+      "side_sign": -1,
+      "speed_mps": 1.0,
+      "radius_m": 0.75,
+      "roll_rad": 0.134918099922087,
+      "pitch_rad": 0.05045938906278108,
+      "yaw_rate_rad_s": -1.3333333333333333,
+      "nominal_total_thrust_n": 0.43011314687787366,
+      "equilibrium_residual_max_abs": 5.551115123125783e-17,
+      "input_origin": [
+        0.43011314687787366,
+        0.06725063856914129,
+        -0.17911726900097438,
+        -1.3195348170228223
+      ],
+      "input_lower": [
+        -0.31011314687787367,
+        -6.067250638569141,
+        -5.820882730999026,
+        -2.6804651829771777
+      ],
+      "input_upper": [
+        0.21988685312212636,
+        5.932749361430859,
+        6.179117269000974,
+        5.319534817022822
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 3.4035211314945013e-15,
+        "closed_loop_spectral_radius": 0.9897081563771231,
+        "cache_identity_max_abs": {
+          "AmBKt": 2.220446049250313e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.2624634999586857e-12,
+          "BPf": 6.310887241768094e-29
+        }
+      }
+    },
+    {
+      "model_id": 3,
+      "name": "left_medium",
+      "side_sign": 1,
+      "speed_mps": 1.5,
+      "radius_m": 0.75,
+      "roll_rad": -0.2959796989840808,
+      "pitch_rad": 0.07560897904851328,
+      "yaw_rate_rad_s": 2.0,
+      "nominal_total_thrust_n": 0.44640655881011215,
+      "equilibrium_residual_max_abs": 2.7755575615628914e-17,
+      "input_origin": [
+        0.44640655881011215,
+        -0.15107392087760757,
+        -0.5816875356910569,
+        1.9075681590056832
+      ],
+      "input_lower": [
+        -0.32640655881011216,
+        -5.848926079122393,
+        -5.4183124643089435,
+        -5.907568159005683
+      ],
+      "input_upper": [
+        0.20359344118988787,
+        6.151073920877607,
+        6.5816875356910565,
+        2.092431840994317
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 3.431148331598162e-14,
+        "closed_loop_spectral_radius": 0.9889574832912098,
+        "cache_identity_max_abs": {
+          "AmBKt": 1.1102230246251565e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.1374759100919857e-11,
+          "BPf": 6.058451752097371e-28
+        }
+      }
+    },
+    {
+      "model_id": 4,
+      "name": "right_medium",
+      "side_sign": -1,
+      "speed_mps": 1.5,
+      "radius_m": 0.75,
+      "roll_rad": 0.2959796989840808,
+      "pitch_rad": 0.07560897904851328,
+      "yaw_rate_rad_s": -2.0,
+      "nominal_total_thrust_n": 0.44640655881011215,
+      "equilibrium_residual_max_abs": 2.7755575615628914e-17,
+      "input_origin": [
+        0.44640655881011215,
+        0.15107392087760757,
+        -0.5816875356910569,
+        -1.9075681590056832
+      ],
+      "input_lower": [
+        -0.32640655881011216,
+        -6.151073920877607,
+        -5.4183124643089435,
+        -2.092431840994317
+      ],
+      "input_upper": [
+        0.20359344118988787,
+        5.848926079122393,
+        6.5816875356910565,
+        5.907568159005683
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 3.431148331598162e-14,
+        "closed_loop_spectral_radius": 0.9889493396269948,
+        "cache_identity_max_abs": {
+          "AmBKt": 1.1102230246251565e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.1331010751902152e-11,
+          "BPf": 4.0389678347315804e-28
+        }
+      }
+    },
+    {
+      "model_id": 5,
+      "name": "left_high",
+      "side_sign": 1,
+      "speed_mps": 2.0,
+      "radius_m": 0.75,
+      "roll_rad": -0.49583814232436046,
+      "pitch_rad": 0.10066312443938251,
+      "yaw_rate_rad_s": 2.6666666666666665,
+      "nominal_total_thrust_n": 0.4866586427001732,
+      "equilibrium_residual_max_abs": 2.7755575615628914e-17,
+      "input_origin": [
+        0.4866586427001732,
+        -0.2679818832738143,
+        -1.2622948240415068,
+        2.333647059549955
+      ],
+      "input_lower": [
+        -0.36665864270017323,
+        -5.732018116726186,
+        -4.737705175958493,
+        -6.333647059549955
+      ],
+      "input_upper": [
+        0.1633413572998268,
+        6.267981883273814,
+        7.262294824041507,
+        1.6663529404500448
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 2.2097676803241952e-13,
+        "closed_loop_spectral_radius": 0.9863555855070554,
+        "cache_identity_max_abs": {
+          "AmBKt": 4.440892098500626e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.1745546446249968e-10,
+          "BPf": 3.2311742677852644e-27
+        }
+      }
+    },
+    {
+      "model_id": 6,
+      "name": "right_high",
+      "side_sign": -1,
+      "speed_mps": 2.0,
+      "radius_m": 0.75,
+      "roll_rad": 0.49583814232436046,
+      "pitch_rad": 0.10066312443938251,
+      "yaw_rate_rad_s": -2.6666666666666665,
+      "nominal_total_thrust_n": 0.4866586427001732,
+      "equilibrium_residual_max_abs": 2.7755575615628914e-17,
+      "input_origin": [
+        0.4866586427001732,
+        0.2679818832738143,
+        -1.2622948240415068,
+        -2.333647059549955
+      ],
+      "input_lower": [
+        -0.36665864270017323,
+        -6.267981883273814,
+        -4.737705175958493,
+        -1.6663529404500448
+      ],
+      "input_upper": [
+        0.1633413572998268,
+        5.732018116726186,
+        7.262294824041507,
+        6.333647059549955
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 2.2097676803241952e-13,
+        "closed_loop_spectral_radius": 0.9863375768663392,
+        "cache_identity_max_abs": {
+          "AmBKt": 4.440892098500626e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 1.179522905417134e-10,
+          "BPf": 1.1309109937248425e-26
+        }
+      }
+    },
+    {
+      "model_id": 7,
+      "name": "left_very_high",
+      "side_sign": 1,
+      "speed_mps": 2.5,
+      "radius_m": 0.75,
+      "roll_rad": -0.7002890985316903,
+      "pitch_rad": 0.12559113136959388,
+      "yaw_rate_rad_s": 3.3333333333333335,
+      "nominal_total_thrust_n": 0.5614574369538332,
+      "equilibrium_residual_max_abs": 1.1102230246251565e-16,
+      "input_origin": [
+        0.5614574369538332,
+        -0.417537435780228,
+        -2.1312101433071775,
+        2.528777753361846
+      ],
+      "input_lower": [
+        -0.4414574369538332,
+        -5.582462564219772,
+        -3.8687898566928225,
+        -6.528777753361846
+      ],
+      "input_upper": [
+        0.08854256304616681,
+        6.417537435780228,
+        8.131210143307177,
+        1.471222246638154
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 1.1338828755788633e-12,
+        "closed_loop_spectral_radius": 0.9815798565809911,
+        "cache_identity_max_abs": {
+          "AmBKt": 1.1102230246251565e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 4.1306463595677985e-10,
+          "BPf": 6.462348535570529e-27
+        }
+      }
+    },
+    {
+      "model_id": 8,
+      "name": "right_very_high",
+      "side_sign": -1,
+      "speed_mps": 2.5,
+      "radius_m": 0.75,
+      "roll_rad": 0.7002890985316903,
+      "pitch_rad": 0.12559113136959388,
+      "yaw_rate_rad_s": -3.3333333333333335,
+      "nominal_total_thrust_n": 0.5614574369538332,
+      "equilibrium_residual_max_abs": 1.1102230246251565e-16,
+      "input_origin": [
+        0.5614574369538332,
+        0.417537435780228,
+        -2.1312101433071775,
+        -2.528777753361846
+      ],
+      "input_lower": [
+        -0.4414574369538332,
+        -6.417537435780228,
+        -3.8687898566928225,
+        -1.471222246638154
+      ],
+      "input_upper": [
+        0.08854256304616681,
+        5.582462564219772,
+        8.131210143307177,
+        6.528777753361846
+      ],
+      "verification": {
+        "nonlinear_fixed_point_20_knot_max_abs": 1.1338828755788633e-12,
+        "closed_loop_spectral_radius": 0.9815416665930928,
+        "cache_identity_max_abs": {
+          "AmBKt": 8.881784197001252e-16,
+          "coeff_d2p_standard_consumer": 0.0,
+          "APf": 4.1475056160944744e-10,
+          "BPf": 1.2924697071141057e-26
+        }
+      }
+    }
+  ],
+  "header_sha256": "d95ac3200ce8204c043c3ecb2932c9710b0ca5dff0e91980f7b4efd212ca719d"
+}

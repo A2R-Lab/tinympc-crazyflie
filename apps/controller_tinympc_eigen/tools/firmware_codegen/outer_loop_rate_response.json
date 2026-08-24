@@ -30,6 +30,10 @@
     "left_medium": {"inherit": "level"},
     "right_medium": {"inherit": "level"},
     "left_high": {"inherit": "level"},
-    "right_high": {"inherit": "level"}
+    "right_high": {"inherit": "level"},
+    "left_very_high": {"inherit": "level"},
+    "right_very_high": {"inherit": "level"},
+    "left_maximum": {"inherit": "level"},
+    "right_maximum": {"inherit": "level"}
   }
 }
