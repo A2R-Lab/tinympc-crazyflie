@@ -194,6 +194,9 @@ def evaluate_policy(policy: TemporalPolicy, dataset: RunTransitions,
 def validation_gates(metrics: dict, config: dict) -> dict:
     thresholds = config.get("validation_gates", {})
     checks = {
+        "decision_balanced_accuracy":
+            metrics["decision_balanced_accuracy"] >=
+            thresholds.get("decision_balanced_accuracy", 0.60),
         "left_recall": metrics["left_recall"] >= thresholds.get("left_recall", 0.80),
         "right_recall": metrics["right_recall"] >= thresholds.get("right_recall", 0.80),
         "hard_track_recall": metrics["hard_track_recall"] is None or

@@ -12,7 +12,7 @@ from tools.crazysim_mujoco.rl.data import (
     RunTransitions, load_expert_npz, load_expert_shards, split_by_episode)
 from tools.crazysim_mujoco.rl.model import TemporalPolicy
 from tools.crazysim_mujoco.rl.train_mbpo import (
-    balanced_domain_expert_indices, balanced_expert_indices)
+    balanced_domain_expert_indices, balanced_expert_indices, validation_gates)
 
 
 def dataset(count=12):
@@ -101,6 +101,16 @@ class TrainerRedesignTest(unittest.TestCase):
         gradient = policy.encoder[0].weight.grad
         self.assertIsNotNone(gradient)
         self.assertGreater(float(torch.linalg.vector_norm(gradient)), 0.0)
+
+    def test_checkpoint_gate_includes_decision_balance(self):
+        metrics = {
+            "decision_balanced_accuracy": 0.59,
+            "left_recall": 0.95, "right_recall": 0.95,
+            "hard_track_recall": 0.95, "easy_track_false_dodge_rate": 0.0,
+        }
+        gates = validation_gates(metrics, {"validation_gates": {}})
+        self.assertFalse(gates["decision_balanced_accuracy"])
+        self.assertFalse(gates["all_passed"])
 
 
 if __name__ == "__main__":
