@@ -1,0 +1,87 @@
+{
+  "action_agreement": 0.99,
+  "clips": 200,
+  "clock_hz": 100000000,
+  "cycles": {
+    "p50": 1481702.5,
+    "p95": 1482161.55
+  },
+  "gate_semantics": {
+    "confidence_classification_agreement": 0.94,
+    "confidence_threshold": 0.6174671283,
+    "float_confidence_counts": {
+      "false_negative": 46,
+      "false_positive": 6,
+      "true_negative": 123,
+      "true_positive": 25
+    },
+    "float_visible_corner_coordinate_mae_px": 7.193897664317931,
+    "float_visible_gate_recall": 0.352112676056338,
+    "float_visible_per_corner_error_px": 10.801381578358205,
+    "gvsoc_confidence_counts": {
+      "false_negative": 54,
+      "false_positive": 2,
+      "true_negative": 127,
+      "true_positive": 17
+    },
+    "gvsoc_visible_corner_coordinate_mae_px": 8.97067447683683,
+    "gvsoc_visible_gate_recall": 0.23943661971830985,
+    "gvsoc_visible_per_corner_error_px": 13.900322589985462,
+    "runtime_gate_admission": {
+      "agreement": 0.945,
+      "bridge_confidence_threshold": 0.5,
+      "controller_confidence_threshold": 0.6174671283,
+      "float_counts": {
+        "false_negative": 48,
+        "false_positive": 6,
+        "true_negative": 123,
+        "true_positive": 23
+      },
+      "float_visible_recall": 0.323943661971831,
+      "gvsoc_counts": {
+        "false_negative": 55,
+        "false_positive": 2,
+        "true_negative": 127,
+        "true_positive": 16
+      },
+      "gvsoc_visible_recall": 0.22535211267605634,
+      "visible_recall_degradation": 0.09859154929577466
+    },
+    "visible_corner_coordinate_mae_increase_px": 1.7767768125188992,
+    "visible_gate_recall_degradation": 0.11267605633802816,
+    "visible_per_corner_error_increase_px": 3.0989410116272573
+  },
+  "inference_latency_ms": {
+    "p50": 14.817025000000001,
+    "p95": 14.8216155
+  },
+  "memory": {
+    "deployment_flash_upper_bound_bytes": 372256,
+    "l1_bytes": 36728,
+    "l2_bytes": 466152
+  },
+  "memory_capacity": {
+    "deployment_flash_upper_bound_bytes": 8388608,
+    "l1_bytes": 64000,
+    "l2_bytes": 512000
+  },
+  "memory_fits": true,
+  "model_provenance": {
+    "bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+    "checkpoint_sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a",
+    "policy_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f"
+  },
+  "passed": true,
+  "performance_passed": true,
+  "primary_performance_passed": true,
+  "supplemental_post_audit_thresholds": {
+    "confidence_classification_agreement_minimum": 0.94,
+    "runtime_gate_admission_agreement_minimum": 0.94,
+    "runtime_gate_admission_gvsoc_false_positives_no_greater_than_float": true,
+    "runtime_gate_admission_visible_recall_degradation_maximum": 0.1,
+    "visible_corner_coordinate_mae_increase_px_maximum": 2.0,
+    "visible_gate_recall_degradation_maximum": 0.12
+  },
+  "supplemental_semantics_passed": true,
+  "visible_gate_center_error_increase_px": 3.2455742669656686
+}

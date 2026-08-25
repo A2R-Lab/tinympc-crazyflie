@@ -1,0 +1,250 @@
+{
+  "format": "tinympc-crazysim-course-v2",
+  "name": "heldout_room_figure8",
+  "scene": "vision_heldout_room_figure8.xml",
+  "trajectory": "figure8",
+  "source_trajectory": "apps/controller_tinympc_eigen/src/trajectories/50hz/traj_figure8_50hz.h",
+  "description": "Fake room: smoothed figure-eight canonical reference with a tangent-aligned NewBee gate and offset obstacle.",
+  "room_bounds_xy": [
+    [
+      -2.2,
+      2.2
+    ],
+    [
+      -2.2,
+      2.2
+    ]
+  ],
+  "obstacles": [
+    {
+      "name": "easy_obstacle",
+      "shape": "box",
+      "center": [
+        0.7787946060270543,
+        -0.941492987512547
+      ],
+      "half_size": [
+        0.12,
+        0.18
+      ],
+      "height": 2.2,
+      "center_z": 1.1
+    }
+  ],
+  "gate_trajectory_source": {
+    "index": 71,
+    "header_sha256": "bc45ff95ce092aa170865711c11102abbec2c3fd531ce5afc4d6d275086f2c81"
+  },
+  "obstacle_trajectory_source": {
+    "index": 301,
+    "header_sha256": "bc45ff95ce092aa170865711c11102abbec2c3fd531ce5afc4d6d275086f2c81",
+    "lateral_side": "left",
+    "lateral_offset_m": 0.25
+  },
+  "completion_trajectory_source": {
+    "index": 428,
+    "header_sha256": "bc45ff95ce092aa170865711c11102abbec2c3fd531ce5afc4d6d275086f2c81"
+  },
+  "gates": [
+    {
+      "name": "tangent_gate",
+      "center": [
+        0.84052487,
+        0.69616975,
+        1.5
+      ],
+      "normal": [
+        0.912209470552685,
+        0.4097241533446499
+      ],
+      "scale": 2.0,
+      "opening": [
+        0.9,
+        0.9
+      ]
+    }
+  ],
+  "pass_point": [
+    -0.64434851,
+    0.58186966
+  ],
+  "pass_radius_m": 0.3,
+  "maximum_final_cross_track_m": 0.35,
+  "required_heading_change_deg": 0.0,
+  "duration_s": 30.0,
+  "centerline": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.2253,
+      0.2228
+    ],
+    [
+      0.4456,
+      0.4255
+    ],
+    [
+      0.6557,
+      0.5897
+    ],
+    [
+      0.8509,
+      0.7007
+    ],
+    [
+      1.0268,
+      0.7485
+    ],
+    [
+      1.1794,
+      0.7287
+    ],
+    [
+      1.3053,
+      0.6431
+    ],
+    [
+      1.4015,
+      0.4995
+    ],
+    [
+      1.4659,
+      0.3108
+    ],
+    [
+      1.497,
+      0.094
+    ],
+    [
+      1.4942,
+      -0.1313
+    ],
+    [
+      1.4574,
+      -0.3447
+    ],
+    [
+      1.3876,
+      -0.527
+    ],
+    [
+      1.2863,
+      -0.6617
+    ],
+    [
+      1.1558,
+      -0.7367
+    ],
+    [
+      0.999,
+      -0.7452
+    ],
+    [
+      0.8196,
+      -0.6864
+    ],
+    [
+      0.6216,
+      -0.5657
+    ],
+    [
+      0.4094,
+      -0.3939
+    ],
+    [
+      0.188,
+      -0.1865
+    ],
+    [
+      -0.0377,
+      0.0377
+    ],
+    [
+      -0.2625,
+      0.2585
+    ],
+    [
+      -0.4814,
+      0.4559
+    ],
+    [
+      -0.6894,
+      0.6123
+    ],
+    [
+      -0.8817,
+      0.7133
+    ],
+    [
+      -1.054,
+      0.7499
+    ],
+    [
+      -1.2024,
+      0.7189
+    ],
+    [
+      -1.3234,
+      0.6229
+    ],
+    [
+      -1.4145,
+      0.4708
+    ],
+    [
+      -1.4734,
+      0.2761
+    ],
+    [
+      -1.4989,
+      0.0565
+    ],
+    [
+      -1.4904,
+      -0.1682
+    ],
+    [
+      -1.4481,
+      -0.3777
+    ],
+    [
+      -1.3729,
+      -0.5531
+    ],
+    [
+      -1.2665,
+      -0.6786
+    ],
+    [
+      -1.1314,
+      -0.7428
+    ],
+    [
+      -0.9706,
+      -0.74
+    ],
+    [
+      -0.7878,
+      -0.6704
+    ],
+    [
+      -0.5871,
+      -0.5402
+    ],
+    [
+      -0.373,
+      -0.3613
+    ],
+    [
+      -0.1505,
+      -0.1498
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "gate_order_required": true
+}

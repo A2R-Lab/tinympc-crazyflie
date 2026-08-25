@@ -1,0 +1,81 @@
+{
+  "format": "tinympc-joint-gate-final-evidence-v1",
+  "candidate_opt_in_adapter": "joint_gate_rl",
+  "repository_base_commit": "076ab4a4bfbc39e33e0041129d5eb349f49bbf01",
+  "overall_accepted": false,
+  "overall_interpretation": "isolated transition and GVSOC conversion accepted; canonical curved-course robustness rejected",
+  "physical_gap8_flash_performed": false,
+  "artifacts": {
+    "checkpoint_sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a",
+    "runtime_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f",
+    "bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+    "controller_sha256": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+    "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+    "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+  },
+  "controller_invariants": {
+    "generated_qr_model_sha256": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+    "bank_header_sha256": "5d5db163f21cbb9fc2be066d7d67a31de1447e4753dcda0d6b2d19845292bdd7",
+    "bank_provenance_sha256": "125ba361148397cdcc7f00d3389c7adabe13db477858b58095d6ec3fc03bba14",
+    "actuator_lti_sha256": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+    "changed_by_experiment": false
+  },
+  "closed_loop_exact": {
+    "slurm_job": 5989,
+    "accepted": true,
+    "fresh_seeds": [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008, 4009, 4010],
+    "ordered_contact_free_completions": 10,
+    "trials": 10,
+    "gate_frame_contacts": 0,
+    "obstacle_contacts": 0,
+    "candidate_obstacle_only_collisions": 0,
+    "baseline_obstacle_only_collisions": 0,
+    "report_sha256": "d5ddd9f87b9b95c59fcccf3aa3015318cecae2b90fc24790736d80a08127f028",
+    "checksum_manifest_sha256": "a2ced7f6f44a3ced16ebd11ccdb4101d57f2ee283379d0da23aa90cd81f3cb4f"
+  },
+  "heldout_canonical_rooms": {
+    "slurm_job": 5990,
+    "accepted": false,
+    "fresh_seeds_per_course": [5301, 5302, 5303, 5304, 5305],
+    "contact_free_completions_by_course": {
+      "straight": 3,
+      "circle": 0,
+      "oval": 0,
+      "figure8": 0
+    },
+    "aggregate_contact_free_completions": 3,
+    "aggregate_trials": 20,
+    "physical_gate_passes": 19,
+    "missing_trials": 0,
+    "invalid_ordered_intervals": 2,
+    "report_sha256": "5ddba946e4bf3243c3288ad89834a9ffb40cc2f22445adf0f4dc5744f04873c6",
+    "checksum_manifest_sha256": "114c42b513deb53675f5a85c42974735d12bcc74e3d8db6fe4c5f7af405fe521"
+  },
+  "gvsoc": {
+    "slurm_job": 5968,
+    "accepted": true,
+    "calibration_parity_clips": 200,
+    "action_agreement": 0.99,
+    "visible_gate_center_degradation_px": 3.2455742669656686,
+    "p95_latency_ms_at_100mhz": 14.8216155,
+    "l1_bytes": 36728,
+    "l2_bytes": 466152,
+    "deployment_flash_upper_bound_bytes": 372256,
+    "audited_report_sha256": "970c594cb95a1b555660d76d67caeb397372a5c4d260b89ff4590dd7bd099484",
+    "quantized_output_contract_sha256": "a3d4b92926fc4af37bbf28334840756312d5f943b80c135bdc97af26b048de7e",
+    "checksum_manifest_sha256": "9d134c19966b7a17e9f0d400040d016b8624810ed60d7575c00fd4433cdcf23f",
+    "corpus_interpretation": "terminal-affine and NeMO calibration/parity corpus, not unseen-scene generalization"
+  },
+  "post_heldout_structural_fix": {
+    "description": "project camera-relative bearing onto the first path normal, shift every horizon knot on its rotating normal, and rebuild tunnel half-spaces around the shifted horizon",
+    "controller_sha256": "e60a8223e72bfb80d193e2182a6f3c8c3b8ce0aad00847675869e3b41c615f1d",
+    "generated_qr_and_cached_bank_models_changed": false,
+    "diagnostic_slurm_job": 5993,
+    "diagnostic_seed": 5402,
+    "curved_course_completions": 0,
+    "curved_course_trials": 3,
+    "physical_gate_passes": 3,
+    "interpretation": "structural frame consistency fixed, but first accepted gate observation occurred after physical crossing on all three courses; diagnostic rejected"
+  },
+  "dominant_unresolved_defect": "low or late gate admission under curved/rolled views permits a banked dodge before gate suppression; the subsequent discrete dodge/recovery handoff loses attitude and altitude"
+}

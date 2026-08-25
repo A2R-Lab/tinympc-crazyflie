@@ -1,0 +1,2354 @@
+{
+  "format": "heldout-fake-room-evaluation-v1",
+  "courses": {
+    "heldout_room_straight": {
+      "trials": 5,
+      "gate_pass_rate": 0.8,
+      "contact_free_completion_rate": 0.6,
+      "minimum_clearance_m": {
+        "obstacle_m": 0.2752773631268073,
+        "wall_m": -0.02246323090399685,
+        "gate_m": -0.7131467625190692
+      },
+      "mean_speed_mps": 0.4811392012952477,
+      "max_inference_p95_ms": 17.30904473224653
+    },
+    "heldout_room_circle": {
+      "trials": 5,
+      "gate_pass_rate": 1.0,
+      "contact_free_completion_rate": 0.0,
+      "minimum_clearance_m": {
+        "obstacle_m": 0.4285754655355579,
+        "wall_m": 0.9980738120348237,
+        "gate_m": 0.014164070734065337
+      },
+      "mean_speed_mps": 0.4641421777264571,
+      "max_inference_p95_ms": 17.63024351093918
+    },
+    "heldout_room_oval": {
+      "trials": 5,
+      "gate_pass_rate": 1.0,
+      "contact_free_completion_rate": 0.0,
+      "minimum_clearance_m": {
+        "obstacle_m": 0.49097135435019,
+        "wall_m": 1.0651474622439332,
+        "gate_m": 0.09310087294381353
+      },
+      "mean_speed_mps": 0.5679989545620765,
+      "max_inference_p95_ms": 20.054663019254786
+    },
+    "heldout_room_figure8": {
+      "trials": 5,
+      "gate_pass_rate": 1.0,
+      "contact_free_completion_rate": 0.0,
+      "minimum_clearance_m": {
+        "obstacle_m": -0.0027102170922159996,
+        "wall_m": 0.15314852044569602,
+        "gate_m": 0.14700435408571164
+      },
+      "mean_speed_mps": 0.4756197103019564,
+      "max_inference_p95_ms": 15.593106532469385
+    }
+  },
+  "runs": [
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_straight_seed5301",
+      "course": "heldout_room_straight",
+      "seed": 5301,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": true,
+      "clearance": {
+        "obstacle_m": 0.5455140722668844,
+        "wall_m": 0.6036642876398418,
+        "gate_m": 0.2093782794421294
+      },
+      "speed_mps": 0.45173301336761706,
+      "inference_p95_ms": 15.50274619366973,
+      "scene_sha256": "1ec0c847e957658d08d420de4bdcfc75e72db502c0185bb6f4faf5acbdca1f71",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_straight_seed5302",
+      "course": "heldout_room_straight",
+      "seed": 5302,
+      "complete": false,
+      "errors": [
+        "invalid ordered gate-to-completion validation interval"
+      ],
+      "gate_pass": false,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.6876588373422995,
+        "wall_m": -0.02246323090399685,
+        "gate_m": -0.7131467625190692
+      },
+      "speed_mps": 0.5500005103092566,
+      "inference_p95_ms": 17.30904473224653,
+      "scene_sha256": "1ec0c847e957658d08d420de4bdcfc75e72db502c0185bb6f4faf5acbdca1f71",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_straight_seed5303",
+      "course": "heldout_room_straight",
+      "seed": 5303,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 1.0162409127800986,
+        "wall_m": -0.018014734980628694,
+        "gate_m": 0.18894029203998464
+      },
+      "speed_mps": 0.48958497245822175,
+      "inference_p95_ms": 15.659035445423793,
+      "scene_sha256": "1ec0c847e957658d08d420de4bdcfc75e72db502c0185bb6f4faf5acbdca1f71",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_straight_seed5304",
+      "course": "heldout_room_straight",
+      "seed": 5304,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": true,
+      "clearance": {
+        "obstacle_m": 0.9112643663853267,
+        "wall_m": 0.6872953930456459,
+        "gate_m": 0.18992541288910447
+      },
+      "speed_mps": 0.44769362166069426,
+      "inference_p95_ms": 15.419672342250099,
+      "scene_sha256": "1ec0c847e957658d08d420de4bdcfc75e72db502c0185bb6f4faf5acbdca1f71",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_straight_seed5305",
+      "course": "heldout_room_straight",
+      "seed": 5305,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": true,
+      "clearance": {
+        "obstacle_m": 0.2752773631268073,
+        "wall_m": 0.5451816291666202,
+        "gate_m": 0.18094324770728687
+      },
+      "speed_mps": 0.4666838886804487,
+      "inference_p95_ms": 17.00927590136416,
+      "scene_sha256": "1ec0c847e957658d08d420de4bdcfc75e72db502c0185bb6f4faf5acbdca1f71",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_circle_seed5301",
+      "course": "heldout_room_circle",
+      "seed": 5301,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.4285754655355579,
+        "wall_m": 1.08407465133568,
+        "gate_m": 0.1789479867649428
+      },
+      "speed_mps": 0.520675039284689,
+      "inference_p95_ms": 13.08561593759804,
+      "scene_sha256": "fd2166a426574df2e1fa674210801358e9de54dba47252a5a02b1b8882acb91b",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_circle_seed5302",
+      "course": "heldout_room_circle",
+      "seed": 5302,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.5103863438371421,
+        "wall_m": 1.285840063390832,
+        "gate_m": 0.18059304951221866
+      },
+      "speed_mps": 0.43038913559628655,
+      "inference_p95_ms": 17.63024351093918,
+      "scene_sha256": "fd2166a426574df2e1fa674210801358e9de54dba47252a5a02b1b8882acb91b",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_circle_seed5303",
+      "course": "heldout_room_circle",
+      "seed": 5303,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.8297022490300698,
+        "wall_m": 0.9980738120348237,
+        "gate_m": 0.014164070734065337
+      },
+      "speed_mps": 0.46678315132282894,
+      "inference_p95_ms": 15.79960405942984,
+      "scene_sha256": "fd2166a426574df2e1fa674210801358e9de54dba47252a5a02b1b8882acb91b",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_circle_seed5304",
+      "course": "heldout_room_circle",
+      "seed": 5304,
+      "complete": false,
+      "errors": [
+        "invalid ordered gate-to-completion validation interval"
+      ],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 1.2444817059125093,
+        "wall_m": 1.3016031476396546,
+        "gate_m": 0.1788952719810638
+      },
+      "speed_mps": 0.40846037029859267,
+      "inference_p95_ms": 16.024107841076322,
+      "scene_sha256": "fd2166a426574df2e1fa674210801358e9de54dba47252a5a02b1b8882acb91b",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_circle_seed5305",
+      "course": "heldout_room_circle",
+      "seed": 5305,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.6981759392950729,
+        "wall_m": 1.1058661968681422,
+        "gate_m": 0.2146326224289017
+      },
+      "speed_mps": 0.49440319212988854,
+      "inference_p95_ms": 14.638436509994794,
+      "scene_sha256": "fd2166a426574df2e1fa674210801358e9de54dba47252a5a02b1b8882acb91b",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_oval_seed5301",
+      "course": "heldout_room_oval",
+      "seed": 5301,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 1.0073552351494086,
+        "wall_m": 1.4808435338107744,
+        "gate_m": 0.13612161170222137
+      },
+      "speed_mps": 0.6533926180667723,
+      "inference_p95_ms": 14.804689213633534,
+      "scene_sha256": "ed45c15a2172f4a4f0e6c66de140c0d2f12496b79f9dced64fd276add077af6f",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_oval_seed5302",
+      "course": "heldout_room_oval",
+      "seed": 5302,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 1.1480074054170912,
+        "wall_m": 1.4778515408361628,
+        "gate_m": 0.16113898216466394
+      },
+      "speed_mps": 0.5656799495780244,
+      "inference_p95_ms": 17.38821855979036,
+      "scene_sha256": "ed45c15a2172f4a4f0e6c66de140c0d2f12496b79f9dced64fd276add077af6f",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_oval_seed5303",
+      "course": "heldout_room_oval",
+      "seed": 5303,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.7984287377452033,
+        "wall_m": 1.6962884122245327,
+        "gate_m": 0.10228598303977676
+      },
+      "speed_mps": 0.4478800768640839,
+      "inference_p95_ms": 20.054663019254786,
+      "scene_sha256": "ed45c15a2172f4a4f0e6c66de140c0d2f12496b79f9dced64fd276add077af6f",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_oval_seed5304",
+      "course": "heldout_room_oval",
+      "seed": 5304,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.49097135435019,
+        "wall_m": 1.0651474622439332,
+        "gate_m": 0.09310087294381353
+      },
+      "speed_mps": 0.5257104064011109,
+      "inference_p95_ms": 13.354386726859957,
+      "scene_sha256": "ed45c15a2172f4a4f0e6c66de140c0d2f12496b79f9dced64fd276add077af6f",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_oval_seed5305",
+      "course": "heldout_room_oval",
+      "seed": 5305,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.5686149172521859,
+        "wall_m": 1.6994553725289099,
+        "gate_m": 0.09479663513486247
+      },
+      "speed_mps": 0.6473317219003915,
+      "inference_p95_ms": 16.92107287235555,
+      "scene_sha256": "ed45c15a2172f4a4f0e6c66de140c0d2f12496b79f9dced64fd276add077af6f",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_figure8_seed5301",
+      "course": "heldout_room_figure8",
+      "seed": 5301,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.2610914443564418,
+        "wall_m": 0.25443490724479323,
+        "gate_m": 0.20118810623946348
+      },
+      "speed_mps": 0.5327139393900298,
+      "inference_p95_ms": 15.593106532469385,
+      "scene_sha256": "0a39626522a53e1489453553ed0198a6faa72670cc6dcd8e2e511486fa0b396e",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_figure8_seed5302",
+      "course": "heldout_room_figure8",
+      "seed": 5302,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.5165188477186968,
+        "wall_m": 0.176189247748452,
+        "gate_m": 0.18146022674855777
+      },
+      "speed_mps": 0.48329489823344085,
+      "inference_p95_ms": 15.180188883095951,
+      "scene_sha256": "0a39626522a53e1489453553ed0198a6faa72670cc6dcd8e2e511486fa0b396e",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_figure8_seed5303",
+      "course": "heldout_room_figure8",
+      "seed": 5303,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.29776535946159544,
+        "wall_m": 0.27157293557914086,
+        "gate_m": 0.14700435408571164
+      },
+      "speed_mps": 0.41449555273596816,
+      "inference_p95_ms": 14.800242817727849,
+      "scene_sha256": "0a39626522a53e1489453553ed0198a6faa72670cc6dcd8e2e511486fa0b396e",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_figure8_seed5304",
+      "course": "heldout_room_figure8",
+      "seed": 5304,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": -0.0027102170922159996,
+        "wall_m": 0.17739649464171844,
+        "gate_m": 0.20513843392220477
+      },
+      "speed_mps": 0.41424909191365444,
+      "inference_p95_ms": 14.051850233227006,
+      "scene_sha256": "0a39626522a53e1489453553ed0198a6faa72670cc6dcd8e2e511486fa0b396e",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+    },
+    {
+      "run": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/heldout_room_matrix_policy7adcc876_seeds5301_5305_tiger_gate90_final/heldout_room_figure8_seed5305",
+      "course": "heldout_room_figure8",
+      "seed": 5305,
+      "complete": true,
+      "errors": [],
+      "gate_pass": true,
+      "contact_free_completion": false,
+      "clearance": {
+        "obstacle_m": 0.4846813660829883,
+        "wall_m": 0.15314852044569602,
+        "gate_m": 0.1888207215491734
+      },
+      "speed_mps": 0.5333450692366887,
+      "inference_p95_ms": 14.812687784433338,
+      "scene_sha256": "0a39626522a53e1489453553ed0198a6faa72670cc6dcd8e2e511486fa0b396e",
+      "common_hashes": {
+        "controller_source_sha256": {
+          "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+          "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+          "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+          "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+          "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+          "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+          "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+          "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+        },
+        "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+        "runtime_tool_hashes": {
+          "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+          "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+        },
+        "camera_calibration": {
+          "model": "Himax HM01B0",
+          "resolution": [
+            160,
+            160
+          ],
+          "fx_px": 89.1558392549,
+          "fy_px": 89.4608171623,
+          "cx_px": 81.103810523,
+          "cy_px": 73.3473030288,
+          "distortion_model": "opencv_plumb_bob",
+          "distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.1900189875
+          ],
+          "simulation_distortion_coefficients": [
+            -0.0176448766,
+            0.0994132451,
+            0.0054432154,
+            -0.006040012,
+            -0.055
+          ],
+          "acquisition": {
+            "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+            "frame_rate_hz": 30.0,
+            "integration_time_us": 10000,
+            "auto_exposure": false,
+            "analog_gain_x": 2.0,
+            "digital_gain_x": 1.0,
+            "image_orientation_register": "0x03",
+            "ai_deck_optical_center_body_m": [
+              0.0,
+              0.0,
+              0.01
+            ]
+          },
+          "mujoco_vertical_fov_deg": 94.0387229678,
+          "distortion_applied_in_mujoco": false,
+          "bridge_calibration_transform_enabled": true,
+          "poc_overscan_render_resolution": [
+            192,
+            192
+          ],
+          "poc_source_focal_px": 89.4608171623,
+          "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+          "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+          "source_repository": "isaacsim-workspace shared-home working tree",
+          "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+          "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+          "source_files": {
+            "calibration": {
+              "path": "gap8_perception/configs/hm01b0_calibration.json",
+              "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+            },
+            "isaac_sensor_pipeline": {
+              "path": "user_workflows/generate_course_shard.py",
+              "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+            },
+            "isaac_gate_example": {
+              "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+              "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+            },
+            "hardware_acquisition_config": {
+              "repository": "tinympc-nanocockpit",
+              "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+              "path": "src/gap/examples/tiny-racer/config.h",
+              "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+            }
+          }
+        }
+      },
+      "firmware_binary_sha256": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+    }
+  ],
+  "common_hashes": {
+    "controller_source_sha256": {
+      "apps/controller_tinympc_eigen/src/controller_tinympc.cpp": "5a82cec609a2b198e83702328d12030b2502648ca2ac81489b1da0f9b0cb0a4f",
+      "apps/controller_tinympc_eigen/src/tinyracer_racing.c": "a200a03430e526feaaccbe6a4e1ddf23f82aaf6eb6ccdcf14a190fe39e433385",
+      "apps/controller_tinympc_eigen/src/tinyracer_racing.h": "f1422054bed77fcf2bea93bc31188d1d34b4aa30b3f273e9fe554fdcf382d940",
+      "apps/controller_tinympc_eigen/src/tinyracer_interface.h": "951c1e75d8b413a3e80c24bcb032934370f95f218a155a81e2489317908a5f5f",
+      "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+      "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h": "c8b3c1247a8bef4d875d7fe51b2b8796b698f4dbc503c76fc05d02160d38224b",
+      "apps/controller_tinympc_eigen/src/tinympc_progress_path.h": "9da92a420237785df35200343a43b8f96743838d0807cdbb0415aeab27618a51",
+      "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h": "e8850ba2effd4bd67973e7c30b117e8d735591d3bf512e6124c5fe14ef5c6552",
+      "apps/controller_tinympc_eigen/src/tinympc_power_loop.h": "06ba2f0c1601d4b4d0e38d0e7a4ca618f12bb28156521c6fd11950573a33aeb4"
+    },
+    "runner_sha256": "81b6c309b6d2118fe81be91fbeb25046a8ef5fff100149c6fcb09630388b7834",
+    "runtime_tool_hashes": {
+      "vision_bridge_sha256": "ff5300577b209eb59e06d210240d47134b2691f7bfc4858eac236071c692dda0",
+      "analyzer_sha256": "7ef18d8c199d1d7acfb72b09670399ad853a30987b97e2bd6b5943f15c59d44c"
+    },
+    "camera_calibration": {
+      "model": "Himax HM01B0",
+      "resolution": [
+        160,
+        160
+      ],
+      "fx_px": 89.1558392549,
+      "fy_px": 89.4608171623,
+      "cx_px": 81.103810523,
+      "cy_px": 73.3473030288,
+      "distortion_model": "opencv_plumb_bob",
+      "distortion_coefficients": [
+        -0.0176448766,
+        0.0994132451,
+        0.0054432154,
+        -0.006040012,
+        -0.1900189875
+      ],
+      "simulation_distortion_coefficients": [
+        -0.0176448766,
+        0.0994132451,
+        0.0054432154,
+        -0.006040012,
+        -0.055
+      ],
+      "acquisition": {
+        "sensor_readout": "HM01B0 HALF 162x162, crop one pixel on every edge to 160x160",
+        "frame_rate_hz": 30.0,
+        "integration_time_us": 10000,
+        "auto_exposure": false,
+        "analog_gain_x": 2.0,
+        "digital_gain_x": 1.0,
+        "image_orientation_register": "0x03",
+        "ai_deck_optical_center_body_m": [
+          0.0,
+          0.0,
+          0.01
+        ]
+      },
+      "mujoco_vertical_fov_deg": 94.0387229678,
+      "distortion_applied_in_mujoco": false,
+      "bridge_calibration_transform_enabled": true,
+      "poc_overscan_render_resolution": [
+        192,
+        192
+      ],
+      "poc_source_focal_px": 89.4608171623,
+      "poc_transform": "principal_point+plumb_bob+isaac_gray_response+seeded_noise",
+      "poc_sensor_response_note": "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response",
+      "source_repository": "isaacsim-workspace shared-home working tree",
+      "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
+      "source_note": "The relevant IsaacSim files are working-tree artifacts outside that upstream commit; their SHA256 identities below are authoritative",
+      "source_files": {
+        "calibration": {
+          "path": "gap8_perception/configs/hm01b0_calibration.json",
+          "sha256": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+        },
+        "isaac_sensor_pipeline": {
+          "path": "user_workflows/generate_course_shard.py",
+          "sha256": "c8e0094adb079cdc477d2cdbb874be903c980ab1ea02532d39e34bd8c47bfb27"
+        },
+        "isaac_gate_example": {
+          "path": "workspace/course_gate_smoke/shard_000000000/inspection_contact_sheet.jpg",
+          "sha256": "08c25690e2df64e7670958ae6b489e81d56e872bbe284242f4f92318b3cc5940"
+        },
+        "hardware_acquisition_config": {
+          "repository": "tinympc-nanocockpit",
+          "commit": "1cdd562c0db99f41a2638a21543d5438f0a257ac",
+          "path": "src/gap/examples/tiny-racer/config.h",
+          "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b"
+        }
+      }
+    }
+  },
+  "matrix_tool_provenance": {
+    "matrix_runner": {
+      "name": "run_heldout_rooms_matrix.sh",
+      "sha256": "8f4958674e6608c825e2da82908091045d105211005d1c28f67551b2a0822f57"
+    },
+    "evaluator": {
+      "name": "evaluate_heldout_rooms.py",
+      "sha256": "76f1b591d40e20f31b0d71d0c346aa8217c5d15677d18bee8c7d00aa2fa6cf3b"
+    }
+  },
+  "firmware_binary_sha256_by_course": {
+    "heldout_room_straight": "c2d6879dd73d7100b546edb54819234ebf7e1baf655b9d43bb23ab53013a1e41",
+    "heldout_room_circle": "0692c6d4bb69106b2940631b4516dedd6d21aa9e1a9242ddfaadaafba490d0c3",
+    "heldout_room_oval": "7cf1a38a12884061b9442a9877aa5f12282d1bc430006afe335e9f6e211b4ff3",
+    "heldout_room_figure8": "de05ca5505dbc2809184a4f41f6bb3f3f2315946a388b43383272116c69d6c3d"
+  },
+  "matrix_errors": [],
+  "acceptance": {
+    "no_invalid_or_missing_trials": false,
+    "each_course_contact_free_completion_at_least_40pct": false,
+    "aggregate_contact_free_completion_at_least_70pct": false,
+    "aggregate_contact_free_completion_rate": 0.15,
+    "accepted": false
+  }
+}

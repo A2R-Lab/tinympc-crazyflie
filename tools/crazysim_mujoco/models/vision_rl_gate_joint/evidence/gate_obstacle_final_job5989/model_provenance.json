@@ -1,0 +1,7 @@
+{
+  "candidate_bundle": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/joint_gate_acceptance_policy7adcc876_seeds4001_4010_tiger_gate100_terminal_final/provenance/candidate_bundle/bundle.json",
+  "candidate_bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+  "candidate_policy_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f",
+  "baseline_policy": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/joint_gate_acceptance_policy7adcc876_seeds4001_4010_tiger_gate100_terminal_final/provenance/frozen_hybrid_policy.onnx",
+  "baseline_policy_sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e"
+}

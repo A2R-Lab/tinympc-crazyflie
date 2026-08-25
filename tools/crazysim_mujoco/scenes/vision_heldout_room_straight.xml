@@ -1,0 +1,52 @@
+<mujoco model="TinyRacer heldout_room_straight">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="2.5 1.5 1.5" extent="7.5"/>
+  <visual><headlight diffuse="0.58 0.58 0.58" ambient="0.38 0.38 0.38" specular="0 0 0"/><global azimuth="20" elevation="-25" ellipsoidinertia="true"/></visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.62 0.67 0.70" rgb2="0.24 0.28 0.31" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.22 0.30 0.38" rgb2="0.11 0.18 0.25" markrgb="0.8 0.8 0.8" width="512" height="512"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="3 3" reflectance="0.15"/>
+    <material name="generic_ceiling" rgba="0.82 0.82 0.79 1" specular="0.04" shininess="0.08"/>
+    <material name="generic_strip_light" rgba="1 0.98 0.86 1" emission="1" specular="0" shininess="0"/>
+    <texture type="2d" name="generic_wall_texture" file="textures/off_white_painted_plaster.png"/>
+    <material name="generic_wall" texture="generic_wall_texture" texrepeat="5 2" texuniform="true"
+              rgba="1 1 1 1" specular="0.08" shininess="0.12"/>
+    <texture type="2d" name="newbeedrone_gate_texture" file="textures/newbeedrone_gate_front_rgba_v1.png"/>
+    <material name="newbeedrone_gate" texture="newbeedrone_gate_texture" texuniform="false" texrepeat="1 1"/>
+    <mesh name="newbeedrone_gate_top" file="meshes/newbeedrone_gate_top.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_bottom" file="meshes/newbeedrone_gate_bottom.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_left" file="meshes/newbeedrone_gate_left.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_right" file="meshes/newbeedrone_gate_right.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_top_easy" file="meshes/newbeedrone_gate_top.obj" scale="1 1.8 1.8"/>
+    <mesh name="newbeedrone_gate_bottom_easy" file="meshes/newbeedrone_gate_bottom.obj" scale="1 1.8 1.8"/>
+    <mesh name="newbeedrone_gate_left_easy" file="meshes/newbeedrone_gate_left.obj" scale="1 1.8 1.8"/>
+    <mesh name="newbeedrone_gate_right_easy" file="meshes/newbeedrone_gate_right.obj" scale="1 1.8 1.8"/>
+  </asset>
+  <worldbody>
+    <light pos="1 0 5" dir="0 0 -1" directional="true"/>
+    <geom name="generic_ceiling" type="box" pos="4.75 0.0 3.05" size="5.35 2.1 .05" material="generic_ceiling" contype="1" conaffinity="1"/>
+    <geom name="generic_ceiling_strip" type="box" pos="4.75 0.0 2.985" size="5.0 .055 .015" material="generic_strip_light" contype="0" conaffinity="0"/>
+    <light name="generic_strip_light_1" pos="0.8125 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="generic_strip_light_2" pos="3.4375 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="generic_strip_light_3" pos="6.0625 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="generic_strip_light_4" pos="8.6875 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <body name="tangent_gate" pos="3.7908799 0.0 1.5" euler="0 0 0.00000">
+      <geom name="tangent_gate_visual_top" type="mesh" mesh="newbeedrone_gate_top_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom name="tangent_gate_visual_bottom" type="mesh" mesh="newbeedrone_gate_bottom_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom name="tangent_gate_visual_left" type="mesh" mesh="newbeedrone_gate_left_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom name="tangent_gate_visual_right" type="mesh" mesh="newbeedrone_gate_right_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <!-- NewBee geometry scaled uniformly in the gate plane. -->
+      <geom name="tangent_gate_left" type="box" pos="0 -0.558 0" size="0.025 0.108 0.45" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="tangent_gate_right" type="box" pos="0 0.558 0" size="0.025 0.108 0.45" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="tangent_gate_top" type="box" pos="0 0 0.558" size="0.025 0.666 0.108" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+      <geom name="tangent_gate_bottom" type="box" pos="0 0 -0.558" size="0.025 0.666 0.108" rgba="0 0 0 0" contype="1" conaffinity="1"/>
+    </body>
+    <geom name="easy_obstacle" type="box" pos="6.1947345 0.25 1.1" size="0.12 0.18 1.1" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="room_wall_west" type="box" pos="-0.55 0.0 1.5" size=".05 2.1 1.5" material="generic_wall" contype="1" conaffinity="1"/>
+    <geom name="room_wall_east" type="box" pos="10.05 0.0 1.5" size=".05 2.1 1.5" material="generic_wall" contype="1" conaffinity="1"/>
+    <geom name="room_wall_south" type="box" pos="4.75 -2.05 1.5" size="5.35 .05 1.5" material="generic_wall" contype="1" conaffinity="1"/>
+    <geom name="room_wall_north" type="box" pos="4.75 2.05 1.5" size="5.35 .05 1.5" material="generic_wall" contype="1" conaffinity="1"/>
+  </worldbody>
+</mujoco>

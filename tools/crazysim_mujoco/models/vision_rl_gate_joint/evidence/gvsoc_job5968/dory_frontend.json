@@ -1,0 +1,20 @@
+{
+  "dory_frontend": "NEMO",
+  "frontend_nodes": 6,
+  "gap8_final_output_bytes": 12,
+  "gap8_hardware_nodes": 6,
+  "gap8_l1_capacity_bytes": 64000,
+  "gap8_max_l1_tile_bytes_estimate": 34520,
+  "gap8_total_macs": 7621056,
+  "generated_app_dir": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/gap8/runs_gvsoc_5931_streaming_v10_core8/5968/gap8_application",
+  "passed": true,
+  "single_output_graph": true,
+  "wide_requantization": {
+    "backend": "DORY GAP8 pulp-nn/64bit",
+    "constant_bits": 64,
+    "enabled": true,
+    "non_power_of_two_strategy": "exact widened signed-int64 coefficients",
+    "overflow_policy": "fail closed before int64 packing",
+    "power_of_two_strategy": "exact divisor fold"
+  }
+}

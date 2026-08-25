@@ -1,0 +1,304 @@
+{
+  "artifacts": {
+    "checkpoint": {
+      "path": "checkpoint.pt",
+      "sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a"
+    },
+    "newbee_gate_supervision": null,
+    "policy_onnx": {
+      "path": "policy.onnx",
+      "sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f"
+    },
+    "runtime_obstacle_retention": {
+      "action_counts_track_left_right": [
+        618,
+        0,
+        46
+      ],
+      "expert_action_sha256": "5a5031eeb2ed9e80126a66dd2d7b5346f302f5e1953bb6d79871c0071a8949c1",
+      "frames_sha256": "454b69c1bc4e3fd3ad73b39f486c84df2712882e27f31907b2ec72fe65fc7b66",
+      "path": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/runtime_obstacle_retention_seed3201_frozen_baseline.npz",
+      "samples": 664,
+      "selection_rule": "post-HM01B0 H.264 sequence N uses adjacent decoded frames [N-2,N-1] and vision.csv rl_action at N; select N>=2 and time_s<=summary course_completion_time_s",
+      "sha256": "6ca64d95a317321abcf69337b2887f6bb09659d9294e0f9bfe5fa1786bae2a32",
+      "source_course_sha256": "1fcc8d41f70a13528de9ea8be92ed507156b39d932f748b1c2a13fca1302e14c",
+      "source_frame_index_sha256": "d823cb90b5f0bdeb4d53b077c3eb9833b97fe423f7591586741027b0736ae2e0",
+      "source_run": {
+        "course_completion_time_s": 22.173000000005384,
+        "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5912_matrix_seed3201/baseline_obstacle_only_seed3201",
+        "run_config_sha256": "e0bf5eedca94f374f123bb7a86c633e3663080d9a0add1a381c19d593567aa76",
+        "state_sha256": "b8baf5f9abb27a62a03fb91e9b95dd445edfab99ff606bd169addb756ff61a72",
+        "summary_sha256": "4b30c1e6567c141fc2687876ae3beaf97c5cbe1ba6ace76690a54c8a64dfb946",
+        "video_sha256": "91da516dbc92c22e7393683c3c61d5dbf57702e97a78944c159f443e0c665d4b",
+        "vision_sha256": "f7010ea8951de4a4f857e7685b37d8fc9767cc476b66f76793c375658a1b36d6"
+      },
+      "source_sequence_sha256": "6e0ca8ac0fcded156006f67fc037a8d70fdc97c6f7f133f81d372986dc2cc74c",
+      "source_time_s": {
+        "maximum": 22.167,
+        "minimum": 0.067,
+        "sha256": "c80c8ba4084f82af48b103bedd32b3b9d8842fb0a9835bd7a033604c9d931f57"
+      },
+      "supervision": "actor action cross-entropy only; no gate, risk, reward, or value targets",
+      "teacher_policy_sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e"
+    },
+    "runtime_track_retention": {
+      "gate_corners_sha256": "4cd4e42f62b8bfc91255ea9e63cfcc684d46501c0052cefbe23b4ca552f64175",
+      "gate_projection": {
+        "ai_deck_optical_center_body_m": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "camera_axes": {
+          "depth": "+body_x",
+          "u": "-body_y",
+          "v": "-body_z"
+        },
+        "corner_order": [
+          "TL",
+          "TR",
+          "BR",
+          "BL"
+        ],
+        "course_gate": {
+          "center": [
+            4.0,
+            0.3,
+            1.5
+          ],
+          "normal": [
+            1.0,
+            0.0
+          ],
+          "opening": [
+            0.45,
+            0.45
+          ]
+        },
+        "normalization_divisor_px": [
+          160,
+          160
+        ],
+        "projection": "cv2.projectPoints with zero extrinsics and simulation distortion",
+        "rail_center_span_m": 0.555,
+        "runs": [
+          {
+            "cx_px": 81.103810523,
+            "cy_px": 73.3473030288,
+            "distortion_model": "opencv_plumb_bob",
+            "fx_px": 89.1558392549,
+            "fy_px": 89.4608171623,
+            "model": "Himax HM01B0",
+            "resolution": [
+              160,
+              160
+            ],
+            "simulation_distortion_coefficients": [
+              -0.0176448766,
+              0.0994132451,
+              0.0054432154,
+              -0.006040012,
+              -0.055
+            ]
+          },
+          {
+            "cx_px": 81.103810523,
+            "cy_px": 73.3473030288,
+            "distortion_model": "opencv_plumb_bob",
+            "fx_px": 89.1558392549,
+            "fy_px": 89.4608171623,
+            "model": "Himax HM01B0",
+            "resolution": [
+              160,
+              160
+            ],
+            "simulation_distortion_coefficients": [
+              -0.0176448766,
+              0.0994132451,
+              0.0054432154,
+              -0.006040012,
+              -0.055
+            ]
+          },
+          {
+            "cx_px": 81.103810523,
+            "cy_px": 73.3473030288,
+            "distortion_model": "opencv_plumb_bob",
+            "fx_px": 89.1558392549,
+            "fy_px": 89.4608171623,
+            "model": "Himax HM01B0",
+            "resolution": [
+              160,
+              160
+            ],
+            "simulation_distortion_coefficients": [
+              -0.0176448766,
+              0.0994132451,
+              0.0054432154,
+              -0.006040012,
+              -0.055
+            ]
+          },
+          {
+            "cx_px": 81.103810523,
+            "cy_px": 73.3473030288,
+            "distortion_model": "opencv_plumb_bob",
+            "fx_px": 89.1558392549,
+            "fy_px": 89.4608171623,
+            "model": "Himax HM01B0",
+            "resolution": [
+              160,
+              160
+            ],
+            "simulation_distortion_coefficients": [
+              -0.0176448766,
+              0.0994132451,
+              0.0054432154,
+              -0.006040012,
+              -0.055
+            ]
+          },
+          {
+            "cx_px": 81.103810523,
+            "cy_px": 73.3473030288,
+            "distortion_model": "opencv_plumb_bob",
+            "fx_px": 89.1558392549,
+            "fy_px": 89.4608171623,
+            "model": "Himax HM01B0",
+            "resolution": [
+              160,
+              160
+            ],
+            "simulation_distortion_coefficients": [
+              -0.0176448766,
+              0.0994132451,
+              0.0054432154,
+              -0.006040012,
+              -0.055
+            ]
+          }
+        ],
+        "schema": "runtime_gate_projection_v1",
+        "source": "interpolated state.csv body pose + run_config HM01B0 calibration + course gate geometry"
+      },
+      "gate_visible": {
+        "sha256": "9454ca7da53cb4603c190b4a18158e37abadd386a8c55814ffc7e2bd622c0efc",
+        "visible_samples": 1330
+      },
+      "path": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/runtime_joint_retention_seed3199_round6.npz",
+      "runs": 5,
+      "samples": 1789,
+      "selection_rule": "post-HM01B0 H.264-decoded adjacent frames while state.x <= gate_x-0.1m; privileged corrective action TRACK",
+      "sha256": "dff9cfb3c411a7c74aa292b7e49a9c4459eabbd50ab849b0971ab587fdac5a1a",
+      "source_course_sha256": "ab1022a5cb4a52a4ab9e5525d408c7fe706cac7fe2df3e54f973d0ebe3e384df",
+      "source_frame_index": {
+        "maximum": 390,
+        "minimum": 1,
+        "sha256": "46648cc42a936e1347ccdd79963366f134dca922abc7cf9fdd3ac3dc6c2ec2b3"
+      },
+      "source_run_index_sha256": "be89510ede2f19ec33758f25e70a5801c607d3a3d08655cf7b8a72fc5ea74e63",
+      "source_runs": [
+        {
+          "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5906_smoke_seed3199",
+          "run_config_sha256": "4e9c00cb2966dd488beb9b1bcebe72a6862d1ab588fe1f2a222d9afab3585bd7",
+          "state_sha256": "079000a6c9c8331bf537261e0248fe15e22ae2cd317fa0aff30ec85b94607059",
+          "video_sha256": "dbc4a3ed8808d7768aee0f11ec9c1f05319393c2b2086b1f0ba7e7cd7134a728"
+        },
+        {
+          "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5907_smoke_seed3199",
+          "run_config_sha256": "48d9aaaa1b3f88ac6f4f39fdea4d747d7a16a6675b9b83f2e70728a0fbdfb263",
+          "state_sha256": "417b7393f8c3faa3bdd9d2967d29c5b5bd7dd98f660ff60be325a52a84be30c2",
+          "video_sha256": "b698a6e1f9baa5c68cccb098ac4aab292d6212c5cd039955904186811f022452"
+        },
+        {
+          "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5908_smoke_seed3199",
+          "run_config_sha256": "679a83624bf5af130e6b36c10e95e862bbd70e9322855e0cd14014f4b76826ec",
+          "state_sha256": "cddde173c519b6994b98ce923d281dc173f6f2fe975e22239c650a82709c63e5",
+          "video_sha256": "cdda70b451638202cdec0b5144f5b0d6c3388411f3dea36a62d03df11adfe75c"
+        },
+        {
+          "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5910_smoke_seed3199",
+          "run_config_sha256": "f0aed7eea2efde8d80bcfafd2173892bf4737bda57d8b483a9a28d57f276a7a0",
+          "state_sha256": "6d8aa9c381a175e75ee2f99e8ac99c03ae0f4701d7af54cc21cafff1c3905fd4",
+          "video_sha256": "322a7b6b09cbba963b792add91efde2c6dbedab0242430bd4dd9cc3cb0beea8d"
+        },
+        {
+          "path": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/gate_obstacle_joint/joint_model_5911_servofix_smoke_seed3199",
+          "run_config_sha256": "88c32c316d88368c0859be9c91b02cd2006a228406273b0bad11cc4250680ba6",
+          "state_sha256": "d7f37275ff3399148cf82dc2497f0102afb507d14a7bb3166f627ad9d8e83e65",
+          "video_sha256": "939137f351e39228111d72f95d25393d97c25b6fc36078d5a9d5e38e9e52b44a"
+        }
+      ],
+      "source_time_s": {
+        "maximum": 13.0,
+        "minimum": 0.03333333333333333,
+        "sha256": "a7180366da41a9c671609b0022a2d0e8a32aa91026d97bc60962e37608234de2"
+      },
+      "supervision": "actor TRACK cross-entropy plus masked gate corners and gate confidence only; no risk, reward, or value targets"
+    }
+  },
+  "deployment": {
+    "actions": [
+      "TRACK",
+      "LEFT",
+      "RIGHT"
+    ],
+    "fixed_intrinsics": {
+      "cx_normalized": 0.5068988157687501,
+      "cy_normalized": 0.45842064393,
+      "fx_normalized": 0.5572239953431251,
+      "fy_normalized": 0.5591301072643751
+    },
+    "input": {
+      "dtype": "float32",
+      "name": "frames",
+      "range": [
+        0,
+        1
+      ],
+      "shape": [
+        1,
+        2,
+        160,
+        160
+      ],
+      "temporal_order": [
+        "previous",
+        "current"
+      ]
+    },
+    "outputs": {
+      "action_logits": [
+        1,
+        3
+      ],
+      "gate_confidence_logit": [
+        1
+      ],
+      "gate_corners": {
+        "order": [
+          "TL",
+          "TR",
+          "BR",
+          "BL"
+        ],
+        "range": [
+          0,
+          1
+        ],
+        "shape": [
+          1,
+          4,
+          2
+        ]
+      }
+    }
+  },
+  "format": "tinympc-joint-gate-obstacle-student-v1",
+  "frozen_obstacle_baseline": {
+    "path": "../vision_rl_mpc_balanced_v2/policy.onnx",
+    "sha256": "291d1de3a7152f09cc2e96f4a6973d322c95bade4e5c8249c7bc14f7b656187e"
+  },
+  "representativeness": "offline only; closed-loop MuJoCo evaluation required before runtime integration",
+  "runtime_adapter": "joint_gate_rl"
+}

@@ -6,6 +6,16 @@
 #include "../../src/tinympc_generated_params.h"
 #include "../../src/tinympc_banked_model_bank.h"
 
+static_assert(NSTATES == TINYMPC_GENERATED_STATE_DIM,
+              "host TinyMPC build and generated level model disagree");
+/* The firmware bank is currently a 16-state Frenet/reference-relative model,
+ * while this Isaac/PyBullet host ABI is the legacy 12-state absolute model.
+ * They are not prefix-compatible: silently copying twelve rows would corrupt
+ * both dynamics and costs.  The host therefore exposes only model 0 until its
+ * ABI is deliberately upgraded; the generated bank itself remains untouched. */
+static_assert(TINYMPC_BANK_MODEL_STATE_DIM != TINYMPC_GENERATED_STATE_DIM,
+              "host bank selection needs an explicit state-coordinate mapping");
+
 namespace {
 
 static Eigen::MatrixNf A;
@@ -191,54 +201,6 @@ bool select_stored_model(int model_id) {
           tinympc_generated_Quu_inv, tinympc_generated_AmBKt,
           tinympc_generated_coeff_d2p, tinympc_generated_APf,
           tinympc_generated_BPf);
-      break;
-    case 1:
-      install_model(
-          tinympc_bank_left_15_A, tinympc_bank_left_15_B,
-          tinympc_bank_left_15_f, tinympc_bank_left_15_Kinf,
-          tinympc_bank_left_15_Pinf, tinympc_bank_left_15_Quu_inv,
-          tinympc_bank_left_15_AmBKt, tinympc_bank_left_15_coeff_d2p,
-          tinympc_bank_left_15_APf, tinympc_bank_left_15_BPf);
-      break;
-    case 2:
-      install_model(
-          tinympc_bank_right_15_A, tinympc_bank_right_15_B,
-          tinympc_bank_right_15_f, tinympc_bank_right_15_Kinf,
-          tinympc_bank_right_15_Pinf, tinympc_bank_right_15_Quu_inv,
-          tinympc_bank_right_15_AmBKt, tinympc_bank_right_15_coeff_d2p,
-          tinympc_bank_right_15_APf, tinympc_bank_right_15_BPf);
-      break;
-    case 3:
-      install_model(
-          tinympc_bank_left_30_A, tinympc_bank_left_30_B,
-          tinympc_bank_left_30_f, tinympc_bank_left_30_Kinf,
-          tinympc_bank_left_30_Pinf, tinympc_bank_left_30_Quu_inv,
-          tinympc_bank_left_30_AmBKt, tinympc_bank_left_30_coeff_d2p,
-          tinympc_bank_left_30_APf, tinympc_bank_left_30_BPf);
-      break;
-    case 4:
-      install_model(
-          tinympc_bank_right_30_A, tinympc_bank_right_30_B,
-          tinympc_bank_right_30_f, tinympc_bank_right_30_Kinf,
-          tinympc_bank_right_30_Pinf, tinympc_bank_right_30_Quu_inv,
-          tinympc_bank_right_30_AmBKt, tinympc_bank_right_30_coeff_d2p,
-          tinympc_bank_right_30_APf, tinympc_bank_right_30_BPf);
-      break;
-    case 5:
-      install_model(
-          tinympc_bank_left_60_A, tinympc_bank_left_60_B,
-          tinympc_bank_left_60_f, tinympc_bank_left_60_Kinf,
-          tinympc_bank_left_60_Pinf, tinympc_bank_left_60_Quu_inv,
-          tinympc_bank_left_60_AmBKt, tinympc_bank_left_60_coeff_d2p,
-          tinympc_bank_left_60_APf, tinympc_bank_left_60_BPf);
-      break;
-    case 6:
-      install_model(
-          tinympc_bank_right_60_A, tinympc_bank_right_60_B,
-          tinympc_bank_right_60_f, tinympc_bank_right_60_Kinf,
-          tinympc_bank_right_60_Pinf, tinympc_bank_right_60_Quu_inv,
-          tinympc_bank_right_60_AmBKt, tinympc_bank_right_60_coeff_d2p,
-          tinympc_bank_right_60_APf, tinympc_bank_right_60_BPf);
       break;
     default:
       return false;

@@ -1,0 +1,51 @@
+<mujoco model="TinyRacer gate-obstacle proof of concept">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="6 0 1.5" extent="7"/>
+  <visual>
+    <headlight diffuse="0.12 0.12 0.12" ambient="0.08 0.08 0.08" specular="0 0 0"/>
+    <rgba haze="0.03 0.03 0.03 0" fog="1 1 1 0"/>
+    <map fogstart="0" fogend="0"/>
+    <global azimuth="135" elevation="-18" ellipsoidinertia="true"/>
+  </visual>
+  <asset>
+    <texture name="corridor_floor_texture" type="2d" builtin="checker"
+             rgb1="0.31 0.31 0.30" rgb2="0.23 0.23 0.22" width="512" height="512"/>
+    <texture name="corridor_wall_texture" type="2d" file="textures/off_white_painted_plaster.png"/>
+    <material name="corridor_floor" texture="corridor_floor_texture" texrepeat="12 4"
+              texuniform="true" reflectance="0.12" specular="0.18" shininess="0.25"/>
+    <material name="corridor_wall" texture="corridor_wall_texture" texrepeat="6 2"
+              texuniform="true" rgba="1 1 1 1" specular="0.08" shininess="0.12"/>
+    <material name="corridor_ceiling" rgba="0.82 0.82 0.79 1" specular="0.04" shininess="0.08"/>
+    <material name="strip_light" rgba="1 0.98 0.86 1" emission="1" specular="0" shininess="0"/>
+    <texture type="2d" name="newbeedrone_gate_texture" file="textures/newbeedrone_gate_front_rgba_v1.png"/>
+    <material name="newbeedrone_gate" texture="newbeedrone_gate_texture" texuniform="false"
+              rgba="1 1 1 1" specular="0.08" shininess="0.12"/>
+    <mesh name="newbeedrone_gate_top" file="meshes/newbeedrone_gate_top.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_bottom" file="meshes/newbeedrone_gate_bottom.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_left" file="meshes/newbeedrone_gate_left.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_right" file="meshes/newbeedrone_gate_right.obj" scale="1 0.9 0.9"/>
+  </asset>
+  <worldbody>
+    <camera name="crazyflie_corridor_preview" pos="0 0 1.5" xyaxes="0 -1 0 0 0 1" fovy="47.168554"/>
+    <geom name="corridor_floor" type="box" pos="6 0 -0.05" size="6 2.05 0.05"
+          material="corridor_floor" contype="1" conaffinity="1"/>
+    <geom name="corridor_left_wall" type="box" pos="6 2.05 1.5" size="6 1.5 0.05"
+          euler="90 0 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_right_wall" type="box" pos="6 -2.05 1.5" size="6 1.5 0.05"
+          euler="90 0 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_end_wall" type="box" pos="12.05 0 1.5" size="1.5 2.05 0.05"
+          euler="0 90 0" material="corridor_wall" contype="1" conaffinity="1"/>
+    <geom name="corridor_ceiling" type="box" pos="6 0 3.05" size="6 2.05 0.05"
+          material="corridor_ceiling" contype="1" conaffinity="1"/>
+
+    <geom name="post_gate_box" type="box" pos="6.2 0.6 1.1" size="0.15 0.4 1.1" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="ceiling_strip_light" type="box" pos="6 0 2.985" size="5.5 0.055 0.015"
+          material="strip_light" contype="0" conaffinity="0"/>
+    <light name="strip_light_1" pos="1 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_2" pos="3.5 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_3" pos="6 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_4" pos="8.5 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+    <light name="strip_light_5" pos="11 0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" specular="0.12 0.12 0.10" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
+  </worldbody>
+</mujoco>

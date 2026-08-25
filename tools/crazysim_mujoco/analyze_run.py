@@ -262,12 +262,32 @@ def build_summary(
         cross_track, course_tangent = point_to_polyline_metrics(points, centerline)
         pass_point = np.asarray(course["pass_point"], dtype=float)
         pass_distance = np.linalg.norm(points - pass_point, axis=1)
+        maximum_final_cross_track = float(
+            course.get("maximum_final_cross_track_m", np.inf)
+        )
+        # A course with physical gates cannot complete simply because its
+        # initial reference happens to lie in the finish sphere.  First find
+        # the ordered physical gate crossing, then begin the finish search.
+        gate_results, gates_passed = ordered_gate_crossings(
+            data, course.get("gates", []), launch_time, vehicle_radius
+        )
+        gate_times = [item["time_s"] for item in gate_results
+                      if item.get("crossed") and item.get("time_s") is not None]
+        completion_after_gates = (not course.get("gates", []) or
+                                  (gates_passed and len(gate_times) == len(gate_results)))
+        completion_search_time = (max(gate_times) if gate_times else launch_time)
         finish_candidates = np.flatnonzero(
             (np.arange(t.size) >= launched_index)
+            & (t >= completion_search_time)
             & (pass_distance <= float(course["pass_radius_m"]))
+            # Completion is the first sample satisfying both terminal
+            # conditions. Freezing at the first sphere entry and checking
+            # cross-track afterward can reject a vehicle that is actively
+            # rejoining and satisfies both conditions milliseconds later.
+            & (cross_track <= maximum_final_cross_track)
         )
         raw_finish_index = (int(finish_candidates[0])
-                            if finish_candidates.size else None)
+                            if finish_candidates.size and completion_after_gates else None)
         contact_before_completion = bool(
             crash_indices.size
             and (raw_finish_index is None
@@ -279,19 +299,43 @@ def build_summary(
             evaluation_end_index = finish_index
         active_slice = slice(launched_index, evaluation_end_index + 1)
         active_points = points[active_slice]
+        # Report the obstacle/wall interval explicitly.  For held-out gate
+        # courses it begins at the final ordered gate passage, so it cannot be
+        # silently truncated at launch by a duplicated start/finish point.
+        validation_start_index = launched_index
+        if gate_times:
+            validation_start_index = min(
+                int(np.searchsorted(t, max(gate_times))), evaluation_end_index)
+        validation_slice = slice(validation_start_index, evaluation_end_index + 1)
+        validation_points = points[validation_slice]
         per_obstacle = {
             obstacle["name"]: float(np.min(clearance_to_obstacle(
-                active_points, obstacle, vehicle_radius
+                validation_points, obstacle, vehicle_radius
             )))
             for obstacle in course.get("obstacles", [])
         }
         minimum_obstacle_clearance = min(per_obstacle.values(), default=math.inf)
         per_wall = {
             wall["name"]: float(np.min(clearance_to_obstacle(
-                active_points, wall, vehicle_radius
+                validation_points, wall, vehicle_radius
             )))
             for wall in course.get("walls", [])
         }
+        room_bounds = course.get("room_bounds_xy")
+        if room_bounds is not None:
+            try:
+                (xmin, xmax), (ymin, ymax) = room_bounds
+                xmin, xmax, ymin, ymax = map(float, (xmin, xmax, ymin, ymax))
+                if not (xmin < xmax and ymin < ymax):
+                    raise ValueError("non-increasing room bounds")
+                per_wall.update({
+                    "room_west": float(np.min(validation_points[:, 0] - xmin - vehicle_radius)),
+                    "room_east": float(np.min(xmax - validation_points[:, 0] - vehicle_radius)),
+                    "room_south": float(np.min(validation_points[:, 1] - ymin - vehicle_radius)),
+                    "room_north": float(np.min(ymax - validation_points[:, 1] - vehicle_radius)),
+                })
+            except (TypeError, ValueError):
+                raise ValueError("course room_bounds_xy must be [[xmin,xmax],[ymin,ymax]]")
         minimum_wall_clearance = min(per_wall.values(), default=math.inf)
         pass_reached = finish_index is not None
         completion_time = (
@@ -341,14 +385,11 @@ def build_summary(
             )))
         required_heading = float(course.get("required_heading_change_deg", 0.0))
         heading_requirement_met = heading_change >= 0.75 * required_heading
-        maximum_final_cross_track = float(
-            course.get("maximum_final_cross_track_m", np.inf)
-        )
         active_cross_track = cross_track[active_slice]
         final_cross_track = float(cross_track[evaluation_end_index])
         final_cross_track_met = final_cross_track <= maximum_final_cross_track
         wall_clearance = (minimum_wall_clearance
-                          if course.get("walls", []) else None)
+                          if per_wall else None)
         wall_clearance_safe = minimum_wall_clearance >= 0.0
         if "corridor_y" in course:
             lower, upper = map(float, course["corridor_y"])
@@ -357,9 +398,10 @@ def build_summary(
                 upper - y[active_slice] - vehicle_radius
             )))
             wall_clearance_safe = wall_clearance >= 0.0
-        gate_results, gates_passed = ordered_gate_crossings(
-            data, course.get("gates", []), launch_time, vehicle_radius
-        )
+        gate_margins = [float(item["clearance_margin_m"])
+                        for item in gate_results
+                        if item.get("clearance_margin_m") is not None]
+        gate_clearance = min(gate_margins) if gate_margins else None
         tangent_velocity = np.sum(
             np.column_stack((data["vx_mps"], data["vy_mps"]))
             * course_tangent, axis=1)[active_slice]
@@ -376,6 +418,7 @@ def build_summary(
             and minimum_obstacle_clearance >= 0.0
             and wall_clearance_safe
             and gates_passed
+            and completion_after_gates
             and heading_requirement_met
             and final_cross_track_met
             and not contact_before_completion
@@ -389,6 +432,10 @@ def build_summary(
             "course_obstacle_clearance_by_name_m": per_obstacle,
             "course_wall_clearance_min_m": wall_clearance,
             "course_wall_clearance_by_name_m": per_wall,
+            "course_gate_clearance_min_m": gate_clearance,
+            "course_validation_interval_start_time_s": float(t[validation_start_index]),
+            "course_validation_interval_end_time_s": float(t[evaluation_end_index]),
+            "course_completion_after_ordered_gates": completion_after_gates,
             "course_segments": segment_results,
             "course_completion_time_s": completion_time,
             "course_mean_horizontal_speed_mps": mean_speed,

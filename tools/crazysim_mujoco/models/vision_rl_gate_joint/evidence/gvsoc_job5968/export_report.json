@@ -1,0 +1,33 @@
+{
+  "clips": 200,
+  "float_reexpression_max_abs_logit_error": 1.9073486328125e-05,
+  "held_out": "/home/cchen/isaacsim-workspace/workspace/joint_gate_obstacle_rollouts_v3_job_5917/test.npz",
+  "held_out_sha256": "61017708ea9966eb3a2816ef2aff260ac19fe4c96c2b9606eed8866460ab4cf4",
+  "nemo_bridge_state_sha256": "a84406c13913c183e14b14457266935761ece1b5295e477810556eacb93cd87e",
+  "onnx_sha256": "889e284d0a468fe1e81675e1c479ecd057ac624364948727124faaebf3a3fd18",
+  "operators": [
+    "AveragePool",
+    "Conv",
+    "Relu"
+  ],
+  "output_layout": [
+    "action_track_logit",
+    "action_left_logit",
+    "action_right_logit",
+    "gate_tl_x_logit",
+    "gate_tl_y_logit",
+    "gate_tr_x_logit",
+    "gate_tr_y_logit",
+    "gate_br_x_logit",
+    "gate_br_y_logit",
+    "gate_bl_x_logit",
+    "gate_bl_y_logit",
+    "gate_confidence_logit"
+  ],
+  "seed": 5913,
+  "selection": "numpy.default_rng(seed).choice(N, 200, replace=False), sorted",
+  "source_checkpoint": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/checkpoint.pt",
+  "source_checkpoint_sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a",
+  "terminal_margin": 1e-06,
+  "terminal_scale": 0.03125
+}

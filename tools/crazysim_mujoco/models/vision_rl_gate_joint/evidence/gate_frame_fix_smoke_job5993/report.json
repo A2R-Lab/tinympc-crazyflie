@@ -1,0 +1,68 @@
+{
+  "format": "tinympc-gate-frame-fix-smoke-v1",
+  "slurm_job": 5993,
+  "slurm_state": "COMPLETED",
+  "slurm_exit_code": "0:0",
+  "node": "a2r-tiger",
+  "seed": 5402,
+  "controller_sha256": "e60a8223e72bfb80d193e2182a6f3c8c3b8ce0aad00847675869e3b41c615f1d",
+  "policy_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f",
+  "bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+  "purpose": "diagnose the per-knot path-normal and shifted-tunnel correction; not a replacement acceptance matrix",
+  "courses": {
+    "circle": {
+      "course_success": false,
+      "gate_crossed": true,
+      "gate_crossing_time_s": 6.186080005248724,
+      "gate_clearance_m": 0.16606484563539137,
+      "first_accepted_gate_frame_time_s": 7.233,
+      "accepted_gate_frames": 1,
+      "contact_before_completion": true,
+      "first_crash_after_launch_s": 6.2830000000007775,
+      "obstacle_clearance_m": 0.7779394760938504,
+      "wall_clearance_m": 0.7027859966751674,
+      "attitude_geodesic_max_deg": 179.94383251478683,
+      "angular_rate_max_rad_s": 17.767240368627448,
+      "inference_p95_ms": 15.790371154434979
+    },
+    "oval": {
+      "course_success": false,
+      "gate_crossed": true,
+      "gate_crossing_time_s": 4.710759606740584,
+      "gate_clearance_m": 0.10395253555336914,
+      "first_accepted_gate_frame_time_s": 4.767,
+      "accepted_gate_frames": 10,
+      "contact_before_completion": true,
+      "first_crash_after_launch_s": 4.581000000000221,
+      "obstacle_clearance_m": 1.1411256504795164,
+      "wall_clearance_m": 1.4805275784298735,
+      "attitude_geodesic_max_deg": 179.9999971753359,
+      "angular_rate_max_rad_s": 56.02050769560819,
+      "inference_p95_ms": 15.664662927156344
+    },
+    "figure8": {
+      "course_success": false,
+      "gate_crossed": true,
+      "gate_crossing_time_s": 4.54022057117112,
+      "gate_clearance_m": 0.22156550388288865,
+      "first_accepted_gate_frame_time_s": 10.2,
+      "accepted_gate_frames": 28,
+      "contact_before_completion": true,
+      "first_crash_after_launch_s": 9.15199999999981,
+      "obstacle_clearance_m": 0.5177723635674165,
+      "wall_clearance_m": 0.3406005221346834,
+      "attitude_geodesic_max_deg": 179.99988208342359,
+      "angular_rate_max_rad_s": 54.875600176939365,
+      "inference_p95_ms": 13.569827453466068
+    }
+  },
+  "aggregate": {
+    "course_completions": 0,
+    "trials": 3,
+    "physical_gate_passes": 3,
+    "contacts_before_completion": 3,
+    "first_gate_observation_preceded_crossing": 0,
+    "accepted": false
+  },
+  "interpretation": "The structural frame correction compiled and ran, but it was not the sole root cause. Gate geometry was admitted only after physical crossing, leaving the pre-gate dodge and post-dodge recovery behavior unchanged."
+}

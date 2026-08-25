@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+# Raw training/retention tensors and bounded-job products live in shared-home
+# storage. Their hashes and compact evaluator reports are checked in instead.
+runtime_*.npz
+runs/
+slurm_logs/*
+!slurm_logs/.gitkeep
+
+# GVSOC build trees, READFS corpora, and scheduler logs are reproducible but
+# too large for source control. Keep only scripts and compact evidence reports.
+gap8/runs*/
+gap8/slurm_logs/*
+!gap8/slurm_logs/.gitkeep

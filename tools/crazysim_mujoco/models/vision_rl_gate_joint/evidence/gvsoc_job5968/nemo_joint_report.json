@@ -1,0 +1,55 @@
+{
+  "action_agreement": 0.99,
+  "action_agreement_requirement": 0.95,
+  "activation_precision_bits": 8,
+  "clips": 200,
+  "golden_activation_layers": 6,
+  "gvsoc": "not yet run; this report is pre-GVSOC NEMO integer parity",
+  "integer_terminal_output_max": 233,
+  "integer_terminal_output_min": 0,
+  "nemo_integer_onnx": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/gap8/runs_gvsoc_5931_streaming_v10_core8/5968/integer/joint_dory_packed_int.onnx",
+  "operators": [
+    "Add",
+    "AveragePool",
+    "Cast",
+    "Clip",
+    "Constant",
+    "Conv",
+    "Div",
+    "Floor",
+    "Mul",
+    "Pad"
+  ],
+  "passed_semantic_parity": true,
+  "saturated_weight_count": 10,
+  "schema": "joint-dory-nemo-integer-v1",
+  "signed_int8_weight_ranges": {
+    "conv0.0.weight": [
+      -116,
+      127
+    ],
+    "conv1.0.weight": [
+      -116,
+      127
+    ],
+    "conv2.0.weight": [
+      -128,
+      120
+    ],
+    "feature.0.weight": [
+      -125,
+      127
+    ],
+    "terminal.0.weight": [
+      -128,
+      111
+    ]
+  },
+  "terminal_epsilon": 0.006223300471901894,
+  "terminal_margin": 1e-06,
+  "terminal_scale": 0.03125,
+  "visible_gate_center_error_increase_px": 3.245570659637451,
+  "visible_gate_center_error_increase_requirement_px": 5.0,
+  "weight_precision_bits": 8,
+  "weight_storage_contract": "signed-int8 saturating export"
+}

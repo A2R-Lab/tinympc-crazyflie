@@ -1,0 +1,57 @@
+{
+  "format": "tinympc-joint-gate-obstacle-v3-isaacsim-source-snapshot-v1",
+  "purpose": "Byte-locked source overlay needed to reproduce the representative physical dataset v3; raw data and Isaac Sim installation remain external provenance.",
+  "external_isaacsim_base": {
+    "repository": "https://github.com/isaac-sim/IsaacSim.git",
+    "commit": "045ca8b59622b99a408092124377c66346e8d9c2"
+  },
+  "snapshot_files_sha256": {
+    "user_workflows/export_joint_gate_obstacle_rollouts.py": "3183dc4dd4ad172d6cfc73e18f2e67270a44ea55dc304180998eeb6373fb0e60",
+    "user_workflows/export_joint_gate_obstacle_rollouts.slurm": "a66f79430009f8ea8a058328bd10b2a115099b73859a9d9cb50ee9e842724488",
+    "user_workflows/compact_joint_gate_obstacle_rollouts.slurm": "b41df4dec9941399e08c933d66a873494d78c3ebc1a9e2409d2294f17a5260a9",
+    "user_workflows/test_export_joint_gate_obstacle_rollouts.py": "08ae6a3cef388bd29f3d8f5b3c12e2aef57f88643b741eb45e25ffc538e17fb1",
+    "user_workflows/generate_course_shard.py": "1f44f1978d95394d411f38ef1b48b5d7579711d3e03e99973c70297abd956ec2",
+    "user_workflows/generate_flight_trajectories.py": "d0fe4aa93348b156921a3336185b513751d68fd1e552996621cc835df8762dd3",
+    "user_workflows/crazyflie_rollout.py": "cca68d52b816da9456359d7971fff541d8b6536400d1cfda320a84aae9ce34f7",
+    "gap8_perception/scene_distribution_v2.py": "448e5e371778e59215e275739bd14e278cdd1202f0da7094589f4f97037ea5b3",
+    "gap8_perception/firmware_tinympc_backend_v2.py": "4bed4dfe3155021848840063d4fd773aee8ba69e7fdfcbdd31db8e9c0cdc2524",
+    "gap8_perception/tinympc_execution_v2.py": "0c820c039a31691d1721d131e9502cb87750551f9c3142da5c7d1af0a6783c74",
+    "gap8_perception/dataset_contracts_v2.py": "8827071ccee9e252b2251c7cc3f58cc5448a31668404977bbb707ddcb7cc5fe0",
+    "gap8_perception/configs/scene_distribution_v2.json": "d3eee98e3a47dcf8a985342f1d65aa8801ff91827f1a230b0b829a079bfd1e64",
+    "gap8_perception/configs/hm01b0_calibration.json": "f34b7b1eaf25c7e6f5b0b6f08a5343abaf0c6b4e07635aae38efe3c6a4fdcef2"
+  },
+  "main_repo_dependencies_sha256": {
+    "apps/controller_tinympc_eigen/src/tinympc_generated_params.h": "2a92dadbad53e56a857947903fa02b11970a8236360a78997392d5d35e23dba6",
+    "apps/controller_tinympc_eigen/tools/pybullet_simulation/tinympc_admm_host.cpp": "2184b533b2ec97875f486513616f6106436579f4b4bfe45d8d7e1661935a733b",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/model.cpp": "bfd35b3f9a96b9d63fb91272eda4b1001fa72e25dbaca695a36196d7e9145d3c",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/auxil.cpp": "c0c3fce3967dd1d98ab3d90b8836fa88f24ca67b3163e25b215d38da5a5cd93c",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/cost_lqr.cpp": "42593d0b662194486493e967511a13e92650c090d6580b39409fad67e5f9d2a9",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/lqr.cpp": "0492141211c6a19b07d6ac7d24c43815137680eb53e08c0cbf944e33be6ec839",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/constraint_linear.cpp": "ee46eb0643fab777efb37c0c755b60a6dbf7369ac0b8fa19d2a9f6b282e278b0",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/admm.cpp": "3ef41ce42004d25be6ab365b70717bf666fdabf477727fb5b212a638273f57cd",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/rho_benchmark.cpp": "3851602a09b54d49d388260f244055c56048c3ad002e7ee78d06832af04c199a",
+    "apps/controller_tinympc_eigen/TinyMPC-ADMM/src/tinympc/utils.cpp": "bfcc09b71269ff8efa71be6c5e691f8ab9f1a82cbc2807a3af9748b48653d726",
+    "tools/crazysim_mujoco/scenes/meshes/newbeedrone_gate_top.obj": "50bb32875b961ccc004e0ce0594d9c7c65fb524d44b3a575834abb50c3121b36",
+    "tools/crazysim_mujoco/scenes/meshes/newbeedrone_gate_bottom.obj": "f42ab8b226bb4a5027134392ba53c8286ac2cfa9800a28ce25ce55c69214db62",
+    "tools/crazysim_mujoco/scenes/meshes/newbeedrone_gate_left.obj": "49369904cbaf7758f1d5fdcffa0af1a85993f60214b0bfa3841ac41bd3cbbf41",
+    "tools/crazysim_mujoco/scenes/meshes/newbeedrone_gate_right.obj": "f1886b33260de3c2bb1feb2c52ffb7dce56b1911f3f3fe09320700dd0402152e",
+    "tools/crazysim_mujoco/scenes/textures/newbeedrone_gate_front_rgba_v1.png": "ae87f32d4ad17e3aea4f101eb511448e0dbe1a8a5bdea9ddd8e83a3dff2217d9"
+  },
+  "optional_external_course_textures_sha256": {
+    "assets/course/procedural_concrete_001.png": "25c6c816c30d81495255af5a87123830a52bb4d91cb430a956596bc7fb370f17",
+    "assets/course/procedural_metal_003.png": "76d7cca2a99ea9b8bac77f51c569b59edffdc36d82720968f6e2e3c103807fa6",
+    "assets/course/procedural_paint_002.png": "da8131032287972868c61f53014493110e97a81c31de2b41270559dc096e2946",
+    "assets/course/procedural_wood_000.png": "d687a0ed62f516b8c1ea836f35b6ef82385bc4511deabb5f24c812bdcfb90de1",
+    "assets/course/wood_floor_obstacle_v1.png": "4aea43ecc04ea9ee3d594e9584067db51d2f14d451ee1a3ac539ebcb43411e49",
+    "assets/course/wood_floor_striated_v2.png": "17c7f09071b2d8d9776f9266c8c34903798fb92a3828375bbd24d95d052f4d66",
+    "assets/course/wood_floor_warm_orange_v4.png": "ae6d48d31d0ff52623198a63d77cc20ea241aff7542232d5a216e7b1619ad04f",
+    "assets/course/wood_floor_yellow_v3.png": "213b2224b7003a9459315643b4ee2facc7591c51cd61551da9d00302a282e9ba"
+  },
+  "dataset_provenance": {
+    "render_job_id": 5917,
+    "compact_only_job_id": 5929,
+    "parameters": {"episodes": 90, "layout_start_index": 29000, "seed": 20260826, "frames": 210, "rt_subframes": 1},
+    "raw_transitions_sha256": "dedfb2cd468dd6d7d95c199048e9d490ac3c07ba18ca016abc1ee266c091c9e6",
+    "final_dataset_manifest_sha256": "e543f9e2b94a9248225ce9e637d91405f6d203f9cbed0236c80babfec3dc6c24"
+  }
+}

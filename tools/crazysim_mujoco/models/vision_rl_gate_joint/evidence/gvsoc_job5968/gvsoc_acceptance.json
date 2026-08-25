@@ -1,0 +1,32 @@
+{
+  "action_agreement": 0.99,
+  "clips": 200,
+  "clock_hz": 100000000,
+  "cycles": {
+    "p50": 1481702.5,
+    "p95": 1482161.55
+  },
+  "inference_latency_ms": {
+    "p50": 14.817025000000001,
+    "p95": 14.8216155
+  },
+  "memory": {
+    "deployment_flash_upper_bound_bytes": 372256,
+    "l1_bytes": 36728,
+    "l2_bytes": 466152
+  },
+  "memory_capacity": {
+    "deployment_flash_upper_bound_bytes": 8388608,
+    "l1_bytes": 64000,
+    "l2_bytes": 512000
+  },
+  "memory_fits": true,
+  "model_provenance": {
+    "bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+    "checkpoint_sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a",
+    "policy_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f"
+  },
+  "passed": true,
+  "performance_passed": true,
+  "visible_gate_center_error_increase_px": 3.2455742669656686
+}

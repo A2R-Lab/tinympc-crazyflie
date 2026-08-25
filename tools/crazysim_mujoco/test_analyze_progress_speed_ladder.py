@@ -109,9 +109,9 @@ class ProgressSpeedLadderTest(unittest.TestCase):
         self.assertIn(
             "PROGRESS step vehicle_m=%.8f forward_m=%.8f "
             "projection_candidate_m=%.8f measured_m=%.8f "
-            "measured_bound_m=%.8f command_request_m=%.8f "
+            "measured_bound_m=%.8f rebase_m=%.8f command_request_m=%.8f "
             "command_m=%.8f lead_m=%.8f lead_bound_m=%.8f "
-            "tolerance_m=%.8f\\n", source)
+            "lag_m=%.8f tolerance_m=%.8f\\n", source)
 
     def test_first_sustained_crossing(self) -> None:
         time = np.arange(0.0, 2.0, 0.1)

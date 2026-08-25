@@ -1,0 +1,19 @@
+{
+  "source": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/gap8/runs_gvsoc_5931_streaming_v10_core8/5968/gvsoc.log",
+  "memory_lines": [
+    "Memory region         Used Size  Region Size  %age Used",
+    "              L2:       49140 B       512 KB      9.37%",
+    "              L1:          28 B      65532 B      0.04%"
+  ],
+  "flash_definition": "complete built flash-image bytes minus only the exact 200-clip raw GVSOC evaluation corpus; retains code, weights, filesystem overhead, alignment, boot payload, and generated default input",
+  "l1_static_bytes": 28,
+  "l1_dynamic_bytes": 36700,
+  "l1_bytes": 36728,
+  "l2_static_bytes": 49140,
+  "l2_dynamic_bytes": 417012,
+  "l2_bytes": 466152,
+  "model_weight_payload_bytes": 51232,
+  "complete_instrumented_flash_image_bytes": 10612256,
+  "gvsoc_evaluation_corpus_bytes": 10240000,
+  "deployment_flash_upper_bound_bytes": 372256
+}

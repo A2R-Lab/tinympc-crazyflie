@@ -2,7 +2,7 @@ diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
 index 834317c6..3dcae15d 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,102 @@ set(SRCS
+@@ -244,6 +244,103 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -63,7 +63,8 @@ index 834317c6..3dcae15d 100644
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_COURSE_CANONICAL_CIRCLE=1)
 +  elseif(NOT TINYMPC_COURSE STREQUAL "none" AND
 +         NOT TINYMPC_COURSE STREQUAL "dronet_u" AND
-+         NOT TINYMPC_COURSE MATCHES "^gate_obstacle_poc(_obstacle_only)?$" AND
++         NOT TINYMPC_COURSE MATCHES "^gate_obstacle_(poc|easy_transition)(_obstacle_only)?$" AND
++         NOT TINYMPC_COURSE MATCHES "^heldout_room_(straight|circle|oval|figure8)$" AND
 +         NOT TINYMPC_COURSE MATCHES "^canonical_(corridor|figure8|chicane|hairpin)$")
 +    message(FATAL_ERROR "Unsupported TINYMPC_COURSE=${TINYMPC_COURSE}")
 +  endif()

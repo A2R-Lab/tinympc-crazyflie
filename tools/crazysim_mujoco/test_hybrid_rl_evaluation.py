@@ -93,6 +93,21 @@ class AnalyzeRunMetricsTest(unittest.TestCase):
         self.assertIsNone(summary["course_completion_time_s"])
         self.assertEqual(summary["course_evaluation_end_time_s"], 3.0)
 
+    def test_completion_search_waits_for_joint_sphere_and_cross_track(self) -> None:
+        state = synthetic_state(contact_index=5)
+        state["contacts"][:] = 0.0
+        state["x_m"] = np.asarray([0.0, 0.0, 1.0, 2.8, 3.0, 3.0])
+        state["y_m"] = np.asarray([0.0, 0.1, 0.2, 0.55, 0.4, 0.4])
+        course = synthetic_course()
+        course["pass_radius_m"] = 0.60
+        course["maximum_final_cross_track_m"] = 0.50
+        summary = analyzer.build_summary(state, 1.0, course=course)
+        self.assertTrue(summary["course_success"])
+        # Sample 3 enters the finish sphere but is still outside the allowed
+        # cross-track envelope; sample 4 is the first joint terminal state.
+        self.assertEqual(summary["course_evaluation_end_time_s"], 4.0)
+        self.assertAlmostEqual(summary["course_cross_track_error_final_m"], 0.4)
+
     def test_polyline_tangent_follows_curve(self) -> None:
         points = np.asarray([[0.8, 0.1], [1.1, 0.8]])
         distance, tangent = analyzer.point_to_polyline_metrics(

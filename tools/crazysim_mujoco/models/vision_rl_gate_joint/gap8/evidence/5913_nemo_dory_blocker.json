@@ -1,0 +1,54 @@
+{
+  "schema": "joint-dory-blocker-v1",
+  "candidate": {
+    "checkpoint_sha256": "7be19836887ee143ea603e7e253ce588d6bb9af3023e59e667164b02cc450a07",
+    "heldout_clips": 200,
+    "nemo_pre_dory_action_agreement": 1.0,
+    "nemo_pre_dory_visible_gate_center_error_increase_px": 2.4366841316223145
+  },
+  "environment": {
+    "nemo_python": "/home/cchen/miniconda3/envs/frontnet/bin/python",
+    "dory_python": "/home/cchen/miniconda3/envs/dory/bin/python",
+    "dory_parser": "/home/cchen/dory/dory/Frontend_frameworks/NEMO/Pattern_rewriter.py"
+  },
+  "offending_terminal_bnrelu": {
+    "onnx_node_index": 49,
+    "onnx_conv_weight": "terminal.0.weight",
+    "onnx_bn_kappa": "terminal.1.kappa",
+    "onnx_bn_lamda": "terminal.1.lamda",
+    "post_multiplier_onnx_node_index": 53,
+    "post_multiplier": 63,
+    "divisor_onnx_node_index": 55,
+    "divisor": 4294967296,
+    "kappa": [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048],
+    "lamda": [4739695, 37590436, 34096820, 2735893, 3049199, 2821282, 3091101, 1262639, 1920710, 2391185, 1594009, 24428434]
+  },
+  "failure": {
+    "source_lines": "Pattern_rewriter.py:130-136",
+    "message": "BNRelu multiplier 63 overflows DORY's int32 coefficients; this graph requires the widened two-stage requantization kernel",
+    "tested_requantization_factors": [1, 2, 4, 8, 16, 32, 64, 128],
+    "result_for_every_factor": "same multiplier-63 parser failure before GAP8 code generation"
+  },
+  "equivalent_terminal_scale_sweep": [
+    {"scale": 1.0, "post_multiplier": 63, "max_k": 2048, "max_lambda": 37590436, "max_packed_k": 129024, "max_packed_lambda": 2368197468, "action_agreement": 1.0, "gate_center_delta_px": 2.4366841316223145},
+    {"scale": 0.5, "post_multiplier": 63, "max_k": 2048, "max_lambda": 37918920, "max_packed_k": 129024, "max_packed_lambda": 2388891960, "action_agreement": 1.0, "gate_center_delta_px": 2.298771381378174},
+    {"scale": 0.25, "post_multiplier": 62, "max_k": 2048, "max_lambda": 38575896, "max_packed_k": 126976, "max_packed_lambda": 2391705552, "action_agreement": 1.0, "gate_center_delta_px": 2.9532885551452637},
+    {"scale": 0.125, "post_multiplier": 61, "max_k": 2048, "max_lambda": 39889848, "max_packed_k": 124928, "max_packed_lambda": 2433280728, "action_agreement": 1.0, "gate_center_delta_px": 2.5491833686828613},
+    {"scale": 0.0625, "post_multiplier": 59, "max_k": 2048, "max_lambda": 42517744, "max_packed_k": 120832, "max_packed_lambda": 2508546896, "action_agreement": 1.0, "gate_center_delta_px": 2.376371383666992},
+    {"scale": 0.03125, "post_multiplier": 55, "max_k": 2048, "max_lambda": 47773544, "max_packed_k": 112640, "max_packed_lambda": 2627544920, "action_agreement": 1.0, "gate_center_delta_px": 2.9149465560913086},
+    {"scale": 0.015625, "post_multiplier": 48, "max_k": 2048, "max_lambda": 58285148, "max_packed_k": 98304, "max_packed_lambda": 2797687104, "action_agreement": 1.0, "gate_center_delta_px": 9.535120964050293},
+    {"scale": 0.0078125, "post_multiplier": 39, "max_k": 2048, "max_lambda": 79308352, "max_packed_k": 79872, "max_packed_lambda": 3093025728, "action_agreement": 1.0, "gate_center_delta_px": 8.57939100265503, "not_eligible_after_1_64_gate_failure": true},
+    {"scale": 0.00390625, "post_multiplier": 28, "max_k": 2048, "max_lambda": 121354752, "max_packed_k": 57344, "max_packed_lambda": 3397933056, "action_agreement": 1.0, "gate_center_delta_px": 32.501643657684326, "not_eligible_after_1_64_gate_failure": true}
+  ],
+  "int32_max": 2147483647,
+  "scale_sweep_stop": "At scale 1/64, visible gate-center increase exceeded 5 px; smaller scales were not eligible for acceptance.",
+  "terminal_margin_sweep_at_scale_1_32": [
+    {"margin": 0.125, "float_encoded_min": 0.12499994039535522, "integer_encoded_min": 0, "post_multiplier": 59, "max_lambda": 42517744, "max_packed_lambda": 2508546896, "action_agreement": 1.0, "gate_center_delta_px": 2.376371383666992, "dory_result": "int32 overflow"},
+    {"margin": 0.0625, "float_encoded_min": 0.062499985098838806, "integer_encoded_min": 0, "post_multiplier": 61, "max_lambda": 39889848, "max_packed_lambda": 2433280728, "action_agreement": 1.0, "gate_center_delta_px": 2.5491833686828613, "dory_result": "int32 overflow"},
+    {"margin": 0.03125, "float_encoded_min": 0.0312499962747097, "integer_encoded_min": 0, "post_multiplier": 62, "max_lambda": 38575896, "max_packed_lambda": 2391705552, "action_agreement": 1.0, "gate_center_delta_px": 2.9532885551452637, "dory_result": "int32 overflow"},
+    {"margin": 0.015625, "float_encoded_min": 0.015624996274709702, "integer_encoded_min": 0, "post_multiplier": 63, "max_lambda": 37918920, "max_packed_lambda": 2388891960, "action_agreement": 1.0, "gate_center_delta_px": 2.298771381378174, "dory_result": "int32 overflow"},
+    {"margin": 0.0078125, "float_encoded_min": 0.0078124962747097015, "integer_encoded_min": 0, "post_multiplier": 63, "max_lambda": 37590436, "max_packed_lambda": 2368197468, "action_agreement": 1.0, "gate_center_delta_px": 2.4366841316223145, "dory_result": "int32 overflow"},
+    {"margin": 0.000001, "float_encoded_min": 9.98377799987793e-07, "integer_encoded_min": 0, "post_multiplier": 64, "max_lambda": 37261988, "max_packed_lambda": 2384767232, "action_agreement": 1.0, "gate_center_delta_px": 1.9216485023498535, "dory_result": "passed frontend, GAP8 tiling, and C generation"}
+  ],
+  "scope_decision": "The terminal-margin result avoids the need for DORY backend changes. Remaining validation is generated-C GVSOC evidence, retained by the submitted Slurm harness."
+}

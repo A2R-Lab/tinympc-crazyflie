@@ -210,8 +210,17 @@ static_assert(MAX_HS >= 5, "path tunnel and perception require five halfspaces")
 #ifndef TINYMPC_GATE_OBSTACLE_POC_ENABLE
 #define TINYMPC_GATE_OBSTACLE_POC_ENABLE 0
 #endif
+/* The joint gate/obstacle policy is deliberately a distinct experiment from
+ * the older two-teacher POC.  It may use the same bounded gate association and
+ * servo, but its TRACK/LEFT/RIGHT packet is the only collision authority. */
+#ifndef TINYMPC_JOINT_GATE_RL_ENABLE
+#define TINYMPC_JOINT_GATE_RL_ENABLE 0
+#endif
 #ifndef TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED
 #define TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED 1.14531138f
+#endif
+#ifndef TINYMPC_GATE_CORNER_SPAN_M
+#define TINYMPC_GATE_CORNER_SPAN_M 0.555f
 #endif
 #ifndef TINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED
 #define TINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED 0.5f
@@ -600,12 +609,27 @@ static TinyRacerNavigationIntent navigation_intent;
 static TinyRacerDodgeState dodge_state;
 static TinyRacerDodgeIntent dodge_intent;
 static uint16_t navigation_warmup_steps = 0;
-#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
-static bool gate_poc_collision_suppressed = false;
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
 static bool gate_poc_associated = false;
+/* The joint proof-of-concept acceptance courses contain one physical gate.
+ * Once that gate's retained association expires, do not let rear views or a
+ * later gate-like obstacle steal authority back from obstacle avoidance. */
+static bool gate_poc_completed = false;
 static uint8_t gate_poc_consecutive_samples = 0u;
 static uint8_t gate_poc_dropout_steps = 0u;
+static uint8_t gate_poc_geometry_dropout_samples = UINT8_MAX;
+static uint16_t gate_poc_association_samples = 0u;
 static uint32_t gate_poc_last_sample = UINT32_MAX;
+#if TINYMPC_JOINT_GATE_RL_ENABLE
+/* A 20-frame geometry-outage bound bridges only a short near-plane gap. A
+ * separate monotonic 300-sample (10 s at 30 Hz) lifetime prevents continuous
+ * gate-like geometry from extending either behavior for the whole flight. */
+static constexpr uint8_t joint_gate_maximum_geometry_dropout_samples = 20u;
+static constexpr uint16_t joint_gate_maximum_association_samples = 300u;
+#endif
+#endif
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
+static bool gate_poc_collision_suppressed = false;
 #endif
 #if defined(TINYMPC_TRAJECTORY_CANONICAL_FIGURE8)
 static bool figure8_midcourse_dual_reset_complete = false;
@@ -1690,20 +1714,25 @@ static void resetPerceptionFilter() {
   tinyRacerDodgeReset(&dodge_state);
   memset(&dodge_intent, 0, sizeof(dodge_intent));
   navigation_warmup_steps = 0;
-#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
-  gate_poc_collision_suppressed = false;
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
   gate_poc_associated = false;
+  gate_poc_completed = false;
   gate_poc_consecutive_samples = 0u;
   gate_poc_dropout_steps = 0u;
+  gate_poc_geometry_dropout_samples = UINT8_MAX;
+  gate_poc_association_samples = 0u;
   gate_poc_last_sample = UINT32_MAX;
+#endif
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
+  gate_poc_collision_suppressed = false;
 #endif
 }
 
-#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
-/* The transport layer range-checks normalized corners.  This POC additionally
- * accepts only a plausible upright quadrilateral: convex ordered corners,
- * non-degenerate area, nearly parallel opposite edges, and vertical/horizontal
- * edge directions with up to about 33 degrees of camera roll. */
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
+/* The transport layer range-checks normalized corners. This controller also
+ * requires a plausible rotation-invariant quadrilateral: convex ordered
+ * corners, non-degenerate area, and nearly parallel opposing edges with
+ * bounded ratios. */
 static bool gateObservationFreshAndGeometric(
     const TinyRacerPerceptionObservation& observation) {
   constexpr float gate_confidence_threshold = 0.6174671283f;
@@ -1730,16 +1759,15 @@ static bool gateObservationFreshAndGeometric(
   const Eigen::Vector2f diagonal_tr_bl(
       corner[6] - corner[2], corner[7] - corner[3]);
   constexpr float minimum_edge = 0.05f;
-  constexpr float maximum_roll_slope = 0.65f;
+  /* Validate quadrilateral structure, not image-axis alignment. A real gate
+   * remains valid under camera roll and perspective during banking. Opposing
+   * edge parallelism, ratios, diagonals, and convexity below still reject
+   * self-crossing and implausibly skewed corner sets. */
   if (!isfinite(signed_area_twice) || fabsf(signed_area_twice) < 0.01f ||
       top.norm() < minimum_edge || bottom.norm() < minimum_edge ||
       left.norm() < minimum_edge || right.norm() < minimum_edge ||
       diagonal_tl_br.norm() < minimum_edge ||
-      diagonal_tr_bl.norm() < minimum_edge ||
-      fabsf(top.y()) > maximum_roll_slope * fabsf(top.x()) ||
-      fabsf(bottom.y()) > maximum_roll_slope * fabsf(bottom.x()) ||
-      fabsf(left.x()) > maximum_roll_slope * fabsf(left.y()) ||
-      fabsf(right.x()) > maximum_roll_slope * fabsf(right.y())) {
+      diagonal_tr_bl.norm() < minimum_edge) {
     return false;
   }
   const float parallel_top_bottom = fabsf(top.normalized().dot(bottom.normalized()));
@@ -1773,22 +1801,43 @@ static bool gateObservationFreshPresence(
 static void updateGatePocAssociation(
     const TinyRacerPerceptionObservation& observation) {
   constexpr uint8_t required_consecutive_samples = 2u;
-  /* Four low-presence samples (or stale MPC cycles after transport expiry)
-   * release the retained bearing. Corner-only postprocessor failures may keep
-   * that bearing while presence remains fresh, but obstacle authority is
-   * restored immediately because scalar suppression requires geometry. */
+  /* Low-presence samples (or stale MPC cycles after transport expiry) release
+   * the retained bearing. In joint mode, one counter bounds consecutive
+   * geometry loss and a monotonic counter bounds total association lifetime;
+   * both govern servoing and collision suppression together. */
+#if TINYMPC_JOINT_GATE_RL_ENABLE
+  /* Retain the last geometrically accepted bearing for at most 20 consecutive
+   * missing-geometry frames and never beyond 300 associated camera samples.
+   * Either bound permanently completes the one-gate association. */
+  constexpr uint8_t maximum_dropout_steps =
+      joint_gate_maximum_geometry_dropout_samples + 1u;
+#else
   constexpr uint8_t maximum_dropout_steps = 4u;
+#endif
   const bool geometric = gateObservationFreshAndGeometric(observation);
   const bool fresh_presence = gateObservationFreshPresence(observation);
   const bool new_sample = observation.sample != gate_poc_last_sample;
+  if (new_sample && gate_poc_associated &&
+      gate_poc_association_samples < UINT16_MAX) {
+    ++gate_poc_association_samples;
+  }
+  if (geometric) {
+    gate_poc_geometry_dropout_samples = 0u;
+  } else if ((new_sample ||
+              observation.received_age_ms > race_config.maximum_age_ms) &&
+             gate_poc_geometry_dropout_samples < UINT8_MAX) {
+    ++gate_poc_geometry_dropout_samples;
+  }
   if (geometric) {
     gate_poc_dropout_steps = 0u;
     if (new_sample && gate_poc_consecutive_samples < UINT8_MAX) {
       ++gate_poc_consecutive_samples;
     }
-    if (gate_poc_consecutive_samples >= required_consecutive_samples &&
+    if (!gate_poc_completed &&
+        gate_poc_consecutive_samples >= required_consecutive_samples &&
         !gate_poc_associated) {
       gate_poc_associated = true;
+      gate_poc_association_samples = 0u;
       DEBUG_PRINT("Gate POC visual association acquired sample=%lu confidence=%.2f\n",
                   (unsigned long)observation.sample,
                   (double)observation.gate_confidence);
@@ -1807,9 +1856,36 @@ static void updateGatePocAssociation(
     }
     if (gate_poc_dropout_steps >= maximum_dropout_steps && gate_poc_associated) {
       gate_poc_associated = false;
+#if TINYMPC_JOINT_GATE_RL_ENABLE
+      gate_poc_completed = true;
+#endif
+      gate_lateral_offset_m = 0.0f;
+      gate_vertical_offset_m = 0.0f;
       DEBUG_PRINT("Gate POC visual association released after low presence\n");
     }
   }
+#if TINYMPC_JOINT_GATE_RL_ENABLE
+  if (gate_poc_associated &&
+      gate_poc_geometry_dropout_samples >=
+          joint_gate_maximum_geometry_dropout_samples + 1u) {
+    gate_poc_associated = false;
+    gate_poc_completed = true;
+    gate_poc_consecutive_samples = 0u;
+    gate_lateral_offset_m = 0.0f;
+    gate_vertical_offset_m = 0.0f;
+    DEBUG_PRINT("Joint gate association completed after geometry timeout\n");
+  }
+  if (gate_poc_associated &&
+      gate_poc_association_samples >=
+          joint_gate_maximum_association_samples) {
+    gate_poc_associated = false;
+    gate_poc_completed = true;
+    gate_poc_consecutive_samples = 0u;
+    gate_lateral_offset_m = 0.0f;
+    gate_vertical_offset_m = 0.0f;
+    DEBUG_PRINT("Joint gate association completed after hard lifetime\n");
+  }
+#endif
   if (new_sample) {
     gate_poc_last_sample = observation.sample;
   }
@@ -1869,6 +1945,29 @@ static void applyVisionNavigation(
   } else if (gate_poc_collision_suppressed) {
     gate_poc_collision_suppressed = false;
     DEBUG_PRINT("Gate POC restoring scalar collision authority\n");
+  }
+#elif TINYMPC_JOINT_GATE_RL_ENABLE
+  updateGatePocAssociation(observation);
+  /* Gate rails are traversable structure, not an obstacle to dodge around.
+   * A short 20-frame geometry grace bridges the near-plane blind interval; a
+   * separate 300-sample hard lifetime also ends a continuously geometric
+   * association. Either completion is one-shot for this single-gate flight. */
+  const bool visual_gate_authority = gate_poc_associated &&
+      gate_poc_geometry_dropout_samples <=
+          joint_gate_maximum_geometry_dropout_samples &&
+      !race_intent.constraint_active &&
+      tinyRacerGateServoAllowed(
+          race_intent.mode, dodge_state.phase, perception_halfspace_active,
+          perception_recovery_active);
+  if (visual_gate_authority) {
+    navigation_observation.collision_probability = 0.0f;
+    if (!gate_poc_collision_suppressed) {
+      gate_poc_collision_suppressed = true;
+      DEBUG_PRINT("Joint gate suppressing avoidance during opening evidence\n");
+    }
+  } else if (gate_poc_collision_suppressed) {
+    gate_poc_collision_suppressed = false;
+    DEBUG_PRINT("Joint gate restoring obstacle authority\n");
   }
 #endif
   /* Once the finite course is complete, do not launch a new avoidance
@@ -2056,7 +2155,7 @@ static void __attribute__((unused)) applyGateVisualServo(
       perception_halfspace_active, perception_recovery_active)) {
     return;
   }
-#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
   if (!gate_poc_associated) {
     return;
   }
@@ -2065,6 +2164,25 @@ static void __attribute__((unused)) applyGateVisualServo(
     return;
   }
 #endif
+  /* Gate image bearing is lateral in the camera/body frame. The solve-local
+   * frame follows current vehicle yaw, so its Y axis is the yaw-level camera
+   * lateral approximation at the first knot. Project that vector and the
+   * nominal path displacement onto the first Frenet normal before comparing
+   * them. Keep the tangent as a fallback for stopped terminal knots. */
+  Eigen::Vector3f gate_path_tangent_local = Xref[0].segment<3>(6);
+  gate_path_tangent_local.z() = 0.0f;
+  if (gate_path_tangent_local.head<2>().norm() < 0.01f) {
+    gate_path_tangent_local =
+        Xref[NHORIZON - 1].head<3>() - Xref[0].head<3>();
+    gate_path_tangent_local.z() = 0.0f;
+  }
+  if (gate_path_tangent_local.head<2>().norm() < 0.01f) {
+    gate_path_tangent_local = Eigen::Vector3f::UnitX();
+  } else {
+    gate_path_tangent_local.normalize();
+  }
+  const Eigen::Vector3f gate_path_normal_local(
+      -gate_path_tangent_local.y(), gate_path_tangent_local.x(), 0.0f);
   if (fresh_gate) {
     const float *corner = observation.gate_corners_xy;
     const float width = 0.5f * ((corner[2] - corner[0]) +
@@ -2088,7 +2206,7 @@ static void __attribute__((unused)) applyGateVisualServo(
        * opening. Isaac training metadata specifies their 0.555 m span; use
        * that fixed detected-class dimension only to scale image bearing into
        * a bounded reference offset, never as a world gate pose. */
-      constexpr float gate_corner_span_m = 0.555f;
+      constexpr float gate_corner_span_m = TINYMPC_GATE_CORNER_SPAN_M;
       const float estimated_depth_m = T_MIN(T_MAX(
           gate_corner_span_m * fx_normalized / width, 0.4f), 4.0f);
       const float requested_lateral_m = T_MIN(T_MAX(
@@ -2097,10 +2215,43 @@ static void __attribute__((unused)) applyGateVisualServo(
       const float requested_vertical_m = T_MIN(T_MAX(
           -(center_y - cy_normalized) * estimated_depth_m / fy_normalized,
           -0.25f), 0.25f);
-      gate_lateral_offset_m +=
-          0.25f * (requested_lateral_m - gate_lateral_offset_m);
-      gate_vertical_offset_m +=
-          0.25f * (requested_vertical_m - gate_vertical_offset_m);
+      /* requested_* is a camera-relative displacement from the vehicle to
+       * the gate centre. Xref[0] is the nominal path displacement from that
+       * same vehicle-centred local-frame origin. Compare their scalar
+       * components on the current path normal. Using Xref[0](1) directly is a
+       * hidden straight-course assumption and rotates the correction into the
+       * wrong world direction on circle/oval/figure-eight references. */
+      constexpr float maximum_lateral_path_shift_m = 0.35f;
+      const Eigen::Vector3f requested_gate_displacement_local(
+          0.0f, requested_lateral_m, 0.0f);
+      const float requested_lateral_shift_m = T_MIN(T_MAX(
+          gate_path_normal_local.dot(
+              requested_gate_displacement_local - Xref[0].head<3>()),
+          -maximum_lateral_path_shift_m), maximum_lateral_path_shift_m);
+      /* The course path already provides the gate's nominal height.  Preserve
+       * a small upward crossing margin for the altitude lost while banking
+       * laterally, and let the learned bearing add only a bounded correction.
+       * Never allow a near-fill corner outlier to pull the horizon downward
+       * into the bottom rail. */
+#if TINYMPC_JOINT_GATE_RL_ENABLE
+      /* Development seeds on the physical 0.45 m NewBee opening showed that
+       * banking/vertical lag could consume the entire lower-rail margin.  The
+       * joint experiment therefore carries 4 cm more upward feedforward.  It
+       * remains bounded and opt-in; ordinary and legacy POC builds retain the
+       * original reference behavior below. */
+      constexpr float minimum_vertical_path_shift_m = 0.12f;
+      constexpr float maximum_vertical_path_shift_m = 0.16f;
+#else
+      constexpr float minimum_vertical_path_shift_m = 0.08f;
+      constexpr float maximum_vertical_path_shift_m = 0.12f;
+#endif
+      const float requested_vertical_shift_m = T_MIN(T_MAX(
+          requested_vertical_m - Xref[0](2),
+          minimum_vertical_path_shift_m), maximum_vertical_path_shift_m);
+      gate_lateral_offset_m += 0.25f *
+          (requested_lateral_shift_m - gate_lateral_offset_m);
+      gate_vertical_offset_m += 0.25f *
+          (requested_vertical_shift_m - gate_vertical_offset_m);
       gate_filter_sample = observation.sample;
       if ((observation.sample % 10u) == 0u) {
         DEBUG_PRINT("Vision gate confidence=%.2f offset=(%.2f,%.2f) depth=%.2f\n",
@@ -2111,10 +2262,52 @@ static void __attribute__((unused)) applyGateVisualServo(
       }
     }
   }
+  /* Shift each knot on its own rotating path normal. Rebuild the path-tunnel
+   * slots around the same displaced horizon so the optimizer never receives a
+   * shifted reference inside an unshifted corridor. Nominal attitude/bank is
+   * retained as feedforward; TinyMPC may deviate through its unchanged
+   * dynamics and costs. */
+#if TINYMPC_PATH_TUNNEL_ENABLE
+  TinyMpcTunnelFrame previous_gate_shifted_tunnel_frame = {};
+#endif
   for (int k = 0; k < NHORIZON; ++k) {
     const float ramp = (float)k / (float)(NHORIZON - 1);
-    Xref[k](1) += ramp * gate_lateral_offset_m;
+    Eigen::Vector3f knot_path_tangent_local = Xref[k].segment<3>(6);
+    knot_path_tangent_local.z() = 0.0f;
+    if (knot_path_tangent_local.head<2>().norm() < 0.01f) {
+      knot_path_tangent_local = gate_path_tangent_local;
+    } else {
+      knot_path_tangent_local.normalize();
+    }
+    const Eigen::Vector3f knot_path_normal_local(
+        -knot_path_tangent_local.y(), knot_path_tangent_local.x(), 0.0f);
+    Xref[k].head<3>() +=
+        knot_path_normal_local * (ramp * gate_lateral_offset_m);
     Xref[k](2) += ramp * gate_vertical_offset_m;
+#if TINYMPC_PATH_TUNNEL_ENABLE
+    if (k > 0) {
+      const Eigen::Vector3f tangent_world = localVectorToWorld(
+          active_local_frame, knot_path_tangent_local);
+      const TinyMpcTunnelVector tunnel_tangent = tinyMpcTunnelVector(
+          tangent_world.x(), tangent_world.y(), tangent_world.z());
+      const TinyMpcTunnelVector *previous_normal =
+          previous_gate_shifted_tunnel_frame.valid
+          ? &previous_gate_shifted_tunnel_frame.normal_1 : NULL;
+      const TinyMpcTunnelFrame shifted_tunnel_frame = tinyMpcPathTunnelFrame(
+          tunnel_tangent, previous_normal);
+      if (shifted_tunnel_frame.valid) {
+        const Eigen::Vector3f local_frame_origin_world(
+            active_local_frame.origin_x,
+            active_local_frame.origin_y,
+            active_local_frame.origin_z);
+        setPathTunnelHalfspaces(
+            k, local_frame_origin_world + localVectorToWorld(
+                active_local_frame, Xref[k].head<3>()),
+            shifted_tunnel_frame);
+        previous_gate_shifted_tunnel_frame = shifted_tunnel_frame;
+      }
+    }
+#endif
   }
 }
 
@@ -3715,7 +3908,7 @@ static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
       observation, path_world.dot(velocity_world), position_world,
       heading_world);
 #endif
-#if TINYMPC_GATE_OBSTACLE_POC_ENABLE
+#if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
   /* A visual gate is only a bounded center-bearing correction.  A dodge,
    * halfspace, or recovery immediately takes the horizon back. */
   if (gate_poc_associated && !race_intent.constraint_active &&

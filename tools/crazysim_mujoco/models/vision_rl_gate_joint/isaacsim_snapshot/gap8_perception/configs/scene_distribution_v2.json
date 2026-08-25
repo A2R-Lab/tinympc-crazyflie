@@ -1,0 +1,117 @@
+{
+  "schema_version": "horizon-aware-scene-distribution-v2.3-planar",
+  "coordinate_system": "world_z_up_meters",
+  "vertical_avoidance_enabled": false,
+  "scenario_schedule": {
+    "policy": "deterministic_balanced_cycle_before_seeded_within_scenario_sampling",
+    "order": ["curved_corridor", "collision", "competing_obstacles", "s_turn", "obstacle_gate", "corner_turn", "near_miss", "corridor", "clear_gate", "curved_corridor", "competing_obstacles", "corridor"],
+    "minimum_layouts_per_scenario_per_generation_shard": 1
+  },
+  "room": {
+    "wall_height_m": 3.0,
+    "flight_volume_surface_altitude_m": [0.30, 1.30],
+    "types": {
+      "open_room": {"probability": 0.40, "length_m": [12.0, 20.0], "width_m": [9.0, 14.0]},
+      "compact_room": {"probability": 0.30, "length_m": [7.0, 10.0], "width_m": [5.0, 7.5]},
+      "hallway": {"probability": 0.30, "length_m": [12.0, 22.0], "width_m": [4.5, 6.0]}
+    }
+  },
+  "obstacles": {
+    "mixed_field_count_by_room_inclusive": {
+      "open_room": [12, 20],
+      "compact_room": [6, 10],
+      "hallway": [8, 12]
+    },
+    "primitive_cycle": ["box", "cylinder", "cone", "sphere"],
+    "box_xy_m": [0.36, 0.82],
+    "circular_diameter_m": [0.36, 0.82],
+    "sphere_diameter_m": [0.38, 0.78],
+    "height_m": [0.45, 1.30],
+    "floor_supported": true,
+    "minimum_existing_center_clearance_base_m": 0.55,
+    "route_clearance_m": [0.55, 0.85],
+    "wall_inset_x_m": 1.0,
+    "wall_inset_y_m": 0.8,
+    "maximum_placement_attempts_per_object": 100,
+    "failure_policy": "sample_room_specific_count_then_fail_layout_without_silent_count_reduction"
+  },
+  "gate": {
+    "outer_width_m": 1.15,
+    "outer_height_m": 1.05,
+    "depth_m": 0.08,
+    "rail_m": 0.10,
+    "center_height_m": 0.78
+  },
+  "scenario_core": {
+    "start_finish_wall_inset_x_m": 1.0,
+    "start_finish_lateral_m": [-0.45, 0.45],
+    "route_altitude_m": 0.72,
+    "midpoint_x_extent_fraction": [-0.12, 0.12],
+    "collision_obstacle_size_m": [0.70, 0.82, 1.20],
+    "collision_bypass_lateral_m": 0.78,
+    "near_miss_obstacle_size_m": [0.70, 0.70, 1.10],
+    "near_miss_bypass_lateral_m": 0.62,
+    "corridor_gap_m": [0.78, 1.20],
+    "corridor_obstacle_size_m": [0.80, 0.68, 1.40],
+    "competing_obstacle_count": 4,
+    "competing_x_extent_fraction": [-0.24, 0.24],
+    "competing_lateral_m": [0.45, 0.95],
+    "competing_route_opposite_lateral_m": 0.42,
+    "arch_span_m": 1.80,
+    "arch_height_m": 1.45,
+    "arch_depth_m": 0.28,
+    "vertical_over_barrier_depth_m": 0.42,
+    "vertical_over_barrier_wall_inset_m": 0.70,
+    "vertical_over_barrier_height_m": 0.68,
+    "vertical_over_route_height_m": 1.02,
+    "vertical_under_beam_depth_m": 0.42,
+    "vertical_under_beam_wall_inset_m": 0.75,
+    "vertical_under_beam_center_height_m": 0.90,
+    "vertical_under_route_height_m": 0.60,
+    "curved_course_radius_fraction_of_min_extent": [0.22, 0.28],
+    "curved_course_clearance_from_center_obstacle_m": [0.62, 0.82],
+    "curved_course_route_samples": 9,
+    "s_turn_gap_fraction_of_room_width": [0.30, 0.42],
+    "s_turn_wall_thickness_m": [0.42, 0.60],
+    "s_turn_wall_x_fraction": 0.19,
+    "corner_block_fraction_xy": [0.34, 0.44],
+    "turning_minimum_heading_travel_rad": 0.55
+  },
+  "appearance": {
+    "condition_order": ["neutral", "low_contrast", "strong_shadows", "backlit", "low_texture", "motion_blur"],
+    "condition_probability": [0.16666666666666666, 0.16666666666666666, 0.16666666666666666, 0.16666666666666666, 0.16666666666666666, 0.16666666666666666],
+    "texture_probability_per_object": 0.72,
+    "specular_level": [0.06, 0.42],
+    "baseline_ambient_intensity": 2400.0,
+    "baseline_key_intensity": 12500.0,
+    "baseline_key_temperature_k": 5200.0,
+    "strong_shadow_ambient_key": [1600.0, 14000.0],
+    "backlit_ambient_key_temperature": [1700.0, 15000.0, 6800.0],
+    "low_contrast_ambient_key": [2600.0, 7500.0],
+    "motion_blur_sigma_px": [0.55, 1.25]
+  },
+  "mission_and_trajectory": {
+    "trajectory_type_cycle": ["collision", "near_miss", "safe"],
+    "nominal_speed_mps": [0.8, 2.5],
+    "flight_altitude_m": [0.55, 0.90],
+    "near_miss_clearance_m": [0.08, 0.25],
+    "safe_route_lateral_jitter_m": [-0.12, 0.12],
+    "nominal_capture_rate_hz": 30.0,
+    "capture_interval_jitter_fraction": 0.05,
+    "single_frame_skip_probability": 0.02,
+    "maximum_reference_acceleration_mps2": 5.0,
+    "waypoint_reached_radius_m": 0.25,
+    "yaw_policy": "horizontal_velocity_tangent_hold_below_0.02_mps",
+    "turning_scenario_fraction": 0.3333333333333333,
+    "turning_scenarios": ["curved_corridor", "s_turn", "corner_turn"],
+    "rotation_and_speed_sampled_independently_from_scene_seed": true
+  },
+  "constraint_order": [
+    "sample_room", "sample_scenario_core", "sample_reference_route", "place_mixed_obstacles",
+    "validate_floor_or_structural_support", "assign_per_object_material", "sample_lighting", "generate_trajectory"
+  ],
+  "seed_streams": [
+    "geometry", "material_texture", "lighting_appearance", "reference_mission",
+    "controller_execution", "counterfactual_candidate", "sensor_estimator_noise"
+  ]
+}

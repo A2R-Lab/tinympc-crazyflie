@@ -1044,6 +1044,148 @@ class VisionRlAdapter:
         )
 
 
+class JointGateRlAdapter:
+    """One jointly trained policy with frozen action and gate contracts.
+
+    This adapter intentionally has no per-frame fallback.  A bad ONNX model or
+    inference result is an operational error; a finite but implausible gate is
+    merely withheld while the policy's navigation decision remains intact.
+    """
+
+    TRACK = 0
+    LEFT = 1
+    RIGHT = 2
+    _FORMAT = "tinympc-joint-gate-obstacle-student-v1"
+    _EXPECTED_INPUT = {
+        "name": "frames", "shape": [1, 2, 160, 160], "dtype": "float32",
+        "range": [0, 1], "temporal_order": ["previous", "current"],
+    }
+    _EXPECTED_OUTPUTS = {
+        "action_logits": [1, 3],
+        "gate_corners": {
+            "shape": [1, 4, 2], "range": [0, 1],
+            "order": ["TL", "TR", "BR", "BL"],
+        },
+        "gate_confidence_logit": [1],
+    }
+
+    def __init__(self, bundle: Path):
+        import onnxruntime as ort
+
+        manifest_path = bundle / "bundle.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"missing joint model manifest: {manifest_path}")
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            artifact = manifest["artifacts"]["policy_onnx"]
+            deployment = manifest["deployment"]
+            model_relative = Path(artifact["path"])
+            expected_hash = artifact["sha256"]
+        except (json.JSONDecodeError, KeyError, TypeError) as error:
+            raise ValueError("joint model manifest is incomplete") from error
+        if (manifest.get("format") != self._FORMAT or
+                manifest.get("runtime_adapter") != "joint_gate_rl"):
+            raise ValueError("bundle is not a joint_gate_rl manifest")
+        if (deployment.get("input") != self._EXPECTED_INPUT or
+                deployment.get("outputs") != self._EXPECTED_OUTPUTS or
+                deployment.get("actions") != ["TRACK", "LEFT", "RIGHT"]):
+            raise ValueError("unexpected joint model deployment contract")
+        if model_relative.is_absolute():
+            raise ValueError("joint model artifact path must be manifest-relative")
+        root = bundle.resolve()
+        model_path = (root / model_relative).resolve()
+        if root not in model_path.parents or not model_path.is_file():
+            raise FileNotFoundError(f"joint model artifact missing: {model_path}")
+        if not isinstance(expected_hash, str) or file_sha256(model_path) != expected_hash:
+            raise ValueError(f"joint model checksum mismatch: {model_path}")
+        try:
+            intrinsics = deployment["fixed_intrinsics"]
+            self.gate_intrinsics = tuple(float(intrinsics[key]) for key in (
+                "fx_normalized", "fy_normalized", "cx_normalized", "cy_normalized"))
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("joint model manifest has invalid fixed intrinsics") from error
+        if (not np.all(np.isfinite(self.gate_intrinsics)) or
+                self.gate_intrinsics[0] <= 0.0 or self.gate_intrinsics[1] <= 0.0 or
+                not all(0.0 <= value <= 1.0 for value in self.gate_intrinsics[2:])):
+            raise ValueError("joint model manifest has invalid fixed intrinsics")
+
+        self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+        inputs = self.session.get_inputs()
+        outputs = self.session.get_outputs()
+        expected_shapes = {
+            "action_logits": [1, 3], "gate_corners": [1, 4, 2],
+            "gate_confidence_logit": [1],
+        }
+        if (len(inputs) != 1 or inputs[0].name != "frames" or
+                list(inputs[0].shape) != [1, 2, 160, 160] or
+                {output.name: list(output.shape) for output in outputs} != expected_shapes):
+            raise ValueError("unexpected joint gate RL ONNX contract")
+        self.input_name = inputs[0].name
+        self.previous_frame = None
+        self.last_input = None
+        self.last_input_raw = None
+
+    def reset(self) -> None:
+        self.previous_frame = None
+        self.last_input = None
+        self.last_input_raw = None
+
+    @staticmethod
+    def _gate_geometry(corners: np.ndarray) -> tuple[bool, str]:
+        """Validate normalized TL/TR/BR/BL corners without changing actions."""
+        if corners.shape != (4, 2) or not np.all(np.isfinite(corners)):
+            return False, "nonfinite"
+        if np.any(corners < 0.0) or np.any(corners > 1.0):
+            return False, "range"
+        # The existing gate packet uses normalized full-frame coordinates.
+        return EspnetAdapter._gate_geometry(corners * 160.0)
+
+    @classmethod
+    def _decode_gate(cls, corners: np.ndarray, confidence: float):
+        valid, reason = cls._gate_geometry(corners)
+        if not valid:
+            return False, np.zeros((4, 2), dtype=np.float32), 0.0, reason
+        if confidence < 0.5:
+            return False, np.zeros((4, 2), dtype=np.float32), 0.0, "confidence"
+        return True, corners.astype(np.float32, copy=True), confidence, "accepted"
+
+    def predict(self, frame: np.ndarray) -> Prediction:
+        current = hm01b0_full_frame(frame)
+        previous = current if self.previous_frame is None else self.previous_frame
+        ordered = np.stack((previous, current), axis=0)
+        outputs = self.session.run(
+            ["action_logits", "gate_corners", "gate_confidence_logit"],
+            {self.input_name: ordered[None].astype(np.float32) / 255.0},
+        )
+        if len(outputs) != 3:
+            raise ValueError("joint gate RL inference returned wrong output count")
+        logits = np.asarray(outputs[0], dtype=np.float32)
+        corners = np.asarray(outputs[1], dtype=np.float32)
+        confidence_logit = np.asarray(outputs[2], dtype=np.float32)
+        if logits.shape != (1, 3) or corners.shape != (1, 4, 2) or confidence_logit.shape != (1,):
+            raise ValueError("joint gate RL inference returned malformed output shape")
+        if not (np.all(np.isfinite(logits)) and np.all(np.isfinite(corners)) and
+                np.all(np.isfinite(confidence_logit))):
+            raise ValueError("joint gate RL inference produced non-finite output")
+        action_logits = logits[0]
+        action = int(np.argmax(action_logits))
+        steering = 1.0 if action == self.LEFT else (-1.0 if action == self.RIGHT else 0.0)
+        collision = 0.0 if action == self.TRACK else 1.0
+        confidence = float(sigmoid(confidence_logit[0]))
+        gate_valid, gate_corners, gate_confidence, gate_reason = self._decode_gate(
+            corners[0], confidence)
+        self.previous_frame = current.copy()
+        self.last_input = current
+        self.last_input_raw = np.stack((previous, current), axis=-1)
+        return Prediction(
+            False, False, True, np.full(4, 6.0), np.zeros(4),
+            np.full(4, collision), steering, collision, gate_valid,
+            gate_corners, gate_confidence, gate_reason,
+            gate_intrinsics=self.gate_intrinsics, action=action,
+            action_logits=tuple(float(value) for value in action_logits),
+        )
+
+
 def _combined_gate_rl_teacher_paths(bundle: Path) -> tuple[Path, Path]:
     """Resolve the two existing teachers named by a combined POC manifest.
 
@@ -1160,6 +1302,8 @@ def make_adapter(kind: str, model: Path, threshold: float):
         return DronetAdapter(model), kind
     if kind in ("rl", "hybrid_rl"):
         return VisionRlAdapter(model), kind
+    if kind == "joint_gate_rl":
+        return JointGateRlAdapter(model), kind
     if kind == "combined_gate_rl":
         return CombinedGateRlAdapter(model), kind
     raise ValueError(kind)
@@ -1263,7 +1407,7 @@ def main() -> int:
                       help="Capture/log frames without inference or firmware I/O")
     parser.add_argument("--adapter",
                         choices=("auto", "espnet", "sequential", "stdc", "dronet",
-                                 "rl", "hybrid_rl", "combined_gate_rl"),
+                                 "rl", "hybrid_rl", "combined_gate_rl", "joint_gate_rl"),
                         default="auto")
     parser.add_argument("--camera-port", type=int, default=5200)
     parser.add_argument("--firmware-port", type=int, default=19960)

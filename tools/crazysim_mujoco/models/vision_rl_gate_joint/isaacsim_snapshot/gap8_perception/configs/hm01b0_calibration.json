@@ -1,0 +1,27 @@
+{
+  "model": "Himax HM01B0",
+  "resolution": [160, 160],
+  "camera_matrix": [
+    [89.1558392549, 0.0, 81.1038105230],
+    [0.0, 89.4608171623, 73.3473030288],
+    [0.0, 0.0, 1.0]
+  ],
+  "distortion_model": "opencv_plumb_bob",
+  "distortion_coefficients": [
+    -0.0176448766,
+    0.0994132451,
+    0.0054432154,
+    -0.0060400120,
+    -0.1900189875
+  ],
+  "simulation_distortion_coefficients": [
+    -0.0176448766,
+    0.0994132451,
+    0.0054432154,
+    -0.0060400120,
+    -0.055
+  ],
+  "simulation_distortion_note": "The measured k3 polynomial folds at normalized radius 1.018, inside the 160x160 frame. The simulation k3 is monotonically constrained through the farthest corner while preserving k1, k2, p1, and p2.",
+  "average_reprojection_error_px": 0.1573255917,
+  "source": "user-provided calibration"
+}

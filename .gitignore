@@ -9,3 +9,6 @@ __pycache__/
 .cf_cache/
 apps/controller_tinympc_eigen/sim_runs/
 apps/controller_tinympc_eigen/tools/debug_runs/
+# DORY writes frontend/HW graph diagnostics here when invoked from the repo
+# root. They are reproducible job products, not source artifacts.
+/logs/

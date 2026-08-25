@@ -1,0 +1,15 @@
+# Held-out fake-room evaluation
+
+Accepted: **no**.
+
+## Matrix tool provenance
+
+- runner SHA-256: 8f4958674e6608c825e2da82908091045d105211005d1c28f67551b2a0822f57
+- evaluator SHA-256: 76f1b591d40e20f31b0d71d0c346aa8217c5d15677d18bee8c7d00aa2fa6cf3b
+
+| course | gate pass | contact-free completion | obstacle clearance | wall clearance | gate clearance | speed | p95 inference |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| heldout_room_straight | 0.8 | 0.6 | 0.2752773631268073 | -0.02246323090399685 | -0.7131467625190692 | 0.4811392012952477 | 17.30904473224653 |
+| heldout_room_circle | 1.0 | 0.0 | 0.4285754655355579 | 0.9980738120348237 | 0.014164070734065337 | 0.4641421777264571 | 17.63024351093918 |
+| heldout_room_oval | 1.0 | 0.0 | 0.49097135435019 | 1.0651474622439332 | 0.09310087294381353 | 0.5679989545620765 | 20.054663019254786 |
+| heldout_room_figure8 | 1.0 | 0.0 | -0.0027102170922159996 | 0.15314852044569602 | 0.14700435408571164 | 0.4756197103019564 | 15.593106532469385 |

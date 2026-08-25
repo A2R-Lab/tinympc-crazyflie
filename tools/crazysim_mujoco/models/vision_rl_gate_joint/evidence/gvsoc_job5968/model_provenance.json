@@ -1,0 +1,10 @@
+{
+  "bundle": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/bundle.json",
+  "bundle_sha256": "bf5d5b6c21eb0973d385382970b57e0a8d49298366147705ee3adeada922c82f",
+  "checkpoint": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/checkpoint.pt",
+  "checkpoint_sha256": "5548f36c5ae86d938db3545f6fd5616ac6440d8ba4f27fe45cb6c4e0812b5f3a",
+  "policy_onnx": "/home/cchen/tinympc-crazyflie/tools/crazysim_mujoco/models/vision_rl_gate_joint/policy.onnx",
+  "policy_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f",
+  "runtime_adapter": "joint_gate_rl",
+  "schema": "joint-gvsoc-model-provenance-v1"
+}
