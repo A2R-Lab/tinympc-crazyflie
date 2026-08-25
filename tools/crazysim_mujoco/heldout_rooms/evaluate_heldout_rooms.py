@@ -140,9 +140,28 @@ def geometry_errors(data, scene_text):
         if not isinstance(index, int) or not 0 <= index < len(rows): errors.append("invalid gate trajectory index")
         else:
             point, velocity, gate = rows[index], rows[index][7:9], gates[0]
-            distance = math.dist(point[:2], gate["center"][:2]); speed = math.hypot(*velocity)
+            speed = math.hypot(*velocity)
+            gate_side = source.get("lateral_side")
+            gate_offset = number(source.get("lateral_offset_m", 0.0))
+            expected_gate_center = point[:2]
+            if gate_offset is None or gate_offset < 0.0:
+                errors.append("invalid gate lateral offset provenance")
+            elif gate_offset > 0.0:
+                if gate_side not in ("left", "right") or speed <= 0.0:
+                    errors.append("invalid gate lateral provenance")
+                else:
+                    tx, ty = velocity[0] / speed, velocity[1] / speed
+                    nx, ny = -ty, tx
+                    if gate_side == "right": nx, ny = -nx, -ny
+                    expected_gate_center = [
+                        point[0] + gate_offset * nx,
+                        point[1] + gate_offset * ny,
+                    ]
+            elif gate_side is not None:
+                errors.append("zero-offset gate must not declare a lateral side")
+            distance = math.dist(expected_gate_center, gate["center"][:2])
             dot = (velocity[0] * gate["normal"][0] + velocity[1] * gate["normal"][1]) / speed if speed else -1
-            if distance > .01: errors.append("gate center deviates from trajectory header")
+            if distance > .01: errors.append("gate center deviates from derived trajectory offset")
             if dot < .999: errors.append("gate normal is not header tangent")
         obstacle_source = data.get("obstacle_trajectory_source", {})
         completion_source = data.get("completion_trajectory_source", {})

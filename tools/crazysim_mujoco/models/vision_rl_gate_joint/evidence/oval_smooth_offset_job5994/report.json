@@ -1,0 +1,63 @@
+{
+  "format": "tinympc-oval-smooth-offset-diagnostic-v1",
+  "simulation_slurm_job": 5994,
+  "render_slurm_job": 5995,
+  "seed": 5501,
+  "node": "a2r-tiger",
+  "policy_onnx_sha256": "7adcc87649790c014ed9b8fb8277a5255fd3becf970e50ef2953b92a2536512f",
+  "controller_sha256": "e60a8223e72bfb80d193e2182a6f3c8c3b8ce0aad00847675869e3b41c615f1d",
+  "geometry": {
+    "major_radius_m": 1.0,
+    "minor_radius_m": 0.75,
+    "former_minor_radius_m": 0.5,
+    "peak_curvature_per_m": 1.7777777777777777,
+    "former_peak_curvature_per_m": 4.0,
+    "gate_trajectory_index": 375,
+    "gate_path_curvature_per_m": 0.75,
+    "gate_lateral_side": "right",
+    "gate_lateral_offset_m": 0.2,
+    "gate_opening_m": [0.9, 0.9],
+    "trajectory_header_sha256": "4f4f01f9715b9595cb729a1410c0198bfa479c55e21d08658396ee4f434db7bb",
+    "course_manifest_sha256": "f6cbb928cff5474fbb733c381fc867719ea5461d68edbade6b051f32c4983bd3",
+    "scene_sha256": "521c260a585b1102ff7a50dccc7eca0429c1167a50dbb96f0734ad41cc34662a"
+  },
+  "timing": {
+    "requested_launch_s": 1.0,
+    "measured_launch_s": 1.0259999999999978,
+    "launch_error_s": 0.0259999999999978,
+    "realtime_factor": 0.2,
+    "firmware_time_factor": 0.1047352488,
+    "calibrated_within_0p10_s": true
+  },
+  "flight": {
+    "course_success": false,
+    "crashed": true,
+    "first_crash_time_s": 6.806000000000608,
+    "first_crash_after_launch_s": 5.7800000000006095,
+    "gate_crossed": false,
+    "obstacle_clearance_min_m": 0.5929378624202981,
+    "wall_clearance_min_m": 0.8019510113388834,
+    "cross_track_rmse_m": 0.2403099133608101,
+    "cross_track_max_m": 0.5905927781152904,
+    "mean_horizontal_speed_mps": 0.6232237263536456,
+    "attitude_geodesic_max_deg": 179.99994858591415,
+    "angular_rate_max_rad_s": 63.31570278797542
+  },
+  "vision": {
+    "samples": 174,
+    "inference_p95_ms": 14.626944391056892,
+    "actions_track_left_right": [155, 16, 3],
+    "first_accepted_gate_frame_time_s": 1.633,
+    "firmware_association_sample": 196,
+    "association_interpretation": "no ordered gate crossing; association was not early and continuous enough to prevent the preceding banked dodge"
+  },
+  "raw_artifacts": {
+    "run_directory": "/home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen/sim_runs/crazysim/oval_smooth_offset_policy7adcc876_seed5501_tiger/oval_seed5501",
+    "run_config_sha256": "bf446d8bb91753e8c5a29ed8792d888716f323cf73d1ec10a2fc8a479ec3b852",
+    "summary_sha256": "9cc09ba440814d57528232db5ebf218310f45e77b0779754d02b1a7e2f331c0c",
+    "fpv_video_sha256": "7ebbf010b0b39b622dbd0aca22f368bfa75f3895eb6ef18a957b5789e1ec6310",
+    "flight_video_sha256": "d8aa5624edeb460d929f660df7984a605ec3fea029c88e456366a581c3fa35a2"
+  },
+  "accepted": false,
+  "interpretation": "The requested geometry and calibration were achieved, but the current policy/controller handoff still failed before the gate; this is negative development evidence."
+}

@@ -27,7 +27,10 @@ class TrajectorySettings:
     circle_period_s: float = 15.0
     circle_laps: int = 1
     oval_x_radius_m: float = 1.0
-    oval_y_radius_m: float = 0.5
+    # The former 1.0 x 0.5 m ellipse reached 4.0 1/m at each tight end
+    # (0.25 m turn radius).  Raising the minor radius to 0.75 m retains a
+    # visibly oval course while limiting peak curvature to 1.78 1/m.
+    oval_y_radius_m: float = 0.75
     oval_period_s: float = 15.0
     oval_laps: int = 1
     # Broad Gerono lobes keep the minimum turn radius above 0.31 m.  The old

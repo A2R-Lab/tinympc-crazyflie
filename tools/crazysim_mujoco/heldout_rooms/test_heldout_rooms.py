@@ -153,12 +153,48 @@ class HeldoutGeometryTest(unittest.TestCase):
             normal = data["gates"][0]["normal"]
             self.assertAlmostEqual(math.hypot(*normal), 1.0, places=6)
 
+    def test_oval_gate_is_disclosed_offset_on_low_curvature_segment(self):
+        manifest = ROOT / "tools/crazysim_mujoco/courses/heldout_room_oval.json"
+        data = json.loads(manifest.read_text())
+        source = data["gate_trajectory_source"]
+        self.assertEqual(source["index"], 375)
+        self.assertEqual(source["lateral_side"], "right")
+        self.assertAlmostEqual(source["lateral_offset_m"], 0.20)
+        header = ROOT / data["source_trajectory"]
+        rows = []
+        import re
+        for line in header.read_text().splitlines():
+            values = re.findall(
+                r"[-+]?\d*\.?\d+(?:e[-+]?\d+)?(?=f)", line, re.I)
+            if len(values) >= 13:
+                rows.append([float(value) for value in values])
+        xs = [row[0] for row in rows]
+        ys = [row[1] for row in rows]
+        major_radius = 0.5 * (max(xs) - min(xs))
+        minor_radius = 0.5 * (max(ys) - min(ys))
+        # The sampled header does not necessarily land on the analytic extrema
+        # exactly, so four decimal places is the appropriate discretization
+        # tolerance for the regenerated 50 Hz path.
+        self.assertAlmostEqual(major_radius, 1.0, places=4)
+        self.assertAlmostEqual(minor_radius, 0.75, places=4)
+        # Ellipse peak curvature a/b^2 falls from the former 4.0 1/m to
+        # 1.778 1/m, while the midpoint gate uses the minimum b/a^2.
+        self.assertLessEqual(major_radius / minor_radius**2, 1.78)
+        gate_curvature = minor_radius / major_radius**2
+        self.assertAlmostEqual(gate_curvature, 0.75, places=4)
+        self.assertAlmostEqual(math.dist(
+            rows[source["index"]][:2], data["gates"][0]["center"][:2]),
+            0.20, places=6)
+        self.assertEqual(evaluation.geometry_errors(
+            data, (ROOT / "tools/crazysim_mujoco/scenes" /
+                   data["scene"]).read_text()), [])
+
     def test_gate_header_provenance_fails_closed(self):
         manifest = ROOT / "tools/crazysim_mujoco/courses/heldout_room_straight.json"
         data = json.loads(manifest.read_text())
         scene = ROOT / "tools/crazysim_mujoco/scenes" / data["scene"]
         data["gates"][0]["center"][1] += .30
-        self.assertIn("gate center deviates from trajectory header",
+        self.assertIn("gate center deviates from derived trajectory offset",
                       evaluation.geometry_errors(data, scene.read_text()))
 
     def test_transition_scenes_use_the_visual_newbee_room_contract(self):
@@ -182,7 +218,7 @@ class HeldoutGeometryTest(unittest.TestCase):
                 self.assertIsNone(gate_body)
             else:
                 self.assertIsNotNone(gate_body)
-                self.assertEqual(data["gates"][0]["opening"], [0.9, 0.9])
+                self.assertEqual(data["gates"][0]["opening"], [1.0, 1.0])
                 visual_meshes = gate_body.findall("geom[@type='mesh']")
                 self.assertEqual(len(visual_meshes), 4)
                 self.assertEqual(len(gate_body.findall("geom[@type='box']")), 4)

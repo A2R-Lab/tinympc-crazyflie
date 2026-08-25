@@ -1440,10 +1440,9 @@ if [[ "$RENDER_VIDEO" == 1 && -f "$OUT/state.csv" ]]; then
     --fps "$VIDEO_FPS" --playback-speed "$VIDEO_SPEED" --launch-time "$LAUNCH_TIME")
   [[ -z "$COURSE_MANIFEST" ]] || \
     video_args+=(--course "/workspace/${COURSE_MANIFEST#"$REPO_DIR"/}")
-  docker run --rm \
-    --volume "$REPO_DIR:/workspace" \
-    --workdir /workspace \
-    "$IMAGE" \
+  # Reuse the selected simulator container engine. Calling Docker here made an
+  # otherwise valid Apptainer/Slurm flight fail only during post-processing.
+  "${container_command[@]}" \
     python3 tools/crazysim_mujoco/render_flight_video.py "${video_args[@]}"
 fi
 

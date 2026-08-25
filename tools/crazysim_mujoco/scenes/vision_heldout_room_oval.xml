@@ -32,7 +32,7 @@
     <light name="generic_strip_light_3" pos="0.875 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
     <light name="generic_strip_light_4" pos="2.625 0.0 2.94" dir="0 0 -1" diffuse="0.85 0.82 0.72" cutoff="75" exponent="1" attenuation="0.25 0.08 0.02" castshadow="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
-    <body name="tangent_gate" pos="0.97492831 0.6112596 1.5" euler="0 0 114.53590">
+    <body name="tangent_gate" pos="0.0 1.7 1.5" euler="0 0 180.00000">
       <geom name="tangent_gate_visual_top" type="mesh" mesh="newbeedrone_gate_top_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
       <geom name="tangent_gate_visual_bottom" type="mesh" mesh="newbeedrone_gate_bottom_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
       <geom name="tangent_gate_visual_left" type="mesh" mesh="newbeedrone_gate_left_easy" material="newbeedrone_gate" contype="0" conaffinity="0"/>
@@ -43,7 +43,7 @@
       <geom name="tangent_gate_top" type="box" pos="0 0 0.558" size="0.025 0.666 0.108" rgba="0 0 0 0" contype="1" conaffinity="1"/>
       <geom name="tangent_gate_bottom" type="box" pos="0 0 -0.558" size="0.025 0.666 0.108" rgba="0 0 0 0" contype="1" conaffinity="1"/>
     </body>
-    <geom name="easy_obstacle" type="box" pos="-0.6138135374746507 0.6203525551779695 1.1" size="0.12 0.18 1.1" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
+    <geom name="easy_obstacle" type="box" pos="-0.6950139338953798 0.5666805619652631 1.1" size="0.12 0.18 1.1" rgba="0.75 0.23 0.13 1" contype="1" conaffinity="1"/>
     <geom name="room_wall_west" type="box" pos="-3.55 0.0 1.5" size=".05 2.6 1.5" material="generic_wall" contype="1" conaffinity="1"/>
     <geom name="room_wall_east" type="box" pos="3.55 0.0 1.5" size=".05 2.6 1.5" material="generic_wall" contype="1" conaffinity="1"/>
     <geom name="room_wall_south" type="box" pos="0.0 -2.55 1.5" size="3.6 .05 1.5" material="generic_wall" contype="1" conaffinity="1"/>

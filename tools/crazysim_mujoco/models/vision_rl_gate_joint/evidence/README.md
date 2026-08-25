@@ -57,3 +57,11 @@ accepted gate observation arrived after physical crossing, so the corrected
 servo could not guide the approach. This compact negative result narrows the
 remaining defect to low/late curved-view gate admission and the associated
 dodge/recovery handoff; it is not a replacement acceptance matrix.
+
+`oval_smooth_offset_job5994/` records the user-requested softened oval and
+off-center-gate diagnostic. The ellipse minor radius increases from 0.50 to
+0.75 m, reducing peak curvature from 4.00 to 1.78 1/m. Its 0.20 m-offset gate
+is placed at the minimum-curvature midpoint. Calibration passed, but the
+vehicle entered a false banked dodge and contacted before the gate, so this is
+negative development evidence rather than acceptance evidence. Raw telemetry
+and both videos remain in the shared-home run directory sealed by the report.

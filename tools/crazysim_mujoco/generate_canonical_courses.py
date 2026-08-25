@@ -291,11 +291,17 @@ _HELDOUT_ROOM_SPECS = {
         "description": "Fake room: circular canonical reference with a tangent-aligned NewBee gate and offset obstacle.",
     },
     "heldout_room_oval": {
-        "trajectory": "oval", "gate_index": 286,
-        "obstacle_index": 428, "obstacle_lateral_side": "left",
-        "completion_index": 556, "obstacle_offset_m": 0.25,
+        "trajectory": "oval",
+        # Index 375 is the low-curvature midpoint of the upper oval segment.
+        # Offset the physical gate 0.20 m to the vehicle's right so a nominal
+        # centerline pass remains safe but cannot look perfectly centered; the
+        # bounded visual servo must visibly pull the reference toward it.
+        "gate_index": 375, "gate_lateral_side": "right",
+        "gate_offset_m": 0.20,
+        "obstacle_index": 515, "obstacle_lateral_side": "left",
+        "completion_index": 650, "obstacle_offset_m": 0.25,
         "room_bounds_xy": [[-3.5, 3.5], [-2.5, 2.5]],
-        "description": "Fake room: oval canonical reference with a tangent-aligned NewBee gate and offset obstacle.",
+        "description": "Fake room: softened oval reference with a tangent-aligned NewBee gate offset 0.20 m from a low-curvature segment, followed by an offset obstacle.",
     },
     "heldout_room_figure8": {
         "trajectory": "figure8", "gate_index": 71,
@@ -319,6 +325,19 @@ for _name, _spec in _HELDOUT_ROOM_SPECS.items():
         _obstacle_anchor["center"][0] + _offset * _nx,
         _obstacle_anchor["center"][1] + _offset * _ny,
     ]
+    _gate_offset = float(_spec.get("gate_offset_m", 0.0))
+    _gate_center = list(_anchor["center"])
+    if _gate_offset > 0.0:
+        _gate_side = _spec.get("gate_lateral_side")
+        if _gate_side not in ("left", "right"):
+            raise ValueError(f"{_name} gate lateral side is invalid")
+        _gnx, _gny = -_anchor["normal"][1], _anchor["normal"][0]
+        if _gate_side == "right":
+            _gnx, _gny = -_gnx, -_gny
+        _gate_center = [
+            _anchor["center"][0] + _gate_offset * _gnx,
+            _anchor["center"][1] + _gate_offset * _gny,
+        ]
     COURSES[_name] = {
         "trajectory": _spec["trajectory"],
         "source_trajectory": (
@@ -336,6 +355,10 @@ for _name, _spec in _HELDOUT_ROOM_SPECS.items():
         "gate_trajectory_source": {
             "index": _anchor["index"],
             "header_sha256": _anchor["header_sha256"],
+            **({
+                "lateral_side": _spec["gate_lateral_side"],
+                "lateral_offset_m": _gate_offset,
+            } if _gate_offset > 0.0 else {}),
         },
         "obstacle_trajectory_source": {
             "index": _obstacle_anchor["index"],
@@ -349,7 +372,7 @@ for _name, _spec in _HELDOUT_ROOM_SPECS.items():
         },
         "gates": [{
             "name": "tangent_gate",
-            "center": [*_anchor["center"], 1.5],
+            "center": [*_gate_center, 1.5],
             "normal": _anchor["normal"],
             # A two-times NewBee gate is the explicit easier-course
             # concession for this first cross-trajectory robustness matrix.
