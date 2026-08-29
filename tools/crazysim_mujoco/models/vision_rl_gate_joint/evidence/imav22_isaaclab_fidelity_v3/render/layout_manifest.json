@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "arena_abi": "imav22_nanocopter_visual_fidelity_v3",
+  "layout_id": "imav22_static_full_seed_22",
+  "seed": 22,
+  "randomized": true,
+  "complexity_mode": "static_full",
+  "complexity_score_multiplier": 5,
+  "relocation_period_s": null,
+  "relocation_event_index": 0,
+  "last_relocated_object_id": null,
+  "arena_size_m": [
+    10.0,
+    10.0
+  ],
+  "scoring_area_size_m": [
+    8.0,
+    8.0
+  ],
+  "official_simulator": {
+    "url": "https://github.com/tudelft/crazyflie-simulation",
+    "branch": "imav2022",
+    "commit": "da3636651e43ba7663eb3ed4f73c59f641058cef"
+  },
+  "final_object_counts": {
+    "pole": 4,
+    "panel": 2,
+    "flag": 2,
+    "gate": 2
+  },
+  "active_object_counts": {
+    "pole": 4,
+    "panel": 2,
+    "flag": 2,
+    "gate": 2
+  },
+  "layout_claim": "seeded randomized reconstruction of the published final-round inventory",
+  "objects": [
+    {
+      "object_id": "panel_0",
+      "kind": "panel",
+      "center_m": [
+        3.0974954075647645,
+        -2.4311083310835713,
+        1.1
+      ],
+      "size_m": [
+        0.03,
+        1.0,
+        1.8
+      ],
+      "yaw_rad": -2.9932080248749333,
+      "texture_relative_path": "metal_panel/metal_panel1.png",
+      "color_rgb": [
+        0.12,
+        0.13,
+        0.14
+      ],
+      "footprint_radius_m": 0.5,
+      "source_fidelity": "official_simulator_object_family_and_texture"
+    },
+    {
+      "object_id": "panel_1",
+      "kind": "panel",
+      "center_m": [
+        -2.564797652664403,
+        1.0236075861715355,
+        1.1
+      ],
+      "size_m": [
+        0.03,
+        1.0,
+        1.8
+      ],
+      "yaw_rad": -0.9698420887141994,
+      "texture_relative_path": "metal_panel/metal_panel3.png",
+      "color_rgb": [
+        0.12,
+        0.13,
+        0.14
+      ],
+      "footprint_radius_m": 0.5,
+      "source_fidelity": "official_simulator_object_family_and_texture"
+    },
+    {
+      "object_id": "flag_0",
+      "kind": "flag",
+      "center_m": [
+        0.7039503285794155,
+        3.0073297262333916,
+        0.95
+      ],
+      "size_m": [
+        0.045,
+        0.8,
+        1.55
+      ],
+      "yaw_rad": 1.164025224641681,
+      "texture_relative_path": "shower_curtain/curtain_striped.png",
+      "color_rgb": [
+        0.96,
+        0.97,
+        0.95
+      ],
+      "footprint_radius_m": 0.4,
+      "source_fidelity": "smooth_feather_banner_proxy_from_final_arena_photographs"
+    },
+    {
+      "object_id": "flag_1",
+      "kind": "flag",
+      "center_m": [
+        2.949990213758323,
+        1.4484802662562806,
+        0.95
+      ],
+      "size_m": [
+        0.045,
+        0.8,
+        1.55
+      ],
+      "yaw_rad": -2.8372330585340366,
+      "texture_relative_path": "shower_curtain/curtain_striped.png",
+      "color_rgb": [
+        0.96,
+        0.97,
+        0.95
+      ],
+      "footprint_radius_m": 0.4,
+      "source_fidelity": "smooth_feather_banner_proxy_from_final_arena_photographs"
+    },
+    {
+      "object_id": "gate_0",
+      "kind": "gate",
+      "center_m": [
+        -1.3577944001918176,
+        -2.222367465088001,
+        1.0
+      ],
+      "size_m": [
+        0.08,
+        0.5880000000000001,
+        0.5880000000000001
+      ],
+      "yaw_rad": 2.1979114873897334,
+      "texture_relative_path": "imav2022-gate/GateTex.png",
+      "color_rgb": [
+        0.96,
+        0.27,
+        0.02
+      ],
+      "footprint_radius_m": 0.29400000000000004,
+      "source_fidelity": "published_dimensions_with_official_simulator_texture"
+    },
+    {
+      "object_id": "gate_1",
+      "kind": "gate",
+      "center_m": [
+        1.9647847572444301,
+        3.3076693733861533,
+        1.0
+      ],
+      "size_m": [
+        0.08,
+        0.5880000000000001,
+        0.5880000000000001
+      ],
+      "yaw_rad": 0.4166563459756305,
+      "texture_relative_path": "imav2022-gate/GateTex.png",
+      "color_rgb": [
+        0.96,
+        0.27,
+        0.02
+      ],
+      "footprint_radius_m": 0.29400000000000004,
+      "source_fidelity": "published_dimensions_with_official_simulator_texture"
+    },
+    {
+      "object_id": "pole_0",
+      "kind": "pole",
+      "center_m": [
+        1.479954398685663,
+        0.8379416674204632,
+        1.1
+      ],
+      "size_m": [
+        0.3,
+        0.3,
+        2.2
+      ],
+      "yaw_rad": 0.0,
+      "texture_relative_path": "orange_pole/orange_pole.png",
+      "color_rgb": [
+        0.95,
+        0.25,
+        0.02
+      ],
+      "footprint_radius_m": 0.15,
+      "source_fidelity": "official_simulator_geometry_and_texture"
+    },
+    {
+      "object_id": "pole_1",
+      "kind": "pole",
+      "center_m": [
+        3.407109004207769,
+        -1.398956101093729,
+        1.1
+      ],
+      "size_m": [
+        0.3,
+        0.3,
+        2.2
+      ],
+      "yaw_rad": 0.0,
+      "texture_relative_path": "orange_pole/orange_pole.png",
+      "color_rgb": [
+        0.95,
+        0.25,
+        0.02
+      ],
+      "footprint_radius_m": 0.15,
+      "source_fidelity": "official_simulator_geometry_and_texture"
+    },
+    {
+      "object_id": "pole_2",
+      "kind": "pole",
+      "center_m": [
+        -2.6690135103071997,
+        2.426185652305961,
+        1.1
+      ],
+      "size_m": [
+        0.3,
+        0.3,
+        2.2
+      ],
+      "yaw_rad": 0.0,
+      "texture_relative_path": "orange_pole/orange_pole.png",
+      "color_rgb": [
+        0.95,
+        0.25,
+        0.02
+      ],
+      "footprint_radius_m": 0.15,
+      "source_fidelity": "official_simulator_geometry_and_texture"
+    },
+    {
+      "object_id": "pole_3",
+      "kind": "pole",
+      "center_m": [
+        -2.349688360079777,
+        -3.363526696604193,
+        1.1
+      ],
+      "size_m": [
+        0.3,
+        0.3,
+        2.2
+      ],
+      "yaw_rad": 0.0,
+      "texture_relative_path": "orange_pole/orange_pole.png",
+      "color_rgb": [
+        0.95,
+        0.25,
+        0.02
+      ],
+      "footprint_radius_m": 0.15,
+      "source_fidelity": "official_simulator_geometry_and_texture"
+    }
+  ]
+}
