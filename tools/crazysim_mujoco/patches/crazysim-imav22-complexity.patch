@@ -1,0 +1,260 @@
+--- a/simulator_files/mujoco/crazysim.py
++++ b/simulator_files/mujoco/crazysim.py
+@@ -1210,7 +1210,13 @@
+                  launch_on_motor_command: bool = False,
+                  launch_prespin: bool = False,
+                  thrust_scale: float = 1.0,
+-                 realtime_factor: float = 1.0):
++                 realtime_factor: float = 1.0,
++                 imav22_mode: str | None = None,
++                 imav22_relocation_period: float = 30.0,
++                 imav22_relocation_clearance: float = 1.5,
++                 imav22_relocation_duration: float = 2.0,
++                 imav22_event_log: str | None = None,
++                 imav22_object_set: str = 'official'):
+         self.host = host
+         self.visualize = visualize
+         self.dt = timestep
+@@ -1227,6 +1233,17 @@
+         if realtime_factor <= 0.0 or realtime_factor > 1.0:
+             raise ValueError('realtime_factor must be in (0, 1]')
+         self._realtime_factor = realtime_factor
++        self._imav22_mode = imav22_mode
++        self._imav22_relocation_period = imav22_relocation_period
++        self._imav22_relocation_clearance = imav22_relocation_clearance
++        self._imav22_relocation_duration = imav22_relocation_duration
++        self._imav22_event_log = imav22_event_log
++        self._imav22_object_set = imav22_object_set
++        self._imav22_event_writer = None
++        self._imav22_dynamic = []
++        self._imav22_cycle = 0
++        self._imav22_transition = None
++        self._imav22_delayed_cycle = None
+ 
+         if model_type not in MOTOR_PARAMS:
+             raise ValueError(f'Unknown model_type {model_type!r}. '
+@@ -1273,6 +1290,7 @@
+                 self.model.cam_fovy[camera_id] = cam_fovy
+             print(f'[crazysim] camera fovy : {cam_fovy:.3f} deg')
+         self.data = mujoco.MjData(self.model)
++        self._configure_imav22_environment()
+ 
+         # The stock scenes start on the floor. Aggressive maneuver references
+         # are relative to their handoff pose, so validation needs an airborne
+@@ -1317,6 +1335,151 @@
+ 
+         self._running = False
+ 
++    def _configure_imav22_environment(self):
++        if self._imav22_mode is None:
++            return
++        if self._imav22_mode not in ('gates', 'static', 'dynamic'):
++            raise ValueError('imav22_mode must be gates, static, or dynamic')
++        if self._imav22_object_set not in ('official', 'extended'):
++            raise ValueError('imav22_object_set must be official or extended')
++        if self._imav22_mode == 'gates' and self._imav22_object_set != 'official':
++            raise ValueError('IMAV22 gates mode supports only the official object set')
++        if min(self._imav22_relocation_period,
++               self._imav22_relocation_clearance,
++               self._imav22_relocation_duration) <= 0.0:
++            raise ValueError('IMAV22 relocation parameters must be positive')
++        if self._imav22_relocation_duration >= self._imav22_relocation_period:
++            raise ValueError('IMAV22 relocation duration must be shorter than its period')
++
++        obstacle_prefixes = ('imav_orange_pole_', 'imav_black_panel_', 'imav_flag_')
++        if self._imav22_mode == 'gates':
++            hidden = 0
++            for geom_id in range(self.model.ngeom):
++                name = mujoco.mj_id2name(
++                    self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or ''
++                if name.startswith(obstacle_prefixes):
++                    self.model.geom_contype[geom_id] = 0
++                    self.model.geom_conaffinity[geom_id] = 0
++                    self.model.geom_rgba[geom_id, 3] = 0.0
++                    hidden += 1
++            if hidden != 22:
++                raise ValueError(
++                    f'IMAV22 gates mode expected 22 non-gate geoms, found {hidden}')
++        if self._imav22_object_set == 'extended':
++            enabled = 0
++            for geom_id in range(self.model.ngeom):
++                name = mujoco.mj_id2name(
++                    self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or ''
++                if name.startswith('imav_extra_'):
++                    self.model.geom_contype[geom_id] = 1
++                    self.model.geom_conaffinity[geom_id] = 1
++                    self.model.geom_rgba[geom_id, 3] = 1.0
++                    enabled += 1
++            if enabled != 11:
++                raise ValueError(
++                    f'IMAV22 extended set expected 11 extra geoms, found {enabled}')
++        if self._imav22_mode == 'dynamic':
++            mujoco.mj_forward(self.model, self.data)
++            for body_id in range(self.model.nbody):
++                name = mujoco.mj_id2name(
++                    self.model, mujoco.mjtObj.mjOBJ_BODY, body_id) or ''
++                if not name.startswith('imav_dynamic_'):
++                    continue
++                mocap_id = int(self.model.body_mocapid[body_id])
++                if mocap_id < 0:
++                    raise ValueError(f'IMAV22 dynamic body is not mocap: {name}')
++                target_id = mujoco.mj_name2id(
++                    self.model, mujoco.mjtObj.mjOBJ_SITE, f'{name}_target')
++                if target_id < 0:
++                    raise ValueError(f'IMAV22 dynamic body lacks target site: {name}')
++                target_quat = np.empty(4, dtype=float)
++                mujoco.mju_mat2Quat(target_quat, self.data.site_xmat[target_id])
++                self._imav22_dynamic.append({
++                    'name': name,
++                    'mocap_id': mocap_id,
++                    'start': self.data.mocap_pos[mocap_id].copy(),
++                    'target': self.data.site_xpos[target_id].copy(),
++                    'start_quat': self.data.mocap_quat[mocap_id].copy(),
++                    'target_quat': target_quat,
++                    'radius': (0.50 if 'panel' in name else
++                               0.40 if 'flag' in name else 0.15),
++                })
++            if not self._imav22_dynamic:
++                raise ValueError('IMAV22 dynamic mode found no imav_dynamic_* bodies')
++        print(f'[crazysim] IMAV22 mode : {self._imav22_mode} '
++              f'objects={self._imav22_object_set}')
++
++    def _log_imav22_event(self, event: str, cycle: int, detail: str = ''):
++        if self._imav22_event_writer is not None:
++            self._imav22_event_writer.writerow([
++                f'{self.data.time:.9f}', event, cycle, detail])
++
++    def _update_imav22_dynamic_obstacles(self):
++        if self._imav22_mode != 'dynamic':
++            return
++        if self._imav22_transition is not None:
++            transition = self._imav22_transition
++            u = min(1.0, max(0.0, (self.data.time - transition['start_time']) /
++                                  self._imav22_relocation_duration))
++            alpha = u * u * (3.0 - 2.0 * u)
++            item = transition['item']
++            self.data.mocap_pos[item['mocap_id']] = (
++                transition['origin'] + alpha *
++                (transition['destination'] - transition['origin']))
++            origin_quat = transition['origin_quat']
++            destination_quat = transition['destination_quat']
++            if float(origin_quat @ destination_quat) < 0.0:
++                destination_quat = -destination_quat
++            quat = (1.0 - alpha) * origin_quat + alpha * destination_quat
++            self.data.mocap_quat[item['mocap_id']] = quat / np.linalg.norm(quat)
++            if u >= 1.0:
++                self._imav22_cycle = transition['cycle']
++                self._log_imav22_event('complete', self._imav22_cycle)
++                self._imav22_transition = None
++            return
++
++        requested_cycle = int(self.data.time // self._imav22_relocation_period)
++        if requested_cycle <= self._imav22_cycle:
++            return
++        item_index = (requested_cycle - 1) % len(self._imav22_dynamic)
++        item = self._imav22_dynamic[item_index]
++        visit = (requested_cycle - 1) // len(self._imav22_dynamic)
++        destination = item['target'] if visit % 2 == 0 else item['start']
++        destination_quat = (
++            item['target_quat'] if visit % 2 == 0 else item['start_quat'])
++        drone_xy = [self.data.xpos[agent._body_id, :2] for agent in self.agents]
++        def segment_distance(point, start, finish):
++            segment = finish - start
++            denominator = float(segment @ segment)
++            fraction = 0.0 if denominator <= 1.0e-12 else float(
++                np.clip(((point - start) @ segment) / denominator, 0.0, 1.0))
++            return float(np.linalg.norm(point - (start + fraction * segment)))
++
++        safe = all(
++            segment_distance(
++                drone,
++                self.data.mocap_pos[item['mocap_id'], :2], destination[:2]) >=
++            self._imav22_relocation_clearance + item['radius']
++            for drone in drone_xy
++        )
++        if not safe:
++            if self._imav22_delayed_cycle != requested_cycle:
++                self._log_imav22_event('delayed_for_clearance', requested_cycle)
++                self._imav22_delayed_cycle = requested_cycle
++            return
++        self._imav22_delayed_cycle = None
++        self._imav22_transition = {
++            'cycle': requested_cycle,
++            'start_time': self.data.time,
++            'item': item,
++            'origin': self.data.mocap_pos[item['mocap_id']].copy(),
++            'destination': destination,
++            'origin_quat': self.data.mocap_quat[item['mocap_id']].copy(),
++            'destination_quat': destination_quat,
++        }
++        self._log_imav22_event('start', requested_cycle,
++                               f"object={item['name']}")
++
+     def _hold_airborne_pose(self):
+         for i in range(self.num_agents):
+             body_id = self.model.body(f'cf{i}_drone').id
+@@ -1402,6 +1565,14 @@
+                 'motor_cmd_packet_count', 'motor_cmd_last_packet_sim_time_s',
+                 'motor_cmd_age_s',
+             ])
++        imav22_event_file = None
++        if self._imav22_event_log:
++            event_dir = os.path.dirname(os.path.abspath(self._imav22_event_log))
++            os.makedirs(event_dir, exist_ok=True)
++            imav22_event_file = open(self._imav22_event_log, 'w', newline='')
++            self._imav22_event_writer = csv.writer(imav22_event_file)
++            self._imav22_event_writer.writerow(['time_s', 'event', 'cycle', 'detail'])
++            self._log_imav22_event('configured', 0, f'mode={self._imav22_mode}')
+ 
+         def _step_and_send():
+             """One physics step + CRTP packet dispatch for all agents."""
+@@ -1422,6 +1593,7 @@
+                 agent.update_led_materials()
+             if self._downwash and self.num_agents > 1:
+                 self._apply_downwash()
++            self._update_imav22_dynamic_obstacles()
+             mujoco.mj_step(self.model, self.data)
+             for agent in self.agents:
+                 agent.send_sensor_data()
+@@ -1523,6 +1695,8 @@
+             agent.stop()
+         if state_file is not None:
+             state_file.close()
++        if imav22_event_file is not None:
++            imav22_event_file.close()
+         print('[crazysim] Done.')
+ 
+ 
+@@ -1614,6 +1788,19 @@
+                    help='Seed sensor-noise and turbulence randomness')
+     p.add_argument('--scene', default=None,
+                    help='Path to scene MJCF XML (default: scene.xml)')
++    p.add_argument('--imav22-mode', choices=['gates', 'static', 'dynamic'], default=None,
++                   help='Official IMAV22 environment complexity')
++    p.add_argument('--imav22-relocation-period', type=float, default=30.0,
++                   help='Dynamic-mode interval between obstacle relocation attempts [s]')
++    p.add_argument('--imav22-relocation-clearance', type=float, default=1.5,
++                   help='Minimum drone-to-obstacle clearance before relocation [m]')
++    p.add_argument('--imav22-relocation-duration', type=float, default=2.0,
++                   help='Smooth dynamic obstacle transition duration [s]')
++    p.add_argument('--imav22-event-log', default=None,
++                   help='Write IMAV22 relocation events to CSV')
++    p.add_argument('--imav22-object-set', choices=['official', 'extended'],
++                   default='official',
++                   help='Official inventory or optional textured robustness objects')
+     # --- Feature flags ---
+     p.add_argument('--sensor-noise', action='store_true',
+                    help='Enable sensor noise model (IMU + baro)')
+@@ -1739,6 +1926,12 @@
+         launch_prespin=args.launch_prespin,
+         thrust_scale=args.thrust_scale,
+         realtime_factor=args.realtime_factor,
++        imav22_mode=args.imav22_mode,
++        imav22_relocation_period=args.imav22_relocation_period,
++        imav22_relocation_clearance=args.imav22_relocation_clearance,
++        imav22_relocation_duration=args.imav22_relocation_duration,
++        imav22_event_log=args.imav22_event_log,
++        imav22_object_set=args.imav22_object_set,
+     ).run()
+ 
+ 

@@ -1,0 +1,193 @@
+<mujoco model="IMAV 2022 Nanocopter AI Challenge representative arena">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true" angle="degree"/>
+  <statistic center="0 0 1.2" extent="8"/>
+  <visual>
+    <headlight diffuse="0.48 0.48 0.48" ambient="0.30 0.30 0.30" specular="0 0 0"/>
+    <global azimuth="135" elevation="-35" ellipsoidinertia="true"/>
+  </visual>
+  <asset>
+    <texture name="imav_neutral_dome" type="skybox" builtin="gradient"
+             rgb1="0.86 0.90 1.0" rgb2="0.16 0.19 0.25" width="512" height="3072"/>
+    <!-- Byte-pinned textures shared with Isaac Lab's visual-fidelity-v3 scene. -->
+    <texture name="imav_grass_green" type="2d" file="textures/imav22/grass_green.png"/>
+    <texture name="imav_grass_black" type="2d" file="textures/imav22/grass_black.png"/>
+    <texture name="imav_grass_blue" type="2d" file="textures/imav22/grass_blue.png"/>
+    <texture name="imav_gate_fabric" type="2d" file="textures/imav22/GateTex.png"/>
+    <texture name="imav_pole_fabric" type="2d" file="textures/imav22/orange_pole.png"/>
+    <texture name="imav_panel_1_texture" type="2d" file="textures/imav22/metal_panel1.png"/>
+    <texture name="imav_panel_3_texture" type="2d" file="textures/imav22/metal_panel3.png"/>
+    <texture name="imav_flag_texture" type="2d" file="textures/imav22/flag_white_blue_proxy_v1.png"/>
+    <texture name="imav_cyberzoo_curtain" type="2d" file="textures/imav22/wall_curtains.png"/>
+    <texture name="imav_cyberzoo_net" type="2d" file="textures/imav22/net.png"/>
+    <texture name="imav_padded_post_texture" type="2d" file="textures/imav22/padded_pole.png"/>
+    <texture name="imav_cabinet_texture" type="2d" file="textures/imav22/cabinets.png"/>
+    <texture name="imav_traffic_rug_texture" type="2d" file="textures/imav22/mat_traffic_1.png"/>
+    <material name="imav_scoring_floor" texture="imav_grass_green" texrepeat="6 6" texuniform="true"
+              reflectance="0.02" specular="0.03" shininess="0.04"/>
+    <material name="imav_floor_black" texture="imav_grass_black" texrepeat="4 1" texuniform="true"/>
+    <material name="imav_floor_blue" texture="imav_grass_blue" texrepeat="1 4" texuniform="true"/>
+    <material name="imav_gate" texture="imav_gate_fabric" texrepeat="1 1" texuniform="true"
+              specular="0.10" shininess="0.12"/>
+    <material name="imav_pole" texture="imav_pole_fabric" texrepeat="1 1" texuniform="true"
+              specular="0.08" shininess="0.10"/>
+    <material name="imav_panel_1" texture="imav_panel_1_texture" texrepeat="1 1" texuniform="true"/>
+    <material name="imav_panel_3" texture="imav_panel_3_texture" texrepeat="1 1" texuniform="true"/>
+    <material name="imav_flag_white" texture="imav_flag_texture" texrepeat="1 1" texuniform="true"
+              specular="0.03" shininess="0.05"/>
+    <material name="imav_curtain_wall" texture="imav_cyberzoo_curtain" texrepeat="3 1" texuniform="true"/>
+    <material name="imav_net" texture="imav_cyberzoo_net" texrepeat="12 1" texuniform="true" rgba="1 1 1 0.72"/>
+    <material name="imav_padded_post" texture="imav_padded_post_texture" texrepeat="1 3" texuniform="true"/>
+    <material name="imav_cabinet" texture="imav_cabinet_texture" texrepeat="1 1" texuniform="true"/>
+    <material name="imav_traffic_rug" texture="imav_traffic_rug_texture" texrepeat="1 1" texuniform="true"/>
+    <texture name="imav_blue_barrel_texture" type="2d" builtin="checker"
+             rgb1="0.025 0.18 0.55" rgb2="0.06 0.42 0.82" width="256" height="256"/>
+    <material name="imav_blue_barrel" texture="imav_blue_barrel_texture" texrepeat="10 4"
+              texuniform="true" specular="0.22" shininess="0.25"/>
+    <texture name="imav_wood_crate_texture" type="2d" builtin="checker"
+             rgb1="0.42 0.20 0.07" rgb2="0.72 0.46 0.18" width="256" height="256"/>
+    <material name="imav_wood_crate" texture="imav_wood_crate_texture" texrepeat="4 4"
+              texuniform="true" specular="0.04" shininess="0.06"/>
+    <texture name="imav_hazard_texture" type="2d" builtin="checker"
+             rgb1="0.98 0.72 0.02" rgb2="0.025 0.025 0.025" width="256" height="256"/>
+    <material name="imav_hazard" texture="imav_hazard_texture" texrepeat="14 3"
+              texuniform="true" specular="0.08" shininess="0.10"/>
+    <texture name="imav_curtain_texture" type="2d" builtin="checker"
+             rgb1="0.72 0.08 0.10" rgb2="0.92 0.90 0.78" width="256" height="256"/>
+    <material name="imav_curtain" texture="imav_curtain_texture" texrepeat="1 8"
+              texuniform="true" specular="0.02" shininess="0.03"/>
+    <material name="imav_frame" rgba="0.045 0.047 0.050 1" specular="0.04" shininess="0.05"/>
+    <mesh name="imav_official_gate_mesh" file="textures/imav22/imav2022-gate.obj"/>
+    <mesh name="imav_feather_flag_mesh" file="textures/imav22/feather_flag_proxy.obj"/>
+  </asset>
+  <worldbody>
+    <camera name="imav22_overview" pos="0 -7.2 6.4" xyaxes="1 0 0 0 0.66 0.75" fovy="60"/>
+    <camera name="imav22_start_preview" pos="0 0 0.5" xyaxes="0 -1 0 0 0 1" fovy="83.6091095"/>
+    <camera name="imav22_gate_1_approach" pos="-1.2 -0.75 1.0"
+            xyaxes="-0.326 0.945 0 0 0 1" fovy="83.6091095"/>
+    <camera name="imav22_gate_2_approach" pos="1.2 0.65 1.0"
+            xyaxes="0.555 -0.832 0 0 0 1" fovy="83.6091095"/>
+    <camera name="imav22_obstacle_corridor" pos="-0.2 -2.8 0.65"
+            xyaxes="0.981 -0.196 0 0 0 1" fovy="83.6091095"/>
+    <!-- Isaac uses a neutral dome plus warm distant light and deliberately no ceiling. -->
+    <light name="cyberzoo_key" pos="-3 -4 8" dir="0.28 0.18 -0.94" directional="true"
+           diffuse="1.0 0.94 0.84" specular="0.08 0.08 0.08"/>
+    <!-- Exact visual-fidelity-v3 floor split: 8 m scoring turf and 1 m perimeter strips. -->
+    <geom name="imav_scoring_floor" type="box" pos="0 0 -0.035" size="4 4 0.035"
+          material="imav_scoring_floor" contype="1" conaffinity="1"/>
+    <geom name="imav_floor_north" type="box" pos="0 4.5 -0.035" size="5 0.5 0.035" material="imav_floor_black"/>
+    <geom name="imav_floor_south" type="box" pos="0 -4.5 -0.035" size="5 0.5 0.035" material="imav_floor_black"/>
+    <geom name="imav_floor_east" type="box" pos="4.5 0 -0.035" size="0.5 4 0.035" material="imav_floor_blue"/>
+    <geom name="imav_floor_west" type="box" pos="-4.5 0 -0.035" size="0.5 4 0.035" material="imav_floor_blue"/>
+    <geom name="imav_traffic_rug" type="box" pos="-1.05 2.65 0.006" size="1 1 0.006"
+          euler="0 0 6.875494" material="imav_traffic_rug" contype="0" conaffinity="0"/>
+
+    <!-- Visual-only Cyberzoo curtain/net perimeter and restrained venue clutter. -->
+    <geom name="imav_room_wall_north" type="box" pos="0 4.96 1.30" size="4.96 0.0175 1.30" material="imav_curtain_wall" contype="0" conaffinity="0"/>
+    <geom name="imav_room_wall_south" type="box" pos="0 -4.96 1.30" size="4.96 0.0175 1.30" material="imav_curtain_wall" contype="0" conaffinity="0"/>
+    <geom name="imav_room_wall_east" type="box" pos="4.96 0 1.30" size="0.0175 4.96 1.30" material="imav_curtain_wall" contype="0" conaffinity="0"/>
+    <geom name="imav_room_wall_west" type="box" pos="-4.96 0 1.30" size="0.0175 4.96 1.30" material="imav_curtain_wall" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_north_net" type="box" pos="0 4.93 3.0" size="4.9 0.008 0.4" material="imav_net" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_east_net" type="box" pos="4.93 0 3.0" size="0.008 4.9 0.4" material="imav_net" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_post_0" type="box" pos="-4.65 -4.65 1.45" size="0.09 0.09 1.45" material="imav_padded_post" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_post_1" type="box" pos="4.65 -4.65 1.45" size="0.09 0.09 1.45" material="imav_padded_post" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_post_2" type="box" pos="4.65 4.65 1.45" size="0.09 0.09 1.45" material="imav_padded_post" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_post_3" type="box" pos="-4.65 4.65 1.45" size="0.09 0.09 1.45" material="imav_padded_post" contype="0" conaffinity="0"/>
+    <geom name="imav_venue_cabinet" type="box" pos="-4.56 2.75 0.65" size="0.31 0.725 0.65" material="imav_cabinet" contype="0" conaffinity="0"/>
+
+    <!-- Accepted Isaac seed-22 layout. Gate rails are invisible analytic collision geometry;
+         the official DAE-derived UV mesh supplies the complete stand and fabric visual. -->
+    <body name="imav_gate_1" pos="-1.3577944002 -2.2223674651 1.0" euler="0 0 125.931393">
+      <geom name="imav_gate_1_left" type="box" pos="0 -0.247 0" size="0.04 0.047 0.20" rgba="1 1 1 0"/>
+      <geom name="imav_gate_1_right" type="box" pos="0 0.247 0" size="0.04 0.047 0.20" rgba="1 1 1 0"/>
+      <geom name="imav_gate_1_top" type="box" pos="0 0 0.247" size="0.04 0.294 0.047" rgba="1 1 1 0"/>
+      <geom name="imav_gate_1_bottom" type="box" pos="0 0 -0.247" size="0.04 0.294 0.047" rgba="1 1 1 0"/>
+      <geom name="imav_gate_1_visual" type="mesh" mesh="imav_official_gate_mesh" pos="0 0 -1" euler="0 0 -90"
+            material="imav_gate" contype="0" conaffinity="0"/>
+    </body>
+    <body name="imav_gate_2" pos="1.9647847572 3.3076693734 1.0" euler="0 0 23.872089">
+      <geom name="imav_gate_2_left" type="box" pos="0 -0.247 0" size="0.04 0.047 0.20" rgba="1 1 1 0"/>
+      <geom name="imav_gate_2_right" type="box" pos="0 0.247 0" size="0.04 0.047 0.20" rgba="1 1 1 0"/>
+      <geom name="imav_gate_2_top" type="box" pos="0 0 0.247" size="0.04 0.294 0.047" rgba="1 1 1 0"/>
+      <geom name="imav_gate_2_bottom" type="box" pos="0 0 -0.247" size="0.04 0.294 0.047" rgba="1 1 1 0"/>
+      <geom name="imav_gate_2_visual" type="mesh" mesh="imav_official_gate_mesh" pos="0 0 -1" euler="0 0 -90"
+            material="imav_gate" contype="0" conaffinity="0"/>
+    </body>
+
+    <!-- All non-gate objects are mocap bodies so relocated mode can cycle one object/event. -->
+    <body name="imav_dynamic_panel_1" mocap="true" pos="3.0974954076 -2.4311083311 1.1" euler="0 0 -171.497623">
+      <geom name="imav_black_panel_1" type="box" size="0.015 0.50 0.90" material="imav_panel_1"/>
+      <geom name="imav_black_panel_1_foot_left" type="box" pos="0 -0.32 -1.065" size="0.215 0.05 0.035" material="imav_frame"/>
+      <geom name="imav_black_panel_1_foot_right" type="box" pos="0 0.32 -1.065" size="0.215 0.05 0.035" material="imav_frame"/>
+      <geom name="imav_black_panel_1_support_left" type="box" pos="0 -0.32 -0.97" size="0.04 0.04 0.13" material="imav_frame"/>
+      <geom name="imav_black_panel_1_support_right" type="box" pos="0 0.32 -0.97" size="0.04 0.04 0.13" material="imav_frame"/>
+    </body>
+    <site name="imav_dynamic_panel_1_target" pos="0.4402079849 -2.2838900160 1.1" euler="0 0 -31.194309" size="0.01" rgba="0 0 0 0"/>
+    <body name="imav_dynamic_panel_2" mocap="true" pos="-2.5647976527 1.0236075862 1.1" euler="0 0 -55.567855">
+      <geom name="imav_black_panel_2" type="box" size="0.015 0.50 0.90" material="imav_panel_3"/>
+      <geom name="imav_black_panel_2_foot_left" type="box" pos="0 -0.32 -1.065" size="0.215 0.05 0.035" material="imav_frame"/>
+      <geom name="imav_black_panel_2_foot_right" type="box" pos="0 0.32 -1.065" size="0.215 0.05 0.035" material="imav_frame"/>
+      <geom name="imav_black_panel_2_support_left" type="box" pos="0 -0.32 -0.97" size="0.04 0.04 0.13" material="imav_frame"/>
+      <geom name="imav_black_panel_2_support_right" type="box" pos="0 0.32 -0.97" size="0.04 0.04 0.13" material="imav_frame"/>
+    </body>
+    <site name="imav_dynamic_panel_2_target" pos="-2.7485253822 -1.6308951545 1.1" euler="0 0 -166.073864" size="0.01" rgba="0 0 0 0"/>
+
+    <body name="imav_dynamic_flag_1" mocap="true" pos="0.7039503286 3.0073297262 0" euler="0 0 66.693055">
+      <geom name="imav_flag_1_collision" type="box" pos="0 0 0.95" size="0.0225 0.40 0.775" rgba="1 1 1 0"/>
+      <geom name="imav_flag_1_cloth" type="mesh" mesh="imav_feather_flag_mesh" material="imav_flag_white" contype="0" conaffinity="0"/>
+      <geom name="imav_flag_1_mast" type="cylinder" pos="0 -0.40 0.95" size="0.018 0.95" material="imav_frame"/>
+      <geom name="imav_flag_1_base" type="cylinder" pos="0 -0.40 0.0275" size="0.115 0.0275" material="imav_frame"/>
+    </body>
+    <site name="imav_dynamic_flag_1_target" pos="-2.1159225292 3.0749679212 0" euler="0 0 -27.442781" size="0.01" rgba="0 0 0 0"/>
+    <body name="imav_dynamic_flag_2" mocap="true" pos="2.9499902138 1.4484802663 0" euler="0 0 -162.562696">
+      <geom name="imav_flag_2_collision" type="box" pos="0 0 0.95" size="0.0225 0.40 0.775" rgba="1 1 1 0"/>
+      <geom name="imav_flag_2_cloth" type="mesh" mesh="imav_feather_flag_mesh" material="imav_flag_white" contype="0" conaffinity="0"/>
+      <geom name="imav_flag_2_mast" type="cylinder" pos="0 -0.40 0.95" size="0.018 0.95" material="imav_frame"/>
+      <geom name="imav_flag_2_base" type="cylinder" pos="0 -0.40 0.0275" size="0.115 0.0275" material="imav_frame"/>
+    </body>
+    <site name="imav_dynamic_flag_2_target" pos="-1.8949594634 -0.2545505311 0" euler="0 0 63.924825" size="0.01" rgba="0 0 0 0"/>
+
+    <body name="imav_dynamic_pole_1" mocap="true" pos="1.4799543987 0.8379416674 1.1"><geom name="imav_orange_pole_1" type="cylinder" size="0.15 1.1" material="imav_pole"/></body>
+    <site name="imav_dynamic_pole_1_target" pos="1.0407229175 2.8344015232 1.1" size="0.01" rgba="0 0 0 0"/>
+    <body name="imav_dynamic_pole_2" mocap="true" pos="3.4071090042 -1.3989561011 1.1"><geom name="imav_orange_pole_2" type="cylinder" size="0.15 1.1" material="imav_pole"/></body>
+    <site name="imav_dynamic_pole_2_target" pos="-0.8592885713 1.9347568474 1.1" size="0.01" rgba="0 0 0 0"/>
+    <body name="imav_dynamic_pole_3" mocap="true" pos="-2.6690135103 2.4261856523 1.1"><geom name="imav_orange_pole_3" type="cylinder" size="0.15 1.1" material="imav_pole"/></body>
+    <site name="imav_dynamic_pole_3_target" pos="-0.3023757739 -3.4692234357 1.1" size="0.01" rgba="0 0 0 0"/>
+    <body name="imav_dynamic_pole_4" mocap="true" pos="-2.3496883601 -3.3635266966 1.1"><geom name="imav_orange_pole_4" type="cylinder" size="0.15 1.1" material="imav_pole"/></body>
+    <site name="imav_dynamic_pole_4_target" pos="-3.3196397546 0.9933896243 1.1" size="0.01" rgba="0 0 0 0"/>
+
+    <!-- Optional robustness objects. CrazySim enables these only for the extended set. -->
+    <body name="imav_extra_barrel" pos="-2.55 -2.65 0.60">
+      <geom name="imav_extra_barrel_shell" type="cylinder" size="0.25 0.60"
+            material="imav_blue_barrel" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_barrel_band_top" type="cylinder" pos="0 0 0.43" size="0.265 0.035"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_barrel_band_bottom" type="cylinder" pos="0 0 -0.43" size="0.265 0.035"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+    </body>
+    <body name="imav_extra_crate" pos="2.55 2.90 0.40" euler="0 0 22">
+      <geom name="imav_extra_crate_box" type="box" size="0.38 0.38 0.40"
+            material="imav_wood_crate" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_crate_strap" type="box" size="0.40 0.055 0.41"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+    </body>
+    <body name="imav_extra_curtain" pos="-2.80 -0.10 0.95" euler="0 0 -12">
+      <geom name="imav_extra_curtain_panel" type="box" size="0.025 0.62 0.95"
+            material="imav_curtain" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+    </body>
+    <body name="imav_extra_beam" pos="1.05 3.30 0.75" euler="0 0 8">
+      <geom name="imav_extra_beam_bar" type="box" size="0.075 0.85 0.075"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_beam_post_left" type="cylinder" pos="0 -0.76 -0.35" size="0.055 0.40"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_beam_post_right" type="cylinder" pos="0 0.76 -0.35" size="0.055 0.40"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+    </body>
+    <body name="imav_extra_bollards" pos="0.95 -3.25 0.55">
+      <geom name="imav_extra_bollard_left" type="capsule" pos="0 -0.30 0" size="0.09 0.46"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+      <geom name="imav_extra_bollard_right" type="capsule" pos="0 0.30 0" size="0.09 0.46"
+            material="imav_hazard" rgba="1 1 1 0" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

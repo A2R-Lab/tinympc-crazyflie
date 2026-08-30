@@ -42,8 +42,13 @@ apply_once "$CRAZYSIM_DIR/crazyflie-firmware" \
   "$SCRIPT_DIR/patches/crazysim-firmware-tinympc.patch"
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/vendor/FreeRTOS" \
   "$SCRIPT_DIR/patches/freertos-posix-sim-time.patch"
+if ! grep -q "motor_command_packet_count" \
+    "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation/simulator_files/mujoco/crazysim.py"; then
+  apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation" \
+    "$SCRIPT_DIR/patches/crazysim-mujoco-logging.patch"
+fi
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation" \
-  "$SCRIPT_DIR/patches/crazysim-mujoco-logging.patch"
+  "$SCRIPT_DIR/patches/crazysim-imav22-complexity.patch"
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation/simulator_files/mujoco/drone-models" \
   "$SCRIPT_DIR/patches/crazysim-drone-models-hm01b0-camera.patch"
 

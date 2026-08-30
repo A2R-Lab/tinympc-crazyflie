@@ -9,6 +9,6 @@ index f9b8d96..982f6f7 100644
 +      <!-- AI-deck HM01B0 optical center: 10 mm above the body origin.
 +           Keep the existing forward-looking axis convention; the gate POC
 +           applies calibrated K and lens distortion in its camera bridge. -->
-+      <camera name="fpv_cam" pos="0 0 0.01" euler="0 -90 -90" fovy="70" resolution="640 480" />
++      <camera name="fpv_cam" pos="0 0 0.03" euler="0 -90 -90" fovy="70" resolution="640 480" />
      </body>
    </worldbody>

@@ -57,6 +57,11 @@ VISION_LATENCY_FRAMES=1
 CAMERA_FPS=30
 VISION_PASSIVE=0
 CAMERA_ONLY=0
+IMAV22_MODE=""
+IMAV22_RELOCATION_PERIOD_S="30.0"
+IMAV22_RELOCATION_CLEARANCE_M="1.5"
+IMAV22_RELOCATION_DURATION_S="2.0"
+IMAV22_OBJECT_SET="official"
 FLOWDECK_ENABLED=0
 COURSE=""
 RENDER_VIDEO=0
@@ -120,11 +125,17 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --vision-adapter NAME   auto, espnet, sequential, stdc, dronet, hybrid_rl,
                           combined_gate_rl, or joint_gate_rl (default: auto)
   --vision-scene NAME     obstacle, gate, corridor, corridor_obstacles,
-                          circle_obstacles, figure8_obstacles, or none
+                          circle_obstacles, figure8_obstacles, imav22, or none
                           (default: obstacle)
   --vision-latency-frames N  Fixed camera-frame delivery delay (default: 1)
   --vision-passive        Run/log inference without sending it to firmware
   --camera-only          Capture AI-deck-style frames without inference or firmware I/O
+  --imav22-mode MODE     Official gates, static, or dynamic environment complexity
+  --imav22-relocation-period S  Dynamic-mode interval between relocation attempts (default: 30)
+  --imav22-relocation-clearance M  Base drone clearance before relocation (default: 1.5;
+                            object footprint radius is added)
+  --imav22-relocation-duration S  Smooth relocation duration (default: 2)
+  --imav22-object-set SET  official or extended textured robustness objects
   --course NAME           Select a manifest-backed obstacle/gate course
   --container-engine NAME docker (default) or apptainer; the latter requires --apptainer-image
   --apptainer-image PATH  Shared .sif used only with --container-engine apptainer
@@ -191,6 +202,11 @@ while [[ $# -gt 0 ]]; do
     --vision-latency-frames) VISION_LATENCY_FRAMES="$2"; shift 2 ;;
     --vision-passive) VISION_PASSIVE=1; shift ;;
     --camera-only) CAMERA_ONLY=1; shift ;;
+    --imav22-mode) IMAV22_MODE="$2"; shift 2 ;;
+    --imav22-relocation-period) IMAV22_RELOCATION_PERIOD_S="$2"; shift 2 ;;
+    --imav22-relocation-clearance) IMAV22_RELOCATION_CLEARANCE_M="$2"; shift 2 ;;
+    --imav22-relocation-duration) IMAV22_RELOCATION_DURATION_S="$2"; shift 2 ;;
+    --imav22-object-set) IMAV22_OBJECT_SET="$2"; shift 2 ;;
     --course) COURSE="$2"; shift 2 ;;
     --container-engine) CONTAINER_ENGINE="$2"; shift 2 ;;
     --apptainer-image) APPTAINER_IMAGE="$2"; shift 2 ;;
@@ -396,7 +412,24 @@ if [[ "$CONTAINER_ENGINE" == apptainer ]]; then
   command -v apptainer >/dev/null || { echo "apptainer is unavailable" >&2; exit 2; }
 fi
 [[ "$VISION_ADAPTER" != rl ]] || VISION_ADAPTER=hybrid_rl
-case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+case "$IMAV22_MODE" in ""|gates|static|dynamic) ;; *) echo "Invalid --imav22-mode (expected gates, static, or dynamic)" >&2; exit 2 ;; esac
+case "$IMAV22_OBJECT_SET" in official|extended) ;; *) echo "Invalid --imav22-object-set (expected official or extended)" >&2; exit 2 ;; esac
+if [[ "$IMAV22_OBJECT_SET" == extended && ( -z "$IMAV22_MODE" || "$IMAV22_MODE" == gates ) ]]; then
+  echo "--imav22-object-set extended requires --imav22-mode static or dynamic" >&2
+  exit 2
+fi
+if [[ -n "$IMAV22_MODE" ]]; then
+  VISION_SCENE=imav22
+  python3 - "$IMAV22_RELOCATION_PERIOD_S" "$IMAV22_RELOCATION_CLEARANCE_M" "$IMAV22_RELOCATION_DURATION_S" <<'PY'
+import math, sys
+period, clearance, duration = map(float, sys.argv[1:])
+if not all(math.isfinite(value) and value > 0.0 for value in (period, clearance, duration)):
+    raise SystemExit("IMAV22 relocation period, clearance, and duration must be finite and positive")
+if duration >= period:
+    raise SystemExit("IMAV22 relocation duration must be shorter than its period")
+PY
+fi
+case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|imav22|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
   echo "--camera-only and --vision-model are mutually exclusive" >&2
@@ -548,6 +581,7 @@ python3 - "$OUT/run_config.json" "$REPO_DIR" "$SCRIPT_DIR/run.sh" \
   "$FLIP_ENABLE" "$FLIP_TRIGGER_S_M" "$FLIP_TRIGGER_WINDOW_M" "$FLIP_DURATION_S" "$FLIP_PITCH_DIRECTION" \
   "$POWER_LOOP_ENABLE" "$POWER_LOOP_TRIGGER_S_M" "$POWER_LOOP_TRIGGER_WINDOW_M" "$POWER_LOOP_RADIUS_M" "$POWER_LOOP_BOTTOM_SPEED_MPS" "$POWER_LOOP_TOP_SPEED_MPS" \
   "$CAMERA_ONLY" "$VISION_PASSIVE" "$FLOWDECK_ENABLED" "$RATE_IDENTIFICATION" "$DIRECT_PLAN_REPLAY" "$MPC_DIAG_MODE" "$TICK_US" \
+  "$IMAV22_MODE" "$IMAV22_RELOCATION_PERIOD_S" "$IMAV22_RELOCATION_CLEARANCE_M" "$IMAV22_RELOCATION_DURATION_S" "$IMAV22_OBJECT_SET" \
   "${EXTRA_SIM_ARGS[@]}" <<'PY'
 import hashlib
 import importlib.util
@@ -569,6 +603,8 @@ import sys
  power_loop_enable, power_loop_trigger_s_m, power_loop_trigger_window_m,
  power_loop_radius_m, power_loop_bottom_speed_mps, power_loop_top_speed_mps,
  camera_only, vision_passive, flowdeck_enabled, rate_identification, direct_plan_replay, mpc_diag_mode, tick_us,
+ imav22_mode, imav22_relocation_period_s, imav22_relocation_clearance_m,
+ imav22_relocation_duration_s, imav22_object_set,
  *extra) = sys.argv[1:]
 
 def sha256(path):
@@ -714,6 +750,14 @@ config = {
     "vision_model": vision_identity,
     "vision_adapter": vision_adapter,
     "vision_scene": vision_scene,
+    "imav22_complexity": ({
+        "mode": imav22_mode,
+        "environment_factor": {"gates": 1, "static": 5, "dynamic": 10}[imav22_mode],
+        "relocation_period_s": float(imav22_relocation_period_s),
+        "relocation_clearance_m": float(imav22_relocation_clearance_m),
+        "relocation_duration_s": float(imav22_relocation_duration_s),
+        "object_set": imav22_object_set,
+    } if imav22_mode else None),
     "vision_latency_frames": int(vision_latency_frames),
     "camera_fps": 30.0,
     "camera_calibration": ({
@@ -738,7 +782,7 @@ config = {
             "analog_gain_x": 2.0,
             "digital_gain_x": 1.0,
             "image_orientation_register": "0x03",
-            "ai_deck_optical_center_body_m": [0.0, 0.0, 0.010],
+            "ai_deck_optical_center_body_m": [0.0, 0.0, 0.030],
         },
         "mujoco_vertical_fov_deg": (94.0387229678 if course_name in gate_camera_courses
                                       and vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl")
@@ -784,7 +828,8 @@ config = {
                 "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b",
             },
         },
-    } if vision_adapter in ("dronet", "hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+    } if (vision_adapter in ("dronet", "hybrid_rl", "combined_gate_rl", "joint_gate_rl")
+          or imav22_mode) else None),
     "camera_only_enabled": bool(int(camera_only)),
     "camera_capture_enabled": bool(int(camera_only)) or bool(int(vision_enabled)),
     "camera_inference_enabled": bool(int(vision_enabled)),
@@ -894,6 +939,7 @@ set +e
     "$FLIP_ENABLE" "$FLIP_TRIGGER_S_M" "$FLIP_TRIGGER_WINDOW_M" "$FLIP_DURATION_S" "$FLIP_PITCH_DIRECTION" \
     "$POWER_LOOP_ENABLE" "$POWER_LOOP_TRIGGER_S_M" "$POWER_LOOP_TRIGGER_WINDOW_M" "$POWER_LOOP_RADIUS_M" "$POWER_LOOP_BOTTOM_SPEED_MPS" "$POWER_LOOP_TOP_SPEED_MPS" \
     "$DIRECT_PLAN_REPLAY" "$MPC_DIAG_MODE" \
+    "$IMAV22_MODE" "$IMAV22_RELOCATION_PERIOD_S" "$IMAV22_RELOCATION_CLEARANCE_M" "$IMAV22_RELOCATION_DURATION_S" "$IMAV22_OBJECT_SET" \
     --realtime-factor "$REALTIME_FACTOR" \
     "${EXTRA_SIM_ARGS[@]}" <<'CONTAINER_SCRIPT'
 set -euo pipefail
@@ -918,7 +964,10 @@ power_loop_enable="${41}"; power_loop_trigger_s_m="${42}"
 power_loop_trigger_window_m="${43}"; power_loop_radius_m="${44}"
 power_loop_bottom_speed_mps="${45}"; power_loop_top_speed_mps="${46}"
 direct_plan_replay="${47}"; mpc_diag_mode="${48}"
-shift 48
+imav22_mode="${49}"; imav22_relocation_period_s="${50}"
+imav22_relocation_clearance_m="${51}"; imav22_relocation_duration_s="${52}"
+imav22_object_set="${53}"
+shift 53
 camera_fps=30
 course_build="${course:-none}"
 hm01b0_poc_camera=0
@@ -1056,6 +1105,15 @@ sim_command=(python3 -u "$simulator" \
   --motor-tau-scale "$motor_tau_scale" \
   --thrust-scale "$thrust_scale" \
   --state-log "$out/state.csv")
+if [[ -n "$imav22_mode" ]]; then
+  scene=/workspace/tools/crazysim_mujoco/scenes/vision_imav22.xml
+  sim_command+=(--scene "$scene" --imav22-mode "$imav22_mode"
+    --imav22-relocation-period "$imav22_relocation_period_s"
+    --imav22-relocation-clearance "$imav22_relocation_clearance_m"
+    --imav22-relocation-duration "$imav22_relocation_duration_s"
+    --imav22-object-set "$imav22_object_set"
+    --imav22-event-log "$out/imav22_events.csv")
+fi
 if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
   scene=/workspace/tools/crazysim_mujoco/scenes/vision_${vision_scene}.xml
   camera_width=160; camera_height=120
@@ -1078,9 +1136,15 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
     camera_width=160; camera_height=160
     camera_fovy=47.168554
   fi
+  if [[ -n "$imav22_mode" ]]; then
+    # Match the Isaac IMAV/HM01B0 square render contract for both passive
+    # captures and policy-driven flights.
+    camera_width=160; camera_height=160
+    camera_fovy=83.6091095
+  fi
   sim_command+=(--camera --cam-width "$camera_width" --cam-height "$camera_height" --cam-fps "$camera_fps" --cam-port 5200)
   [[ -z "$camera_fovy" ]] || sim_command+=(--cam-fovy "$camera_fovy")
-  [[ "$vision_scene" == none ]] || sim_command+=(--scene "$scene")
+  [[ "$vision_scene" == none || -n "$imav22_mode" ]] || sim_command+=(--scene "$scene")
   if [[ "$camera_only" == 1 ]]; then
     python3 -u /workspace/tools/crazysim_mujoco/vision_bridge.py \
       --camera-only --camera-port 5200 --camera-fps "$camera_fps" \
