@@ -1,0 +1,45 @@
+{
+  "layout_id": "imav22_static_full_seed_22",
+  "complexity_mode": "static_full",
+  "relocation_event_index": 0,
+  "last_relocated_object_id": null,
+  "seed": 22,
+  "object_count": 10,
+  "object_counts": {
+    "pole": 4,
+    "panel": 2,
+    "flag": 2,
+    "gate": 2
+  },
+  "overview_shape": [
+    600,
+    720,
+    3
+  ],
+  "sensor_shape": [
+    120,
+    160
+  ],
+  "sensor_mean": 102.76192708333333,
+  "sensor_standard_deviation": 71.55200351285082,
+  "sensor_minimum": 1,
+  "sensor_maximum": 210,
+  "gate_closeups": [
+    "gate_0_front.png",
+    "gate_0_oblique.png",
+    "gate_0_rear.png",
+    "gate_1_front.png",
+    "gate_1_oblique.png",
+    "gate_1_rear.png"
+  ],
+  "panel_closeups": [
+    "panel_0_front.png",
+    "panel_0_rear.png",
+    "panel_0_hm01b0_gray_160x120.png",
+    "panel_1_front.png",
+    "panel_1_rear.png",
+    "panel_1_hm01b0_gray_160x120.png"
+  ],
+  "flow_capture": null,
+  "passed": true
+}

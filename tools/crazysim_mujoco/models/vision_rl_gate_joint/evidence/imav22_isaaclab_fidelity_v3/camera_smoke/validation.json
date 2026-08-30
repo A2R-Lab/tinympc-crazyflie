@@ -1,0 +1,13 @@
+{
+  "shape": [
+    160,
+    160
+  ],
+  "mean": 121.3716015625,
+  "standard_deviation": 60.488659175429305,
+  "minimum": 5,
+  "maximum": 192,
+  "nonzero_fraction": 1.0,
+  "steps": 24,
+  "passed": true
+}
