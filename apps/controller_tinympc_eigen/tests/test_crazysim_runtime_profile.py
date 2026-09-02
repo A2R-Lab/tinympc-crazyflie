@@ -2,6 +2,7 @@
 """Identity and dynamics checks for the canonical CrazySim runtime profile."""
 
 import importlib
+import hashlib
 from pathlib import Path
 import sys
 import unittest
@@ -21,6 +22,22 @@ dynamics = importlib.import_module("quadrotor_dynamics")
 
 
 class CrazySimRuntimeProfileTest(unittest.TestCase):
+    def test_profile_identifies_active_crazysim_sources(self):
+        simulator_root = (
+            APP.parents[1] / "tools" / "crazysim_mujoco" / ".deps"
+            / "CrazySim" / "crazyflie-firmware" / "tools"
+            / "crazyflie-simulation" / "simulator_files" / "mujoco")
+        sources = {
+            "crazysim_py": simulator_root / "crazysim.py",
+            "drone_models_params_toml": (
+                simulator_root / "drone-models" / "drone_models"
+                / "data" / "params.toml"),
+        }
+        for key, path in sources.items():
+            self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                profile.SOURCE_SHA256[key])
+
     def test_active_consumers_share_the_canonical_profile(self):
         problem = adapter.CompileTimeProblem()
         self.assertEqual(adapter.vehicle_mass(problem), profile.MASS_KG)
@@ -34,6 +51,9 @@ class CrazySimRuntimeProfileTest(unittest.TestCase):
         np.testing.assert_array_equal(dynamics.RPM_TO_THRUST, profile.RPM_TO_THRUST)
         np.testing.assert_array_equal(dynamics.RPM_TO_TORQUE, profile.RPM_TO_TORQUE)
         self.assertEqual(dynamics.MOTOR_TIME_CONSTANT_S, profile.MOTOR_TIME_CONSTANT_S)
+        self.assertEqual(
+            dynamics.PROPELLER_INERTIA_KGM2,
+            profile.PROPELLER_INERTIA_KGM2)
         self.assertEqual(
             profile.NORMALIZED_COMMAND_FULL_THRUST_N,
             profile.MAX_MOTOR_THRUST_N)
@@ -71,6 +91,32 @@ class CrazySimRuntimeProfileTest(unittest.TestCase):
         dynamics_dx = dynamics._absolute_derivative(absolute, hover)
         self.assertAlmostEqual(dynamics_dx[7], expected_ax, places=12)
         self.assertAlmostEqual(dynamics_dx[9], 0.0, places=12)
+
+    def test_propeller_precession_matches_crazysim_formula(self):
+        absolute = np.zeros(17)
+        absolute[3] = 1.0
+        absolute[10:13] = [0.7, -0.4, 0.3]
+        rpm = np.asarray([15000.0, 16200.0, 15100.0, 16000.0])
+        absolute[13:17] = rpm / dynamics.ROTOR_STATE_SCALE_RPM
+        motor_command = dynamics._rpm_polynomial(rpm, dynamics.RPM_TO_THRUST)
+        derivative = dynamics._absolute_derivative(absolute, motor_command)
+
+        motor_torque = dynamics._rpm_polynomial(rpm, dynamics.RPM_TO_TORQUE)
+        motor_thrust = dynamics._rpm_polynomial(rpm, dynamics.RPM_TO_THRUST)
+        body_torque = (dynamics.ALLOCATION @ motor_thrust)[1:4]
+        body_torque[2] = dynamics.MOTOR_DIRECTIONS @ motor_torque
+        h_z = (profile.PROPELLER_INERTIA_KGM2 * (2.0 * np.pi / 60.0)
+               * (dynamics.MOTOR_DIRECTIONS @ rpm))
+        omega = absolute[10:13]
+        gyro_torque = np.asarray([-omega[1] * h_z, omega[0] * h_z, 0.0])
+        expected = dynamics.INERTIA_INV @ (
+            body_torque + gyro_torque
+            - np.cross(omega, dynamics.INERTIA_KGM2 @ omega))
+        np.testing.assert_allclose(
+            derivative[10:13], expected, rtol=0.0, atol=1.0e-12)
+
+        equal = np.full(4, 15500.0)
+        self.assertEqual(float(dynamics.MOTOR_DIRECTIONS @ equal), 0.0)
 
 
 if __name__ == "__main__":

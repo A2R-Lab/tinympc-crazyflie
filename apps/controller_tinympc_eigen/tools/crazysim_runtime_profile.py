@@ -36,6 +36,7 @@ MAX_MOTOR_THRUST_N = 0.20
 # thrust as command^2 * thrust_max before inverting the RPM polynomial.
 NORMALIZED_COMMAND_FULL_THRUST_N = MAX_MOTOR_THRUST_N
 ROTOR_STATE_SCALE_RPM = 10000.0
+PROPELLER_INERTIA_KGM2 = 38.93e-9
 
 # Immutable source identity retained in generated provenance.  The file hashes
 # identify the exact local sources audited when this profile was introduced.
@@ -48,7 +49,7 @@ SOURCE_SHA256 = {
     "drone_models_params_toml":
         "5f9613e0f4fbf949e351e696ad5d840632405c2224313f1f12c7e1a57dd1e48e",
     "crazysim_py":
-        "a24cfd58f2d64600b9ba3d2b0a041a0a4520f7053199555028fd5249a4ad6d33",
+        "f5ab66d1a3179a29e4038acf4565f6e3f2809b12d76083c865b023007a5542d5",
 }
 
 
@@ -68,6 +69,7 @@ def provenance() -> dict[str, object]:
         "rpm_to_thrust": list(RPM_TO_THRUST),
         "rpm_to_torque": list(RPM_TO_TORQUE),
         "rotor_dynamics_coefficient_per_s": ROTOR_DYNAMICS_COEFFICIENT_PER_S,
+        "propeller_inertia_kgm2": PROPELLER_INERTIA_KGM2,
         "motor_time_constant_s": MOTOR_TIME_CONSTANT_S,
         "maximum_motor_thrust_n": MAX_MOTOR_THRUST_N,
         "normalized_command_full_thrust_n":

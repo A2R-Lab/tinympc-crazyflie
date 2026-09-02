@@ -30,6 +30,8 @@ MOTOR_TIME_CONSTANT_S = plant_profile.MOTOR_TIME_CONSTANT_S
 ROTOR_STATE_SCALE_RPM = plant_profile.ROTOR_STATE_SCALE_RPM
 RPM_TO_THRUST = np.asarray(plant_profile.RPM_TO_THRUST)
 RPM_TO_TORQUE = np.asarray(plant_profile.RPM_TO_TORQUE)
+PROPELLER_INERTIA_KGM2 = plant_profile.PROPELLER_INERTIA_KGM2
+MOTOR_DIRECTIONS = np.asarray([-1.0, 1.0, -1.0, 1.0])
 
 def _allocation() -> np.ndarray:
     return np.asarray([[1.0, 1.0, 1.0, 1.0], [-ARM_OFFSET_M, -ARM_OFFSET_M, ARM_OFFSET_M, ARM_OFFSET_M], [-ARM_OFFSET_M, ARM_OFFSET_M, ARM_OFFSET_M, -ARM_OFFSET_M], [-YAW_TORQUE_RATIO_M, YAW_TORQUE_RATIO_M, -YAW_TORQUE_RATIO_M, YAW_TORQUE_RATIO_M]])
@@ -139,13 +141,24 @@ def _absolute_derivative(absolute: np.ndarray, motor_command_n: np.ndarray) -> n
     motor_thrust_n = _rpm_polynomial(motor_rpm, RPM_TO_THRUST)
     motor_torque_nm = _rpm_polynomial(motor_rpm, RPM_TO_TORQUE)
     force_moment = ALLOCATION @ motor_thrust_n
-    force_moment[3] = np.asarray([-1.0, 1.0, -1.0, 1.0]) @ motor_torque_nm
+    force_moment[3] = MOTOR_DIRECTIONS @ motor_torque_nm
     velocity_body = rotation.T @ velocity
     force_body = np.asarray([0.0, 0.0, force_moment[0]]) + (
         BODY_LINEAR_DRAG_N_PER_MPS @ velocity_body)
     acceleration = rotation @ (force_body / MASS_KG) - np.asarray([0.0, 0.0, GRAVITY_MPS2])
     quaternion_dot = 0.5 * _quat_product(quaternion, np.r_[0.0, omega])
-    omega_dot = INERTIA_INV @ (force_moment[1:4] - np.cross(omega, INERTIA_KGM2 @ omega))
+    net_rotor_rate_rad_s = (
+        MOTOR_DIRECTIONS @ motor_rpm) * (2.0 * math.pi / 60.0)
+    rotor_angular_momentum_z = (
+        PROPELLER_INERTIA_KGM2 * net_rotor_rate_rad_s)
+    gyroscopic_torque = np.asarray([
+        -omega[1] * rotor_angular_momentum_z,
+        omega[0] * rotor_angular_momentum_z,
+        0.0,
+    ])
+    omega_dot = INERTIA_INV @ (
+        force_moment[1:4] + gyroscopic_torque
+        - np.cross(omega, INERTIA_KGM2 @ omega))
     command_rpm_state = _thrust_to_rpm(np.asarray(motor_command_n, dtype=np.float64)) / ROTOR_STATE_SCALE_RPM
     motor_state_dot = (command_rpm_state - absolute[13:17]) / MOTOR_TIME_CONSTANT_S
     return np.r_[velocity, quaternion_dot, acceleration, omega_dot, motor_state_dot]

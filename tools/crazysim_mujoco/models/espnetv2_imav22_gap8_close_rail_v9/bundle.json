@@ -1,0 +1,89 @@
+{
+  "format": "tinympc-espnetv2-gap8-close-rail-v9",
+  "runtime_adapter": "espnet_v7_reactive_gap8",
+  "source_candidate": "/home/cchen/drone_rl/outputs/espnetv2_imav22_gate_rail/promoted/espnetv2_gap8_collision_v8_close_rail_recovery_v9_int8",
+  "student_architecture": "v8_collision_v9_close_rail_recovery",
+  "input": {
+    "dtype": "uint8",
+    "layout": "CHW",
+    "shape": [
+      3,
+      160,
+      160
+    ],
+    "channels": [
+      "previous_gray",
+      "current_gray",
+      "signed_frame_difference"
+    ],
+    "difference_formula": "(current-previous+255)//2"
+  },
+  "partition_execution": {
+    "encoder": "exact_int8_onnx",
+    "global_head": "exact_int8_onnx",
+    "gate_encoder": "exact_int8_onnx",
+    "gate_head": "exact_int8_onnx"
+  },
+  "rail_recovery": {
+    "sector_order": [
+      "left",
+      "center",
+      "right"
+    ],
+    "output_order": [
+      "rail_present_left",
+      "rail_present_center",
+      "rail_present_right",
+      "pass_right_left",
+      "pass_right_center",
+      "pass_right_right"
+    ],
+    "rail_present_threshold": 0.45,
+    "pass_right_threshold": 0.5,
+    "selection": "highest_collision_risk_sector",
+    "activation": "after_brake_near_hover_two_frame_confirmation"
+  },
+  "navigation_mapping": {
+    "image_right": "negative_yaw_rate",
+    "image_left": "positive_yaw_rate",
+    "maneuver_owner": "firmware_route_free_reactive"
+  },
+  "artifacts": {
+    "encoder": {
+      "path": "encoder_int.onnx",
+      "sha256": "abd3f71a2674b83c0e73a4b9ceaa24b5c908014140c4bb87810a8652aff41117"
+    },
+    "global_head": {
+      "path": "global_head_int.onnx",
+      "sha256": "5f5a1f2d72750ebd537651bf7faf98f21d8c055b2472670341305060bd86e89d"
+    },
+    "collision_nemo_report": {
+      "path": "collision_nemo_report.json",
+      "sha256": "603aa0a6f4f3223e2b0b2fb0d71726264768f47cf06f82ec5cbde71e5ad6bf9d"
+    },
+    "gate_encoder": {
+      "path": "gate_encoder_int.onnx",
+      "sha256": "f767698f3bdd4976745613fdaa90e5950fa125b56d25d18383da7d48567e896c"
+    },
+    "gate_head": {
+      "path": "gate_head_int.onnx",
+      "sha256": "0cf2dbd839e2a98af2423f1b9cb608e9c6b36f13bc4bd5a33a93c077c2662ec3"
+    },
+    "gate_nemo_report": {
+      "path": "gate_nemo_report.json",
+      "sha256": "f2cccb3dc3735ec180040dcd073be1c7f869f81bf57f18872a9deb50b72d07b4"
+    },
+    "gate_bridge_manifest": {
+      "path": "gate_manifest.json",
+      "sha256": "c9cda1e007e708a42420bd0efbe5ad055f2e1729592bc0a5549911f7f1faf0ce"
+    },
+    "promotion_manifest": {
+      "path": "promotion_manifest.json",
+      "sha256": "a9734d00704b4d522193b7cf017597a5939719759058589c43587fc709794835"
+    }
+  },
+  "limitations": {
+    "physical_gap8_evaluated": false,
+    "closed_loop_crazysim_qualified": false
+  }
+}

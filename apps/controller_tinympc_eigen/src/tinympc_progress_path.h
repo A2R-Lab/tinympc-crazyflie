@@ -45,6 +45,8 @@ typedef struct {
   float curvature_speed_gain_m;
   float progress_tolerance_m;
   float maximum_command_advance_m;
+  bool target_lead_bound_enabled;
+  float maximum_target_lead_m;
   float completion_radius_m;
   TinyMpcPathPoint previous_vehicle;
   float cumulative_vehicle_displacement_m;
@@ -60,6 +62,16 @@ typedef struct {
   float last_reference_rebase_m;
   float last_commanded_advance_m;
   float cumulative_reference_rebase_m;
+  /* A clean state-machine rejoin may legitimately place the vehicle farther
+   * along a curved route than forward-displacement integration can prove.
+   * Catch that measured phase up gradually; never jump the route clock. */
+  bool geometric_catchup_active;
+  bool geometric_catchup_update_enabled;
+  float geometric_catchup_target_progress;
+  float maximum_geometric_catchup_per_update_m;
+  float last_geometric_projection_error_m;
+  float last_geometric_catchup_m;
+  float cumulative_geometric_catchup_m;
   float last_phase_lead_m;
   float last_phase_lead_bound_m;
   float last_phase_lag_m;
@@ -234,6 +246,9 @@ static inline void tinyMpcProgressPathInitLaps(
   path->curvature_speed_gain_m = curvature_speed_gain_m;
   path->progress_tolerance_m = progress_tolerance_m;
   path->maximum_command_advance_m = maximum_command_advance_m;
+  path->target_lead_bound_enabled = true;
+  path->maximum_target_lead_m =
+      maximum_command_advance_m + progress_tolerance_m;
   path->completion_radius_m = completion_radius_m;
   path->measured_progress = 0.0f;
   path->previous_vehicle = (TinyMpcPathPoint){0.0f, 0.0f, 0.0f};
@@ -250,6 +265,13 @@ static inline void tinyMpcProgressPathInitLaps(
   path->last_reference_rebase_m = 0.0f;
   path->last_commanded_advance_m = 0.0f;
   path->cumulative_reference_rebase_m = 0.0f;
+  path->geometric_catchup_active = false;
+  path->geometric_catchup_update_enabled = false;
+  path->geometric_catchup_target_progress = 0.0f;
+  path->maximum_geometric_catchup_per_update_m = 0.0f;
+  path->last_geometric_projection_error_m = 0.0f;
+  path->last_geometric_catchup_m = 0.0f;
+  path->cumulative_geometric_catchup_m = 0.0f;
   path->last_phase_lead_m = 0.0f;
   path->last_phase_lead_bound_m = 0.0f;
   path->last_phase_lag_m = 0.0f;
@@ -274,6 +296,25 @@ static inline void tinyMpcProgressPathSetAnalyticalDerivatives(
     uint16_t derivative_stride) {
   path->derivative_data = derivative_data;
   path->derivative_stride = derivative_stride;
+}
+
+/* Opt out of tying virtual target phase to measured forward displacement.
+ * Measured phase remains physically bounded and still owns completion. */
+static inline void tinyMpcProgressPathSetTargetLeadBound(
+    TinyMpcProgressPath *path, bool enabled) {
+  path->target_lead_bound_enabled = enabled;
+}
+
+/* Set an explicit maximum arc-length separation between virtual target phase
+ * and physically measured phase. This does not alter the per-update command
+ * step or measured-progress/completion invariants. */
+static inline void tinyMpcProgressPathSetMaximumTargetLead(
+    TinyMpcProgressPath *path, float maximum_target_lead_m) {
+  if (!isfinite(maximum_target_lead_m) || maximum_target_lead_m < 0.0f) {
+    return;
+  }
+  path->maximum_target_lead_m = maximum_target_lead_m;
+  path->target_lead_bound_enabled = true;
 }
 
 static inline void tinyMpcProgressPathInit(
@@ -323,17 +364,22 @@ static inline float tinyMpcProgressPathLapProgress(
       : bounded - (float)completed * segments_per_lap;
 }
 
-static inline float tinyMpcProgressPathProjectionCandidate(
-    const TinyMpcProgressPath *path, TinyMpcPathPoint vehicle) {
+static inline float tinyMpcProgressPathProjectionCandidateWindow(
+    const TinyMpcProgressPath *path, TinyMpcPathPoint vehicle,
+    uint16_t search_back_segments, uint16_t search_forward_segments,
+    float *projection_error_m) {
   if (path->complete || path->point_data == 0 || path->count < 2u) {
+    if (projection_error_m != 0) {
+      *projection_error_m = 0.0f;
+    }
     return path->measured_progress;
   }
   const uint32_t terminal_segment = path->virtual_count - 2u;
   const uint32_t current = (uint32_t)tinyMpcPathClamp(
       floorf(path->measured_progress), 0.0f, (float)terminal_segment);
-  const uint32_t first = current > path->search_back_segments
-      ? current - path->search_back_segments : 0u;
-  uint32_t requested_last = (uint32_t)current + path->search_forward_segments;
+  const uint32_t first = current > search_back_segments
+      ? current - search_back_segments : 0u;
+  uint32_t requested_last = (uint32_t)current + search_forward_segments;
   const uint32_t last = requested_last <= terminal_segment
       ? requested_last : terminal_segment;
   const uint32_t current_segment = (uint32_t)tinyMpcPathClamp(
@@ -375,7 +421,73 @@ static inline float tinyMpcProgressPathProjectionCandidate(
       best_progress = candidate_progress;
     }
   }
+  if (projection_error_m != 0) {
+    *projection_error_m = sqrtf(fmaxf(best_distance_sq, 0.0f));
+  }
   return best_progress;
+}
+
+static inline float tinyMpcProgressPathProjectionCandidate(
+    const TinyMpcProgressPath *path, TinyMpcPathPoint vehicle) {
+  return tinyMpcProgressPathProjectionCandidateWindow(
+      path, vehicle, path->search_back_segments,
+      path->search_forward_segments, 0);
+}
+
+/* Schedule a bounded phase correction after a clean avoidance rejoin.  The
+ * wide projection is evaluated only at that transition, so ordinary 50 Hz
+ * path updates retain their small local search.  Cross-track gating prevents
+ * a visually plausible but geometrically distant branch from advancing the
+ * measured route phase. */
+static inline bool tinyMpcProgressPathScheduleGeometricCatchup(
+    TinyMpcProgressPath *path, TinyMpcPathPoint vehicle,
+    uint16_t search_forward_segments, float maximum_cross_track_error_m,
+    float maximum_catchup_per_update_m) {
+  if (path == 0 || path->complete || !isfinite(maximum_cross_track_error_m)
+      || !isfinite(maximum_catchup_per_update_m)
+      || maximum_cross_track_error_m < 0.0f
+      || maximum_catchup_per_update_m <= 0.0f) {
+    return false;
+  }
+  float projection_error_m = 0.0f;
+  const float candidate = tinyMpcProgressPathProjectionCandidateWindow(
+      path, vehicle, 0u, search_forward_segments, &projection_error_m);
+  path->last_geometric_projection_error_m = projection_error_m;
+  const float candidate_advance_m = tinyMpcProgressPathDistance(
+      path, path->measured_progress, candidate);
+  /* A point on a repeated closed route has an identical copy every lap.  A
+   * forward-only nearest-point search can therefore prefer the next-lap copy
+   * by floating-point noise even when the vehicle is already at its current
+   * phase.  Advances of half a lap or more are geometrically ambiguous and
+   * must be earned by ordinary measured motion, never by rejoin catch-up. */
+  if (path->lap_count > 1u && path->count > 1u) {
+    const float lap_distance_m = tinyMpcProgressPathDistance(
+        path, 0.0f, (float)(path->count - 1u));
+    if (isfinite(lap_distance_m) && lap_distance_m > 1.0e-5f
+        && candidate_advance_m >= 0.5f * lap_distance_m) {
+      return false;
+    }
+  }
+  if (!isfinite(candidate) || !isfinite(projection_error_m)
+      || projection_error_m > maximum_cross_track_error_m
+      || candidate_advance_m <= 1.0e-5f) {
+    return false;
+  }
+  path->geometric_catchup_target_progress = candidate;
+  path->maximum_geometric_catchup_per_update_m =
+      maximum_catchup_per_update_m;
+  path->geometric_catchup_active = true;
+  path->geometric_catchup_update_enabled = true;
+  return true;
+}
+
+/* Pause catch-up while an avoidance offset is active. The last clean target
+ * is retained and is replaced by a new wide projection on the next rejoin. */
+static inline void tinyMpcProgressPathSetGeometricCatchupUpdateEnabled(
+    TinyMpcProgressPath *path, bool enabled) {
+  if (path != 0) {
+    path->geometric_catchup_update_enabled = enabled;
+  }
 }
 
 static inline float tinyMpcProgressPathUpdate(
@@ -387,6 +499,7 @@ static inline float tinyMpcProgressPathUpdate(
 
   path->last_vehicle_displacement_m = 0.0f;
   path->last_forward_displacement_m = 0.0f;
+  path->last_geometric_catchup_m = 0.0f;
   if (path->vehicle_initialized) {
     const float dx = vehicle.x - path->previous_vehicle.x;
     const float dy = vehicle.y - path->previous_vehicle.y;
@@ -416,6 +529,22 @@ static inline float tinyMpcProgressPathUpdate(
 
   const float projection_candidate =
       tinyMpcProgressPathProjectionCandidate(path, vehicle);
+  const uint32_t projection_terminal_segment = path->virtual_count - 2u;
+  const uint32_t projection_current_segment =
+      (uint32_t)tinyMpcPathClamp(
+          floorf(path->measured_progress), 0.0f,
+          (float)projection_terminal_segment);
+  const uint32_t projection_last_segment =
+      projection_current_segment + path->search_forward_segments
+              <= projection_terminal_segment
+          ? projection_current_segment + path->search_forward_segments
+          : projection_terminal_segment;
+  const float projection_window_end = fminf(
+      (float)(projection_last_segment + 1u),
+      tinyMpcProgressPathTerminalProgress(path));
+  const bool projection_at_forward_window_edge =
+      projection_window_end > path->measured_progress + 1.0e-5f
+      && projection_candidate >= projection_window_end - 1.0e-3f;
   path->last_projection_candidate_advance_m = tinyMpcProgressPathDistance(
       path, path->measured_progress, projection_candidate);
   const float cumulative_measured_bound_m =
@@ -438,12 +567,41 @@ static inline float tinyMpcProgressPathUpdate(
   path->last_measured_advance_m = tinyMpcProgressPathDistance(
       path, previous_measured_progress, path->measured_progress);
   path->cumulative_measured_advance_m += path->last_measured_advance_m;
+  if (path->geometric_catchup_active
+      && path->geometric_catchup_update_enabled) {
+    /* The rejoin projection is a fixed correction target. Ratcheting it with
+     * each later local projection turns a short phase correction into a
+     * permanent synthetic-speed source, so the target must not move after it
+     * has been accepted. */
+    const float remaining_catchup_m = tinyMpcProgressPathDistance(
+        path, path->measured_progress,
+        path->geometric_catchup_target_progress);
+    const float requested_catchup_m = fminf(
+        remaining_catchup_m,
+        path->maximum_geometric_catchup_per_update_m);
+    const float before_catchup = path->measured_progress;
+    path->measured_progress = tinyMpcProgressPathAdvance(
+        path, path->measured_progress, requested_catchup_m);
+    path->last_geometric_catchup_m = tinyMpcProgressPathDistance(
+        path, before_catchup, path->measured_progress);
+    path->cumulative_geometric_catchup_m +=
+        path->last_geometric_catchup_m;
+    path->last_measured_advance_m += path->last_geometric_catchup_m;
+    path->cumulative_measured_advance_m += path->last_geometric_catchup_m;
+    path->last_measured_advance_bound_m += path->last_geometric_catchup_m;
+    if (remaining_catchup_m <=
+            path->last_geometric_catchup_m + 1.0e-5f
+        && !projection_at_forward_window_edge) {
+      path->geometric_catchup_active = false;
+    }
+  }
   path->projection_limited =
       path->last_projection_candidate_advance_m >
       path->last_measured_advance_m + 1.0e-5f;
   path->projection_bound_violation =
       path->cumulative_measured_advance_m >
-      cumulative_measured_bound_m + 1.0e-5f;
+      cumulative_measured_bound_m
+          + path->cumulative_geometric_catchup_m + 1.0e-5f;
 
   path->last_commanded_request_m =
       isfinite(commanded_advance_m) && commanded_advance_m > 0.0f
@@ -460,11 +618,16 @@ static inline float tinyMpcProgressPathUpdate(
   path->cumulative_reference_rebase_m += path->last_reference_rebase_m;
   const float requested_progress = tinyMpcProgressPathAdvance(
       path, rebased_progress, path->last_commanded_request_m);
-  path->last_phase_lead_bound_m =
-      path->maximum_command_advance_m + path->progress_tolerance_m;
-  const float lead_ceiling = tinyMpcProgressPathAdvance(
-      path, path->measured_progress, path->last_phase_lead_bound_m);
-  const float bounded_progress = fminf(requested_progress, lead_ceiling);
+  path->last_phase_lead_bound_m = path->target_lead_bound_enabled
+      ? path->maximum_target_lead_m
+      : tinyMpcProgressPathDistance(
+          path, path->measured_progress, requested_progress);
+  const float bounded_progress = path->target_lead_bound_enabled
+      ? fminf(
+          requested_progress,
+          tinyMpcProgressPathAdvance(
+              path, path->measured_progress, path->last_phase_lead_bound_m))
+      : requested_progress;
   path->progress = fmaxf(rebased_progress, bounded_progress);
   path->last_commanded_advance_m = tinyMpcProgressPathDistance(
       path, rebased_progress, path->progress);

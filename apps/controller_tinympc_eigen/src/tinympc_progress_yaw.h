@@ -23,6 +23,56 @@ static inline float tinyMpcProgressUnwrapYawNear(
   return reference_rad + delta_rad;
 }
 
+static inline float tinyMpcProgressSlewYawToward(
+    float current_yaw_rad, float target_yaw_rad,
+    float maximum_step_rad) {
+  const float target_unwrapped_rad = tinyMpcProgressUnwrapYawNear(
+      target_yaw_rad, current_yaw_rad);
+  float step_rad = target_unwrapped_rad - current_yaw_rad;
+  const float bounded_maximum_step_rad = fmaxf(maximum_step_rad, 0.0f);
+  if (step_rad > bounded_maximum_step_rad) {
+    step_rad = bounded_maximum_step_rad;
+  } else if (step_rad < -bounded_maximum_step_rad) {
+    step_rad = -bounded_maximum_step_rad;
+  }
+  return current_yaw_rad + step_rad;
+}
+
+/* Align to the initial path tangent once, then follow its unwrapped yaw
+ * continuously. Re-arming the stationary alignment whenever normal tracking
+ * exceeds the release tolerance creates a stop/go pitch transient. */
+static inline bool tinyMpcProgressUpdateInitialHeadingAlignment(
+    float target_yaw_rad, float maximum_step_rad,
+    float release_error_rad, float *yaw_phase_rad,
+    bool *alignment_complete, float *remaining_error_rad) {
+  if (yaw_phase_rad == NULL || alignment_complete == NULL) {
+    if (remaining_error_rad != NULL) {
+      *remaining_error_rad = 0.0f;
+    }
+    return false;
+  }
+  if (*alignment_complete) {
+    *yaw_phase_rad = tinyMpcProgressUnwrapYawNear(
+        target_yaw_rad, *yaw_phase_rad);
+    if (remaining_error_rad != NULL) {
+      *remaining_error_rad = 0.0f;
+    }
+    return false;
+  }
+  *yaw_phase_rad = tinyMpcProgressSlewYawToward(
+      *yaw_phase_rad, target_yaw_rad, maximum_step_rad);
+  const float remaining = tinyMpcProgressUnwrapYawNear(
+      target_yaw_rad, *yaw_phase_rad) - *yaw_phase_rad;
+  const bool active = fabsf(remaining) > fmaxf(release_error_rad, 0.0f);
+  if (!active) {
+    *alignment_complete = true;
+  }
+  if (remaining_error_rad != NULL) {
+    *remaining_error_rad = remaining;
+  }
+  return active;
+}
+
 /* Keep the geometric tangent continuous across the +/-pi chart seam. The
  * default progress policy additionally bounds every horizon knot around its
  * current reference phase; the explicitly uncapped policy does not. */

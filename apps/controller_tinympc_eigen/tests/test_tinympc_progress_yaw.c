@@ -114,6 +114,65 @@ static void testTangentHeadingSequenceUnwrapsContinuously(void) {
   }
 }
 
+static void testHeadingAlignmentSlewBoundsInitialQuarterTurn(void) {
+  const float maximum_step = 0.60f * 0.02f;
+  float yaw = 0.0f;
+  yaw = tinyMpcProgressSlewYawToward(
+      yaw, -0.5f * 3.14159265358979323846f, maximum_step);
+  assert(near(yaw, -maximum_step, 1.0e-7f));
+  for (int step = 0; step < 200; ++step) {
+    const float previous = yaw;
+    yaw = tinyMpcProgressSlewYawToward(
+        yaw, -0.5f * 3.14159265358979323846f, maximum_step);
+    assert(fabsf(yaw - previous) <= maximum_step + 1.0e-7f);
+  }
+  assert(near(yaw, -0.5f * 3.14159265358979323846f, 1.0e-6f));
+}
+
+static void testHeadingAlignmentSlewUsesShortestSeamDirection(void) {
+  const float degrees_to_radians = 0.01745329251994329577f;
+  const float current = 179.0f * degrees_to_radians;
+  const float next = tinyMpcProgressSlewYawToward(
+      current, -179.0f * degrees_to_radians,
+      0.5f * degrees_to_radians);
+  assert(next > current);
+  assert(near(next - current, 0.5f * degrees_to_radians, 1.0e-6f));
+}
+
+static void testInitialHeadingAlignmentDoesNotRearm(void) {
+  const float degrees_to_radians = 0.01745329251994329577f;
+  const float maximum_step = 0.60f * 0.02f;
+  const float release_error = 3.0f * degrees_to_radians;
+  float phase = 0.0f;
+  float remaining = 0.0f;
+  bool complete = false;
+  bool active = true;
+  for (int step = 0; step < 200 && active; ++step) {
+    active = tinyMpcProgressUpdateInitialHeadingAlignment(
+        90.0f * degrees_to_radians, maximum_step, release_error,
+        &phase, &complete, &remaining);
+  }
+  assert(!active);
+  assert(complete);
+  assert(fabsf(remaining) <= release_error);
+
+  active = tinyMpcProgressUpdateInitialHeadingAlignment(
+      105.0f * degrees_to_radians, maximum_step, release_error,
+      &phase, &complete, &remaining);
+  assert(!active);
+  assert(complete);
+  assert(near(phase, 105.0f * degrees_to_radians, 1.0e-6f));
+  assert(near(remaining, 0.0f, 1.0e-7f));
+
+  phase = 179.0f * degrees_to_radians;
+  active = tinyMpcProgressUpdateInitialHeadingAlignment(
+      -179.0f * degrees_to_radians, maximum_step, release_error,
+      &phase, &complete, &remaining);
+  assert(!active);
+  assert(phase > 3.14159265358979323846f);
+  assert(near(phase, 181.0f * degrees_to_radians, 1.0e-6f));
+}
+
 static void testQuaternionIdentityHasZeroBodyRate(void) {
   const TinyMpcProgressQuaternion identity = {0.0f, 0.0f, 0.0f, 1.0f};
   const TinyMpcProgressBodyRate rate = tinyMpcProgressQuaternionBodyRate(
@@ -230,6 +289,9 @@ int main(void) {
   testDefaultHorizonRemainsLocallyBounded();
   testUncappedHorizonIsContinuousAcrossAngleSeam();
   testTangentHeadingSequenceUnwrapsContinuously();
+  testHeadingAlignmentSlewBoundsInitialQuarterTurn();
+  testHeadingAlignmentSlewUsesShortestSeamDirection();
+  testInitialHeadingAlignmentDoesNotRearm();
   testQuaternionIdentityHasZeroBodyRate();
   testPureYawProducesPositiveBodyR();
   testBankedCoordinatedYawProducesCoupledBodyRates();

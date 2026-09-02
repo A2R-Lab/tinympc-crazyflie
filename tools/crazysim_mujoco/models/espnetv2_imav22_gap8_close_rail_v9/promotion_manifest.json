@@ -1,0 +1,2304 @@
+{
+  "abi_impact": {
+    "collision_output_order": [
+      "collision_left",
+      "collision_center",
+      "collision_right"
+    ],
+    "firmware_v4_action_packet_changed": false,
+    "gate_output_replaced": true,
+    "removed_gate_outputs": [
+      "affordance_none",
+      "affordance_opening_left",
+      "affordance_opening_right",
+      "visibility_left_rail",
+      "visibility_right_rail",
+      "corner_heatmaps"
+    ],
+    "tiny_mpc_u0_boundary_changed": false
+  },
+  "architecture": "v8_collision_v9_close_rail_recovery",
+  "artifacts": {
+    "ESPNETV2_GAP8_CLOSE_RAIL_RECOVERY_20260902.md": {
+      "bytes": 5668,
+      "sha256": "91605a844700a21cfe65e011ce1c69d6e7719a1585ac429f1a5dbe9bf4785439"
+    },
+    "base_v8/ESPNETV2_GAP8_TASK_BRANCHING_20260901.md": {
+      "bytes": 6768,
+      "sha256": "1510c3776c901ca3c4960d3041228dc6e9a95db00cf1834efbb06303add27029"
+    },
+    "base_v8/_PROMOTED.json": {
+      "bytes": 186,
+      "sha256": "96c34efc4f01138d549c7b6b658456493b43798cea3978e1aefeba74318b9c06"
+    },
+    "base_v8/best.pt": {
+      "bytes": 3184759,
+      "sha256": "ee6453ba47c637dfb1840ac2d6105b222972a70c4bbf841cd1b1aae972c22c8f"
+    },
+    "base_v8/bridge/corner_head_state.npz": {
+      "bytes": 520946,
+      "sha256": "89829194fa3f7892d37679ba8d235c9e56cf9c336d0c72fb64551db312eeb2bb"
+    },
+    "base_v8/bridge/encoder_state.npz": {
+      "bytes": 36062,
+      "sha256": "442ff68225a2bdb95ef9b836c203b3952bbbed2ae63d19843ddd613afef35af9"
+    },
+    "base_v8/bridge/gate_encoder_state.npz": {
+      "bytes": 36062,
+      "sha256": "4926ad5ac1fa513da17e7519b1223258a33a83f59f9ee874c85fb8d9659f99c4"
+    },
+    "base_v8/bridge/gate_head_state.npz": {
+      "bytes": 1297314,
+      "sha256": "180304d6aacfc413649facc622f034c6b3d6e2a589276aec43ed66a1c862fb5f"
+    },
+    "base_v8/bridge/global_head_state.npz": {
+      "bytes": 1296538,
+      "sha256": "a02c0f7edcefc0b6a60f9adf18da189deb21ac3ad416abbfdf9a6677222b8390"
+    },
+    "base_v8/bridge/manifest.json": {
+      "bytes": 1431,
+      "sha256": "6e7c802e238e617c329010d9caef895189e72cd29baae4c08a67baa12530e5ed"
+    },
+    "base_v8/bridge/output_decode.npz": {
+      "bytes": 840,
+      "sha256": "3c1b9e2cd4ee9f24598fb9683e3779a14be10281992bc262723563193cda3b88"
+    },
+    "base_v8/corner_head_dory_report.json": {
+      "bytes": 1451,
+      "sha256": "949219c28387fedea21490645f0da1dfaa55ca2a1182b1eba5e278b6d8deed00"
+    },
+    "base_v8/corner_head_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "base_v8/corner_head_gap8_application/gap8_vars.mk": {
+      "bytes": 381,
+      "sha256": "de37c4fd749b657a740dc386358c631f387259b6a3ef136e691ee354993d2635"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_ReluConvolution0_weights.hex": {
+      "bytes": 18688,
+      "sha256": "87d3c379dffcd855a851caf099d7da13a9a5652fb0cd645711a69e5ef39c25f5"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_ReluConvolution1_weights.hex": {
+      "bytes": 37120,
+      "sha256": "ac4a88c2a69c3c56d5bd03a01b070fa31cdcc95391443fd7504606bb61ed03cb"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_ReluConvolution2_weights.hex": {
+      "bytes": 37120,
+      "sha256": "1b0841398e5e760ad5f2aa4c0aa2f8d9ade78bd8336d91dc16943f676b0f0706"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_ReluConvolution3_weights.hex": {
+      "bytes": 37120,
+      "sha256": "794b0958ce903bb83127d1d6e0206b3945dc31bf8187edeb2748ec5b25dc77c2"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_ReluConvolution4_weights.hex": {
+      "bytes": 272,
+      "sha256": "034a8f47ae1b0a380542037d7770a1a243651c40c8d0cef0462af137cd06cdbd"
+    },
+    "base_v8/corner_head_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 51200,
+      "sha256": "55f5c72f2778e8291f63d99454a39262af92b28161156ad9ce9fcf38cf92e2c3"
+    },
+    "base_v8/corner_head_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "base_v8/corner_head_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "base_v8/corner_head_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_ReluConvolution0.h": {
+      "bytes": 813,
+      "sha256": "0a37af65d862283c55d41066c295b9e7433987af167f2443f9a56c81d4a54aac"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_ReluConvolution1.h": {
+      "bytes": 813,
+      "sha256": "4a8680e80c0975dd9b01aefa7505563346963794da145a3e378eee1c6146f0fd"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_ReluConvolution2.h": {
+      "bytes": 813,
+      "sha256": "c0dfa9cc57c65d9e5833b9040fe65bc5765a2a40d6d43b9fb2b9746d8361e55b"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_ReluConvolution3.h": {
+      "bytes": 813,
+      "sha256": "e543c3fa3d27dcee17f558bb9267ce2eba45bdb3328f0285b5467d35ea3b1776"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_ReluConvolution4.h": {
+      "bytes": 813,
+      "sha256": "19e5f2d6557424619ed2ee17110b4d2d5a7ec3693ad75f1ec2d2a93b8592d87b"
+    },
+    "base_v8/corner_head_gap8_application/inc/gap8_network.h": {
+      "bytes": 3002,
+      "sha256": "6b716b75678b1e579e6ca6217f8d73066e7deead0ed4d25842375e099f77cee2"
+    },
+    "base_v8/corner_head_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "base_v8/corner_head_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "base_v8/corner_head_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "base_v8/corner_head_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "base_v8/corner_head_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "base_v8/corner_head_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_ReluConvolution0.c": {
+      "bytes": 8672,
+      "sha256": "e797b42301a595c5db7d5c9cff121d33236b99b90304a6e0b7d90b77fb690174"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_ReluConvolution1.c": {
+      "bytes": 8673,
+      "sha256": "a7006a272b344da38678390854dc60aab838fada6d2573c4c76e83c0ab70959d"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_ReluConvolution2.c": {
+      "bytes": 8673,
+      "sha256": "9800dbb39de727cf8908dd08489e9fcd5fd5d12bce1fa7347a6159f2f1423268"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_ReluConvolution3.c": {
+      "bytes": 8673,
+      "sha256": "0da489dbf763e3c680e72551009b1e20c81af8d79ccb76729f53813f8f910b10"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_ReluConvolution4.c": {
+      "bytes": 8706,
+      "sha256": "837d0cf15f7d2ada1772f384def761329c7594d2a1b10968ececaaa346101231"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 196182,
+      "sha256": "05095fe51836482a64096e9c63dcb4372459a8063315c44425a503381cf00293"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "5973a97cb85bd5e9a09f0ac51eb00f3b835aa37ac7cd5d9f5de7b9a010e1bff3"
+    },
+    "base_v8/corner_head_gap8_application/src/gap8_network.c": {
+      "bytes": 11499,
+      "sha256": "8f83a33785290ef7715a464e14c81348090e3e66f02cb26dac51214780f0230a"
+    },
+    "base_v8/corner_head_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "base_v8/corner_head_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "base_v8/corner_head_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "base_v8/corner_head_gvsoc_checksum.log": {
+      "bytes": 40591,
+      "sha256": "abac61a30b5732c5f254cee263e977aee6a4802a9275707dfc7e036b7ed6d2ce"
+    },
+    "base_v8/encoder_dory_report.json": {
+      "bytes": 1634,
+      "sha256": "152a0333b0ca73d685051ab7e2c83a8b4f63e6373f3503ce80a0c9446c1daf5f"
+    },
+    "base_v8/encoder_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "base_v8/encoder_gap8_application/gap8_vars.mk": {
+      "bytes": 611,
+      "sha256": "8e8ae109ba360f752aa145dca8b656ffed7d5082284c14f7d12ca3de05557fc8"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution0_weights.hex": {
+      "bytes": 688,
+      "sha256": "3f9e8590d888326db4d4bb36e90f72543c2460fcde7d92a542cc1c794ba449f8"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution1_weights.hex": {
+      "bytes": 400,
+      "sha256": "7e5df2502022a1a51d53e307e9ae7c2fa59f0facf1a59b1556d7240be723e8fd"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution2_weights.hex": {
+      "bytes": 512,
+      "sha256": "a92862c3c4a08f0f2c3aa0ae59dc7b75c41fe07166ea72c7f2e94fb4968b4f83"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution3_weights.hex": {
+      "bytes": 400,
+      "sha256": "97555e21382b6af5470183b459554128e4fdc8848990728f2cce508716e74867"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution4_weights.hex": {
+      "bytes": 1024,
+      "sha256": "5caec8009aa3abf48112c9fb9ad4382939611fb998aab8e489be5fab6d1102f8"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution5_weights.hex": {
+      "bytes": 800,
+      "sha256": "61127cfbab6a184c0a48b0f09be5d17efa288a434e595125a07704a644071206"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution6_weights.hex": {
+      "bytes": 1536,
+      "sha256": "827a5cbc97c77825eb65148d99b9e5a6518cadc40d7b7e9a6187d45460ae4b1c"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution8_weights.hex": {
+      "bytes": 800,
+      "sha256": "8b483e93cd6f850afe61d7b32b578442af470a786c38ff7f102c06459f6aa503"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_BNReluConvolution9_weights.hex": {
+      "bytes": 1536,
+      "sha256": "46e12a91563cc2fc2be6f24dd6acb367dedff2bbddb8b3b340c1941fc00bc15c"
+    },
+    "base_v8/encoder_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 76800,
+      "sha256": "526d77e2e892f71e79d8ee5568b3b2f54ddb28d187fa3569636074aa6a880744"
+    },
+    "base_v8/encoder_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "base_v8/encoder_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "base_v8/encoder_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution0.h": {
+      "bytes": 819,
+      "sha256": "977bcb789f775ec22ae24487d35f3246095226e52897802dbfa20817261bf4b6"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution1.h": {
+      "bytes": 819,
+      "sha256": "2919603c97da43a2c06bd68d488ba6d09f3c4109cae39e7bba698c8f775c98d0"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution2.h": {
+      "bytes": 819,
+      "sha256": "99b96943e9aa370361c2ed6348eb31a787606e48477b38d0db0c2ba5a8949bfc"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution3.h": {
+      "bytes": 819,
+      "sha256": "ad9fc1fdbbad6481d197f9bd60e8b402a758e78dd7035217070020224591f887"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution4.h": {
+      "bytes": 819,
+      "sha256": "3a774615534e79b4675b393390e88dac117a892680c07b181de05802b1c2f3f0"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution5.h": {
+      "bytes": 819,
+      "sha256": "d77a1d456e7a333384d1bc65e703172e88ee2106f706b0eda59909be8d091493"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution6.h": {
+      "bytes": 819,
+      "sha256": "d60a87f3ea67283ab4091a3b94c6204e3914791314202d7ce657709d3bdbb7cb"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution8.h": {
+      "bytes": 819,
+      "sha256": "31af66cc7b4ffb8d12bac6edecffcb479a41d6363464a0e62dc96025ccde75c2"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_BNReluConvolution9.h": {
+      "bytes": 819,
+      "sha256": "4fa3ba8ed0e8030a794c193fb753b1e1c6bc722b241a59bc3ac08e71f4556289"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_ReluQAddition10.h": {
+      "bytes": 810,
+      "sha256": "aeee9fbce90d21ac64ac92bd3f7212021f286c5dee4907dce68d55b730f24323"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_ReluQAddition7.h": {
+      "bytes": 807,
+      "sha256": "77859678943ae9b830a80c12e62aaa25bad0a132a54ae5fec0d56d01a3d16227"
+    },
+    "base_v8/encoder_gap8_application/inc/gap8_network.h": {
+      "bytes": 3807,
+      "sha256": "930c4739bd228d4910d805891d020b5d897a89aef4ed6e7b0f07bd2b959a5c94"
+    },
+    "base_v8/encoder_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "base_v8/encoder_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "base_v8/encoder_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "base_v8/encoder_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "base_v8/encoder_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "base_v8/encoder_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution0.c": {
+      "bytes": 8803,
+      "sha256": "cb97126f4b9a78d9783fde23ab6c4e0b035109f0afa4cd347e56fd802dc73fef"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution1.c": {
+      "bytes": 8925,
+      "sha256": "fe1c9de7ffe75aa1e2fd867db25f3834b3cd2a1c4fb25b91e4ccb4863613adc4"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution2.c": {
+      "bytes": 8824,
+      "sha256": "b76033b0577bfa99c466e1de5d5bc3d5b7d999ee281f64b078217211f1b791bf"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution3.c": {
+      "bytes": 8923,
+      "sha256": "c11431d08f8e61241419e74be270c87a965da2283ec46b2d5d2a2da2d752430a"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution4.c": {
+      "bytes": 8822,
+      "sha256": "a8cf40314572eecaf5e6780101f2d08d0d4052a9d0d83284b5d9166318d5d1a9"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution5.c": {
+      "bytes": 8927,
+      "sha256": "f90a7d919063b5e6d2203d59b3d42183e1fc716d56903dc68b4c8b6e44f1bd67"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution6.c": {
+      "bytes": 8825,
+      "sha256": "2b4595f119365d0b8e421c76f77885902cde95a5b5a1db7fd2fc306d62cf9aef"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution8.c": {
+      "bytes": 8927,
+      "sha256": "238fb2e9bc1d103cda0d20080c47e482d8f61191022e318a6e700d32edc35a78"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_BNReluConvolution9.c": {
+      "bytes": 8825,
+      "sha256": "80db785aceff19f13128674e7ac14588667d3d80d91a58bbb48ea4c38bdc723c"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_ReluQAddition10.c": {
+      "bytes": 9243,
+      "sha256": "4683f36062a207e2d1b165aa2a1b841012f62846c53a013d0eb603824e138dce"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_ReluQAddition7.c": {
+      "bytes": 9237,
+      "sha256": "5678d6ed533feb820fc2d7b6263dff4aa71a294bf36eed4f84bddb49cf27229c"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 372549,
+      "sha256": "82b00d6e09fabb8cb91cfae2e9d46988c677948b8813e382698caee86f38dc65"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "9c62e61df4a0ae4a43e7aaf44f44dd2b642f3a553685c4f68c4f80e0d60c40c6"
+    },
+    "base_v8/encoder_gap8_application/src/gap8_network.c": {
+      "bytes": 12320,
+      "sha256": "f8c141bbf2a5b46191669661b4bb554f43fd72527126d9bc78d8e886dcb133fd"
+    },
+    "base_v8/encoder_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "base_v8/encoder_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "base_v8/encoder_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "base_v8/encoder_gvsoc_checksum.log": {
+      "bytes": 49469,
+      "sha256": "eb65db17200b1291f14a0189001dc602a782350dd571dedb88f5b4eb36259035"
+    },
+    "base_v8/float_student_report.json": {
+      "bytes": 5578,
+      "sha256": "cfc608675632a80c91bcc381e012230c92aeedd97908a29df4081ff3a2ad61db"
+    },
+    "base_v8/gate_encoder_dory_report.json": {
+      "bytes": 1658,
+      "sha256": "b41b4cea8018f0bbde3875672d4321cdc76f3a8811b16d2de13c6007de7ca635"
+    },
+    "base_v8/gate_encoder_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "base_v8/gate_encoder_gap8_application/gap8_vars.mk": {
+      "bytes": 611,
+      "sha256": "8e8ae109ba360f752aa145dca8b656ffed7d5082284c14f7d12ca3de05557fc8"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution0_weights.hex": {
+      "bytes": 688,
+      "sha256": "c468c62914b1de0aed7a23c3212f87cdff9bc32d620d3f6e4258999e7bcfef95"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution1_weights.hex": {
+      "bytes": 400,
+      "sha256": "c880df02951edc3dbd18ef5f2f997d183c2e6ed6ddd9ae2db01cc2862c2c2626"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution2_weights.hex": {
+      "bytes": 512,
+      "sha256": "e3a3ef018ff7106e9b807220417fc0946e32da3397e7909300b6279f167f62ae"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution3_weights.hex": {
+      "bytes": 400,
+      "sha256": "a7c328ff8fc689d3ee75c7e0b30774160e14da8ecd98f24c7e09cb4cd3fc0f96"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution4_weights.hex": {
+      "bytes": 1024,
+      "sha256": "353210f5dae8e02d9a134ef4c52528faa9af532279179ba484dafd7116a9441a"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution5_weights.hex": {
+      "bytes": 800,
+      "sha256": "9f03f6a98afe430e59d6797d40a17227cf7a512c5f59b2d84b94570ef9bafbc7"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution6_weights.hex": {
+      "bytes": 1536,
+      "sha256": "de8105996ff87cef33440925e6aba69ab60b841ed97be6388395d127872dada2"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution8_weights.hex": {
+      "bytes": 800,
+      "sha256": "02a7ccce054d1fe76fd92796961ecbdb300340bca7d92fd843f74881203c85c5"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_BNReluConvolution9_weights.hex": {
+      "bytes": 1536,
+      "sha256": "74d092a58006ce5fb21994380933c7b0d550fda1a8353a9f1baecc289c9d5a2b"
+    },
+    "base_v8/gate_encoder_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 76800,
+      "sha256": "526d77e2e892f71e79d8ee5568b3b2f54ddb28d187fa3569636074aa6a880744"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution0.h": {
+      "bytes": 819,
+      "sha256": "977bcb789f775ec22ae24487d35f3246095226e52897802dbfa20817261bf4b6"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution1.h": {
+      "bytes": 819,
+      "sha256": "2919603c97da43a2c06bd68d488ba6d09f3c4109cae39e7bba698c8f775c98d0"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution2.h": {
+      "bytes": 819,
+      "sha256": "99b96943e9aa370361c2ed6348eb31a787606e48477b38d0db0c2ba5a8949bfc"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution3.h": {
+      "bytes": 819,
+      "sha256": "ad9fc1fdbbad6481d197f9bd60e8b402a758e78dd7035217070020224591f887"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution4.h": {
+      "bytes": 819,
+      "sha256": "3a774615534e79b4675b393390e88dac117a892680c07b181de05802b1c2f3f0"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution5.h": {
+      "bytes": 819,
+      "sha256": "d77a1d456e7a333384d1bc65e703172e88ee2106f706b0eda59909be8d091493"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution6.h": {
+      "bytes": 819,
+      "sha256": "d60a87f3ea67283ab4091a3b94c6204e3914791314202d7ce657709d3bdbb7cb"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution8.h": {
+      "bytes": 819,
+      "sha256": "31af66cc7b4ffb8d12bac6edecffcb479a41d6363464a0e62dc96025ccde75c2"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_BNReluConvolution9.h": {
+      "bytes": 819,
+      "sha256": "4fa3ba8ed0e8030a794c193fb753b1e1c6bc722b241a59bc3ac08e71f4556289"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_ReluQAddition10.h": {
+      "bytes": 810,
+      "sha256": "aeee9fbce90d21ac64ac92bd3f7212021f286c5dee4907dce68d55b730f24323"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_ReluQAddition7.h": {
+      "bytes": 807,
+      "sha256": "77859678943ae9b830a80c12e62aaa25bad0a132a54ae5fec0d56d01a3d16227"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/gap8_network.h": {
+      "bytes": 3811,
+      "sha256": "ab7421d1bf5a4563671d6f366b124d2004a3e537c17c83bfb05c1b320b2cc4e5"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "base_v8/gate_encoder_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "base_v8/gate_encoder_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution0.c": {
+      "bytes": 8803,
+      "sha256": "cb97126f4b9a78d9783fde23ab6c4e0b035109f0afa4cd347e56fd802dc73fef"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution1.c": {
+      "bytes": 8925,
+      "sha256": "fe1c9de7ffe75aa1e2fd867db25f3834b3cd2a1c4fb25b91e4ccb4863613adc4"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution2.c": {
+      "bytes": 8824,
+      "sha256": "b76033b0577bfa99c466e1de5d5bc3d5b7d999ee281f64b078217211f1b791bf"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution3.c": {
+      "bytes": 8923,
+      "sha256": "c11431d08f8e61241419e74be270c87a965da2283ec46b2d5d2a2da2d752430a"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution4.c": {
+      "bytes": 8822,
+      "sha256": "a8cf40314572eecaf5e6780101f2d08d0d4052a9d0d83284b5d9166318d5d1a9"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution5.c": {
+      "bytes": 8927,
+      "sha256": "f90a7d919063b5e6d2203d59b3d42183e1fc716d56903dc68b4c8b6e44f1bd67"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution6.c": {
+      "bytes": 8825,
+      "sha256": "2b4595f119365d0b8e421c76f77885902cde95a5b5a1db7fd2fc306d62cf9aef"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution8.c": {
+      "bytes": 8927,
+      "sha256": "238fb2e9bc1d103cda0d20080c47e482d8f61191022e318a6e700d32edc35a78"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_BNReluConvolution9.c": {
+      "bytes": 8825,
+      "sha256": "80db785aceff19f13128674e7ac14588667d3d80d91a58bbb48ea4c38bdc723c"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_ReluQAddition10.c": {
+      "bytes": 9239,
+      "sha256": "d4d61a1a88274e67e13ad2d67d1d99c7275818533b89b37382cf9d20e3b59552"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_ReluQAddition7.c": {
+      "bytes": 9237,
+      "sha256": "f58c1f57cabc5f0caa357a334f66599d3f79bb51fd9e068106545a83cb81e4e3"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 372549,
+      "sha256": "82b00d6e09fabb8cb91cfae2e9d46988c677948b8813e382698caee86f38dc65"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "9c62e61df4a0ae4a43e7aaf44f44dd2b642f3a553685c4f68c4f80e0d60c40c6"
+    },
+    "base_v8/gate_encoder_gap8_application/src/gap8_network.c": {
+      "bytes": 12320,
+      "sha256": "8cd127ccda7043a5622e834dc3839e5e831e7f26d126e59da6bd3124b5c8ce4b"
+    },
+    "base_v8/gate_encoder_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "base_v8/gate_encoder_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "base_v8/gate_encoder_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "base_v8/gate_encoder_gvsoc_checksum.log": {
+      "bytes": 50024,
+      "sha256": "a3ccf5024edb7909671635a75f94f461ed497db41237da4442b7dd6ac52be7fe"
+    },
+    "base_v8/gate_gvsoc_acceptance.json": {
+      "bytes": 4622,
+      "sha256": "c4abbe9b1f7639cf1489cf6e4d969cfc892941eaad27139ef0cd211c77878fec"
+    },
+    "base_v8/gate_head_dory_report.json": {
+      "bytes": 1495,
+      "sha256": "8399af81745b15764b2df46935176632a7f3b1533b23ad9969e7c3a22238fc50"
+    },
+    "base_v8/gate_head_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "base_v8/gate_head_gap8_application/gap8_vars.mk": {
+      "bytes": 434,
+      "sha256": "3341a8c4b18b308b6729ae4fc8b0c4a9a1c0d7bd6803112b12615463570a63a0"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution0_weights.hex": {
+      "bytes": 18688,
+      "sha256": "35372e16d4cc84d8d1e471a343febc96c1100d00f126d64194ad91cb208334c4"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution1_weights.hex": {
+      "bytes": 55680,
+      "sha256": "65c6b18ce4cb21566a22fb0d40a88d89a8956018f9442db05706117972bce09d"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution2_weights.hex": {
+      "bytes": 83328,
+      "sha256": "3fe3ccc3f9dd6c013e8d97e3de471b479aa33ccb0d52993f43c1234bc5eea720"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution3_weights.hex": {
+      "bytes": 83328,
+      "sha256": "8cdd713bfbb0dcdaa81d72c5f4424b9d976b15ce7911a0f465a78fbebf1e38ff"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution4_weights.hex": {
+      "bytes": 83328,
+      "sha256": "9c2e70e53461d3d81ab544a71240d0ef0a767e59be5ef764d13cd51c879ed110"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_ReluConvolution6_weights.hex": {
+      "bytes": 500,
+      "sha256": "3f0f85994b5a06f840219c23c2567a84c645f44d4479a76025ace9a90d40bd56"
+    },
+    "base_v8/gate_head_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 51200,
+      "sha256": "55f5c72f2778e8291f63d99454a39262af92b28161156ad9ce9fcf38cf92e2c3"
+    },
+    "base_v8/gate_head_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "base_v8/gate_head_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "base_v8/gate_head_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution0.h": {
+      "bytes": 813,
+      "sha256": "0a37af65d862283c55d41066c295b9e7433987af167f2443f9a56c81d4a54aac"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution1.h": {
+      "bytes": 813,
+      "sha256": "4a8680e80c0975dd9b01aefa7505563346963794da145a3e378eee1c6146f0fd"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution2.h": {
+      "bytes": 813,
+      "sha256": "c0dfa9cc57c65d9e5833b9040fe65bc5765a2a40d6d43b9fb2b9746d8361e55b"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution3.h": {
+      "bytes": 813,
+      "sha256": "e543c3fa3d27dcee17f558bb9267ce2eba45bdb3328f0285b5467d35ea3b1776"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution4.h": {
+      "bytes": 813,
+      "sha256": "19e5f2d6557424619ed2ee17110b4d2d5a7ec3693ad75f1ec2d2a93b8592d87b"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluConvolution6.h": {
+      "bytes": 813,
+      "sha256": "96e88475963a922d275b8d4c528db9b5224633be34e3e35d4416982369ef541a"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_ReluPooling5.h": {
+      "bytes": 801,
+      "sha256": "d2d7c158b1f727a8c4013b9626343bc2ebb2a008a19bdebf81a0efc1ab6f72b9"
+    },
+    "base_v8/gate_head_gap8_application/inc/gap8_network.h": {
+      "bytes": 3215,
+      "sha256": "50b39afc8366dfdf382e5e8d0de7e16e29e443812f1206ce04bd01bac47d749d"
+    },
+    "base_v8/gate_head_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "base_v8/gate_head_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "base_v8/gate_head_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "base_v8/gate_head_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "base_v8/gate_head_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "base_v8/gate_head_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution0.c": {
+      "bytes": 8672,
+      "sha256": "e797b42301a595c5db7d5c9cff121d33236b99b90304a6e0b7d90b77fb690174"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution1.c": {
+      "bytes": 8668,
+      "sha256": "5f62dabf57fc767e18d3227e756d1af8b8081aca1d341b01e502cb6a44ef4e84"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution2.c": {
+      "bytes": 8664,
+      "sha256": "9a8d4f27502e7ac28c774e276b250b3d4aa05c2f6940583f8f46da484716cddc"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution3.c": {
+      "bytes": 8664,
+      "sha256": "b4ec05fc5f9524463c87bdd5fbe405e27560eee6961008118b230bce794839c1"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution4.c": {
+      "bytes": 8664,
+      "sha256": "70ed4383a14744ff897e2b07181a4a30ab1b956018561aac297f60ff7daab8ce"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluConvolution6.c": {
+      "bytes": 8675,
+      "sha256": "a1ab54758418f0984a599284620e68506386d80c8f79445977cbc38241feb16f"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_ReluPooling5.c": {
+      "bytes": 8596,
+      "sha256": "ccd662c2332f1c068cef0d3107073697d29ac44b0606e7bbbb02305f06ac45b1"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 196182,
+      "sha256": "05095fe51836482a64096e9c63dcb4372459a8063315c44425a503381cf00293"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "5973a97cb85bd5e9a09f0ac51eb00f3b835aa37ac7cd5d9f5de7b9a010e1bff3"
+    },
+    "base_v8/gate_head_gap8_application/src/gap8_network.c": {
+      "bytes": 11753,
+      "sha256": "03175b648ee55409cd921aee04b4d34d4136e8a7af5ef2a68808fbeb83d85d01"
+    },
+    "base_v8/gate_head_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "base_v8/gate_head_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "base_v8/gate_head_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "base_v8/gate_head_gvsoc_checksum.log": {
+      "bytes": 43347,
+      "sha256": "d4e92b4742fad34da6adc21d87e2d2de9373aea4c08507a21bbcff96e916c8af"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/corner_head_qat.pt": {
+      "bytes": 527697,
+      "sha256": "8005041a4f884dd5d10ea9f365f59919f81fbc502cebd9db93feee4f6dfe300a"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/corner_head_qat_history.json": {
+      "bytes": 4476,
+      "sha256": "d805d617d9604bb41e2ba141b596911271568408a3b2afe3b28a4f572b46dc68"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/gate_encoder_qat.pt": {
+      "bytes": 44249,
+      "sha256": "860ad1b178289e93e4f93aae7a5415dde3196bef5e9239e802285bed39ce97f6"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/gate_encoder_qat_history.json": {
+      "bytes": 694,
+      "sha256": "42b6532cf844af5be6fd6c71be5f8969637d8c1dcdaeb5d4c376c1aa3101f348"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/gate_head_qat.pt": {
+      "bytes": 1305331,
+      "sha256": "0ffd130c5770e109703bba71ce1640df6eec3b8dd38240c27e4088f0db62df4f"
+    },
+    "base_v8/gate_qat_symw8_gw7_cw7/gate_head_qat_history.json": {
+      "bytes": 5428,
+      "sha256": "b8322f815f39dfe992e7232fd24e5967e9a69306e6bc4390b072a9dba0316051"
+    },
+    "base_v8/global_head_dory_report.json": {
+      "bytes": 1492,
+      "sha256": "de619906bf88d6eba59c60cee17685aa674e95457c3a17744077cb5c99270953"
+    },
+    "base_v8/global_head_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "base_v8/global_head_gap8_application/gap8_vars.mk": {
+      "bytes": 434,
+      "sha256": "3341a8c4b18b308b6729ae4fc8b0c4a9a1c0d7bd6803112b12615463570a63a0"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution0_weights.hex": {
+      "bytes": 18688,
+      "sha256": "1f5a832641e4e411ba30f0de0462f2f2402407b8873382e2064a86508c88ec4d"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution1_weights.hex": {
+      "bytes": 55680,
+      "sha256": "4f08dd40c810641d58b2b08e947b97ae839c1a2e7b2ad4133260077f7ed1627c"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution2_weights.hex": {
+      "bytes": 83328,
+      "sha256": "4422a4d4556619f451a97384ab20f2c066e49b5761332f438b408aaf0cf4f756"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution3_weights.hex": {
+      "bytes": 83328,
+      "sha256": "c855405ac6c8a5a74bacca23c7cc89d01a822f0713ef6521d7fb58d29e87c066"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution4_weights.hex": {
+      "bytes": 83328,
+      "sha256": "d2f4e8ca036ee597dd30a6b9d3bb66eaccc813f1d37092b6e031edb81235778c"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_ReluConvolution6_weights.hex": {
+      "bytes": 300,
+      "sha256": "a2b02fa21f41ecab8b43bd3495acb99391e2d326ad211ce575e1661ed3a69bdd"
+    },
+    "base_v8/global_head_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 51200,
+      "sha256": "395c6c4142a40f9db502aa59a6c16c1df9f305ba19265e9c6f3eddadbfc8aab5"
+    },
+    "base_v8/global_head_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "base_v8/global_head_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "base_v8/global_head_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution0.h": {
+      "bytes": 813,
+      "sha256": "0a37af65d862283c55d41066c295b9e7433987af167f2443f9a56c81d4a54aac"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution1.h": {
+      "bytes": 813,
+      "sha256": "4a8680e80c0975dd9b01aefa7505563346963794da145a3e378eee1c6146f0fd"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution2.h": {
+      "bytes": 813,
+      "sha256": "c0dfa9cc57c65d9e5833b9040fe65bc5765a2a40d6d43b9fb2b9746d8361e55b"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution3.h": {
+      "bytes": 813,
+      "sha256": "e543c3fa3d27dcee17f558bb9267ce2eba45bdb3328f0285b5467d35ea3b1776"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution4.h": {
+      "bytes": 813,
+      "sha256": "19e5f2d6557424619ed2ee17110b4d2d5a7ec3693ad75f1ec2d2a93b8592d87b"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluConvolution6.h": {
+      "bytes": 813,
+      "sha256": "96e88475963a922d275b8d4c528db9b5224633be34e3e35d4416982369ef541a"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_ReluPooling5.h": {
+      "bytes": 801,
+      "sha256": "d2d7c158b1f727a8c4013b9626343bc2ebb2a008a19bdebf81a0efc1ab6f72b9"
+    },
+    "base_v8/global_head_gap8_application/inc/gap8_network.h": {
+      "bytes": 3216,
+      "sha256": "c45a3c8f16f583c61036ea6fa4b88270834a440b3531502067ee9c20fe8adab4"
+    },
+    "base_v8/global_head_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "base_v8/global_head_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "base_v8/global_head_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "base_v8/global_head_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "base_v8/global_head_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "base_v8/global_head_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution0.c": {
+      "bytes": 8672,
+      "sha256": "e797b42301a595c5db7d5c9cff121d33236b99b90304a6e0b7d90b77fb690174"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution1.c": {
+      "bytes": 8668,
+      "sha256": "5f62dabf57fc767e18d3227e756d1af8b8081aca1d341b01e502cb6a44ef4e84"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution2.c": {
+      "bytes": 8664,
+      "sha256": "9a8d4f27502e7ac28c774e276b250b3d4aa05c2f6940583f8f46da484716cddc"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution3.c": {
+      "bytes": 8664,
+      "sha256": "b4ec05fc5f9524463c87bdd5fbe405e27560eee6961008118b230bce794839c1"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution4.c": {
+      "bytes": 8664,
+      "sha256": "70ed4383a14744ff897e2b07181a4a30ab1b956018561aac297f60ff7daab8ce"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluConvolution6.c": {
+      "bytes": 8675,
+      "sha256": "3df059fdac43cf2c4c0cb725b9d1d86ea62dbc1261058b5be0f98ddd5bb48025"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_ReluPooling5.c": {
+      "bytes": 8596,
+      "sha256": "bb629db72ccdb2b8a4748c38410d722de97305f0fc41fa00817e612202e0ffe3"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 202205,
+      "sha256": "620fc6aabd0b6719ebefe2583bed07aa63891550260ca1a875f1c5d12c165664"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "5973a97cb85bd5e9a09f0ac51eb00f3b835aa37ac7cd5d9f5de7b9a010e1bff3"
+    },
+    "base_v8/global_head_gap8_application/src/gap8_network.c": {
+      "bytes": 11753,
+      "sha256": "53857c239457e598c494ac9ab79e131a5a15ce4d08b4032cc3e6d96a8124ae43"
+    },
+    "base_v8/global_head_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "base_v8/global_head_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "base_v8/global_head_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "base_v8/global_head_gvsoc_checksum.log": {
+      "bytes": 43545,
+      "sha256": "cacb75d49855cc3363602a5e06d7333c58657db533ae7d028dffa1d2ba8cca20"
+    },
+    "base_v8/history.json": {
+      "bytes": 31173,
+      "sha256": "68846a385dbb380895cede60874c1d08b7d9590709c9540c17992758726589f8"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/corner_head_int.onnx": {
+      "bytes": 520977,
+      "sha256": "1987926e83d79f2700a6af463535d7441c8ab1dd959c170a26a7a160545e4e74"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/corner_head_parity_predictions.npz": {
+      "bytes": 9478881,
+      "sha256": "5239402c3c68d4348fc204eb26ec68f6052fcf3035999e521c15cdac503cf488"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/dory_config.json": {
+      "bytes": 139,
+      "sha256": "164883c3bfd1c7ad1d052cd0539273440eed8fc8f3615923841ab706ecd71307"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/input.txt": {
+      "bytes": 396652,
+      "sha256": "67a6595073e8fb10cb9e1a355666949b01555cdfe4a1ee6a5511a65cc42246a7"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/out_layer0.txt": {
+      "bytes": 186896,
+      "sha256": "a9b520e60feb4eff86a64e9efd932dd0a85609dafabad1472205e2bc417ddcdf"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/out_layer1.txt": {
+      "bytes": 191890,
+      "sha256": "a2ca3cd5a4c4b430c65b0e153ac6fb631c18b0758235da5fd85d456ac882d710"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/out_layer2.txt": {
+      "bytes": 192490,
+      "sha256": "1c73384bea5c0f70829bc76ad13fafc60881a9491342fe7052a20a0b92d8b23f"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/out_layer3.txt": {
+      "bytes": 191972,
+      "sha256": "ad795905ad562c86876dcc0932fd37d46ce75e62567cd4ebdeb05dd72000d661"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/corner_head/out_layer4.txt": {
+      "bytes": 11817,
+      "sha256": "69ad9d7812065274e8fdd657e7dbe1803e22dffdeb78996261d9f89518a6ed55"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/dory_config.json": {
+      "bytes": 140,
+      "sha256": "2f8e08d191e097677af765be344ec4b985229d2ade7fd263b84dd4925de42da9"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/gate_encoder_int.onnx": {
+      "bytes": 24556,
+      "sha256": "f767698f3bdd4976745613fdaa90e5950fa125b56d25d18383da7d48567e896c"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/input.txt": {
+      "bytes": 673287,
+      "sha256": "2fd165369b654d624a02fafc916531156436df38cbd5e957720b1be63d3f091e"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer0.txt": {
+      "bytes": 758725,
+      "sha256": "afbafafb2f41cf1576a4be4403c91e9ba76b867c20b589e9e4a807fb4f75fd02"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer1.txt": {
+      "bytes": 747760,
+      "sha256": "20d2ee83459ac0267fa5f64f44a4e1d7a390d4b19cbd16690f1aa6d2099fe0ab"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer10.txt": {
+      "bytes": 396652,
+      "sha256": "67a6595073e8fb10cb9e1a355666949b01555cdfe4a1ee6a5511a65cc42246a7"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer2.txt": {
+      "bytes": 758636,
+      "sha256": "31bffb7ed818dcb7db1f791e29592280e4be712a6772864f26d34daaa1356f56"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer3.txt": {
+      "bytes": 189977,
+      "sha256": "e09c7fabc2c9c7567ab49f59007260a71276ccfb822a4435561c9ed323a7cacd"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer4.txt": {
+      "bytes": 390007,
+      "sha256": "e5dc2fe21fe5c905a6c932afe43258f9d056ee422b9a84836afd636b0a0744b3"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer5.txt": {
+      "bytes": 382743,
+      "sha256": "2a4359a4d795a853d6ce4910e1ff82916b58c33e78cec257d93881d9bf95c3c3"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer6.txt": {
+      "bytes": 389086,
+      "sha256": "bf4f945360f887866bdaa56c7e41307920913eb5b84f1a07b938a1d6788f2338"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer7.txt": {
+      "bytes": 397611,
+      "sha256": "979b424592f26fff8e8599c227c921a162c3c6e7288fb6c3e7c924546cc7705d"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer8.txt": {
+      "bytes": 380256,
+      "sha256": "4c4d02b11b0464bb1145e9ce7e73a1764f96725ac05322aff3bcf8f02eec682c"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_encoder/out_layer9.txt": {
+      "bytes": 383812,
+      "sha256": "3e0a22833f2231a802e8ccf17e022f8b1c2b16338f8d4cbfc979e0171642f170"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/dory_config.json": {
+      "bytes": 137,
+      "sha256": "e9f25f88e46e0d3f458a3a8ea4789809f18e55008ed48fe03f5fc81f9625f47b"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/gate_head_int.onnx": {
+      "bytes": 1297685,
+      "sha256": "9c3f787fe01fa80bdd48ad1d8e5045d565054dc6e21842798960c229c54265c8"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/gate_head_parity_predictions.npz": {
+      "bytes": 54212,
+      "sha256": "6b0b60a515e377e259bf84c75f38d87d53cdb3d2e80a14ee502f51946fd65e53"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/input.txt": {
+      "bytes": 396652,
+      "sha256": "67a6595073e8fb10cb9e1a355666949b01555cdfe4a1ee6a5511a65cc42246a7"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer0.txt": {
+      "bytes": 184209,
+      "sha256": "1a3e93db95ff77050c0c8184d366a2c2fecdadac2bb56a3d2837ae2cba05060a"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer1.txt": {
+      "bytes": 69173,
+      "sha256": "d1265c67a8db101f90e8779dfac3f44a159566b6b91879910fbb6618f57e3448"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer2.txt": {
+      "bytes": 68445,
+      "sha256": "f46bfbc20e76014c958e711b82381f0d1e22b59d33612ce0dd28349d64ea4687"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer3.txt": {
+      "bytes": 68294,
+      "sha256": "2dcfcedcd07a4524398469230d7cd211e824253fd974c2fc2d180c7d78982e9a"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer4.txt": {
+      "bytes": 68717,
+      "sha256": "657e17c7e3c4605f803f6790b3de331d4a547bf8de5bcf6271d7e43df66d2991"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer5.txt": {
+      "bytes": 680,
+      "sha256": "87066318faa5ee5cc248da571dc0f142cdb256675048f09f2fe7b4b360f65966"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/gate_head/out_layer6.txt": {
+      "bytes": 42,
+      "sha256": "9aea01a655d34a16fe7db6a620109303a9f197f080da013ab333bb90bda4ee5c"
+    },
+    "base_v8/integer_gate_symw8_gw7_cw7/nemo_report.json": {
+      "bytes": 13333,
+      "sha256": "c0c2eb7bc211bb5ead602b88bac1e7fe0dd487ebaddb5d67eae17890ca4bbcde"
+    },
+    "base_v8/integer_symw8_gw7/encoder/dory_config.json": {
+      "bytes": 135,
+      "sha256": "2a930603c3dabee481500c6901764a49a6373cd6f73b29a1a2a60e017a7d3ea5"
+    },
+    "base_v8/integer_symw8_gw7/encoder/encoder_int.onnx": {
+      "bytes": 24617,
+      "sha256": "abd3f71a2674b83c0e73a4b9ceaa24b5c908014140c4bb87810a8652aff41117"
+    },
+    "base_v8/integer_symw8_gw7/encoder/input.txt": {
+      "bytes": 673287,
+      "sha256": "2fd165369b654d624a02fafc916531156436df38cbd5e957720b1be63d3f091e"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer0.txt": {
+      "bytes": 757960,
+      "sha256": "94ba866f9b45bb4036ccb9004c58318c32e106782fa851170cccea889839d461"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer1.txt": {
+      "bytes": 747382,
+      "sha256": "495490b2bbf97c43123f97ab04f9e77d09513aa72de0013dbd2c56bf603a7b37"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer10.txt": {
+      "bytes": 402675,
+      "sha256": "4429f60a37c4b19f7fb499ce87cd3db5c96abf69bd0eafd3567058b0e0016c31"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer2.txt": {
+      "bytes": 758068,
+      "sha256": "3e15262b4674e786adc6af4ce015101c49d14bededb3b2bda8eef5c437cfc21d"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer3.txt": {
+      "bytes": 190192,
+      "sha256": "6c38548d5617ba215719fcded0258a82c3fe95ff3fc32a5f602f5768e0a4af11"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer4.txt": {
+      "bytes": 388643,
+      "sha256": "267d24136d2cf10f99209deb0aaa8b7ce8d9c2cfcf1efe8621d2665b7303e1df"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer5.txt": {
+      "bytes": 381649,
+      "sha256": "3e70601a52f6cee850a06d6b75c96d45ecb293782bf3fec6df7b9de1352038a5"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer6.txt": {
+      "bytes": 387557,
+      "sha256": "278c9081528509878a9446f52964ca69210d41a3193215864aac64f49829e9c4"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer7.txt": {
+      "bytes": 396188,
+      "sha256": "e931ac82e672714cc6e85b7078405e00c8975c9a2e22da31d7101510c0729c26"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer8.txt": {
+      "bytes": 379613,
+      "sha256": "0ec0ace256dc9ec8891c7731909aa2cfa8460e39e0689b81edb6087d930bae02"
+    },
+    "base_v8/integer_symw8_gw7/encoder/out_layer9.txt": {
+      "bytes": 385440,
+      "sha256": "c7d137516a6a3189d939db408b9d56f182937633acab7c15b93093bfc5011dc1"
+    },
+    "base_v8/integer_symw8_gw7/global_head/dory_config.json": {
+      "bytes": 139,
+      "sha256": "7c078c1e5e08c75304c109fed7127a10561ec95592adbd67680a3d9a43f73879"
+    },
+    "base_v8/integer_symw8_gw7/global_head/global_head_int.onnx": {
+      "bytes": 1296909,
+      "sha256": "5f5a1f2d72750ebd537651bf7faf98f21d8c055b2472670341305060bd86e89d"
+    },
+    "base_v8/integer_symw8_gw7/global_head/global_head_parity_predictions.npz": {
+      "bytes": 63789,
+      "sha256": "ace39ecbc79c10b6bab9e2b82648ae8edbbdb089c0e59e8d27470b8bb1a3236b"
+    },
+    "base_v8/integer_symw8_gw7/global_head/input.txt": {
+      "bytes": 402675,
+      "sha256": "4429f60a37c4b19f7fb499ce87cd3db5c96abf69bd0eafd3567058b0e0016c31"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer0.txt": {
+      "bytes": 185712,
+      "sha256": "7d5a8a215cb8ab87749defcfec7bc15f936888c782785cbed70c2ecac24d23d6"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer1.txt": {
+      "bytes": 69521,
+      "sha256": "f6bd07f738536b0bfc397bbf7324be9fd624657f93ee47f48227cf27c0e77cc9"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer2.txt": {
+      "bytes": 68801,
+      "sha256": "17efc09ae32a4fff80178350feadf3bcebcd1c79274dba1bfb18e50cae8b0c6e"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer3.txt": {
+      "bytes": 68403,
+      "sha256": "d15e78cd8308a7b180369f09941a375869399242741fe45fff798f1898242aaa"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer4.txt": {
+      "bytes": 69037,
+      "sha256": "747ea08699f4b984227354f57bb0fa79edeac9b37016a3201821cfe81d1b7aa2"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer5.txt": {
+      "bytes": 680,
+      "sha256": "8ef567e0ceb91b3355cca620b001ce3ba0909bd5d59203956336a7338fdca170"
+    },
+    "base_v8/integer_symw8_gw7/global_head/out_layer6.txt": {
+      "bytes": 26,
+      "sha256": "f311d322f3a6673e099ed3c34172f9b8ad453df31d1691c0ae72492f662e978b"
+    },
+    "base_v8/integer_symw8_gw7/nemo_report.json": {
+      "bytes": 11755,
+      "sha256": "603aa0a6f4f3223e2b0b2fb0d71726264768f47cf06f82ec5cbde71e5ad6bf9d"
+    },
+    "base_v8/obstacle_gvsoc_acceptance.json": {
+      "bytes": 3893,
+      "sha256": "d31cddc3c38beec8f78199b5edde8170440b67ca350efbf1dede7b41748ffbc6"
+    },
+    "base_v8/original_obstacle_exact_int8_validation.json": {
+      "bytes": 6181,
+      "sha256": "4cae1930bf9a6531a9a92845847ca3ab950c044f7fbb0e91f838c1dd340a307f"
+    },
+    "base_v8/promotion_manifest.json": {
+      "bytes": 72919,
+      "sha256": "5832b10ce2c612bd9f656ea57d2c590c9cd5763f0c48155f7f7ce500f4004740"
+    },
+    "base_v8/qat_symw8_gw7/encoder_qat.pt": {
+      "bytes": 44985,
+      "sha256": "c95735aefdb1c8c0364c60c75c357719ff974ee5d4c6bc9c807b1f81ab874472"
+    },
+    "base_v8/qat_symw8_gw7/encoder_qat_history.json": {
+      "bytes": 116,
+      "sha256": "d3aca8340c6424550c5bd2b855e679b82095ee1fd31ae00d91c0e87fbd40cff4"
+    },
+    "base_v8/qat_symw8_gw7/global_head_qat.pt": {
+      "bytes": 1305307,
+      "sha256": "93808f73c40e0f70b30a9a625719d1a64e32dfd87231909dd8e42ca68eb6fc14"
+    },
+    "base_v8/qat_symw8_gw7/global_head_qat_history.json": {
+      "bytes": 7450,
+      "sha256": "21345abbf895080ff50b9d2ccbb0e366a1f93d3626da91b324812c8dfb9ec455"
+    },
+    "gate_recovery_v9/head_only/best.pt": {
+      "bytes": 2663475,
+      "sha256": "1fd62ef5bc0d777137d2f986197722639a2920c727206a915374098a8c32ca90"
+    },
+    "gate_recovery_v9/head_only/training_report.json": {
+      "bytes": 48522,
+      "sha256": "2fed636adcf7a404c92901bd175db4b8a98e70288588fce3a67f06d4eebd16c0"
+    },
+    "gate_recovery_v9/head_only_bridge/gate_encoder_state.npz": {
+      "bytes": 36062,
+      "sha256": "4926ad5ac1fa513da17e7519b1223258a33a83f59f9ee874c85fb8d9659f99c4"
+    },
+    "gate_recovery_v9/head_only_bridge/gate_head_state.npz": {
+      "bytes": 1297702,
+      "sha256": "f3ea83f3f2f96e21d23fa2eec769b9a6e23973505a589298b7c8f1b89363e0a9"
+    },
+    "gate_recovery_v9/head_only_bridge/manifest.json": {
+      "bytes": 1457,
+      "sha256": "c9cda1e007e708a42420bd0efbe5ad055f2e1729592bc0a5549911f7f1faf0ce"
+    },
+    "gate_recovery_v9/head_only_bridge/output_decode.npz": {
+      "bytes": 816,
+      "sha256": "9f5ac6bd5714b4aef598dd71378a6c8c20bc24a5a79a4d935a708da41d33f078"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_dory_report.json": {
+      "bytes": 1643,
+      "sha256": "c8b43e1e68307c96086ad7a61e2e3464cc10ae93410fbd003326017c1b2d25eb"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/gap8_vars.mk": {
+      "bytes": 611,
+      "sha256": "8e8ae109ba360f752aa145dca8b656ffed7d5082284c14f7d12ca3de05557fc8"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution0_weights.hex": {
+      "bytes": 688,
+      "sha256": "c468c62914b1de0aed7a23c3212f87cdff9bc32d620d3f6e4258999e7bcfef95"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution1_weights.hex": {
+      "bytes": 400,
+      "sha256": "c880df02951edc3dbd18ef5f2f997d183c2e6ed6ddd9ae2db01cc2862c2c2626"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution2_weights.hex": {
+      "bytes": 512,
+      "sha256": "e3a3ef018ff7106e9b807220417fc0946e32da3397e7909300b6279f167f62ae"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution3_weights.hex": {
+      "bytes": 400,
+      "sha256": "a7c328ff8fc689d3ee75c7e0b30774160e14da8ecd98f24c7e09cb4cd3fc0f96"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution4_weights.hex": {
+      "bytes": 1024,
+      "sha256": "353210f5dae8e02d9a134ef4c52528faa9af532279179ba484dafd7116a9441a"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution5_weights.hex": {
+      "bytes": 800,
+      "sha256": "9f03f6a98afe430e59d6797d40a17227cf7a512c5f59b2d84b94570ef9bafbc7"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution6_weights.hex": {
+      "bytes": 1536,
+      "sha256": "de8105996ff87cef33440925e6aba69ab60b841ed97be6388395d127872dada2"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution8_weights.hex": {
+      "bytes": 800,
+      "sha256": "02a7ccce054d1fe76fd92796961ecbdb300340bca7d92fd843f74881203c85c5"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_BNReluConvolution9_weights.hex": {
+      "bytes": 1536,
+      "sha256": "74d092a58006ce5fb21994380933c7b0d550fda1a8353a9f1baecc289c9d5a2b"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 76800,
+      "sha256": "7245939dff18308f4e93b68f3fe4248662e73968fac78f65c9a0f5f0a1c79ef3"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution0.h": {
+      "bytes": 819,
+      "sha256": "977bcb789f775ec22ae24487d35f3246095226e52897802dbfa20817261bf4b6"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution1.h": {
+      "bytes": 819,
+      "sha256": "2919603c97da43a2c06bd68d488ba6d09f3c4109cae39e7bba698c8f775c98d0"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution2.h": {
+      "bytes": 819,
+      "sha256": "99b96943e9aa370361c2ed6348eb31a787606e48477b38d0db0c2ba5a8949bfc"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution3.h": {
+      "bytes": 819,
+      "sha256": "ad9fc1fdbbad6481d197f9bd60e8b402a758e78dd7035217070020224591f887"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution4.h": {
+      "bytes": 819,
+      "sha256": "3a774615534e79b4675b393390e88dac117a892680c07b181de05802b1c2f3f0"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution5.h": {
+      "bytes": 819,
+      "sha256": "d77a1d456e7a333384d1bc65e703172e88ee2106f706b0eda59909be8d091493"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution6.h": {
+      "bytes": 819,
+      "sha256": "d60a87f3ea67283ab4091a3b94c6204e3914791314202d7ce657709d3bdbb7cb"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution8.h": {
+      "bytes": 819,
+      "sha256": "31af66cc7b4ffb8d12bac6edecffcb479a41d6363464a0e62dc96025ccde75c2"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_BNReluConvolution9.h": {
+      "bytes": 819,
+      "sha256": "4fa3ba8ed0e8030a794c193fb753b1e1c6bc722b241a59bc3ac08e71f4556289"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_ReluQAddition10.h": {
+      "bytes": 810,
+      "sha256": "aeee9fbce90d21ac64ac92bd3f7212021f286c5dee4907dce68d55b730f24323"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_ReluQAddition7.h": {
+      "bytes": 807,
+      "sha256": "77859678943ae9b830a80c12e62aaa25bad0a132a54ae5fec0d56d01a3d16227"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/gap8_network.h": {
+      "bytes": 3807,
+      "sha256": "e4c275d131b8e0226eb5a85da6f5b58f5408ad8a2da64be86847ac391f314ee9"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution0.c": {
+      "bytes": 8803,
+      "sha256": "cb97126f4b9a78d9783fde23ab6c4e0b035109f0afa4cd347e56fd802dc73fef"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution1.c": {
+      "bytes": 8925,
+      "sha256": "fe1c9de7ffe75aa1e2fd867db25f3834b3cd2a1c4fb25b91e4ccb4863613adc4"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution2.c": {
+      "bytes": 8824,
+      "sha256": "b76033b0577bfa99c466e1de5d5bc3d5b7d999ee281f64b078217211f1b791bf"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution3.c": {
+      "bytes": 8923,
+      "sha256": "c11431d08f8e61241419e74be270c87a965da2283ec46b2d5d2a2da2d752430a"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution4.c": {
+      "bytes": 8822,
+      "sha256": "a8cf40314572eecaf5e6780101f2d08d0d4052a9d0d83284b5d9166318d5d1a9"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution5.c": {
+      "bytes": 8927,
+      "sha256": "f90a7d919063b5e6d2203d59b3d42183e1fc716d56903dc68b4c8b6e44f1bd67"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution6.c": {
+      "bytes": 8825,
+      "sha256": "2b4595f119365d0b8e421c76f77885902cde95a5b5a1db7fd2fc306d62cf9aef"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution8.c": {
+      "bytes": 8927,
+      "sha256": "238fb2e9bc1d103cda0d20080c47e482d8f61191022e318a6e700d32edc35a78"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_BNReluConvolution9.c": {
+      "bytes": 8825,
+      "sha256": "80db785aceff19f13128674e7ac14588667d3d80d91a58bbb48ea4c38bdc723c"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_ReluQAddition10.c": {
+      "bytes": 9239,
+      "sha256": "46ffd03c2f62f84677f7e0a7c078ec8fb6c21014fd44bf63af76215b52e04033"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_ReluQAddition7.c": {
+      "bytes": 9237,
+      "sha256": "2190eb5562dd0283c130db682e2430c4a79fd5b15a9dc41c94e3ada74d043981"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 375000,
+      "sha256": "4658305f7157b470514b337be6b1c84fefa006358eb65a2fdf695e853dc8eb3d"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "9c62e61df4a0ae4a43e7aaf44f44dd2b642f3a553685c4f68c4f80e0d60c40c6"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/gap8_network.c": {
+      "bytes": 12320,
+      "sha256": "51be776b0f68757ed927d95aea18078e53aa7943e79e57c09babeaa0cf6d4c5e"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "gate_recovery_v9/head_only_gate_encoder_gvsoc_checksum.log": {
+      "bytes": 50246,
+      "sha256": "60921b1ef60d484872db4c30c525bf6963f8a4c802e535fee0e4bdbee4045f29"
+    },
+    "gate_recovery_v9/head_only_gate_head_dory_report.json": {
+      "bytes": 1480,
+      "sha256": "6f40ec56d2cc0977744b3ba8d8576659aeb68b5dea089ea2d3205cc05c11fa65"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/Makefile": {
+      "bytes": 1775,
+      "sha256": "5625d66fd67f15e44e1cdc42e6c909fd9eecafb304a6b0c317101fe097793f48"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/gap8_vars.mk": {
+      "bytes": 434,
+      "sha256": "3341a8c4b18b308b6729ae4fc8b0c4a9a1c0d7bd6803112b12615463570a63a0"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution0_weights.hex": {
+      "bytes": 18688,
+      "sha256": "eae71feb6f31df138caeec07240529b7c30ef230f2bc0d7cc4c745b0af140a7d"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution1_weights.hex": {
+      "bytes": 55680,
+      "sha256": "cc249b3d6695a1726a49f691507e3da8429c093cc349531340fa7e5d3421edcf"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution2_weights.hex": {
+      "bytes": 83328,
+      "sha256": "e0344ba448b9c9a57539ffe403e77cea3af1a910c4f996cfb2d504ce777a1d75"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution3_weights.hex": {
+      "bytes": 83328,
+      "sha256": "23ec8616800913134a65cf7a57747a58a9b8349fe024d1789ec20cdad492218b"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution4_weights.hex": {
+      "bytes": 83328,
+      "sha256": "bbd6376ed58c5199953be3d59f8fed3d8268d20ffbf63840941168a23efe5ded"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_ReluConvolution6_weights.hex": {
+      "bytes": 600,
+      "sha256": "38638bfb78a6a26c9452c886ace338f118973bd4694fd2f60d141f389942ba89"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/hex/gap8_inputs.hex": {
+      "bytes": 51200,
+      "sha256": "c9d3be95a29611a9bf5c86828b7055e0a1503ad01805540eb910785c53dd8183"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/directional_allocator.h": {
+      "bytes": 2424,
+      "sha256": "91ad8e78ab0b70ee1de6c9ae8052a99ce5b3a205e354d8278815a153a3cb26bf"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/dory_dma.h": {
+      "bytes": 1359,
+      "sha256": "47a783da52aade49d9b5ad1d643356c459372ca5d5d0f103cacbbb08dcb90b9f"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/dory_get_tile.h": {
+      "bytes": 4506,
+      "sha256": "5b65e6ea29cf939451b6aabd21201e85eae8c1b94b9e1905d2ce495c1f224385"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution0.h": {
+      "bytes": 813,
+      "sha256": "0a37af65d862283c55d41066c295b9e7433987af167f2443f9a56c81d4a54aac"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution1.h": {
+      "bytes": 813,
+      "sha256": "4a8680e80c0975dd9b01aefa7505563346963794da145a3e378eee1c6146f0fd"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution2.h": {
+      "bytes": 813,
+      "sha256": "c0dfa9cc57c65d9e5833b9040fe65bc5765a2a40d6d43b9fb2b9746d8361e55b"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution3.h": {
+      "bytes": 813,
+      "sha256": "e543c3fa3d27dcee17f558bb9267ce2eba45bdb3328f0285b5467d35ea3b1776"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution4.h": {
+      "bytes": 813,
+      "sha256": "19e5f2d6557424619ed2ee17110b4d2d5a7ec3693ad75f1ec2d2a93b8592d87b"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluConvolution6.h": {
+      "bytes": 813,
+      "sha256": "96e88475963a922d275b8d4c528db9b5224633be34e3e35d4416982369ef541a"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_ReluPooling5.h": {
+      "bytes": 801,
+      "sha256": "d2d7c158b1f727a8c4013b9626343bc2ebb2a008a19bdebf81a0efc1ab6f72b9"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/gap8_network.h": {
+      "bytes": 3211,
+      "sha256": "ce124619104bc81e532ad0d82e02d41c1f51ebc97d9d5306512e7621dc9bf5fe"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/mchan.h": {
+      "bytes": 4109,
+      "sha256": "dc0f989ac2d18051953ee55d8ade09eb5cc63995fcfc978b17bdbb3fe542ca93"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/mem.h": {
+      "bytes": 559,
+      "sha256": "7d93cafc360eb12f3e78172905bc17f0ab490956f1a72d838ddcf36a39800eb1"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/net_utils.h": {
+      "bytes": 591,
+      "sha256": "9e919398f1b2235d6f45efca5a5b963f8cc78a2ea42dfd9928e68d0dca960a0e"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/pulp_nn_kernels.h": {
+      "bytes": 10137,
+      "sha256": "5e0cece38967da2acb47afd1fde0bab629251a2712b497059d96327a3f848830"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/inc/pulp_nn_utils.h": {
+      "bytes": 2519,
+      "sha256": "436edd4de33762782a2c0326ba079afea36401c3d4f82d9a923930ba9b333c53"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/dory_dma.c": {
+      "bytes": 6193,
+      "sha256": "fc3f6ace89e61ab4ffa0e2b864635c1d87ba65ddd63ac18c0f95e334f1cf4d6a"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution0.c": {
+      "bytes": 8672,
+      "sha256": "e797b42301a595c5db7d5c9cff121d33236b99b90304a6e0b7d90b77fb690174"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution1.c": {
+      "bytes": 8668,
+      "sha256": "5f62dabf57fc767e18d3227e756d1af8b8081aca1d341b01e502cb6a44ef4e84"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution2.c": {
+      "bytes": 8664,
+      "sha256": "9a8d4f27502e7ac28c774e276b250b3d4aa05c2f6940583f8f46da484716cddc"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution3.c": {
+      "bytes": 8664,
+      "sha256": "b4ec05fc5f9524463c87bdd5fbe405e27560eee6961008118b230bce794839c1"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution4.c": {
+      "bytes": 8664,
+      "sha256": "70ed4383a14744ff897e2b07181a4a30ab1b956018561aac297f60ff7daab8ce"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluConvolution6.c": {
+      "bytes": 8675,
+      "sha256": "bb4142aad15aecf7f97d119eb540a2501e0159ec20b2c9e8025e762be7e860bc"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_ReluPooling5.c": {
+      "bytes": 8596,
+      "sha256": "0e2741402f9a87d890f8110e9ab82423f199a45d3d8518918759da0ce595e3aa"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_checksum_input.c": {
+      "bytes": 196076,
+      "sha256": "daa5d391e870b0d6ba0ff0aec05a8a1be900139bf932f3aeeaae33f25abd0e0a"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_main.c": {
+      "bytes": 2337,
+      "sha256": "5973a97cb85bd5e9a09f0ac51eb00f3b835aa37ac7cd5d9f5de7b9a010e1bff3"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/gap8_network.c": {
+      "bytes": 11753,
+      "sha256": "a2b1383cdb48984df6fc13c0d149a7c94eebe1790dd64e88ecb3b3c3fcc9db38"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/mem.c": {
+      "bytes": 3406,
+      "sha256": "19c1e5c72b902de023d66ff50f683acc976cda8860db719ca0c1c2f9c1d07a70"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/net_utils.c": {
+      "bytes": 673,
+      "sha256": "2de853788154c05597ad4e4ee9ad949b5bf9094df8f0e885cef6812c0eed96c5"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_add.c": {
+      "bytes": 2378,
+      "sha256": "6f09d247397bb52c35516700bc1cbde36b9d406b28506a3d59bb3789568ed8d4"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_avgpool.c": {
+      "bytes": 3810,
+      "sha256": "f9608cd1af705b6234047102c9e91a752026d02079f6163e0c16aac3d7dfbec0"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_conv_Co_parallel.c": {
+      "bytes": 8518,
+      "sha256": "63f11d7e484329799c146656104bcd3712c77e270918455f89dc5e14d7d49be8"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_conv_HoWo_parallel.c": {
+      "bytes": 8961,
+      "sha256": "00a147630d2e09eaad8e5edb273e7c7628a9232f68396c47442f27f368e5f0f0"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_conv_Ho_parallel.c": {
+      "bytes": 8133,
+      "sha256": "ef297fd1b688db591d6a9d17f1fbf2050a1295427a95b5a60c372bf3fb1bf71e"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_depthwise_3x3_s1.c": {
+      "bytes": 6692,
+      "sha256": "ff2ab6b5f0220f306d0545e133360d7079077bb5a4a1413646f4332562de76ed"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_depthwise_generic.c": {
+      "bytes": 11376,
+      "sha256": "3c4f0472488e1934c4c836decd154bdbb5f3c34437d8eaae6c68a56faaea09f4"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_depthwise_generic_less_4_weights.c": {
+      "bytes": 11029,
+      "sha256": "7f6e60a55726f3d38019f48381eadce90ce3a07975d2807b3fa2eb64ec845006"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_linear.c": {
+      "bytes": 2628,
+      "sha256": "f2ffcd6e84d897d418af9fa9d6ff7e410fa38995b43738a244ad732dd5ce5795"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_linear_out_32.c": {
+      "bytes": 2165,
+      "sha256": "94f7bf27d4280f7be6a43735b94d6f95738de6049173d187ab9714c459125955"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_matmul.c": {
+      "bytes": 7344,
+      "sha256": "1bf6d5923303790c50a8573fd639f193827b87f36679e7e93adb6dc7adec683f"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_maxpool.c": {
+      "bytes": 5094,
+      "sha256": "800226b3f7177a83354d770a3fa2cd9c47a437c7f0982f2711d44bb9cf012dbd"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_pointwise_Co_parallel.c": {
+      "bytes": 4767,
+      "sha256": "8ebc77270579781e8b53ccf4f24fb49861a1ca07d161d308b686e738670dfcac"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_pointwise_HoWo_parallel.c": {
+      "bytes": 6686,
+      "sha256": "6122bb1175ce414948817dccdba6fc4d97d1bb732ebf1f4420c66c8c37d82fe5"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_pointwise_Ho_parallel.c": {
+      "bytes": 4472,
+      "sha256": "d70d10e5529ca94ee90b77e880bd9db5dc4b580c5bd6b21cbd588c801aac24e1"
+    },
+    "gate_recovery_v9/head_only_gate_head_gap8_application/src/pulp_nn_utils.c": {
+      "bytes": 13846,
+      "sha256": "79d6ea719cb0bdd59712a56adfc83c0ddc82d54a804f7c3e3b8f7821abcc4d6f"
+    },
+    "gate_recovery_v9/head_only_gate_head_gvsoc_checksum.log": {
+      "bytes": 43545,
+      "sha256": "6b36ca107ae24bc347cacd1e40face2c81bd70a8b3e7180fab481496aecd032b"
+    },
+    "gate_recovery_v9/head_only_int8_labeled_acceptance.json": {
+      "bytes": 12644,
+      "sha256": "0d053f4c898bba4eed869af081aa3c17be5c39f75216b6ff222d6e107288b9b3"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/dory_config.json": {
+      "bytes": 140,
+      "sha256": "2f8e08d191e097677af765be344ec4b985229d2ade7fd263b84dd4925de42da9"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/gate_encoder_int.onnx": {
+      "bytes": 24556,
+      "sha256": "f767698f3bdd4976745613fdaa90e5950fa125b56d25d18383da7d48567e896c"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/input.txt": {
+      "bytes": 675738,
+      "sha256": "dca851d190216d8ac6b34299b9d541e3cd9a8ccc92f87a7a99c427b55edff432"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer0.txt": {
+      "bytes": 757674,
+      "sha256": "73e69963fc5cd87c23f3552ea4e21e9847059c57cff5446f9296934ce1b95c67"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer1.txt": {
+      "bytes": 748243,
+      "sha256": "4d9cc5b70c425ccce03eefd524eac88d93d3be5bcea2cbd8ec6fbc807bbb6fa9"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer10.txt": {
+      "bytes": 396546,
+      "sha256": "9d56f5c45fd9ad14bd47dc5eb1ee98b474a94909e70ee5e4e8d81b11b9e71a04"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer2.txt": {
+      "bytes": 758106,
+      "sha256": "02a1118d1b2c567641bd6328ec61525dbeb28f0f2201e7b56994e2aac53f6f87"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer3.txt": {
+      "bytes": 190615,
+      "sha256": "e25fff46573d7544f9ec674b9fd832b97438f731970e11ccf9f2884182b95dc9"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer4.txt": {
+      "bytes": 390432,
+      "sha256": "8d0ffb79704a02be296c3aeba8f03a84d44a3b736e086761cbe7c6c32f1ddd28"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer5.txt": {
+      "bytes": 384336,
+      "sha256": "70dc904b3f74b0bd767d3b1461e95f5be464f89d25edc55287670a92c3357db8"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer6.txt": {
+      "bytes": 389813,
+      "sha256": "cbfc2101e6c1d51504decb2f999fc8d37e9edadbedad32ec047250f15a140f34"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer7.txt": {
+      "bytes": 398628,
+      "sha256": "d3bcf0e694e73b2d0770cad44e016b6a77d5adcd2ef31b66fc93c638d548f4b6"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer8.txt": {
+      "bytes": 381172,
+      "sha256": "9a9d0fbf4d2b8f50f96c77dfadf6437eed085089cf00a2df72aa03f55ef76a9f"
+    },
+    "gate_recovery_v9/head_only_integer/gate_encoder/out_layer9.txt": {
+      "bytes": 383063,
+      "sha256": "86ddfbc67c4243b0a1325ae8bfa0eeacaa25455ac6728b480d13e272a2b3e155"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/dory_config.json": {
+      "bytes": 137,
+      "sha256": "e9f25f88e46e0d3f458a3a8ea4789809f18e55008ed48fe03f5fc81f9625f47b"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/gate_head_int.onnx": {
+      "bytes": 1298073,
+      "sha256": "0cf2dbd839e2a98af2423f1b9cb608e9c6b36f13bc4bd5a33a93c077c2662ec3"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/gate_head_parity_predictions.npz": {
+      "bytes": 50795,
+      "sha256": "0e595d8c9cadb3676ee2cac251792a8992f753658a235a8b5cce20205aff6680"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/input.txt": {
+      "bytes": 396546,
+      "sha256": "9d56f5c45fd9ad14bd47dc5eb1ee98b474a94909e70ee5e4e8d81b11b9e71a04"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer0.txt": {
+      "bytes": 187271,
+      "sha256": "cf3041fe32ed0ab7c1e43937b5a659d520ec4f28ad8b2034c243a37d0b096398"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer1.txt": {
+      "bytes": 70387,
+      "sha256": "e72c7df649db93c160bbce62d353532fbcbde8b75d05a16b2507ca66ed63ea9c"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer2.txt": {
+      "bytes": 69418,
+      "sha256": "eb279cdd6668af84099ec771619473e800797e863a0a3efb77262f780c7d738c"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer3.txt": {
+      "bytes": 69122,
+      "sha256": "d79464df6d9d7667141d88afd42e0dde1e0c4b437c4a9ceaae00659e9f4bb603"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer4.txt": {
+      "bytes": 69820,
+      "sha256": "6b6754f9788a9e0fa89ef8993c99422807ceb26f2a1debb709990bd343fd3f69"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer5.txt": {
+      "bytes": 702,
+      "sha256": "0250c71707dac54008ad8dc609a539b08e15b686f12deded23d7a4c3c56d4ad1"
+    },
+    "gate_recovery_v9/head_only_integer/gate_head/out_layer6.txt": {
+      "bytes": 51,
+      "sha256": "7e55942957eff0303002fee327f67932740f030fa472b104ce0f928b137a167e"
+    },
+    "gate_recovery_v9/head_only_integer/nemo_report.json": {
+      "bytes": 8822,
+      "sha256": "f2cccb3dc3735ec180040dcd073be1c7f869f81bf57f18872a9deb50b72d07b4"
+    },
+    "gate_recovery_v9/head_only_qat/gate_encoder_qat.pt": {
+      "bytes": 44722,
+      "sha256": "5c5982947396ebf545fcd2ca80309e16fb0632a7ce20464ad7aaa50e69d6945f"
+    },
+    "gate_recovery_v9/head_only_qat/gate_head_qat.pt": {
+      "bytes": 1305733,
+      "sha256": "de39be13e6e0dfeb799c101452d7976b5d0e4d3db6b01d274b7e888777615c34"
+    },
+    "gate_recovery_v9/head_only_qat/gate_head_qat_history.json": {
+      "bytes": 2272,
+      "sha256": "f49a4d967f5e07b738608cc1cf30e4f8a9333cad70500b462bfe6da47e4d2ea2"
+    }
+  },
+  "base_release": {
+    "manifest_sha256": "5832b10ce2c612bd9f656ea57d2c590c9cd5763f0c48155f7f7ce500f4004740",
+    "promotion_id": "espnetv2_gap8_task_branched_v8_full_int8",
+    "role": "bit-exact official collision path and rollback gate path"
+  },
+  "branch_point": "after_shared_stem_16x80x80",
+  "deployment_format": "espnetv2-roll-robust-gap8-student-v9-close-rail-recovery",
+  "format": "espnetv2-gap8-official-deployable-promotion-v2",
+  "gate_output_order": [
+    "rail_present_left",
+    "rail_present_center",
+    "rail_present_right",
+    "pass_right_left",
+    "pass_right_center",
+    "pass_right_right"
+  ],
+  "gate_semantic_abi": "close_sector_gate_rail_present_and_conditional_pass_right_v2",
+  "gvsoc": {
+    "all_layer_checksums_passed": true,
+    "gate_encoder_cycles": 4976448,
+    "gate_encoder_layers": 11,
+    "gate_head_cycles": 4022710,
+    "gate_head_layers": 7,
+    "nominal_cluster_frequency_hz": 175000000,
+    "total_gate_cycles": 8999158
+  },
+  "operating_thresholds": {
+    "pass_right": 0.5,
+    "rail_present": 0.4499999999999999
+  },
+  "partition_selection": {
+    "collision": "base_v8/integer_symw8_gw7/{encoder,global_head}",
+    "gate": "gate_recovery_v9/head_only_integer/{gate_encoder,gate_head}"
+  },
+  "promoted_on": "2026-09-02",
+  "promotion_id": "espnetv2_gap8_collision_v8_close_rail_recovery_v9_int8",
+  "qualification": {
+    "closed_loop_crazysim": "not_evaluated",
+    "collision_path": "unchanged_from_official_v8",
+    "dory_pulp_nn": "passed_gate_encoder_and_gate_head",
+    "gvsoc": "passed_18_of_18_gate_layers",
+    "nemo_integer_export": "passed",
+    "official_deployable": true,
+    "official_gate_head": true,
+    "physical_gap8_hm01b0": "not_evaluated",
+    "user_authorized_promotion": true
+  },
+  "sector_order": [
+    "left",
+    "center",
+    "right"
+  ],
+  "source": {
+    "base_official": "/home/cchen/drone_rl/outputs/espnetv2_imav22_gate_rail/promoted/espnetv2_gap8_task_branched_v8_full_int8",
+    "recovery": "/home/cchen/drone_rl/outputs/espnetv2_imav22_gate_rail/close_rail_recovery_v2",
+    "recovery_index_sha256": "433f931b482bde52c7c7109232ab6d63cdf8cd2bfcd06ac476c077f6ede065b4"
+  },
+  "status": "official_deployable",
+  "validation": {
+    "all_le_2m": {
+      "average_precision": 0.6262539495634183,
+      "balanced_accuracy": 0.7755898997253202,
+      "count": 1024,
+      "false_rail_rate": 0.22930800542740842,
+      "fn": 63,
+      "fp": 169,
+      "negative_count": 737,
+      "positive_count": 287,
+      "precision": 0.5699745547073791,
+      "recall": 0.7804878048780488,
+      "roc_auc": 0.8365135046969776,
+      "specificity": 0.7706919945725916,
+      "threshold": 0.4499999999999999,
+      "tn": 568,
+      "tp": 224
+    },
+    "exact_integer_samples": 1024,
+    "float_validation_rows": 19236,
+    "pass_direction": {
+      "accuracy": 0.7804878048780488,
+      "count": 287,
+      "left_count": 162,
+      "right_count": 125,
+      "under_1m_accuracy": 0.7843137254901961,
+      "under_1m_count": 51
+    },
+    "sealed_test_evaluated": false,
+    "under_1m": {
+      "average_precision": 0.6486157813384579,
+      "balanced_accuracy": 0.8110516934046346,
+      "count": 216,
+      "false_rail_rate": 0.18181818181818182,
+      "fn": 10,
+      "fp": 30,
+      "negative_count": 165,
+      "positive_count": 51,
+      "precision": 0.5774647887323944,
+      "recall": 0.803921568627451,
+      "roc_auc": 0.8804515745692216,
+      "specificity": 0.8181818181818182,
+      "threshold": 0.4499999999999999,
+      "tn": 135,
+      "tp": 41
+    }
+  }
+}

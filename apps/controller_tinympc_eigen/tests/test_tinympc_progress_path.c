@@ -40,6 +40,14 @@ static const float shortcut[][3] = {
     {-1.0f, 0.0f, 0.0f},
 };
 
+static const float closed_square[][3] = {
+    {0.0f, 0.0f, 0.0f},
+    {1.0f, 0.0f, 0.0f},
+    {1.0f, 1.0f, 0.0f},
+    {0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f},
+};
+
 static bool near(float actual, float expected, float tolerance) {
   return fabsf(actual - expected) <= tolerance;
 }
@@ -143,6 +151,95 @@ static void testTargetNeverExceedsOneStepPlusToleranceLead(void) {
     assert(path.last_phase_lead_bound_m <= 0.04101f);
     assert(!path.lead_bound_violation);
   }
+}
+
+static void testDisabledTargetLeadBoundAdvancesWhileStationary(void) {
+  TinyMpcProgressPath path = makePath(&line[0][0], 4u, 3u);
+  initializeVehicle(&path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f});
+  tinyMpcProgressPathSetTargetLeadBound(&path, false);
+  for (int i = 0; i < 10; ++i) {
+    tinyMpcProgressPathUpdate(
+        &path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f}, 0.040f);
+  }
+  assert(near(path.progress, 0.40f, 1.0e-5f));
+  assert(path.measured_progress <= path.progress_tolerance_m + 1.0e-5f);
+  assert(path.last_phase_lead_m >
+      path.maximum_command_advance_m + path.progress_tolerance_m);
+  assert(!path.lead_bound_violation);
+  assert(!path.complete);
+}
+
+static void testExplicitHalfMeterTargetLeadBound(void) {
+  TinyMpcProgressPath path = makePath(&line[0][0], 4u, 3u);
+  initializeVehicle(&path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f});
+  tinyMpcProgressPathSetMaximumTargetLead(&path, 0.5f);
+  for (int i = 0; i < 50; ++i) {
+    tinyMpcProgressPathUpdate(
+        &path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f}, 0.040f);
+    assert(path.last_phase_lead_m <= 0.50001f);
+    assert(near(path.last_phase_lead_bound_m, 0.5f, 1.0e-6f));
+    assert(!path.lead_bound_violation);
+  }
+  assert(path.last_phase_lead_m >= 0.499f);
+  assert(!path.complete);
+}
+
+static void testCleanRejoinGeometricCatchupIsBounded(void) {
+  TinyMpcProgressPath path = makePath(&line[0][0], 4u, 1u);
+  tinyMpcProgressPathSetMaximumTargetLead(&path, 0.5f);
+  initializeVehicle(&path, (TinyMpcPathPoint){2.0f, 0.0f, 0.0f});
+  assert(tinyMpcProgressPathScheduleGeometricCatchup(
+      &path, (TinyMpcPathPoint){2.0f, 0.0f, 0.0f}, 3u,
+      0.25f, 0.02f));
+  assert(near(path.geometric_catchup_target_progress, 2.0f, 1.0e-6f));
+  for (int update = 0; update < 10; ++update) {
+    const float before = path.measured_progress;
+    tinyMpcProgressPathUpdate(
+        &path, (TinyMpcPathPoint){2.0f, 0.0f, 0.0f}, 0.04f);
+    assert(path.measured_progress - before <= 0.02001f);
+    assert(path.last_geometric_catchup_m <= 0.02001f);
+    assert(path.last_phase_lead_m <= 0.50001f);
+    assert(!path.projection_bound_violation);
+    assert(!path.lead_bound_violation);
+  }
+  assert(near(path.measured_progress, 0.201f, 1.0e-5f));
+  assert(near(path.cumulative_geometric_catchup_m, 0.20f, 1.0e-5f));
+}
+
+static void testDistantRejoinCannotScheduleGeometricCatchup(void) {
+  TinyMpcProgressPath path = makePath(&line[0][0], 4u, 1u);
+  assert(!tinyMpcProgressPathScheduleGeometricCatchup(
+      &path, (TinyMpcPathPoint){2.0f, 0.40f, 0.0f}, 3u,
+      0.25f, 0.02f));
+  assert(!path.geometric_catchup_active);
+  assert(near(path.measured_progress, 0.0f, 1.0e-7f));
+}
+
+static void testGeometricCatchupTargetDoesNotRatchetWithMotion(void) {
+  TinyMpcProgressPath path = makePath(&line[0][0], 4u, 3u);
+  initializeVehicle(&path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f});
+  assert(tinyMpcProgressPathScheduleGeometricCatchup(
+      &path, (TinyMpcPathPoint){2.0f, 0.0f, 0.0f}, 3u,
+      0.25f, 0.02f));
+  assert(near(path.geometric_catchup_target_progress, 2.0f, 1.0e-6f));
+  tinyMpcProgressPathUpdate(
+      &path, (TinyMpcPathPoint){2.5f, 0.0f, 0.0f}, 0.0f);
+  assert(near(path.geometric_catchup_target_progress, 2.0f, 1.0e-6f));
+  assert(!path.geometric_catchup_active);
+}
+
+static void testClosedRouteCatchupCannotSelectNextLapCopy(void) {
+  TinyMpcProgressPath path;
+  tinyMpcProgressPathInitLaps(
+      &path, &closed_square[0][0], 3u, 5u, 1u, 4u,
+      0.10f, 0.40f, 1.0f, 0.001f, 0.040f, 0.10f, 3u);
+  path.measured_progress = 0.10f;
+  path.progress = 0.10f;
+  assert(!tinyMpcProgressPathScheduleGeometricCatchup(
+      &path, (TinyMpcPathPoint){0.0f, 0.0f, 0.0f}, 4u,
+      0.25f, 0.02f));
+  assert(!path.geometric_catchup_active);
+  assert(near(path.measured_progress, 0.10f, 1.0e-7f));
 }
 
 static void testOversizedCommandIsClampedToConfiguredStep(void) {
@@ -555,6 +652,12 @@ int main(void) {
   testCommandedTargetUsesArcLengthStepAndIsMonotonic();
   testMeasuredOverspeedRebasesReferenceBeforeCommandAdvance();
   testTargetNeverExceedsOneStepPlusToleranceLead();
+  testDisabledTargetLeadBoundAdvancesWhileStationary();
+  testExplicitHalfMeterTargetLeadBound();
+  testCleanRejoinGeometricCatchupIsBounded();
+  testDistantRejoinCannotScheduleGeometricCatchup();
+  testGeometricCatchupTargetDoesNotRatchetWithMotion();
+  testClosedRouteCatchupCannotSelectNextLapCopy();
   testOversizedCommandIsClampedToConfiguredStep();
   testClosedPathShortcutCannotComplete();
   testGenuineBoundedTraversalCompletesAtTerminal();

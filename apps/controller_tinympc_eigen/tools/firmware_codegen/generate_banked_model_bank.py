@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate verified actuator-aware TinyMPC coordinated-turn model bundles.
+"""Generate verified actuator-aware TinyMPC turn and braking model bundles.
 
 The level bundle retains the controller's hover-relative local state chart.
-Each signed bank bundle uses reference-relative rotating Frenet rigid-body
-errors, with rotor states and motor-thrust inputs relative to that bundle's
-coordinated-turn operating point. No runtime differentiation or Riccati work
-is required.
+Each maneuver bundle uses reference-relative Frenet rigid-body errors, with
+rotor states and motor-thrust inputs relative to that bundle's operating
+point.  The turn bundles are steady rotating-frame equilibria.  The braking
+bundles are frozen at five exact speed-indexed points on a straight 6 m/s^2
+deceleration. No runtime differentiation or Riccati work is required.
 """
 
 from __future__ import annotations
@@ -35,8 +36,10 @@ from quadrotor_dynamics import (  # noqa: E402
     BODY_LINEAR_DRAG_N_PER_MPS,
     INERTIA_KGM2,
     MASS_KG,
+    MOTOR_DIRECTIONS,
     MOTOR_STATE_DIM,
     RPM_TO_TORQUE,
+    PROPELLER_INERTIA_KGM2,
     ROTOR_STATE_SCALE_RPM,
     _quat_conjugate,
     _quat_product,
@@ -57,6 +60,7 @@ INPUT_DIM = level.INPUT_DIM
 DT_S = level.DT_S
 RADIUS_M = 0.75
 SPEEDS_MPS = (1.0, 1.5, 2.0, 2.5, 3.0)
+BRAKING_DECELERATION_MPS2 = 6.0
 NONLINEAR_FIXED_POINT_TOLERANCE = 1.0e-7
 BANK_ROLL_STATE_WEIGHT = 40.0
 BANK_PITCH_STATE_WEIGHT = 4.0
@@ -117,6 +121,19 @@ def _solve_motor_thrust(target_force_moment: np.ndarray) -> np.ndarray:
     return thrust
 
 
+def _rotor_gyroscopic_torque(
+    body_rate_rad_s: np.ndarray, motor_thrust_n: np.ndarray
+) -> np.ndarray:
+    motor_rpm = _thrust_to_rpm(motor_thrust_n)
+    h_z = (PROPELLER_INERTIA_KGM2 * (2.0 * math.pi / 60.0)
+           * float(MOTOR_DIRECTIONS @ motor_rpm))
+    return np.asarray([
+        -float(body_rate_rad_s[1]) * h_z,
+        float(body_rate_rad_s[0]) * h_z,
+        0.0,
+    ])
+
+
 def _controller_state_to_absolute(
     state: np.ndarray, hover_rotor_state: float
 ) -> np.ndarray:
@@ -156,7 +173,7 @@ def _transition(
     return _absolute_to_controller_state(next_absolute, hover_rotor_state)
 
 
-def _bank_reference_absolute(
+def _turn_reference_absolute(
     metadata: dict[str, object], physical_input: np.ndarray, time_s: float
 ) -> np.ndarray:
     """Canonical coordinated-turn reference in a yaw-rotating Frenet frame."""
@@ -191,6 +208,22 @@ def _bank_reference_absolute(
         [0.0, 0.0, yaw_rate_rad_s])
     rotor_state = _thrust_to_rpm(physical_input) / ROTOR_STATE_SCALE_RPM
     return np.r_[position, quaternion, velocity, body_rate, rotor_state]
+
+
+def _braking_reference_absolute(
+    metadata: dict[str, object], physical_input: np.ndarray
+) -> np.ndarray:
+    """Frozen straight-braking reference at one speed-indexed phase point."""
+    pitch_rad = float(metadata["pitch_rad"])
+    half_pitch = 0.5 * pitch_rad
+    quaternion = np.asarray([
+        math.cos(half_pitch), 0.0, math.sin(half_pitch), 0.0])
+    rotor_state = _thrust_to_rpm(physical_input) / ROTOR_STATE_SCALE_RPM
+    return np.r_[
+        np.zeros(3), quaternion,
+        np.asarray([float(metadata["speed_mps"]), 0.0, 0.0]),
+        np.zeros(3), rotor_state,
+    ]
 
 
 def _yaw_rotation(yaw_rad: float) -> np.ndarray:
@@ -243,19 +276,32 @@ def _bank_error_from_absolute(
     ]
 
 
-def _bank_error_transition(
+def _maneuver_error_transition(
     error: np.ndarray,
     delta_motor_command_n: np.ndarray,
     metadata: dict[str, object],
     physical_input: np.ndarray,
 ) -> np.ndarray:
-    reference = _bank_reference_absolute(metadata, physical_input, 0.0)
+    maneuver_kind = str(metadata["maneuver_kind"])
+    if maneuver_kind == "turn":
+        reference = _turn_reference_absolute(metadata, physical_input, 0.0)
+        next_yaw = float(metadata["yaw_rate_rad_s"]) * DT_S
+        next_reference = _turn_reference_absolute(
+            metadata, physical_input, DT_S)
+    elif maneuver_kind == "braking":
+        reference = _braking_reference_absolute(metadata, physical_input)
+        next_yaw = 0.0
+        # A braking point is not a steady equilibrium.  Freeze the cache at
+        # the exact requested pitch/speed phase, and propagate its reference
+        # one interval with the same nonlinear plant and physical input.  This
+        # makes zero reference error an exact one-step fixed point without
+        # pretending that a constant-pitch deceleration is time invariant.
+        next_reference = _rk4_step(reference, physical_input, DT_S)
+    else:
+        raise RuntimeError(f"unknown maneuver kind {maneuver_kind}")
     absolute = _bank_error_to_absolute(error, reference, 0.0)
     next_absolute = _rk4_step(
         absolute, physical_input + delta_motor_command_n, DT_S)
-    next_yaw = float(metadata["yaw_rate_rad_s"]) * DT_S
-    next_reference = _bank_reference_absolute(
-        metadata, physical_input, DT_S)
     return _bank_error_from_absolute(next_absolute, next_reference, next_yaw)
 
 
@@ -323,6 +369,7 @@ def _operating_point(
         target_force_moment = np.asarray(
             [INPUT_DIM * hover_thrust_n, 0.0, 0.0, 0.0])
         metadata = {
+            "maneuver_kind": "level",
             "side_sign": 0,
             "speed_mps": 0.0,
             "radius_m": 0.0,
@@ -348,7 +395,7 @@ def _operating_point(
         speed_mps * speed_mps / (9.81 * RADIUS_M))
     pitch_rad = 0.0
     for _ in range(100):
-        attitude = _bank_reference_absolute({
+        attitude = _turn_reference_absolute({
             "speed_mps": speed_mps,
             "yaw_rate_rad_s": yaw_rate_rad_s,
             "roll_rad": roll_rad,
@@ -374,7 +421,7 @@ def _operating_point(
     else:
         raise RuntimeError("drag-aware coordinated-turn attitude did not converge")
 
-    attitude = _bank_reference_absolute({
+    attitude = _turn_reference_absolute({
         "speed_mps": speed_mps,
         "yaw_rate_rad_s": yaw_rate_rad_s,
         "roll_rad": roll_rad,
@@ -397,9 +444,19 @@ def _operating_point(
             f"drag-aware operating point residual {translational_residual}")
     body_rate = rotation_body_to_local.T @ np.asarray(
         [0.0, 0.0, yaw_rate_rad_s])
-    required_body_torque = np.cross(body_rate, INERTIA_KGM2 @ body_rate)
-    target_force_moment = np.r_[total_thrust_n, required_body_torque]
-    physical_input = _solve_motor_thrust(target_force_moment)
+    rigid_body_torque = np.cross(body_rate, INERTIA_KGM2 @ body_rate)
+    physical_input = np.full(INPUT_DIM, total_thrust_n / INPUT_DIM)
+    for _ in range(20):
+        required_body_torque = rigid_body_torque - _rotor_gyroscopic_torque(
+            body_rate, physical_input)
+        target_force_moment = np.r_[total_thrust_n, required_body_torque]
+        next_physical_input = _solve_motor_thrust(target_force_moment)
+        if float(np.max(np.abs(next_physical_input - physical_input))) < 1.0e-14:
+            physical_input = next_physical_input
+            break
+        physical_input = next_physical_input
+    else:
+        raise RuntimeError("gyro-aware coordinated-turn allocation did not converge")
     rotor_state = (
         _thrust_to_rpm(physical_input) / ROTOR_STATE_SCALE_RPM
         - hover_rotor_state)
@@ -409,6 +466,7 @@ def _operating_point(
     nominal_state = np.zeros(STATE_DIM)
     nominal_input = np.zeros(INPUT_DIM)
     metadata = {
+        "maneuver_kind": "turn",
         "side_sign": int(side_sign),
         "speed_mps": float(speed_mps),
         "radius_m": RADIUS_M,
@@ -424,6 +482,76 @@ def _operating_point(
     }
     return (
         nominal_state, nominal_input, physical_input,
+        target_force_moment, metadata)
+
+
+def _braking_operating_point(
+    speed_mps: float,
+    hover_rotor_state: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, object]]:
+    """Solve one drag-aware point on the straight 6 m/s^2 braking schedule."""
+    velocity_local = np.asarray([speed_mps, 0.0, 0.0])
+    acceleration_local = np.asarray([-BRAKING_DECELERATION_MPS2, 0.0, 0.0])
+    gravity_local = np.asarray([0.0, 0.0, -9.81])
+    pitch_rad = math.atan2(-BRAKING_DECELERATION_MPS2, 9.81)
+    for _ in range(100):
+        half_pitch = 0.5 * pitch_rad
+        quaternion = np.asarray([
+            math.cos(half_pitch), 0.0, math.sin(half_pitch), 0.0])
+        rotation_body_to_local = _quat_rotation(quaternion)
+        drag_force_local = rotation_body_to_local @ (
+            BODY_LINEAR_DRAG_N_PER_MPS
+            @ (rotation_body_to_local.T @ velocity_local))
+        required_thrust_local = (
+            MASS_KG * (acceleration_local - gravity_local)
+            - drag_force_local)
+        next_pitch = math.atan2(
+            float(required_thrust_local[0]),
+            float(required_thrust_local[2]))
+        if abs(next_pitch - pitch_rad) < 1.0e-14:
+            pitch_rad = next_pitch
+            break
+        pitch_rad = next_pitch
+    else:
+        raise RuntimeError("drag-aware braking pitch did not converge")
+
+    half_pitch = 0.5 * pitch_rad
+    quaternion = np.asarray([
+        math.cos(half_pitch), 0.0, math.sin(half_pitch), 0.0])
+    rotation_body_to_local = _quat_rotation(quaternion)
+    drag_force_local = rotation_body_to_local @ (
+        BODY_LINEAR_DRAG_N_PER_MPS
+        @ (rotation_body_to_local.T @ velocity_local))
+    required_thrust_local = (
+        MASS_KG * (acceleration_local - gravity_local) - drag_force_local)
+    total_thrust_n = float(np.linalg.norm(required_thrust_local))
+    translational_residual = (
+        rotation_body_to_local @ np.asarray([0.0, 0.0, total_thrust_n])
+        + drag_force_local + MASS_KG * gravity_local
+        - MASS_KG * acceleration_local)
+    if float(np.max(np.abs(translational_residual))) > 1.0e-12:
+        raise RuntimeError(
+            f"drag-aware braking residual {translational_residual}")
+    target_force_moment = np.asarray([total_thrust_n, 0.0, 0.0, 0.0])
+    physical_input = _solve_motor_thrust(target_force_moment)
+    metadata = {
+        "maneuver_kind": "braking",
+        "side_sign": 0,
+        "speed_mps": float(speed_mps),
+        "radius_m": 0.0,
+        "roll_rad": 0.0,
+        "pitch_rad": pitch_rad,
+        "yaw_rate_rad_s": 0.0,
+        "braking_deceleration_mps2": BRAKING_DECELERATION_MPS2,
+        "nominal_total_thrust_n": total_thrust_n,
+        "nominal_tangential_drag_accel_mps2": float(
+            -BODY_LINEAR_DRAG_N_PER_MPS[0, 0] * speed_mps / MASS_KG),
+        "nominal_drag_force_local_n": drag_force_local.tolist(),
+        "translational_equilibrium_residual_max_abs": float(
+            np.max(np.abs(translational_residual))),
+    }
+    return (
+        np.zeros(STATE_DIM), np.zeros(INPUT_DIM), physical_input,
         target_force_moment, metadata)
 
 
@@ -544,23 +672,29 @@ def _verify_bundle(bundle: dict[str, object]) -> dict[str, float | bool]:
 def _make_bundle(
     name: str,
     model_id: int,
+    maneuver_kind: str,
     side_sign: int,
     speed_mps: float,
     hover_thrust_n: float,
     hover_rotor_state: float,
 ) -> dict[str, object]:
-    (nominal_state, nominal_input, physical_input,
-     target_force_moment, metadata) = _operating_point(
-         side_sign, speed_mps, hover_thrust_n, hover_rotor_state)
-    if side_sign == 0:
+    if maneuver_kind == "braking":
+        (nominal_state, nominal_input, physical_input,
+         target_force_moment, metadata) = _braking_operating_point(
+             speed_mps, hover_rotor_state)
+    else:
+        (nominal_state, nominal_input, physical_input,
+         target_force_moment, metadata) = _operating_point(
+             side_sign, speed_mps, hover_thrust_n, hover_rotor_state)
+    if maneuver_kind == "level":
         a, b, affine, nominal_next = _linearize(
             nominal_state, nominal_input, hover_thrust_n, hover_rotor_state)
     else:
-        transition = lambda state, motor_input: _bank_error_transition(
+        transition = lambda state, motor_input: _maneuver_error_transition(
             state, motor_input, metadata, physical_input)
         a, b, affine, nominal_next = _linearize_transition(transition)
     q_diagonal, r, cache, spectral_radius = _cache_bundle(
-        a, b, affine, banked=side_sign != 0)
+        a, b, affine, banked=maneuver_kind in ("turn", "braking"))
     bundle: dict[str, object] = {
         "name": name,
         "model_id": model_id,
@@ -579,12 +713,13 @@ def _make_bundle(
         "metadata": metadata,
     }
     bundle["verification"] = _verify_bundle(bundle)
-    if side_sign != 0:
-        absolute = _bank_reference_absolute(metadata, physical_input, 0.0)
+    if maneuver_kind == "turn":
+        reference_function = _turn_reference_absolute
+        absolute = reference_function(metadata, physical_input, 0.0)
         maximum_error = 0.0
         for knot in range(1, 20):
             absolute = _rk4_step(absolute, physical_input, DT_S)
-            reference = _bank_reference_absolute(
+            reference = reference_function(
                 metadata, physical_input, knot * DT_S)
             error = _bank_error_from_absolute(
                 absolute, reference,
@@ -599,6 +734,16 @@ def _make_bundle(
         if maximum_error > NONLINEAR_FIXED_POINT_TOLERANCE:
             raise RuntimeError(
                 f"{name} nonlinear Frenet fixed point failed: {maximum_error}")
+    elif maneuver_kind == "braking":
+        zero_error = _maneuver_error_transition(
+            np.zeros(STATE_DIM), np.zeros(INPUT_DIM), metadata, physical_input)
+        maximum_error = float(np.max(np.abs(zero_error)))
+        bundle["verification"][
+            "nonlinear_frozen_phase_fixed_point_max_abs"] = maximum_error
+        if maximum_error > 1.0e-12:
+            raise RuntimeError(
+                f"{name} nonlinear braking phase fixed point failed: "
+                f"{maximum_error}")
     return bundle
 
 
@@ -607,17 +752,22 @@ def build_bundles() -> list[dict[str, object]]:
     hover_thrust_n = float(hover_reference.motor_thrust_n[0, 0])
     hover_rotor_state = float(hover_reference.motor_state[0, 0])
     definitions = [
-        ("level", 0, 0, 0.0),
-        ("left_low", 1, 1, SPEEDS_MPS[0]),
-        ("right_low", 2, -1, SPEEDS_MPS[0]),
-        ("left_medium", 3, 1, SPEEDS_MPS[1]),
-        ("right_medium", 4, -1, SPEEDS_MPS[1]),
-        ("left_high", 5, 1, SPEEDS_MPS[2]),
-        ("right_high", 6, -1, SPEEDS_MPS[2]),
-        ("left_very_high", 7, 1, SPEEDS_MPS[3]),
-        ("right_very_high", 8, -1, SPEEDS_MPS[3]),
-        ("left_maximum", 9, 1, SPEEDS_MPS[4]),
-        ("right_maximum", 10, -1, SPEEDS_MPS[4]),
+        ("level", 0, "level", 0, 0.0),
+        ("left_low", 1, "turn", 1, SPEEDS_MPS[0]),
+        ("right_low", 2, "turn", -1, SPEEDS_MPS[0]),
+        ("left_medium", 3, "turn", 1, SPEEDS_MPS[1]),
+        ("right_medium", 4, "turn", -1, SPEEDS_MPS[1]),
+        ("left_high", 5, "turn", 1, SPEEDS_MPS[2]),
+        ("right_high", 6, "turn", -1, SPEEDS_MPS[2]),
+        ("left_very_high", 7, "turn", 1, SPEEDS_MPS[3]),
+        ("right_very_high", 8, "turn", -1, SPEEDS_MPS[3]),
+        ("left_maximum", 9, "turn", 1, SPEEDS_MPS[4]),
+        ("right_maximum", 10, "turn", -1, SPEEDS_MPS[4]),
+        ("brake_low", 11, "braking", 0, SPEEDS_MPS[0]),
+        ("brake_medium", 12, "braking", 0, SPEEDS_MPS[1]),
+        ("brake_high", 13, "braking", 0, SPEEDS_MPS[2]),
+        ("brake_very_high", 14, "braking", 0, SPEEDS_MPS[3]),
+        ("brake_maximum", 15, "braking", 0, SPEEDS_MPS[4]),
     ]
     # Upstream cache construction loads a temporary native library.  ctypes
     # cannot unload it reliably, so building every bundle in one process
@@ -625,11 +775,11 @@ def build_bundles() -> list[dict[str, object]]:
     # per bundle bounds peak memory without changing any generated numerics.
     context = multiprocessing.get_context("fork")
     bundles = []
-    for name, identifier, side_sign, speed_mps in definitions:
+    for name, identifier, maneuver_kind, side_sign, speed_mps in definitions:
         with context.Pool(processes=1, maxtasksperchild=1) as pool:
             bundles.append(pool.apply(
                 _make_bundle,
-                (name, identifier, side_sign, speed_mps,
+                (name, identifier, maneuver_kind, side_sign, speed_mps,
                  hover_thrust_n, hover_rotor_state)))
     # The direct hover model must reproduce the already accepted level model.
     accepted_a, accepted_b, accepted_affine = level._linearize_interval(
@@ -702,7 +852,7 @@ def _render_header(
  * generator_sha256={generator_sha256}
  * dynamics_sha256={dynamics_sha256}
  * profile_sha256={profile_sha256}
- * LEVEL uses the legacy absolute local chart. Banked bundles use rotating
+ * LEVEL uses the legacy absolute local chart. Turn and braking bundles use
  * Frenet/reference-relative error states and motor inputs relative to each
  * bundle's physical_input operating point. */
 #ifndef TINYMPC_BANKED_MODEL_BANK_H
@@ -711,6 +861,8 @@ def _render_header(
 #define TINYMPC_BANK_MODEL_STATE_DIM {STATE_DIM}
 #define TINYMPC_BANK_MODEL_INPUT_DIM {INPUT_DIM}
 #define TINYMPC_BANK_MODEL_COUNT {len(bundles)}
+#define TINYMPC_BANK_MODEL_DT_S ({level._literal(DT_S)})
+#define TINYMPC_BANK_MODEL_RHO ({level._literal(level.RHO)})
 #define TINYMPC_BANK_MODEL_RADIUS_M ({level._literal(RADIUS_M)})
 #define TINYMPC_BANK_MODEL_MASS_KG ({level._literal(plant_profile.MASS_KG)})
 #define TINYMPC_BANK_MODEL_DRAG_X_N_PER_MPS ({level._literal(plant_profile.BODY_LINEAR_DRAG_DIAGONAL_N_PER_MPS[0])})
@@ -727,6 +879,12 @@ def _render_header(
 #define TINYMPC_BANK_BUNDLE_ID_RIGHT_VERY_HIGH 8
 #define TINYMPC_BANK_BUNDLE_ID_LEFT_MAXIMUM 9
 #define TINYMPC_BANK_BUNDLE_ID_RIGHT_MAXIMUM 10
+#define TINYMPC_BANK_BUNDLE_ID_BRAKE_LOW 11
+#define TINYMPC_BANK_BUNDLE_ID_BRAKE_MEDIUM 12
+#define TINYMPC_BANK_BUNDLE_ID_BRAKE_HIGH 13
+#define TINYMPC_BANK_BUNDLE_ID_BRAKE_VERY_HIGH 14
+#define TINYMPC_BANK_BUNDLE_ID_BRAKE_MAXIMUM 15
+#define TINYMPC_BRAKING_DECELERATION_MPS2 ({level._literal(BRAKING_DECELERATION_MPS2)})
 #define TINYMPC_BANK_MODEL_LOW_SPEED_MPS ({level._literal(SPEEDS_MPS[0])})
 #define TINYMPC_BANK_MODEL_MEDIUM_SPEED_MPS ({level._literal(SPEEDS_MPS[1])})
 #define TINYMPC_BANK_MODEL_HIGH_SPEED_MPS ({level._literal(SPEEDS_MPS[2])})
@@ -742,6 +900,11 @@ def _render_header(
 #define TINYMPC_BANK_MODEL_RIGHT_VERY_HIGH_ROLL_RAD ({level._literal(bundles[8]['metadata']['roll_rad'])})
 #define TINYMPC_BANK_MODEL_LEFT_MAXIMUM_ROLL_RAD ({level._literal(bundles[9]['metadata']['roll_rad'])})
 #define TINYMPC_BANK_MODEL_RIGHT_MAXIMUM_ROLL_RAD ({level._literal(bundles[10]['metadata']['roll_rad'])})
+#define TINYMPC_BANK_MODEL_BRAKE_LOW_PITCH_RAD ({level._literal(bundles[11]['metadata']['pitch_rad'])})
+#define TINYMPC_BANK_MODEL_BRAKE_MEDIUM_PITCH_RAD ({level._literal(bundles[12]['metadata']['pitch_rad'])})
+#define TINYMPC_BANK_MODEL_BRAKE_HIGH_PITCH_RAD ({level._literal(bundles[13]['metadata']['pitch_rad'])})
+#define TINYMPC_BANK_MODEL_BRAKE_VERY_HIGH_PITCH_RAD ({level._literal(bundles[14]['metadata']['pitch_rad'])})
+#define TINYMPC_BANK_MODEL_BRAKE_MAXIMUM_PITCH_RAD ({level._literal(bundles[15]['metadata']['pitch_rad'])})
 
 {chr(10).join(blocks)}
 
@@ -808,13 +971,17 @@ def generate(output: Path, provenance_output: Path) -> dict[str, object]:
             "verification": bundle["verification"],
         })
     report: dict[str, object] = {
-        "format": "tinympc-actuator-banked-models-v3",
+        "format": "tinympc-actuator-maneuver-models-v5",
         "coordinate_system": {
             "level": "legacy absolute yaw-local state; rotor/input relative to hover",
             "banked": (
                 "rotating Frenet reference error: yaw-frame position/velocity, "
                 "reference-relative Rodrigues attitude, invariant body-rate error, "
                 "rotor and motor-input correction relative to physical_input"
+            ),
+            "braking": (
+                "straight Frenet reference error frozen at a speed-indexed "
+                "6 m/s^2 deceleration phase point"
             ),
             "bundle_selection": "one complete offline bundle atomically selected per solve",
         },
@@ -828,6 +995,7 @@ def generate(output: Path, provenance_output: Path) -> dict[str, object]:
         "model_count": len(bundles),
         "radius_m": RADIUS_M,
         "speeds_mps": list(SPEEDS_MPS),
+        "braking_deceleration_mps2": BRAKING_DECELERATION_MPS2,
         "bank_cost": {
             "roll_state_index": 3,
             "roll_state_weight": BANK_ROLL_STATE_WEIGHT,
@@ -871,6 +1039,7 @@ def generate(output: Path, provenance_output: Path) -> dict[str, object]:
         print(
             f"{model['model_id']} {model['name']}: "
             f"roll={math.degrees(model['roll_rad']):.6f} deg "
+            f"pitch={math.degrees(model['pitch_rad']):.6f} deg "
             f"speed={model['speed_mps']:.3f} m/s "
             f"rho_cl={verification['closed_loop_spectral_radius']:.9f} "
             f"cache_error={verification['cache_identity_max_abs']:.3e}")

@@ -1,14 +1,15 @@
 {
-  "format": "tinympc-actuator-banked-models-v3",
+  "format": "tinympc-actuator-maneuver-models-v5",
   "coordinate_system": {
     "level": "legacy absolute yaw-local state; rotor/input relative to hover",
     "banked": "rotating Frenet reference error: yaw-frame position/velocity, reference-relative Rodrigues attitude, invariant body-rate error, rotor and motor-input correction relative to physical_input",
+    "braking": "straight Frenet reference error frozen at a speed-indexed 6 m/s^2 deceleration phase point",
     "bundle_selection": "one complete offline bundle atomically selected per solve"
   },
-  "generator_sha256": "a77345794de04be3cceb4348cce764643b1ad3991b35f58dd153a4b2be849d09",
-  "dynamics_sha256": "0dd442d2b907e0d59fd127485678d4fe3708053888751be33d2f46908b494a3b",
+  "generator_sha256": "9879e7c3dd5331484a446a4ba7492c9f4d00881a1746aa3c27163f0bb574e50c",
+  "dynamics_sha256": "ef6c92ad8826e32c890f65455daa4d3ccc857c0ca5faf285c7014bd6449f1540",
   "adapter_sha256": "da88f058692825260e419c092b457270f88690ce7a796629da51710b97a11238",
-  "profile_sha256": "8f3a0f7cb6d13f5c5562d22da945394cf5c4d99988cf35bd9a67077bd6d47687",
+  "profile_sha256": "39bb566d85e99f45459d8d9e3701eca1727b46b11fde26fcbfb273d36e63a31d",
   "plant_profile": {
     "profile_name": "cf21B_500_runtime",
     "source_class": "CrazySim runtime simulation authority; not hardware truth",
@@ -35,6 +36,7 @@
       2.4693477924534137e-12
     ],
     "rotor_dynamics_coefficient_per_s": 15.416891997523813,
+    "propeller_inertia_kgm2": 3.893e-08,
     "motor_time_constant_s": 0.06486391681025042,
     "maximum_motor_thrust_n": 0.2,
     "normalized_command_full_thrust_n": 0.2,
@@ -45,12 +47,12 @@
     },
     "source_sha256": {
       "drone_models_params_toml": "5f9613e0f4fbf949e351e696ad5d840632405c2224313f1f12c7e1a57dd1e48e",
-      "crazysim_py": "a24cfd58f2d64600b9ba3d2b0a041a0a4520f7053199555028fd5249a4ad6d33"
+      "crazysim_py": "f5ab66d1a3179a29e4038acf4565f6e3f2809b12d76083c865b023007a5542d5"
     }
   },
   "state_dim": 16,
   "input_dim": 4,
-  "model_count": 11,
+  "model_count": 16,
   "radius_m": 0.75,
   "speeds_mps": [
     1.0,
@@ -59,6 +61,7 @@
     2.5,
     3.0
   ],
+  "braking_deceleration_mps2": 6.0,
   "bank_cost": {
     "roll_state_index": 3,
     "roll_state_weight": 40.0,
@@ -79,6 +82,7 @@
     {
       "model_id": 0,
       "name": "level",
+      "maneuver_kind": "level",
       "side_sign": 0,
       "speed_mps": 0.0,
       "radius_m": 0.0,
@@ -123,15 +127,16 @@
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 1.3322676295501878e-15,
+        "cache_identity_max_abs": 8.881784197001252e-16,
         "allocation_residual_max_abs": 0.0,
-        "closed_loop_spectral_radius": 0.9851621660100979,
-        "accepted_hover_parity_max_abs": 1.4455991959039238e-11
+        "closed_loop_spectral_radius": 0.985162166010098,
+        "accepted_hover_parity_max_abs": 1.4456436048249088e-11
       }
     },
     {
       "model_id": 1,
       "name": "left_low",
+      "maneuver_kind": "turn",
       "side_sign": 1,
       "speed_mps": 1.0,
       "radius_m": 0.75,
@@ -172,25 +177,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.10754677947073073,
-        0.10757998744760525,
-        0.10750670548528457,
-        0.10747967447425312
+        0.10754678091480596,
+        0.10757999062798532,
+        0.10750670404118365,
+        0.10747967129389878
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 1.7763568394002505e-15,
-        "allocation_residual_max_abs": 1.3279359030579294e-18,
-        "closed_loop_spectral_radius": 0.9955392909100312,
-        "nonlinear_fixed_point_20_knot_max_abs": 1.8205906872981876e-10
+        "cache_identity_max_abs": 8.881784197001252e-16,
+        "allocation_residual_max_abs": 5.551115123125783e-17,
+        "closed_loop_spectral_radius": 0.9955392909096441,
+        "nonlinear_fixed_point_20_knot_max_abs": 1.8205973987195631e-10
       }
     },
     {
       "model_id": 2,
       "name": "right_low",
+      "maneuver_kind": "turn",
       "side_sign": -1,
       "speed_mps": 1.0,
       "radius_m": 0.75,
@@ -231,25 +237,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.10747967447425306,
-        0.10750670548528456,
-        0.1075799874476052,
-        0.10754677947073073
+        0.10747967129389874,
+        0.10750670404118365,
+        0.10757999062798529,
+        0.10754678091480599
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 6.661338147750939e-16,
-        "allocation_residual_max_abs": 1.1102230246251565e-16,
-        "closed_loop_spectral_radius": 0.9955392909100312,
-        "nonlinear_fixed_point_20_knot_max_abs": 1.820594500455155e-10
+        "cache_identity_max_abs": 6.154921451581693e-16,
+        "allocation_residual_max_abs": 1.1341771163735082e-18,
+        "closed_loop_spectral_radius": 0.9955392909096437,
+        "nonlinear_fixed_point_20_knot_max_abs": 1.8205974381388046e-10
       }
     },
     {
       "model_id": 3,
       "name": "left_medium",
+      "maneuver_kind": "turn",
       "side_sign": 1,
       "speed_mps": 1.5,
       "radius_m": 0.75,
@@ -290,25 +297,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.11170622757472067,
-        0.11182659193856719,
-        0.11147450123012817,
-        0.1113992380666961
+        0.11170626734996153,
+        0.11182665962530691,
+        0.11147446145305097,
+        0.11139917038179277
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 8.881784197001252e-16,
-        "allocation_residual_max_abs": 3.066831016299964e-16,
-        "closed_loop_spectral_radius": 0.9955228679022942,
-        "nonlinear_fixed_point_20_knot_max_abs": 1.6082735270725388e-09
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 3.0277997380904857e-16,
+        "closed_loop_spectral_radius": 0.9955228679004406,
+        "nonlinear_fixed_point_20_knot_max_abs": 1.6082529687736643e-09
       }
     },
     {
       "model_id": 4,
       "name": "right_medium",
+      "maneuver_kind": "turn",
       "side_sign": -1,
       "speed_mps": 1.5,
       "radius_m": 0.75,
@@ -349,25 +357,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.1113992380666957,
-        0.11147450123012803,
-        0.11182659193856702,
-        0.11170622757472028
+        0.11139917038179266,
+        0.11147446145305108,
+        0.11182665962530682,
+        0.11170626734996161
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 6.661338147750939e-16,
-        "allocation_residual_max_abs": 1.1102230246251565e-15,
-        "closed_loop_spectral_radius": 0.9955228679022929,
-        "nonlinear_fixed_point_20_knot_max_abs": 1.6082943369808525e-09
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 3.007199896813261e-16,
+        "closed_loop_spectral_radius": 0.9955228679004414,
+        "nonlinear_fixed_point_20_knot_max_abs": 1.6082591180705956e-09
       }
     },
     {
       "model_id": 5,
       "name": "left_high",
+      "maneuver_kind": "turn",
       "side_sign": 1,
       "speed_mps": 2.0,
       "radius_m": 0.75,
@@ -408,25 +417,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.12195247503772313,
-        0.12225169799801543,
-        0.12128988474669426,
-        0.12116458491773609
+        0.12195281384593677,
+        0.12225221946939596,
+        0.12128954591041889,
+        0.12116406347442162
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 6.661338147750939e-16,
-        "allocation_residual_max_abs": 1.3853959076942299e-14,
-        "closed_loop_spectral_radius": 0.9955171512686393,
-        "nonlinear_fixed_point_20_knot_max_abs": 8.086511632323052e-09
+        "cache_identity_max_abs": 1.1810595082904583e-15,
+        "allocation_residual_max_abs": 1.38352023793583e-14,
+        "closed_loop_spectral_radius": 0.99551715126543,
+        "nonlinear_fixed_point_20_knot_max_abs": 8.086490858192796e-09
       }
     },
     {
       "model_id": 6,
       "name": "right_high",
+      "maneuver_kind": "turn",
       "side_sign": -1,
       "speed_mps": 2.0,
       "radius_m": 0.75,
@@ -467,25 +477,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.1211645849177355,
-        0.12128988474669482,
-        0.12225169799801484,
-        0.12195247503772369
+        0.12116406347442144,
+        0.12128954591041906,
+        0.1222522194693958,
+        0.12195281384593694
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 6.653008732444558e-16,
-        "allocation_residual_max_abs": 1.384040654978623e-14,
-        "closed_loop_spectral_radius": 0.9955171512686395,
-        "nonlinear_fixed_point_20_knot_max_abs": 8.08650255083413e-09
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 1.3831190831320103e-14,
+        "closed_loop_spectral_radius": 0.9955171512654281,
+        "nonlinear_fixed_point_20_knot_max_abs": 8.08648566509463e-09
       }
     },
     {
       "model_id": 7,
       "name": "left_very_high",
+      "maneuver_kind": "turn",
       "side_sign": 1,
       "speed_mps": 2.5,
       "radius_m": 0.75,
@@ -526,25 +537,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.140870763009504,
-        0.14145852812701976,
-        0.1396285643435487,
-        0.13949958147376076
+        0.14087219697622522,
+        0.14146066106504548,
+        0.13962713021801051,
+        0.139497448694552
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 9.992007221626409e-16,
-        "allocation_residual_max_abs": 1.758020676733904e-13,
-        "closed_loop_spectral_radius": 0.9955150004646814,
-        "nonlinear_fixed_point_20_knot_max_abs": 2.8375263097516506e-08
+        "cache_identity_max_abs": 1.3322676295501878e-15,
+        "allocation_residual_max_abs": 1.7593574980125787e-13,
+        "closed_loop_spectral_radius": 0.9955150004625624,
+        "nonlinear_fixed_point_20_knot_max_abs": 2.8375337998834373e-08
       }
     },
     {
       "model_id": 8,
       "name": "right_very_high",
+      "maneuver_kind": "turn",
       "side_sign": -1,
       "speed_mps": 2.5,
       "radius_m": 0.75,
@@ -585,10 +597,10 @@
         0.0
       ],
       "physical_input_n": [
-        0.13949958147376443,
-        0.13962856434354756,
-        0.1414585281270209,
-        0.14087076300950033
+        0.139497448694552,
+        0.13962713021801051,
+        0.14146066106504548,
+        0.14087219697622522
       ],
       "verification": {
         "dimensions_valid": true,
@@ -596,14 +608,15 @@
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
         "cache_identity_max_abs": 1.7763568394002505e-15,
-        "allocation_residual_max_abs": 1.758579040852734e-13,
-        "closed_loop_spectral_radius": 0.9955150004646809,
-        "nonlinear_fixed_point_20_knot_max_abs": 2.8375821415603582e-08
+        "allocation_residual_max_abs": 1.7593574980125787e-13,
+        "closed_loop_spectral_radius": 0.9955150004625625,
+        "nonlinear_fixed_point_20_knot_max_abs": 2.8375337998834373e-08
       }
     },
     {
       "model_id": 9,
       "name": "left_maximum",
+      "maneuver_kind": "turn",
       "side_sign": 1,
       "speed_mps": 3.0,
       "radius_m": 0.75,
@@ -644,25 +657,26 @@
         0.0
       ],
       "physical_input_n": [
-        0.16966262796597192,
-        0.170647484717454,
-        0.1678939351193802,
-        0.16785373822780048
+        0.1696664760706325,
+        0.17065321659708746,
+        0.1678900865520402,
+        0.1678480068108464
       ],
       "verification": {
         "dimensions_valid": true,
         "finite_double_and_float32": true,
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
-        "cache_identity_max_abs": 4.440892098500626e-16,
-        "allocation_residual_max_abs": 9.543659536693366e-13,
-        "closed_loop_spectral_radius": 0.995513490315049,
-        "nonlinear_fixed_point_20_knot_max_abs": 7.834136236364862e-08
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 9.544728560035437e-13,
+        "closed_loop_spectral_radius": 0.9955134903154256,
+        "nonlinear_fixed_point_20_knot_max_abs": 7.834246230310354e-08
       }
     },
     {
       "model_id": 10,
       "name": "right_maximum",
+      "maneuver_kind": "turn",
       "side_sign": -1,
       "speed_mps": 3.0,
       "radius_m": 0.75,
@@ -703,10 +717,10 @@
         0.0
       ],
       "physical_input_n": [
-        0.1678537382278142,
-        0.16789393511938733,
-        0.17064748471746774,
-        0.16966262796598425
+        0.1678480068108555,
+        0.1678900865520493,
+        0.17065321659710184,
+        0.16966647607064686
       ],
       "verification": {
         "dimensions_valid": true,
@@ -714,13 +728,318 @@
         "input_bounds_valid": true,
         "affine_identity_max_abs": 0.0,
         "cache_identity_max_abs": 1.7763568394002505e-15,
-        "allocation_residual_max_abs": 9.544125743627535e-13,
-        "closed_loop_spectral_radius": 0.9955134903150588,
-        "nonlinear_fixed_point_20_knot_max_abs": 7.834036629903902e-08
+        "allocation_residual_max_abs": 9.544735065248472e-13,
+        "closed_loop_spectral_radius": 0.9955134903154345,
+        "nonlinear_fixed_point_20_knot_max_abs": 7.834118228328281e-08
+      }
+    },
+    {
+      "model_id": 11,
+      "name": "brake_low",
+      "maneuver_kind": "braking",
+      "side_sign": 0,
+      "speed_mps": 1.0,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": -0.5113394206360746,
+      "yaw_rate_rad_s": 0.0,
+      "braking_deceleration_mps2": 6.0,
+      "nominal_total_thrust_n": 0.4869442893243009,
+      "nominal_tangential_drag_accel_mps2": 0.4954271553711388,
+      "nominal_drag_force_local_n": [
+        -0.02199586661709261,
+        0.0,
+        0.0008986276234867334
+      ],
+      "translational_equilibrium_residual_max_abs": 5.551115123125783e-17,
+      "bank_magnitude_deg": 0.0,
+      "nominal_state": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "nominal_input_delta_n": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_input_n": [
+        0.12173607233107525,
+        0.12173607233107522,
+        0.12173607233107522,
+        0.12173607233107522
+      ],
+      "verification": {
+        "dimensions_valid": true,
+        "finite_double_and_float32": true,
+        "input_bounds_valid": true,
+        "affine_identity_max_abs": 0.0,
+        "cache_identity_max_abs": 3.552713678800501e-15,
+        "allocation_residual_max_abs": 8.673617379884035e-19,
+        "closed_loop_spectral_radius": 0.9955169044311016,
+        "nonlinear_frozen_phase_fixed_point_max_abs": 0.0
+      }
+    },
+    {
+      "model_id": 12,
+      "name": "brake_medium",
+      "maneuver_kind": "braking",
+      "side_sign": 0,
+      "speed_mps": 1.5,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": -0.49192814504510574,
+      "yaw_rate_rad_s": 0.0,
+      "braking_deceleration_mps2": 6.0,
+      "nominal_total_thrust_n": 0.4813153702218763,
+      "nominal_tangential_drag_accel_mps2": 0.7431407330567082,
+      "nominal_drag_force_local_n": [
+        -0.03294210263235233,
+        0.0,
+        0.0013149850552107124
+      ],
+      "translational_equilibrium_residual_max_abs": 0.0,
+      "bank_magnitude_deg": 0.0,
+      "nominal_state": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "nominal_input_delta_n": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_input_n": [
+        0.12032884255546915,
+        0.12032884255546906,
+        0.12032884255546906,
+        0.12032884255546908
+      ],
+      "verification": {
+        "dimensions_valid": true,
+        "finite_double_and_float32": true,
+        "input_bounds_valid": true,
+        "affine_identity_max_abs": 0.0,
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 5.551115123125783e-17,
+        "closed_loop_spectral_radius": 0.9955173086775634,
+        "nonlinear_frozen_phase_fixed_point_max_abs": 3.697785493223493e-32
+      }
+    },
+    {
+      "model_id": 13,
+      "name": "brake_high",
+      "maneuver_kind": "braking",
+      "side_sign": 0,
+      "speed_mps": 2.0,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": -0.47210451674347076,
+      "yaw_rate_rad_s": 0.0,
+      "braking_deceleration_mps2": 6.0,
+      "nominal_total_thrust_n": 0.4759104005258317,
+      "nominal_tangential_drag_accel_mps2": 0.9908543107422776,
+      "nominal_drag_force_local_n": [
+        -0.04385422410051002,
+        0.0,
+        0.001705711583579337
+      ],
+      "translational_equilibrium_residual_max_abs": 0.0,
+      "bank_magnitude_deg": 0.0,
+      "nominal_state": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "nominal_input_delta_n": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_input_n": [
+        0.11897760013145796,
+        0.11897760013145793,
+        0.11897760013145793,
+        0.11897760013145793
+      ],
+      "verification": {
+        "dimensions_valid": true,
+        "finite_double_and_float32": true,
+        "input_bounds_valid": true,
+        "affine_identity_max_abs": 0.0,
+        "cache_identity_max_abs": 9.171615192273076e-16,
+        "allocation_residual_max_abs": 5.551115123125783e-17,
+        "closed_loop_spectral_radius": 0.9955177163276042,
+        "nonlinear_frozen_phase_fixed_point_max_abs": 0.0
+      }
+    },
+    {
+      "model_id": 14,
+      "name": "brake_very_high",
+      "maneuver_kind": "braking",
+      "side_sign": 0,
+      "speed_mps": 2.5,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": -0.45187133179027333,
+      "yaw_rate_rad_s": 0.0,
+      "braking_deceleration_mps2": 6.0,
+      "nominal_total_thrust_n": 0.47073698307053197,
+      "nominal_tangential_drag_accel_mps2": 1.2385678884278468,
+      "nominal_drag_force_local_n": [
+        -0.054732787280660285,
+        0.0,
+        0.0020679529273024324
+      ],
+      "translational_equilibrium_residual_max_abs": 5.551115123125783e-17,
+      "bank_magnitude_deg": 0.0,
+      "nominal_state": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "nominal_input_delta_n": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_input_n": [
+        0.11768424576763298,
+        0.117684245767633,
+        0.117684245767633,
+        0.11768424576763299
+      ],
+      "verification": {
+        "dimensions_valid": true,
+        "finite_double_and_float32": true,
+        "input_bounds_valid": true,
+        "affine_identity_max_abs": 0.0,
+        "cache_identity_max_abs": 1.7763568394002505e-15,
+        "allocation_residual_max_abs": 5.551115123125783e-17,
+        "closed_loop_spectral_radius": 0.995518127348776,
+        "nonlinear_frozen_phase_fixed_point_max_abs": 1.9721522630525295e-31
+      }
+    },
+    {
+      "model_id": 15,
+      "name": "brake_maximum",
+      "maneuver_kind": "braking",
+      "side_sign": 0,
+      "speed_mps": 3.0,
+      "radius_m": 0.0,
+      "roll_rad": 0.0,
+      "pitch_rad": -0.4312328434162402,
+      "yaw_rate_rad_s": 0.0,
+      "braking_deceleration_mps2": 6.0,
+      "nominal_total_thrust_n": 0.4658027248435078,
+      "nominal_tangential_drag_accel_mps2": 1.4862814661134165,
+      "nominal_drag_force_local_n": [
+        -0.06557860769193649,
+        0.0,
+        0.0023987917005923293
+      ],
+      "translational_equilibrium_residual_max_abs": 5.551115123125783e-17,
+      "bank_magnitude_deg": 0.0,
+      "nominal_state": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "nominal_input_delta_n": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_input_n": [
+        0.11645068121087693,
+        0.11645068121087696,
+        0.11645068121087696,
+        0.11645068121087696
+      ],
+      "verification": {
+        "dimensions_valid": true,
+        "finite_double_and_float32": true,
+        "input_bounds_valid": true,
+        "affine_identity_max_abs": 0.0,
+        "cache_identity_max_abs": 8.881784197001252e-16,
+        "allocation_residual_max_abs": 8.673617379884035e-19,
+        "closed_loop_spectral_radius": 0.9955185417047536,
+        "nonlinear_frozen_phase_fixed_point_max_abs": 1.232595164407831e-32
       }
     }
   ],
-  "header_sha256": "5d5db163f21cbb9fc2be066d7d67a31de1447e4753dcda0d6b2d19845292bdd7",
+  "header_sha256": "99873abf15a33755f36c967f9d92432482d25f2587a5240bdd70af0480fb15f5",
   "self_check": {
     "all_models_verified": true,
     "deterministic_render": true

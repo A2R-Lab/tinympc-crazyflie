@@ -1,0 +1,20 @@
+{
+  "format": "tinympc-imav22-circle-trajectory-v1",
+  "source_task": "crazyflie_espnetv2_imav22",
+  "trajectory_family": "circle",
+  "radius_m": 3.6,
+  "nominal_speed_mps": 0.8,
+  "rotation_rad": -1.5707963267948966,
+  "height_m": 1.0,
+  "sample_rate_hz": 50,
+  "duration_s": 28.28,
+  "world_spawn_xy_m": [
+    -3.6,
+    0.0
+  ],
+  "world_circle_center_xy_m": [
+    0.0,
+    0.0
+  ],
+  "header_sha256": "ed02c8a137ffb017d406adf5b8832408f1cad28fd44fda438617a340b842a0bf"
+}

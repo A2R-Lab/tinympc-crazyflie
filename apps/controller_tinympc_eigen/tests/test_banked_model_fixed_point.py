@@ -2,6 +2,7 @@
 """Regression tests for the banked affine-model firmware recursion."""
 
 import importlib.util
+import math
 from pathlib import Path
 import sys
 import unittest
@@ -91,6 +92,12 @@ class BankedModelFixedPointTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.bundles = MODULE.build_bundles()
+        cls.turn_bundles = [
+            bundle for bundle in cls.bundles
+            if bundle["metadata"]["maneuver_kind"] == "turn"]
+        cls.braking_bundles = [
+            bundle for bundle in cls.bundles
+            if bundle["metadata"]["maneuver_kind"] == "braking"]
         cls.bundle = cls.bundles[1]
         initial_error = np.zeros(MODULE.STATE_DIM)
         initial_error[[0, 1, 3, 6, 7, 11]] = [
@@ -101,10 +108,10 @@ class BankedModelFixedPointTest(unittest.TestCase):
     def test_all_signed_tiers_are_nonlinear_zero_error_fixed_points(self):
         self.assertEqual(
             [float(bundle["metadata"]["speed_mps"])
-             for bundle in self.bundles[1::2]],
+             for bundle in self.turn_bundles[::2]],
             list(MODULE.SPEEDS_MPS))
-        self.assertEqual(len(self.bundles), 11)
-        for bundle in self.bundles[1:]:
+        self.assertEqual(len(self.bundles), 16)
+        for bundle in self.bundles[1:11]:
             with self.subTest(bundle=bundle["name"]):
                 np.testing.assert_array_equal(
                     bundle["nominal_state"], np.zeros(MODULE.STATE_DIM))
@@ -117,9 +124,37 @@ class BankedModelFixedPointTest(unittest.TestCase):
                         "nonlinear_fixed_point_20_knot_max_abs"],
                     MODULE.NONLINEAR_FIXED_POINT_TOLERANCE)
 
+    def test_speed_indexed_braking_bundles_are_exact_phase_fixed_points(self):
+        braking = self.braking_bundles
+        expected_pitch_deg = [
+            -29.29759070111179,
+            -28.185406534783958,
+            -27.04959629846418,
+            -25.890320194538365,
+            -24.707821915176453,
+        ]
+        self.assertEqual(
+            [float(bundle["metadata"]["speed_mps"]) for bundle in braking],
+            list(MODULE.SPEEDS_MPS))
+        for bundle, expected_pitch in zip(braking, expected_pitch_deg):
+            metadata = bundle["metadata"]
+            with self.subTest(bundle=bundle["name"]):
+                self.assertEqual(metadata["maneuver_kind"], "braking")
+                self.assertEqual(
+                    float(metadata["braking_deceleration_mps2"]), 6.0)
+                self.assertLess(float(metadata["pitch_rad"]), 0.0)
+                self.assertAlmostEqual(
+                    math.degrees(float(metadata["pitch_rad"])),
+                    expected_pitch, places=9)
+                self.assertEqual(float(metadata["roll_rad"]), 0.0)
+                self.assertLess(
+                    bundle["verification"][
+                        "nonlinear_frozen_phase_fixed_point_max_abs"],
+                    1.0e-12)
+
     def test_drag_aware_operating_points_are_signed_and_physical(self):
         hover_total = MODULE.MASS_KG * 9.81
-        for bundle in self.bundles[1:]:
+        for bundle in self.bundles[1:11]:
             metadata = bundle["metadata"]
             speed = float(metadata["speed_mps"])
             side = int(metadata["side_sign"])
@@ -154,9 +189,14 @@ class BankedModelFixedPointTest(unittest.TestCase):
         for bundle in self.bundles[1:]:
             metadata = bundle["metadata"]
             time_s = 0.17
-            reference = MODULE._bank_reference_absolute(
-                metadata, bundle["physical_input"], time_s)
-            yaw = float(metadata["yaw_rate_rad_s"]) * time_s
+            if metadata["maneuver_kind"] == "turn":
+                reference = MODULE._turn_reference_absolute(
+                    metadata, bundle["physical_input"], time_s)
+                yaw = float(metadata["yaw_rate_rad_s"]) * time_s
+            else:
+                reference = MODULE._braking_reference_absolute(
+                    metadata, bundle["physical_input"])
+                yaw = 0.0
             absolute = MODULE._bank_error_to_absolute(error, reference, yaw)
             recovered = MODULE._bank_error_from_absolute(
                 absolute, reference, yaw)

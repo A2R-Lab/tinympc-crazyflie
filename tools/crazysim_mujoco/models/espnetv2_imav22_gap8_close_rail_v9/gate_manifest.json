@@ -1,0 +1,53 @@
+{
+  "activation_contract": "consume_only_after_collision_stop_or_near_hover",
+  "architecture": "v9_close_rail_recovery",
+  "branch_point": "after_shared_stem_16x80x80",
+  "checkpoint": "/home/cchen/drone_rl/outputs/espnetv2_imav22_gate_rail/close_rail_recovery_v2/head_only/best.pt",
+  "checkpoint_sha256": "1fd62ef5bc0d777137d2f986197722639a2920c727206a915374098a8c32ca90",
+  "collision_branch_inherited_unchanged": true,
+  "decode": "task_logits=uint8_output*partition_epsilon-channel_offset",
+  "deployment_format": "espnetv2-roll-robust-gap8-student-v9-close-rail-recovery",
+  "feature_shape_chw": [
+    32,
+    40,
+    40
+  ],
+  "format": "espnetv2-gap8-python37-bridge-v1",
+  "gate_output_order": [
+    "rail_present_left",
+    "rail_present_center",
+    "rail_present_right",
+    "pass_right_left",
+    "pass_right_center",
+    "pass_right_right"
+  ],
+  "gate_task_offset": [
+    8.0,
+    8.0,
+    8.0,
+    8.0,
+    8.0,
+    8.0
+  ],
+  "input_preprocess": "signed_difference_u8=(current_u8-previous_u8+255)//2",
+  "input_shape_chw": [
+    3,
+    160,
+    160
+  ],
+  "maximum_target_center_distance_m": 2.0,
+  "partition_roles": {
+    "gate_encoder": "private_close_rail_encoder",
+    "gate_head": "sector_rail_presence_and_direction_head"
+  },
+  "partitions": [
+    "gate_encoder",
+    "gate_head"
+  ],
+  "sector_order": [
+    "left",
+    "center",
+    "right"
+  ],
+  "semantic_abi": "close_sector_gate_rail_present_and_conditional_pass_right_v2"
+}
