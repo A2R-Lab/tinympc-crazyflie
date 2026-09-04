@@ -1,0 +1,30 @@
+{
+  "format": "tinympc-olgmd-obstacle-v1",
+  "runtime_adapter": "gate_frontnet_olgmd_obstacle_only",
+  "camera_abi": "hm01b0_gray_160_native_forward_left_up_v2",
+  "description": "Canonical motion-gated oLGMD1 obstacle detector for TinyMPC emergency braking.",
+  "olgmd": {
+    "variant": "oLGMD1",
+    "input_shape": [
+      80,
+      80
+    ],
+    "downsample": "rounded_2x2_box",
+    "polarity": [
+      "ON",
+      "OFF"
+    ],
+    "fps": 30.0,
+    "spike_threshold": 0.7,
+    "collision_window": 6,
+    "collision_spikes": 6,
+    "threshold_status": "validated_hallway_starting_point"
+  },
+  "controller_contract": {
+    "minimum_forward_speed_mps": 0.15,
+    "positive_confirmation_frames": 2,
+    "stationary_hold_s": 3.0,
+    "resume_refractory_s": 2.0,
+    "emergency_deceleration_mps2": 10.0
+  }
+}

@@ -1,0 +1,65 @@
+--- a/simulator_files/mujoco/crazysim.py
++++ b/simulator_files/mujoco/crazysim.py
+@@ -1304,2 +1304,3 @@
+         self._configure_imav22_environment()
++        self._configure_hallway_clear_obstacle()
+
+@@ -1347,2 +1348,54 @@
+         self._running = False
++
++    def _configure_hallway_clear_obstacle(self):
++        self._hallway_clear = None
++        body_id = mujoco.mj_name2id(
++            self.model, mujoco.mjtObj.mjOBJ_BODY, 'hallway_clear_obstacle')
++        if body_id < 0:
++            return
++        mocap_id = int(self.model.body_mocapid[body_id])
++        target_id = mujoco.mj_name2id(
++            self.model, mujoco.mjtObj.mjOBJ_SITE,
++            'hallway_clear_obstacle_target')
++        if mocap_id < 0 or target_id < 0:
++            raise ValueError('hallway clear obstacle requires mocap body and target site')
++        mujoco.mj_forward(self.model, self.data)
++        self._hallway_clear = {
++            'mocap_id': mocap_id,
++            'origin': self.data.mocap_pos[mocap_id].copy(),
++            'target': self.data.site_xpos[target_id].copy(),
++            'stop_since': None, 'move_start': None,
++            'duration': 0.75, 'complete': False,
++        }
++        print('[crazysim] hallway clear obstacle : armed '
++              '(stop<0.10m/s for 0.25s, move=0.75s)')
++
++    def _update_hallway_clear_obstacle(self):
++        state = self._hallway_clear
++        if state is None or state['complete'] or not self._launch_applied:
++            return
++        if state['move_start'] is None:
++            agent = self.agents[0]
++            x = float(self.data.xpos[agent._body_id, 0])
++            speed = float(np.linalg.norm(
++                self.data.qvel[agent._qvel_adr:agent._qvel_adr + 2]))
++            if x >= 2.5 and speed < 0.15:
++                if state['stop_since'] is None:
++                    state['stop_since'] = self.data.time
++                elif self.data.time - state['stop_since'] >= 0.05:
++                    state['move_start'] = self.data.time
++                    print(f'[crazysim] hallway obstacle clear start '
++                          f't={self.data.time:.3f}s x={x:.3f}m speed={speed:.3f}m/s')
++            else:
++                state['stop_since'] = None
++            return
++        u = min(1.0, max(
++            0.0, (self.data.time - state['move_start']) / state['duration']))
++        alpha = u * u * (3.0 - 2.0 * u)
++        self.data.mocap_pos[state['mocap_id']] = (
++            state['origin'] + alpha * (state['target'] - state['origin']))
++        if u >= 1.0:
++            state['complete'] = True
++            print(f'[crazysim] hallway obstacle clear complete '
++                  f't={self.data.time:.3f}s')
+
+@@ -1656,2 +1709,3 @@
+                 self._apply_downwash()
++            self._update_hallway_clear_obstacle()
+             self._update_imav22_dynamic_obstacles()

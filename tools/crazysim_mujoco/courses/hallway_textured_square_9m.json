@@ -1,0 +1,45 @@
+{
+  "format": "tinympc-crazysim-course-v2",
+  "name": "hallway_textured_square_9m",
+  "scene": "vision_hallway_textured_square_9m.xml",
+  "trajectory": "straight_9m",
+  "description": "Textured 0.7 m square head-on obstacle in a plaster-walled hallway for FrontNet plus oLGMD braking validation. Collision geometry remains present while the bridge suppresses feed-forward control until the paper's 1.5 m reveal point.",
+  "obstacles": [
+    {
+      "name": "paper_square_obstacle",
+      "shape": "box",
+      "center": [6.0, 0.0],
+      "half_size": [0.15, 0.35],
+      "height": 0.7,
+      "center_z": 0.5
+    }
+  ],
+  "gates": [],
+  "corridor_y": [-2.0, 2.0],
+  "room_bounds_xy": [[-0.25, 9.25], [-2.0, 2.0]],
+  "pass_point": [8.65, 0.0],
+  "pass_radius_m": 0.25,
+  "minimum_dodge_encounters": 0,
+  "maximum_final_cross_track_m": 0.20,
+  "required_heading_change_deg": 0.0,
+  "duration_s": 32.0,
+  "centerline": [[0.0, 0.0], [9.0, 0.0]],
+  "gate_order_required": false,
+  "benchmark_contract": {
+    "format": "paper-headon-dronetv2-nanoflownet-v1",
+    "trials_per_method": 15,
+    "paired_seed_range_inclusive": [1, 15],
+    "vehicle_radius_m": 0.10,
+    "obstacle_near_face_x_m": 5.85,
+    "obstacle_far_face_x_m": 6.15,
+    "valid_encounter_minimum_x_m": 4.35,
+    "collision_free_pass_minimum_x_m": 6.25,
+    "paper_obstacle_dimensions_m": [0.30, 0.70, 0.70],
+    "paper_dynamic_appearance_distance_m": 1.5,
+    "simulation_appearance": "static_from_launch",
+    "methods": {
+      "pulp_dronet_v2": {"speed_mps": 0.5, "camera_fps": 13.0, "success": "collision_free_braking_stop"},
+      "nanoflownet": {"speed_mps": 0.2, "camera_fps": 5.0, "success": "collision_free_obstacle_pass"}
+    }
+  }
+}

@@ -47,6 +47,16 @@ static volatile uint32_t crc_errors;
 static volatile uint32_t invalid_packets;
 static volatile uint32_t short_reads;
 static uint16_t latest_sequence;
+static volatile uint32_t threat_lock;
+static SequentialObstacleThreatObservation latest_threat;
+static volatile uint32_t latest_threat_rx_tick;
+static volatile uint32_t accepted_threat_packets;
+static uint16_t latest_threat_sequence;
+static volatile uint32_t gate_lock;
+static SequentialObstacleGateObservation latest_gate;
+static volatile uint32_t latest_gate_rx_tick;
+static volatile uint32_t accepted_gate_packets;
+static uint16_t latest_gate_sequence;
 static bool initialized;
 
 static bool readBytes(uint8_t *destination, int count) {
@@ -351,6 +361,174 @@ static bool acceptV6Packet(const TinyRacerVisionV6Packet *packet) {
   return true;
 }
 
+static bool acceptV7Packet(const TinyRacerVisionV7Packet *packet) {
+  const TinyRacerVisionV7Payload *payload = &packet->payload;
+  const uint16_t known_flags = TINYRACER_VISION_V7_HAS_COLLISION |
+      TINYRACER_VISION_V7_HAS_SQUARE_OPENING;
+  if (payload->sequence == 0u || payload->flags != known_flags ||
+      !isfinite(payload->square_opening_visible_probability) ||
+      payload->square_opening_visible_probability < 0.0f ||
+      payload->square_opening_visible_probability > 1.0f) {
+    invalid_packets++;
+    return false;
+  }
+  float maximum_collision = -1.0f;
+  for (int sector = 0; sector < TINYRACER_DANGER_SECTORS; ++sector) {
+    const float probability = payload->collision_probability[sector];
+    if (!isfinite(probability) || probability < 0.0f || probability > 1.0f) {
+      invalid_packets++;
+      return false;
+    }
+    maximum_collision = fmaxf(maximum_collision, probability);
+  }
+  if (payload->sequence == latest_sequence) {
+    return false;
+  }
+
+  const uint32_t lock = sequence_lock + 1;
+  sequence_lock = lock;
+  COMPILER_BARRIER();
+  memset(&latest_observation, 0, sizeof(latest_observation));
+  latest_observation.valid = true;
+  latest_observation.source_timestamp = payload->source_timestamp_ms;
+  latest_observation.sequence = payload->sequence;
+  latest_observation.has_sector_danger = true;
+  latest_observation.has_square_opening = true;
+  latest_observation.progress_speed_scale = 1.0f;
+  latest_observation.collision_probability = maximum_collision;
+  latest_observation.square_opening_visible_probability =
+      payload->square_opening_visible_probability;
+  memcpy(latest_observation.danger_probability,
+         payload->collision_probability,
+         sizeof(latest_observation.danger_probability));
+  for (int sector = 0; sector < TINYRACER_CLEARANCE_SECTORS; ++sector) {
+    latest_observation.clearance_m[sector] = 6.0f;
+  }
+  latest_observation.gate_fx_normalized = LEGACY_GATE_FX_NORMALIZED;
+  latest_observation.gate_fy_normalized = LEGACY_GATE_FY_NORMALIZED;
+  latest_observation.gate_cx_normalized = 0.5f;
+  latest_observation.gate_cy_normalized = 0.5f;
+  latest_rx_tick = xTaskGetTickCount();
+  latest_sequence = payload->sequence;
+  COMPILER_BARRIER();
+  sequence_lock = lock + 1;
+  accepted_packets++;
+  return true;
+}
+
+static bool acceptV8Packet(const TinyRacerVisionV8Packet *packet) {
+  const TinyRacerVisionV8Payload *payload = &packet->payload;
+  const uint16_t known_flags = TINYRACER_VISION_V8_HAS_NAVIGATION |
+      TINYRACER_VISION_V8_HAS_SQUARE_OPENING;
+  if (payload->sequence == 0u || payload->flags != known_flags ||
+      !isfinite(payload->normalized_yaw_rate) ||
+      payload->normalized_yaw_rate < -1.0f ||
+      payload->normalized_yaw_rate > 1.0f ||
+      !isfinite(payload->collision_probability) ||
+      payload->collision_probability < 0.0f ||
+      payload->collision_probability > 1.0f ||
+      !isfinite(payload->square_opening_visible_probability) ||
+      payload->square_opening_visible_probability < 0.0f ||
+      payload->square_opening_visible_probability > 1.0f) {
+    invalid_packets++;
+    return false;
+  }
+  if (payload->sequence == latest_sequence) {
+    return false;
+  }
+
+  const uint32_t lock = sequence_lock + 1;
+  sequence_lock = lock;
+  COMPILER_BARRIER();
+  memset(&latest_observation, 0, sizeof(latest_observation));
+  latest_observation.valid = true;
+  latest_observation.source_timestamp = payload->source_timestamp_ms;
+  latest_observation.sequence = payload->sequence;
+  latest_observation.has_navigation_command = true;
+  latest_observation.has_collision_probability = true;
+  latest_observation.has_normalized_yaw_rate = true;
+  latest_observation.has_square_opening = true;
+  latest_observation.progress_speed_scale = 1.0f;
+  latest_observation.steering_command = payload->normalized_yaw_rate;
+  latest_observation.collision_probability = payload->collision_probability;
+  latest_observation.square_opening_visible_probability =
+      payload->square_opening_visible_probability;
+  for (int sector = 0; sector < TINYRACER_CLEARANCE_SECTORS; ++sector) {
+    latest_observation.clearance_m[sector] = 6.0f;
+  }
+  latest_observation.gate_fx_normalized = LEGACY_GATE_FX_NORMALIZED;
+  latest_observation.gate_fy_normalized = LEGACY_GATE_FY_NORMALIZED;
+  latest_observation.gate_cx_normalized = 0.5f;
+  latest_observation.gate_cy_normalized = 0.5f;
+  latest_rx_tick = xTaskGetTickCount();
+  latest_sequence = payload->sequence;
+  COMPILER_BARRIER();
+  sequence_lock = lock + 1;
+  accepted_packets++;
+  return true;
+}
+
+static bool acceptThreatPacket(const TinyRacerOlgmdThreatPacket *packet) {
+  const TinyRacerOlgmdThreatPayload *payload = &packet->payload;
+  if (payload->frame_sequence == 0u || payload->imminent_threat > 1u ||
+      payload->reserved != 0u) {
+    invalid_packets++;
+    return false;
+  }
+  if (accepted_threat_packets != 0u &&
+      payload->frame_sequence == latest_threat_sequence) {
+    return false;
+  }
+  const uint32_t lock = threat_lock + 1u;
+  threat_lock = lock;
+  COMPILER_BARRIER();
+  latest_threat.valid = true;
+  latest_threat.source_timestamp_ms = payload->source_timestamp_ms;
+  latest_threat.sequence = payload->frame_sequence;
+  latest_threat.imminent_threat = payload->imminent_threat != 0u;
+  latest_threat_rx_tick = xTaskGetTickCount();
+  latest_threat_sequence = payload->frame_sequence;
+  COMPILER_BARRIER();
+  threat_lock = lock + 1u;
+  accepted_threat_packets++;
+  return true;
+}
+
+static bool acceptGatePacket(const TinyRacerGateObservationPacket *packet) {
+  const TinyRacerGateObservationPayload *payload = &packet->payload;
+  if (payload->frame_sequence == 0u || payload->inference_valid > 1u ||
+      payload->reserved != 0u) {
+    invalid_packets++;
+    return false;
+  }
+  for (int index = 0; index < 8; ++index) {
+    if (!isfinite(payload->corners_xy[index]) ||
+        payload->corners_xy[index] < -1.0f ||
+        payload->corners_xy[index] > 2.0f) {
+      invalid_packets++;
+      return false;
+    }
+  }
+  if (accepted_gate_packets != 0u &&
+      payload->frame_sequence == latest_gate_sequence) {
+    return false;
+  }
+  const uint32_t lock = gate_lock + 1u;
+  gate_lock = lock;
+  COMPILER_BARRIER();
+  latest_gate.valid = payload->inference_valid != 0u;
+  latest_gate.source_timestamp_ms = payload->source_timestamp_ms;
+  latest_gate.sequence = payload->frame_sequence;
+  memcpy(latest_gate.corners_xy, payload->corners_xy,
+         sizeof(latest_gate.corners_xy));
+  latest_gate_rx_tick = xTaskGetTickCount();
+  latest_gate_sequence = payload->frame_sequence;
+  COMPILER_BARRIER();
+  gate_lock = lock + 1u;
+  accepted_gate_packets++;
+  return true;
+}
+
 static void sequentialObstacleRxTask(void *parameters) {
   (void)parameters;
   sequential_obstacle_packet_t packet;
@@ -359,6 +537,10 @@ static void sequentialObstacleRxTask(void *parameters) {
   TinyRacerVisionV4Packet packet_v4;
   TinyRacerVisionV5Packet packet_v5;
   TinyRacerVisionV6Packet packet_v6;
+  TinyRacerVisionV7Packet packet_v7;
+  TinyRacerVisionV8Packet packet_v8;
+  TinyRacerOlgmdThreatPacket threat_packet;
+  TinyRacerGateObservationPacket gate_packet;
   uint8_t header_window[SEQUENTIAL_OBSTACLE_HEADER_LEN] = {0};
 
   systemWaitStart();
@@ -388,13 +570,43 @@ static void sequentialObstacleRxTask(void *parameters) {
                               TINYRACER_VISION_HEADER_LEN) == 0;
     const bool is_v6 = memcmp(header_window, TINYRACER_VISION_V6_HEADER,
                               TINYRACER_VISION_HEADER_LEN) == 0;
-    if (!is_v1 && !is_v2 && !is_v3 && !is_v4 && !is_v5 && !is_v6) {
+    const bool is_v7 = memcmp(header_window, TINYRACER_VISION_V7_HEADER,
+                              TINYRACER_VISION_HEADER_LEN) == 0;
+    const bool is_v8 = memcmp(header_window, TINYRACER_VISION_V8_HEADER,
+                              TINYRACER_VISION_HEADER_LEN) == 0;
+    const bool is_threat = memcmp(header_window, TINYRACER_OLGMD_THREAT_HEADER,
+                                  TINYRACER_VISION_HEADER_LEN) == 0;
+    const bool is_gate = memcmp(header_window, TINYRACER_GATE_OBSERVATION_HEADER,
+                                TINYRACER_VISION_HEADER_LEN) == 0;
+    if (!is_v1 && !is_v2 && !is_v3 && !is_v4 && !is_v5 && !is_v6 &&
+        !is_v7 && !is_v8 && !is_threat && !is_gate) {
       continue;
     }
 
     uint8_t *remainder;
     size_t remainder_size;
-    if (is_v6) {
+    if (is_gate) {
+      memcpy(gate_packet.header, TINYRACER_GATE_OBSERVATION_HEADER,
+             TINYRACER_VISION_HEADER_LEN);
+      remainder = (uint8_t *)&gate_packet.payload;
+      remainder_size = sizeof(gate_packet.payload) + sizeof(gate_packet.checksum);
+    } else if (is_threat) {
+      memcpy(threat_packet.header, TINYRACER_OLGMD_THREAT_HEADER,
+             TINYRACER_VISION_HEADER_LEN);
+      remainder = (uint8_t *)&threat_packet.payload;
+      remainder_size = sizeof(threat_packet.payload) +
+          sizeof(threat_packet.checksum);
+    } else if (is_v8) {
+      memcpy(packet_v8.header, TINYRACER_VISION_V8_HEADER,
+             TINYRACER_VISION_HEADER_LEN);
+      remainder = (uint8_t *)&packet_v8.payload;
+      remainder_size = sizeof(packet_v8.payload) + sizeof(packet_v8.checksum);
+    } else if (is_v7) {
+      memcpy(packet_v7.header, TINYRACER_VISION_V7_HEADER,
+             TINYRACER_VISION_HEADER_LEN);
+      remainder = (uint8_t *)&packet_v7.payload;
+      remainder_size = sizeof(packet_v7.payload) + sizeof(packet_v7.checksum);
+    } else if (is_v6) {
       memcpy(packet_v6.header, TINYRACER_VISION_V6_HEADER,
              TINYRACER_VISION_HEADER_LEN);
       remainder = (uint8_t *)&packet_v6.payload;
@@ -485,6 +697,52 @@ void sequentialObstacleLinkInit(void) {
       NULL, tskIDLE_PRIORITY + 2, NULL);
   configASSERT(created == pdPASS);
   initialized = true;
+}
+
+bool sequentialObstacleLinkGetLatestThreat(
+    SequentialObstacleThreatObservation *observation) {
+  uint32_t before;
+  uint32_t after;
+  uint32_t rx_tick;
+  do {
+    before = threat_lock;
+    COMPILER_BARRIER();
+    memcpy(observation, &latest_threat, sizeof(*observation));
+    rx_tick = latest_threat_rx_tick;
+    COMPILER_BARRIER();
+    after = threat_lock;
+  } while ((before & 1u) || before != after);
+  if (accepted_threat_packets == 0u) {
+    memset(observation, 0, sizeof(*observation));
+    return false;
+  }
+  observation->received_age_ms =
+      (xTaskGetTickCount() - rx_tick) * portTICK_PERIOD_MS;
+  observation->sample = before >> 1;
+  return true;
+}
+
+bool sequentialObstacleLinkGetLatestGate(
+    SequentialObstacleGateObservation *observation) {
+  uint32_t before;
+  uint32_t after;
+  uint32_t rx_tick;
+  do {
+    before = gate_lock;
+    COMPILER_BARRIER();
+    memcpy(observation, &latest_gate, sizeof(*observation));
+    rx_tick = latest_gate_rx_tick;
+    COMPILER_BARRIER();
+    after = gate_lock;
+  } while ((before & 1u) || before != after);
+  if (accepted_gate_packets == 0u) {
+    memset(observation, 0, sizeof(*observation));
+    return false;
+  }
+  observation->received_age_ms =
+      (xTaskGetTickCount() - rx_tick) * portTICK_PERIOD_MS;
+  observation->sample = before >> 1;
+  return true;
 }
 
 bool sequentialObstacleLinkGetLatest(

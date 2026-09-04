@@ -13,8 +13,30 @@ extern "C" {
 
 #define SEQUENTIAL_OBSTACLE_DIRECTIONS TINYRACER_CLEARANCE_SECTORS
 
+typedef struct {
+  bool valid;
+  uint32_t source_timestamp_ms;
+  uint16_t sequence;
+  bool imminent_threat;
+  uint32_t received_age_ms;
+  uint32_t sample;
+} SequentialObstacleThreatObservation;
+
+typedef struct {
+  bool valid;
+  uint32_t source_timestamp_ms;
+  uint16_t sequence;
+  float corners_xy[8];
+  uint32_t received_age_ms;
+  uint32_t sample;
+} SequentialObstacleGateObservation;
+
 void sequentialObstacleLinkInit(void);
 bool sequentialObstacleLinkGetLatest(TinyRacerPerceptionObservation *observation);
+bool sequentialObstacleLinkGetLatestThreat(
+    SequentialObstacleThreatObservation *observation);
+bool sequentialObstacleLinkGetLatestGate(
+    SequentialObstacleGateObservation *observation);
 
 #ifdef __cplusplus
 }

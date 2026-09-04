@@ -72,11 +72,14 @@ EXTRA_SIM_ARGS=(__none__)
 usage() {
   cat <<'EOF'
 Usage: tools/crazysim_mujoco/run.sh [options]
-  --trajectory NAME       straight, straight_long, straight_9m, figure8, oval, circle, chicane,
+  --trajectory NAME       straight, straight_long, straight_9m, straight_20m, figure8, oval, circle, imav22_circle, chicane,
                           hairpin_180, dronet_u, or a canonical level-flight route
   --actuator-lti 0|1      Include fixed motor-lag states in level flight (default: 1)
   --rate-cascade 0|1      Use TinyMPC collective/body-rate output with the 500 Hz
-                          firmware rate PID and legacy mixer (default: 0)
+                          firmware rate PID and legacy mixer. This bypasses the
+                          direct actuator-LTI braking cache (default: 0)
+  --braking-cache MODE    auto, 0, or 1. Explicit 0/1 creates matched direct-
+                          actuator TinyMPC cache A/B builds (default: auto)
   --direct-plan-replay 0|1  Replay successive direct-MPC horizon inputs while a solve
                           is delayed (requires direct mode, actuator LTI; default: 0)
   --rate-identification   Run bounded hover rate-response excitation (diagnostic only)
@@ -106,9 +109,21 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --power-loop-radius-m M Vertical loop radius (default: 1.2)
   --power-loop-bottom-speed-mps MPS  Entry/exit speed (default: 2.2)
   --power-loop-top-speed-mps MPS  Inverted-top speed (default: 4.0)
+  --reactive-power-loop 0|1  Enable the one-shot cached vertical loop when
+                            route-free center risk stays <=0.20 (default: 0)
+  --pitch-through-brake 0|1  Use the cache-free moving-entry minimum-distance
+                            brake for emergency TinyMPC arms (default: 0)
+  --vertical-active-sensing 0|1  Add the opt-in +/-0.10 m, 2.0 s altitude
+                            square wave to the nominal reference (default: 0)
+  --yaw-spin-test 0|1     Command an in-place fixed-rate yaw diagnostic (default: 0)
+  --yaw-spin-rate-rad-s RATE  Signed yaw rate for the spin diagnostic (default: 2.0)
+  --yaw-spin-revolutions N  Positive number of commanded turns (default: 4.0)
+  --yaw-spin-straight-speed-mps MPS  Insert a straight segment halfway through the turns (default: 0)
+  --yaw-spin-straight-duration-s S  Duration of the optional straight segment (default: 2.0)
   --duration SECONDS      Simulation duration (default: 10)
   --launch-time SECONDS   Airborne handoff/controller start (default: 1)
   --spawn-z METERS        Handoff altitude (default: 1.5)
+  --spawn-yaw-deg DEGREES Initial heading applied at airborne handoff (default: 0)
   --model NAME            CrazySim model (default: cf21B_500)
   --mass KG|stock         Override vehicle mass (default: stock model value)
   --pwm-thrust-full N     Full normalized-command thrust (default: 0.20)
@@ -121,13 +136,31 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --firmware-time-factor RATE  Measured simulator/wall rate (default: 0.8)
   --out DIRECTORY         Output directory
   --vision-model PATH     Model path, or bundled tinyracer/espnet, dronet-v3,
-                          sequential, stdc, vision-rl, combined-gate-rl, or joint-gate-rl
+                          sequential, stdc, vision-rl, combined-gate-rl, joint-gate-rl,
+                          gate-frontnet-olgmd (160x96 bring-up), olgmd-obstacle (canonical),
+                          the paper-ablation aliases espnet-v7-{pid,emergency},
+                          dronet-v{2,3}-{pid,emergency}, and
+                          nanoflow-paper-{pid,emergency-yaw}, oracle-brake-pid,
+                          espnet-v7 (current float four-corner controller),
+                          espnet-v7-gap8 (unreleased INT8 evaluation model),
+                          espnet-v7-gap8-reactive (current v8 collision/v9 rail INT8 model with route-free reactive control),
+                          espnet-v7-legacy-residual (historical only), or an explicit bundle path;
+                          frame-ablation bundles are selected from their manifest
   --vision-adapter NAME   auto, espnet, sequential, stdc, dronet, hybrid_rl,
-                          combined_gate_rl, or joint_gate_rl (default: auto)
+                          combined_gate_rl, joint_gate_rl, joint_residual_rl, or
+                          espnet_v7_dronet, espnet_frame_ablation,
+                          espnet_v7_dronet_gap8,
+                          espnet_v7_reactive_gap8, gate_frontnet_olgmd,
+                          tinyvpc_square_opening, or legacy
+                          espnet_v7_residual (default: auto)
   --vision-scene NAME     obstacle, gate, corridor, corridor_obstacles,
                           circle_obstacles, figure8_obstacles, imav22, or none
-                          (default: obstacle)
+                          (default: obstacle; gate-frontnet-olgmd defaults to gate)
   --vision-latency-frames N  Fixed camera-frame delivery delay (default: 1)
+  --camera-fps FPS        Camera/inference cadence (default: 30)
+  --vision-control-enable-after-s S  Suppress paper-adapter control until the
+                            obstacle reveal time (default: 0)
+  --vision-control-enable-at-x-m M  Reveal paper obstacle at this CrazySim x
   --vision-passive        Run/log inference without sending it to firmware
   --camera-only          Capture AI-deck-style frames without inference or firmware I/O
   --imav22-mode MODE     Official gates, static, or dynamic environment complexity
@@ -237,7 +270,7 @@ if [[ "$FLOWDECK_ENABLED" == 1 ]]; then
 fi
 
 case "$TRAJECTORY" in
-  straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
+  straight|straight_long|straight_9m|straight_20m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|imav22_circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
   *) echo "Unsupported trajectory: $TRAJECTORY" >&2; exit 2 ;;
 esac
 if [[ "$ACTUATOR_LTI" != 0 && "$ACTUATOR_LTI" != 1 ]]; then
@@ -405,7 +438,7 @@ if [[ "$LEVEL_COST_MODE" != baseline && "$ACTUATOR_LTI" != 1 ]]; then
   echo "non-baseline --level-cost-mode requires --actuator-lti 1" >&2
   exit 2
 fi
-case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet|rl|hybrid_rl|combined_gate_rl|joint_gate_rl) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
+case "$VISION_ADAPTER" in auto|espnet|sequential|stdc|dronet|rl|hybrid_rl|combined_gate_rl|joint_gate_rl|joint_residual_rl|gate_frontnet_olgmd|gate_frontnet_olgmd_obstacle_only|espnet_v7_residual|espnet_v7_dronet|espnet_v7_pid|espnet_frame_ablation|espnet_v7_reactive|espnet_v7_dronet_gap8|espnet_v7_reactive_gap8|tinyvpc_square_opening|tinyvpc_navigation|tinyvpc_pid|tinyvpc_emergency|oracle_brake|oracle_brake_pid|espnet_v7_emergency|espnet_v7_straight_brake|tiny_dronet_v3_direct|pulp_dronet_v3_paper|pulp_dronet_v3_pid|pulp_dronet_v3_emergency|pulp_dronet_v3_straight_brake|dronet_v2_paper|dronet_v2_pid|dronet_v2_emergency|nanoflow|nanoflow_paper|nanoflow_paper_pid|nanoflow_paper_emergency|nanoflow_paper_emergency_yaw|oracle_action) ;; *) echo "Invalid --vision-adapter" >&2; exit 2 ;; esac
 case "$CONTAINER_ENGINE" in docker|apptainer) ;; *) echo "Invalid --container-engine" >&2; exit 2 ;; esac
 if [[ "$CONTAINER_ENGINE" == apptainer ]]; then
   [[ -n "$APPTAINER_IMAGE" && -f "$APPTAINER_IMAGE" ]] || { echo "--container-engine apptainer requires a readable --apptainer-image" >&2; exit 2; }
@@ -429,7 +462,7 @@ if duration >= period:
     raise SystemExit("IMAV22 relocation duration must be shorter than its period")
 PY
 fi
-case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|imav22|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|imav22|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8|straight_approach_9m|straight_approach_9m_dronet|paper_headon_9m|hallway_textured_square_9m) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
   echo "--camera-only and --vision-model are mutually exclusive" >&2
@@ -481,9 +514,56 @@ VISION_MODEL_CONTAINER=__none__
 if [[ -n "$VISION_MODEL" ]]; then
   VISION_ENABLED=1
   case "$VISION_MODEL" in
+    gate-frontnet-olgmd|gate_frontnet_olgmd)
+      VISION_MODEL="/home/cchen/pulp-frontnet/PyTorch"
+      VISION_ADAPTER=gate_frontnet_olgmd ;;
+    olgmd-obstacle|olgmd_obstacle|gate-frontnet-olgmd-obstacle-only|gate_frontnet_olgmd_obstacle_only)
+      VISION_MODEL="$SCRIPT_DIR/models/olgmd_obstacle_v1"
+      VISION_ADAPTER=gate_frontnet_olgmd_obstacle_only ;;
+    dronet-v3-pid)
+      VISION_MODEL="$SCRIPT_DIR/models/pulp_dronet_v3/pulp_dronet_v3.onnx"
+      VISION_ADAPTER=pulp_dronet_v3_pid ;;
+    dronet-v3-emergency)
+      VISION_MODEL="$SCRIPT_DIR/models/pulp_dronet_v3/pulp_dronet_v3.onnx"
+      VISION_ADAPTER=pulp_dronet_v3_emergency ;;
     dronet|dronet-v3)
       VISION_MODEL="$SCRIPT_DIR/models/pulp_dronet_v3/pulp_dronet_v3.onnx"
       VISION_ADAPTER=dronet ;;
+    pulp-dronet-v3-straight-brake|dronet-v3-straight-brake)
+      VISION_MODEL="$SCRIPT_DIR/models/pulp_dronet_v3/pulp_dronet_v3.onnx"
+      VISION_ADAPTER=pulp_dronet_v3_straight_brake ;;
+    tiny-dronet-v3|tiny_dronet_v3)
+      VISION_MODEL="$SCRIPT_DIR/models/tiny_pulp_dronet_v3/tiny_pulp_dronet_v3.onnx"
+      VISION_ADAPTER=tiny_dronet_v3_direct ;;
+    dronet-v2-pid)
+      VISION_MODEL="/home/cchen/pulp-dronet/pulp-dronet-v2/gapflow/nntool_input/models_onnx/model_original_himax.onnx"
+      VISION_ADAPTER=dronet_v2_pid ;;
+    dronet-v2|dronetv2|pulp-dronet-v2)
+      VISION_MODEL="/home/cchen/pulp-dronet/pulp-dronet-v2/gapflow/nntool_input/models_onnx/model_original_himax.onnx"
+      VISION_ADAPTER=dronet_v2_paper ;;
+    dronet-v2-emergency|dronetv2-emergency)
+      VISION_MODEL="/home/cchen/pulp-dronet/pulp-dronet-v2/gapflow/nntool_input/models_onnx/model_original_himax.onnx"
+      VISION_ADAPTER=dronet_v2_emergency ;;
+    nanoflow|nanoflownet)
+      VISION_MODEL="/home/cchen/drone_rl/outputs/nanoflow_rl/detail_guidance_ablation_20260829/run_6951/selected/export/nanoflownet_fp32.tflite"
+      VISION_ADAPTER=nanoflow ;;
+    nanoflow-paper-pid)
+      VISION_MODEL="/home/cchen/waft-gap8/thirdparty/nanoflownet-cnns/pretrained_models/nanoflownet/nanoflownet_unquantized.tflite"
+      VISION_ADAPTER=nanoflow_paper_pid
+      VERTICAL_ACTIVE_SENSING=1 ;;
+    nanoflow-paper|nanoflownet-paper)
+      VISION_MODEL="/home/cchen/waft-gap8/thirdparty/nanoflownet-cnns/pretrained_models/nanoflownet/nanoflownet_unquantized.tflite"
+      VISION_ADAPTER=nanoflow_paper ;;
+    nanoflow-paper-emergency-yaw)
+      VISION_MODEL="/home/cchen/waft-gap8/thirdparty/nanoflownet-cnns/pretrained_models/nanoflownet/nanoflownet_unquantized.tflite"
+      VISION_ADAPTER=nanoflow_paper_emergency_yaw
+      VERTICAL_ACTIVE_SENSING=1 ;;
+    nanoflow-paper-emergency|nanoflownet-paper-emergency)
+      VISION_MODEL="/home/cchen/waft-gap8/thirdparty/nanoflownet-cnns/pretrained_models/nanoflownet/nanoflownet_unquantized.tflite"
+      VISION_ADAPTER=nanoflow_paper_emergency ;;
+    oracle-action|oracle_action)
+      VISION_MODEL="$SCRIPT_DIR/models/privileged_oracle_straight_approach"
+      VISION_ADAPTER=oracle_action ;;
     vision-rl|rl-poc)
       VISION_MODEL="$SCRIPT_DIR/models/vision_rl_mpc_poc/policy.onnx"
       VISION_ADAPTER=hybrid_rl ;;
@@ -513,11 +593,73 @@ if [[ -n "$VISION_MODEL" ]]; then
   esac
   VISION_MODEL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$VISION_MODEL")"
   [[ -e "$VISION_MODEL" ]] || { echo "Vision model not found: $VISION_MODEL" >&2; exit 2; }
+  if [[ "$VISION_ADAPTER" == auto && -d "$VISION_MODEL" && \
+        -f "$VISION_MODEL/bundle.json" ]]; then
+    detected_runtime_adapter="$(python3 - "$VISION_MODEL/bundle.json" <<'PY'
+import json
+import sys
+print(json.load(open(sys.argv[1])).get("runtime_adapter", ""))
+PY
+)"
+    [[ "$detected_runtime_adapter" != espnet_frame_ablation ]] || \
+      VISION_ADAPTER=espnet_frame_ablation
+    [[ "$detected_runtime_adapter" != espnet_v7_reactive_gap8 ]] || \
+      VISION_ADAPTER=espnet_v7_reactive_gap8
+    [[ "$detected_runtime_adapter" != tinyvpc_square_opening ]] || \
+      VISION_ADAPTER=tinyvpc_square_opening
+    [[ "$detected_runtime_adapter" != tinyvpc_navigation ]] || \
+      VISION_ADAPTER=tinyvpc_navigation
+    [[ "$detected_runtime_adapter" != gate_frontnet_olgmd ]] || \
+      VISION_ADAPTER=gate_frontnet_olgmd
+    [[ "$detected_runtime_adapter" != gate_frontnet_olgmd_obstacle_only ]] || \
+      VISION_ADAPTER=gate_frontnet_olgmd_obstacle_only
+  fi
+  if [[ "$VISION_ADAPTER" == gate_frontnet_olgmd &&
+        "$VISION_SCENE_EXPLICIT" == 0 ]]; then
+    VISION_SCENE=gate
+  elif [[ "$VISION_ADAPTER" == gate_frontnet_olgmd_obstacle_only &&
+          "$VISION_SCENE_EXPLICIT" == 0 ]]; then
+    VISION_SCENE=obstacle
+  fi
+  if [[ "$VISION_ADAPTER" == gate_frontnet_olgmd_obstacle_only ]]; then
+    [[ "$BRAKING_CACHE" != 1 ]] || {
+      echo "olgmd-obstacle uses the cache-free 10 m/s^2 emergency formulation; use --braking-cache auto or 0" >&2
+      exit 2
+    }
+    BRAKING_CACHE_EFFECTIVE=0
+  fi
   case "$TRAJECTORY" in
-    straight|straight_long|straight_9m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
+    straight|straight_long|straight_9m|straight_20m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|imav22_circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
     *) echo "Vision requires a supported level-flight trajectory." >&2; exit 2 ;;
   esac
-  if [[ "$VISION_ADAPTER" == combined_gate_rl ]]; then
+  if [[ "$PITCH_THROUGH_BRAKE" == 1 ]]; then
+    case "$VISION_ADAPTER" in
+      oracle_brake|tinyvpc_emergency|espnet_v7_emergency|dronet_v2_emergency|pulp_dronet_v3_emergency|nanoflow_paper_emergency_yaw) ;;
+      *) echo "--pitch-through-brake requires an emergency TinyMPC vision adapter" >&2; exit 2 ;;
+    esac
+    [[ "$BRAKING_CACHE_EFFECTIVE" == 0 ]] || {
+      echo "--pitch-through-brake is cache-free; pass --braking-cache 0" >&2
+      exit 2
+    }
+  fi
+  if [[ "$VISION_ADAPTER" == espnet_v7_emergency ||
+        "$VISION_ADAPTER" == dronet_v2_emergency ||
+        "$VISION_ADAPTER" == pulp_dronet_v3_emergency ||
+        "$VISION_ADAPTER" == nanoflow_paper_emergency_yaw ]] &&
+      [[ "$PITCH_THROUGH_BRAKE" != 1 ]]; then
+    [[ "$BRAKING_CACHE_EFFECTIVE" == 1 ]] || {
+      echo "Emergency frontend modes require direct TinyMPC with --braking-cache 1 (or auto)." >&2
+      exit 2
+    }
+  fi
+  if [[ "$VISION_ADAPTER" == combined_gate_rl ||
+        "$VISION_ADAPTER" == espnet_v7_dronet ||
+        "$VISION_ADAPTER" == espnet_v7_pid ||
+        "$VISION_ADAPTER" == espnet_v7_dronet_gap8 ||
+        "$VISION_ADAPTER" == espnet_v7_reactive_gap8 ||
+        "$VISION_ADAPTER" == espnet_v7_emergency ||
+        "$VISION_ADAPTER" == espnet_v7_straight_brake ||
+        "$VISION_ADAPTER" == espnet_v7_reactive ]]; then
     # The manifest intentionally points to sibling model bundles. Mount the
     # common models root so those relative teacher paths remain valid inside
     # the container instead of exposing only the manifest leaf directory.
@@ -963,17 +1105,31 @@ flip_duration_s="${39}"; flip_pitch_direction="${40}"
 power_loop_enable="${41}"; power_loop_trigger_s_m="${42}"
 power_loop_trigger_window_m="${43}"; power_loop_radius_m="${44}"
 power_loop_bottom_speed_mps="${45}"; power_loop_top_speed_mps="${46}"
-direct_plan_replay="${47}"; mpc_diag_mode="${48}"
-imav22_mode="${49}"; imav22_relocation_period_s="${50}"
-imav22_relocation_clearance_m="${51}"; imav22_relocation_duration_s="${52}"
-imav22_object_set="${53}"
-shift 53
-camera_fps=30
+vertical_active_sensing="${47}"
+direct_plan_replay="${48}"; mpc_diag_mode="${49}"
+imav22_mode="${50}"; imav22_relocation_period_s="${51}"
+imav22_relocation_clearance_m="${52}"; imav22_relocation_duration_s="${53}"
+imav22_object_set="${54}"
+camera_fps="${55}"
+vision_control_enable_after_s="${56}"
+vision_control_enable_at_x_m="${57}"
+braking_cache_enabled="${58}"
+yaw_spin_test="${59}"
+yaw_spin_rate_rad_s="${60}"
+yaw_spin_revolutions="${61}"
+yaw_spin_straight_speed_mps="${62}"
+yaw_spin_straight_duration_s="${63}"
+reactive_power_loop="${64}"
+pitch_through_brake="${65}"
+shift 65
+export PYTHONPATH="/workspace/tools/crazysim_mujoco/.runtime_deps${PYTHONPATH:+:$PYTHONPATH}"
 course_build="${course:-none}"
 hm01b0_poc_camera=0
+[[ "$vision_adapter" != gate_frontnet_olgmd &&
+    "$vision_adapter" != gate_frontnet_olgmd_obstacle_only ]] || hm01b0_poc_camera=1
 if [[ "$course" == gate_obstacle_poc || "$course" == gate_obstacle_poc_obstacle_only || "$course" == gate_obstacle_easy_transition || "$course" == gate_obstacle_easy_transition_obstacle_only || "$course" == heldout_room_straight || "$course" == heldout_room_circle || "$course" == heldout_room_oval || "$course" == heldout_room_figure8 ]]; then
-  if [[ "$vision_enabled" != 1 || ( "$vision_adapter" != hybrid_rl && "$vision_adapter" != combined_gate_rl && "$vision_adapter" != joint_gate_rl ) ]]; then
-    echo "The gate-obstacle POC requires vision-rl, combined-gate-rl, or joint-gate-rl vision." >&2
+  if [[ "$vision_enabled" != 1 || ( "$vision_adapter" != hybrid_rl && "$vision_adapter" != combined_gate_rl && "$vision_adapter" != joint_gate_rl && "$vision_adapter" != joint_residual_rl && "$vision_adapter" != gate_frontnet_olgmd ) ]]; then
+    echo "The gate-obstacle POC requires a supported gate/obstacle vision adapter." >&2
     exit 2
   fi
   # Keep the normal camera path unchanged.  The POC alone renders a compact
@@ -992,7 +1148,75 @@ diagnostic_path=""
 gate_controller_mode=off
 [[ "$vision_adapter" != combined_gate_rl ]] || gate_controller_mode=poc
 [[ "$vision_adapter" != joint_gate_rl ]] || gate_controller_mode=joint
-build="$firmware/sitl_make/build-tinympc-${trajectory}-course${course_build}-gatemode${gate_controller_mode}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}"
+[[ "$vision_adapter" != joint_residual_rl ]] || gate_controller_mode=residual
+[[ "$vision_adapter" != espnet_v7_residual ]] || gate_controller_mode=residual
+[[ "$vision_adapter" != espnet_v7_dronet ]] || gate_controller_mode=dronetv7
+[[ "$vision_adapter" != espnet_v7_pid ]] || gate_controller_mode=espnetv7pid
+[[ "$vision_adapter" != espnet_frame_ablation ]] || gate_controller_mode=dronetv7
+[[ "$vision_adapter" != espnet_v7_reactive ]] || gate_controller_mode=reactive
+[[ "$vision_adapter" != espnet_v7_dronet_gap8 ]] || gate_controller_mode=dronetv7
+[[ "$vision_adapter" != espnet_v7_reactive_gap8 ]] || gate_controller_mode=reactive
+[[ "$vision_adapter" != tinyvpc_square_opening ]] || gate_controller_mode=tinyvpcopen
+[[ "$vision_adapter" != tinyvpc_navigation ]] || gate_controller_mode=tinyvpc
+[[ "$vision_adapter" != tinyvpc_pid ]] || gate_controller_mode=tinyvpcpid
+[[ "$vision_adapter" != tinyvpc_emergency ]] || gate_controller_mode=tinyvpcemergency
+[[ "$vision_adapter" != oracle_brake ]] || gate_controller_mode=oraclebrake
+[[ "$vision_adapter" != oracle_brake_pid ]] || gate_controller_mode=oraclebrakepid
+[[ "$vision_adapter" != espnet_v7_emergency ]] || gate_controller_mode=espnetemergency
+[[ "$vision_adapter" != espnet_v7_straight_brake ]] || gate_controller_mode=espnetstraightbrake
+[[ "$vision_adapter" != tiny_dronet_v3_direct ]] || gate_controller_mode=tinydronetv3
+[[ "$vision_adapter" != pulp_dronet_v3_pid ]] || gate_controller_mode=dronetv3pid
+[[ "$vision_adapter" != pulp_dronet_v3_emergency ]] || gate_controller_mode=dronetv3emergency
+[[ "$vision_adapter" != dronet_v2_paper ]] || gate_controller_mode=dronetv2
+[[ "$vision_adapter" != dronet_v2_pid ]] || gate_controller_mode=dronetv2pid
+[[ "$vision_adapter" != dronet_v2_emergency ]] || gate_controller_mode=dronetv2emergency
+[[ "$vision_adapter" != pulp_dronet_v3_straight_brake ]] || gate_controller_mode=dronetv3straightbrake
+[[ "$vision_adapter" != nanoflow ]] || gate_controller_mode=nanoflow
+[[ "$vision_adapter" != nanoflow_paper ]] || gate_controller_mode=nanoflowpaper
+[[ "$vision_adapter" != nanoflow_paper_pid ]] || gate_controller_mode=nanoflowpaperpid
+[[ "$vision_adapter" != nanoflow_paper_emergency ]] || gate_controller_mode=nanoflowpaperemergency
+[[ "$vision_adapter" != nanoflow_paper_emergency_yaw ]] || gate_controller_mode=nanoflowpaperyawemergency
+[[ "$vision_adapter" != oracle_action ]] || gate_controller_mode=oracle
+[[ "$vision_adapter" != gate_frontnet_olgmd ]] || gate_controller_mode=gateolgmd
+[[ "$vision_adapter" != gate_frontnet_olgmd_obstacle_only ]] || gate_controller_mode=olgmdonly
+square_opening_threshold=disabled
+square_opening_compile_flag=""
+if [[ "$vision_enabled" == 1 && ( "$vision_adapter" == espnet_v7_reactive_gap8 ||
+      "$vision_adapter" == tinyvpc_square_opening ) &&
+      -f "$vision_model/bundle.json" ]]; then
+  square_opening_threshold="$(python3 - "$vision_model/bundle.json" <<'PY'
+import json
+import sys
+
+manifest = json.load(open(sys.argv[1]))
+formats = {
+    "tinympc-espnetv2-gap8-square-opening-v11":
+        "espnetv2_collision3_square_opening_probability1_v1",
+    "tinympc-tinyvpc-square-opening-v1":
+        "tinyvpc_normalized_yaw_collision_square_opening_probability_v1",
+}
+if manifest.get("format") in formats:
+    expected = formats[manifest["format"]]
+    if manifest.get("semantic_abi") != expected:
+        raise SystemExit("v11 square-opening semantic ABI mismatch")
+    opening = manifest.get("square_opening", {})
+    threshold = opening.get("operating_threshold")
+    if type(threshold) not in (int, float) or not 0.0 < float(threshold) < 1.0:
+        raise SystemExit("v11 square-opening operating threshold is invalid")
+    if opening.get("confirmation_frames") != 2:
+        raise SystemExit("v11 square-opening confirmation_frames must be 2")
+    print(repr(float(threshold)))
+PY
+)"
+  if [[ -n "$square_opening_threshold" ]]; then
+    square_opening_compile_flag="-DTINYMPC_SQUARE_OPENING_THRESHOLD=${square_opening_threshold}f"
+  else
+    square_opening_threshold=disabled
+  fi
+fi
+build_signature="${trajectory}-course${course_build}-gatemode${gate_controller_mode}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-brakecache${braking_cache_enabled}-pitchthrough${pitch_through_brake}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}-vas${vertical_active_sensing}-reactiveloop${reactive_power_loop}-sqopen${square_opening_threshold}-yawspin${yaw_spin_test}-yawrate${yaw_spin_rate_rad_s}-yawrev${yaw_spin_revolutions}-yawstraight${yaw_spin_straight_speed_mps}x${yaw_spin_straight_duration_s}"
+build_hash="$(printf '%s' "$build_signature" | sha256sum | cut -c1-16)"
+build="$firmware/sitl_make/build-tinympc-${trajectory}-${build_hash}"
 actuator_lti_flag=OFF
 [[ "$actuator_lti" == 1 ]] && actuator_lti_flag=ON
 cost_compile_flag=""
@@ -1009,10 +1233,91 @@ rate_identification_compile_flag=""
 direct_plan_replay_compile_flag=""
 [[ "$direct_plan_replay" == 1 ]] && \
   direct_plan_replay_compile_flag="-DTINYMPC_DIRECT_PLAN_REPLAY=1"
+residual_reference_compile_flag=""
+[[ "$vision_enabled" == 1 && ( "$vision_adapter" == joint_residual_rl || \
+    "$vision_adapter" == espnet_v7_residual || "$vision_adapter" == nanoflow || \
+    "$vision_adapter" == nanoflow_paper || \
+    "$vision_adapter" == oracle_action ) ]] && \
+  residual_reference_compile_flag="-DTINYMPC_VISION_RL_RESIDUAL_ENABLE=1"
+direct_dronet_compile_flag=""
+if [[ "$vision_enabled" == 1 && ( "$vision_adapter" == tiny_dronet_v3_direct || \
+    "$vision_adapter" == oracle_brake_pid || \
+    "$vision_adapter" == espnet_v7_pid || \
+    "$vision_adapter" == pulp_dronet_v3_pid ) ]]; then
+  direct_dronet_compile_flag="-DTINYMPC_DIRECT_DRONET_SERVO=1 -DTINYMPC_PID_VISION_MODE=1 -DTINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M=0.50f"
+elif [[ "$vision_enabled" == 1 && "$vision_adapter" == tinyvpc_pid ]]; then
+  direct_dronet_compile_flag="-DTINYMPC_DIRECT_DRONET_SERVO=1 -DTINYMPC_PID_VISION_MODE=4 -DTINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M=0.50f"
+elif [[ "$vision_enabled" == 1 && "$vision_adapter" == dronet_v2_pid ]]; then
+  direct_dronet_compile_flag="-DTINYMPC_DIRECT_DRONET_SERVO=1 -DTINYMPC_PID_VISION_MODE=2 -DTINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M=0.50f"
+elif [[ "$vision_enabled" == 1 && "$vision_adapter" == nanoflow_paper_pid ]]; then
+  direct_dronet_compile_flag="-DTINYMPC_DIRECT_DRONET_SERVO=1 -DTINYMPC_PID_VISION_MODE=3 -DTINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M=0.50f"
+elif [[ "$vision_enabled" == 1 && ( \
+    "$vision_adapter" == espnet_v7_straight_brake || \
+    "$vision_adapter" == pulp_dronet_v3_straight_brake ) ]]; then
+  direct_dronet_compile_flag="-DTINYMPC_DIRECT_DRONET_SERVO=1 -DTINYMPC_DIRECT_DRONET_STEERING_SILENCED=1 -DTINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M=0.50f"
+fi
+paper_ablation_compile_flag=""
+if [[ "$vision_enabled" == 1 && ( \
+    "$vision_adapter" == oracle_brake || \
+    "$vision_adapter" == oracle_brake_pid || \
+    "$vision_adapter" == tinyvpc_pid || \
+    "$vision_adapter" == tinyvpc_emergency || \
+    "$vision_adapter" == espnet_v7_pid || \
+    "$vision_adapter" == espnet_v7_emergency || \
+    "$vision_adapter" == dronet_v2_pid || \
+    "$vision_adapter" == dronet_v2_emergency || \
+    "$vision_adapter" == pulp_dronet_v3_pid || \
+    "$vision_adapter" == pulp_dronet_v3_emergency || \
+    "$vision_adapter" == nanoflow_paper_pid || \
+    "$vision_adapter" == nanoflow_paper_emergency_yaw ) ]]; then
+  # Obstacle-free calibration isolates the speed map from visual false stops.
+  # Scored and smoke courses retain the preregistered x=3 m enable boundary.
+  paper_control_enable_x_m=3.0
+  [[ "$vision_scene" != none ]] || paper_control_enable_x_m=9.0
+  paper_ablation_compile_flag="-DTINYMPC_PAPER_ABLATION_ENABLE_GATE=1 -DTINYMPC_PAPER_ABLATION_CONTROL_ENABLE_X_M=${paper_control_enable_x_m}f"
+fi
+paper_emergency_terminal_stop_compile_flag=""
+if [[ "$vision_enabled" == 1 && ( \
+    "$vision_adapter" == gate_frontnet_olgmd || \
+    "$vision_adapter" == gate_frontnet_olgmd_obstacle_only || \
+    "$vision_adapter" == oracle_brake || \
+    "$vision_adapter" == tinyvpc_emergency || \
+    "$vision_adapter" == espnet_v7_emergency || \
+    "$vision_adapter" == dronet_v2_emergency || \
+    "$vision_adapter" == pulp_dronet_v3_emergency || \
+    "$vision_adapter" == nanoflow_paper_emergency_yaw ) ]]; then
+  paper_emergency_terminal_stop_compile_flag="-DTINYMPC_PAPER_EMERGENCY_TERMINAL_STOP=1"
+fi
+reactive_reference_compile_flag=""
+[[ "$vision_enabled" == 1 && ( "$vision_adapter" == espnet_v7_reactive || \
+    "$vision_adapter" == espnet_v7_reactive_gap8 || \
+    "$vision_adapter" == tinyvpc_square_opening ) ]] && \
+  reactive_reference_compile_flag="-DTINYMPC_REACTIVE_REFERENCE_FREE=1"
+dronet_v2_compile_flag=""
+[[ "$vision_enabled" == 1 && "$vision_adapter" == dronet_v2_paper ]] && \
+  dronet_v2_compile_flag="-DTINYMPC_VISION_DRONETV2_BRAKE_ENABLE=1"
+oracle_action_compile_flag=""
+[[ "$vision_enabled" == 1 && "$vision_adapter" == oracle_action ]] && \
+  oracle_action_compile_flag="-DTINYMPC_ORACLE_ACTION_ENABLE=1"
+espnet_dronet_compile_flag=""
+[[ "$vision_enabled" == 1 && ( "$vision_adapter" == espnet_v7_dronet || \
+    "$vision_adapter" == espnet_frame_ablation || \
+    "$vision_adapter" == espnet_v7_dronet_gap8 ) ]] && \
+  espnet_dronet_compile_flag="-DTINYMPC_VISION_ESPNET_DRONET_ENABLE=1"
 gate_position_compile_flag=""
 if [[ "$vision_enabled" == 1 && "$vision_adapter" == espnet && \
       "$vision_scene" == corridor ]]; then
   gate_position_compile_flag="-DTINYMPC_GATE_POSITION_FUSION_ENABLE=1 -DTINYMPC_GATE_CENTER_BEARING_FUSION_ENABLE=1 -DTINYMPC_GATE_CAMERA_FOCAL_NORMALIZED=1.14531138f -DTINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED=0.5f -DTINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED=0.5f -DTINYMPC_GATE_WORLD_X_M=4.0f -DTINYMPC_GATE_WORLD_Y_M=0.0f -DTINYMPC_GATE_WORLD_Z_M=1.5f"
+fi
+gate_olgmd_compile_flag=""
+if [[ "$vision_enabled" == 1 && (
+      "$vision_adapter" == gate_frontnet_olgmd ||
+      "$vision_adapter" == gate_frontnet_olgmd_obstacle_only ) ]]; then
+  gate_olgmd_compile_flag="-DTINYMPC_GATE_OLGMD_ENABLE=1 -DTINYMPC_GATE_CAMERA_FOCAL_NORMALIZED=0.5572239953f -DTINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED=0.5068988158f -DTINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED=0.4584206439f"
+fi
+if [[ "$vision_enabled" == 1 &&
+      "$vision_adapter" == gate_frontnet_olgmd_obstacle_only ]]; then
+  gate_olgmd_compile_flag+=" -DTINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2=10.0f -DTINYMPC_OLGMD_CLEAR_RESUME_ENABLE=1 -DTINYMPC_OLGMD_MOVING_SPEED_MPS=0.15f -DTINYMPC_OLGMD_STOP_HOLD_S=3.0f -DTINYMPC_OLGMD_RESUME_REFRACTORY_S=2.0f"
 fi
 course_compile_flag=""
 if [[ "$course" == gate_obstacle_poc || \
@@ -1043,17 +1348,22 @@ trajectory_compile_flag=""
   trajectory_compile_flag="-DTINYMPC_TRAJECTORY_CIRCLE=1"
 delay_ms="$(python3 -c 'import sys; print(round(float(sys.argv[1]) * 1000))' "$launch_time")"
 
+build_lock_key="$(printf '%s' "$build" | sha256sum | cut -c1-16)"
+build_lock="/workspace/tools/crazysim_mujoco/.build-${build_lock_key}.lock"
+exec 9>"$build_lock"
+flock 9
 cmake -S "$firmware/sitl_make" -B "$build" \
   -DTINYMPC_APP_DIR="$app" \
   -DTINYMPC_SITL_SUPPORT_DIR="$support" \
   -DTINYMPC_TRAJECTORY="$trajectory" \
   -DTINYMPC_COURSE="$course_build" \
   -DTINYMPC_ACTUATOR_LTI="$actuator_lti_flag" \
-  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $gate_position_compile_flag $course_compile_flag $trajectory_compile_flag -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
+  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $residual_reference_compile_flag $direct_dronet_compile_flag $paper_ablation_compile_flag $paper_emergency_terminal_stop_compile_flag $reactive_reference_compile_flag $square_opening_compile_flag $dronet_v2_compile_flag $oracle_action_compile_flag $espnet_dronet_compile_flag $gate_position_compile_flag $gate_olgmd_compile_flag $course_compile_flag $trajectory_compile_flag -DTINYMPC_REACTIVE_POWER_LOOP_ENABLE=$reactive_power_loop -DTINYMPC_PITCH_THROUGH_BRAKE_ENABLE=$pitch_through_brake -DTINYMPC_BRAKING_CACHE_ENABLE=$braking_cache_enabled -DTINYMPC_VERTICAL_ACTIVE_SENSING_ENABLE=$vertical_active_sensing -DTINYMPC_YAW_SPIN_TEST_ENABLE=$yaw_spin_test -DTINYMPC_YAW_SPIN_TEST_RATE_RAD_S=${yaw_spin_rate_rad_s}f -DTINYMPC_YAW_SPIN_TEST_REVOLUTIONS=${yaw_spin_revolutions}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_SPEED_MPS=${yaw_spin_straight_speed_mps}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_DURATION_S=${yaw_spin_straight_duration_s}f -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
   -DTINYMPC_SITL_START_DELAY_MS="$delay_ms" \
   -DTINYMPC_SITL_TICK_US="$tick_us" \
   >"$out/configure.log" 2>&1
 cmake --build "$build" --target cf2 -j2 >"$out/build.log" 2>&1
+flock -u 9
 python3 - "$out/run_config.json" "$build/cf2" <<'PY'
 import hashlib
 import json
@@ -1275,6 +1585,7 @@ case "$trajectory" in
   straight) reference="$app/sim/trajectories/straight.csv" ;;
   straight_long) reference="$app/sim/trajectories/straight_long.csv" ;;
   straight_9m) reference="$app/sim/trajectories/straight_9m.csv" ;;
+  straight_20m) reference="$app/sim/trajectories/straight_20m.csv" ;;
   chicane|hairpin_180) reference="$app/sim/trajectories/racing/${trajectory}.csv" ;;
   *) reference="" ;;
 esac

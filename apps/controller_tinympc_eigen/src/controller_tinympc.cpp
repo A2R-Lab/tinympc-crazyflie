@@ -78,19 +78,24 @@ extern "C" {
 #include "tinympc_bank_selector.h"
 #include "tinympc_braking_selector.h"
 #include "tinympc_direct_plan_replay.h"
+#include "tinympc_emergency_stop.h"
+#include "tinympc_pitch_through_brake.h"
 #include "tinympc_flip_primitive.h"
 #include "tinympc_frenet_error.h"
+#include "tinympc_gate_olgmd.h"
 #include "tinympc_progress_path.h"
 #include "tinympc_progress_yaw.h"
 #include "tinympc_rate_command_guard.h"
 #include "tinympc_path_tunnel.h"
 #include "tinympc_power_loop.h"
+#include "tinympc_reactive_power_loop.h"
 #include "tinympc_vertical_active_sensing.h"
 #include "tinympc_vision_residual_authority.h"
 #include "tinympc_actor_state_link.h"
 #include "tiny_pulp_dronet_v3_servo.h"
 #include "pulp_dronet_v2_brake.h"
 #include "tinyracer_reactive_escape.h"
+#include "tinyracer_square_opening.h"
 
 #include "cpp_compat.h"   // needed to compile Cpp to C
 
@@ -116,6 +121,24 @@ extern "C" {
 #ifndef TINYMPC_REACTIVE_YAW_ACCELERATION_RAD_S2
 #define TINYMPC_REACTIVE_YAW_ACCELERATION_RAD_S2 0.50f
 #endif
+#ifndef TINYMPC_REACTIVE_POWER_LOOP_ENABLE
+#define TINYMPC_REACTIVE_POWER_LOOP_ENABLE 0
+#endif
+#ifndef TINYMPC_GATE_OLGMD_ENABLE
+#define TINYMPC_GATE_OLGMD_ENABLE 0
+#endif
+#ifndef TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+#define TINYMPC_OLGMD_CLEAR_RESUME_ENABLE 0
+#endif
+#ifndef TINYMPC_OLGMD_MOVING_SPEED_MPS
+#define TINYMPC_OLGMD_MOVING_SPEED_MPS 0.15f
+#endif
+#ifndef TINYMPC_OLGMD_STOP_HOLD_S
+#define TINYMPC_OLGMD_STOP_HOLD_S 3.0f
+#endif
+#ifndef TINYMPC_OLGMD_RESUME_REFRACTORY_S
+#define TINYMPC_OLGMD_RESUME_REFRACTORY_S 2.0f
+#endif
 #ifndef TINYMPC_YAW_SPIN_TEST_ENABLE
 #define TINYMPC_YAW_SPIN_TEST_ENABLE 0
 #endif
@@ -139,6 +162,23 @@ extern "C" {
 #endif
 #ifndef TINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M
 #define TINYMPC_DIRECT_DRONET_HOLD_ALTITUDE_M 0.50f
+#endif
+#ifndef TINYMPC_PAPER_ABLATION_CONTROL_ENABLE_X_M
+#define TINYMPC_PAPER_ABLATION_CONTROL_ENABLE_X_M (-INFINITY)
+#endif
+#ifndef TINYMPC_PAPER_EMERGENCY_PITCH_RATE_LIMIT_RAD_S
+#define TINYMPC_PAPER_EMERGENCY_PITCH_RATE_LIMIT_RAD_S 5.0f
+#endif
+#ifndef TINYMPC_PITCH_THROUGH_BRAKE_ENABLE
+#define TINYMPC_PITCH_THROUGH_BRAKE_ENABLE 0
+#endif
+#ifndef TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2
+#ifdef TINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2
+#define TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2 \
+  TINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2
+#else
+#define TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2 6.0f
+#endif
 #endif
 #ifndef TINYMPC_PROGRESS_SPEED_MPS
 #define TINYMPC_PROGRESS_SPEED_MPS 0.0f
@@ -304,7 +344,9 @@ static_assert(MAX_HS >= 5, "path tunnel and perception require five halfspaces")
  * It does not enable pose fusion or give a generic gate detection authority
  * over collision avoidance. */
 #ifndef TINYMPC_GATE_OBSTACLE_POC_ENABLE
-#define TINYMPC_GATE_OBSTACLE_POC_ENABLE 0
+/* The split gate/oLGMD mode uses the existing bounded visual gate state
+ * machine to establish SEARCH/ALIGN/TRANSIT context. */
+#define TINYMPC_GATE_OBSTACLE_POC_ENABLE TINYMPC_GATE_OLGMD_ENABLE
 #endif
 /* The joint gate/obstacle policy is deliberately a distinct experiment from
  * the older two-teacher POC.  It may use the same bounded gate association and
@@ -362,6 +404,8 @@ enum {
 #include "trajectories/50hz/traj_straight_long_50hz.h"
 #elif defined(TINYMPC_TRAJECTORY_STRAIGHT_9M)
 #include "trajectories/50hz/traj_straight_9m_50hz.h"
+#elif defined(TINYMPC_TRAJECTORY_STRAIGHT_20M)
+#include "trajectories/50hz/traj_straight_20m_50hz.h"
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR)
 #include "trajectories/50hz/traj_canonical_corridor_50hz.h"
 #elif defined(TINYMPC_TRAJECTORY_CANONICAL_CIRCLE)
@@ -625,7 +669,8 @@ static const TinyRacerNavigationConfig navigation_config = {
 #define TINYRACER_DODGE_MINIMUM_LATERAL_OFFSET_M 0.35f
 #endif
 #define TINYRACER_EMERGENCY_BRAKE_PROBABILITY 0.90f
-#define TINYRACER_EMERGENCY_BRAKE_DECELERATION_MPS2 6.00f
+#define TINYRACER_EMERGENCY_BRAKE_DECELERATION_MPS2 \
+  ((float)TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2)
 #define TINYRACER_BACKTRACK_RELEASE_PROBABILITY 0.50f
 #define TINYRACER_BACKTRACK_SPEED_MPS 0.50f
 #define TINYRACER_BACKTRACK_SETTLE_MAXIMUM_TILT_RAD 0.34906585f
@@ -750,6 +795,53 @@ static TinyRacerNavigationState navigation_state;
 static TinyRacerNavigationIntent navigation_intent;
 static TinyRacerDodgeState dodge_state;
 static TinyRacerDodgeIntent dodge_intent;
+#if TINYMPC_GATE_OLGMD_ENABLE
+static TinyMpcGateOlgmdState gate_olgmd_state;
+static uint32_t gate_olgmd_trigger_count = 0u;
+static uint32_t gate_olgmd_release_count = 0u;
+static bool gate_olgmd_near_gate_suppression = false;
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+static uint32_t gate_olgmd_stop_hold_cycles = 0u;
+static uint32_t gate_olgmd_resume_refractory_cycles = 0u;
+#endif
+#endif
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+/* The controller-ablation emergency arm is a one-shot safety action, not an
+ * obstacle-avoidance encounter.  Once asserted it may brake and settle, but
+ * it must never backtrack, scan, or resume the nominal approach. */
+static bool paper_emergency_terminal_stop_latched = false;
+static float paper_emergency_measured_forward_speed_mps = 0.0f;
+static bool paper_emergency_position_velocity_active = false;
+#if TINYMPC_PITCH_THROUGH_BRAKE_ENABLE
+static bool pitch_through_brake_reference_active = false;
+static float pitch_through_brake_entry_altitude_world_m = 0.0f;
+static float pitch_through_brake_internal_up_position_m = 0.0f;
+static float pitch_through_brake_internal_up_speed_mps = 0.0f;
+static uint32_t pitch_through_brake_trigger_count = 0u;
+static const TinyMpcPitchThroughBrakeConfig pitch_through_brake_config = {
+    0.87266463f,  /* 50 deg at and below 1 m/s. */
+    1.13446401f,  /* 65 deg at and above 4 m/s. */
+    1.0f,
+    4.0f,
+    4.5f,         /* 258 deg/s remains below ordinary Crazyflie rate limits. */
+    60.0f,
+    0.80f,        /* Begin counter-rotation while thrust still brakes. */
+    4.0f,
+    6.0f,
+    18.0f,
+    6.0f,
+    5.0f,
+    0.20f,        /* Spend at most 20 cm of altitude before recovery. */
+    0.04f,
+    TINYMPC_BANK_MODEL_DRAG_X_N_PER_MPS,
+    TINYMPC_BANK_MODEL_MASS_KG,
+    9.81f,
+    TINYMPC_LEVEL_MAX_MOTOR_THRUST_N,
+    28.0e-6f,
+    0.035355f,
+};
+#endif
+#endif
 static bool dodge_camera_yaw_initialized = false;
 static float dodge_camera_yaw_world_rad = 0.0f;
 static bool dodge_rejoin_target_yaw_valid = false;
@@ -2008,6 +2100,24 @@ static void resetPerceptionFilter() {
   memset(&navigation_intent, 0, sizeof(navigation_intent));
   tinyRacerDodgeReset(&dodge_state);
   memset(&dodge_intent, 0, sizeof(dodge_intent));
+#if TINYMPC_GATE_OLGMD_ENABLE
+  tinyMpcGateOlgmdReset(&gate_olgmd_state);
+  gate_olgmd_trigger_count = 0u;
+  gate_olgmd_release_count = 0u;
+  gate_olgmd_near_gate_suppression = false;
+#endif
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+  paper_emergency_terminal_stop_latched = false;
+  paper_emergency_measured_forward_speed_mps = 0.0f;
+  paper_emergency_position_velocity_active = false;
+#if TINYMPC_PITCH_THROUGH_BRAKE_ENABLE
+  pitch_through_brake_reference_active = false;
+  pitch_through_brake_entry_altitude_world_m = 0.0f;
+  pitch_through_brake_internal_up_position_m = 0.0f;
+  pitch_through_brake_internal_up_speed_mps = 0.0f;
+  pitch_through_brake_trigger_count = 0u;
+#endif
+#endif
   dodge_camera_yaw_initialized = false;
   dodge_camera_yaw_world_rad = 0.0f;
   dodge_rejoin_target_yaw_valid = false;
@@ -2558,6 +2668,30 @@ static struct quat setReferenceYawPreservingBodyZ(
 
 static void applyVisionNavigation(
     const TinyRacerPerceptionObservation& observation) {
+#if TINYMPC_GATE_OLGMD_ENABLE
+  SequentialObstacleThreatObservation olgmd_threat = {};
+  SequentialObstacleGateObservation olgmd_gate = {};
+  const bool olgmd_threat_available =
+      sequentialObstacleLinkGetLatestThreat(&olgmd_threat);
+  const bool olgmd_gate_available =
+      sequentialObstacleLinkGetLatestGate(&olgmd_gate);
+  TinyRacerPerceptionObservation olgmd_gate_observation = {};
+  olgmd_gate_observation.valid = olgmd_gate_available;
+  olgmd_gate_observation.gate_valid = olgmd_gate.valid;
+  olgmd_gate_observation.gate_confidence = olgmd_gate.valid ? 1.0f : 0.0f;
+  olgmd_gate_observation.gate_fx_normalized =
+      (float)TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED;
+  olgmd_gate_observation.gate_fy_normalized =
+      (float)TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED;
+  olgmd_gate_observation.gate_cx_normalized =
+      (float)TINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED;
+  olgmd_gate_observation.gate_cy_normalized =
+      (float)TINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED;
+  olgmd_gate_observation.received_age_ms = olgmd_gate.received_age_ms;
+  olgmd_gate_observation.sample = olgmd_gate.sample;
+  memcpy(olgmd_gate_observation.gate_corners_xy, olgmd_gate.corners_xy,
+         sizeof(olgmd_gate_observation.gate_corners_xy));
+#endif
   TinyRacerPerceptionObservation navigation_observation = observation;
   const auto clear_navigation_risk = [&navigation_observation]() {
     navigation_observation.collision_probability = 0.0f;
@@ -2624,7 +2758,11 @@ static void applyVisionNavigation(
    * position, gate ordering, or map window is used. */
 #if TINYMPC_GATE_OBSTACLE_POC_ENABLE
   const bool gate_was_associated = gate_poc_associated;
+#if TINYMPC_GATE_OLGMD_ENABLE
+  updateGatePocAssociation(olgmd_gate_observation);
+#else
   updateGatePocAssociation(observation);
+#endif
   if (!gate_was_associated && gate_poc_associated &&
       dodge_state.phase != TINYRACER_DODGE_TRACK) {
     const bool recovery_owns_reference =
@@ -2680,7 +2818,11 @@ static void applyVisionNavigation(
     DEBUG_PRINT("Gate visual transit restoring collision authority\n");
   }
 #elif TINYMPC_JOINT_GATE_RL_ENABLE
+#if TINYMPC_GATE_OLGMD_ENABLE
+  updateGatePocAssociation(olgmd_gate_observation);
+#else
   updateGatePocAssociation(observation);
+#endif
   /* Gate rails are traversable structure, not an obstacle to dodge around.
    * A short 20-frame geometry grace bridges the near-plane blind interval; a
    * separate 300-sample hard lifetime also ends a continuously geometric
@@ -2739,6 +2881,46 @@ static void applyVisionNavigation(
   }
   const Eigen::Vector3f route_lateral_local(
       -path_local.y(), path_local.x(), 0.0f);
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+  const Eigen::Vector3f position_delta_velocity_local = worldVectorToLocal(
+      active_local_frame, position_delta_velocity_world);
+  const float estimator_forward_speed_mps =
+      path_local.dot(x0.segment<3>(6));
+  const float emergency_signed_forward_speed_mps =
+      position_delta_velocity_valid
+      ? path_local.dot(position_delta_velocity_local)
+      : estimator_forward_speed_mps;
+  const float emergency_forward_speed_mps =
+      tinyMpcEmergencyMeasuredForwardSpeed(
+          estimator_forward_speed_mps,
+          path_local.dot(position_delta_velocity_local),
+          position_delta_velocity_valid);
+  const float emergency_lateral_speed_mps = position_delta_velocity_valid
+      ? route_lateral_local.dot(position_delta_velocity_local)
+      : route_lateral_local.dot(x0.segment<3>(6));
+  const bool paper_emergency_requested =
+      paper_emergency_terminal_stop_latched ||
+      (navigation_intent.new_sample &&
+       navigation_intent.center_collision_probability >
+           dodge_config.emergency_brake_probability);
+  if (paper_emergency_requested && position_delta_velocity_valid) {
+    /* CrazySim's external-pose estimator can lag the plant velocity by more
+     * than 50% during a fast approach.  A 50 Hz position delta is in the same
+     * spatial frame as the MPC state and is the authoritative emergency
+     * velocity for both state error and cache selection. */
+    x0.segment<3>(6) = position_delta_velocity_local;
+    paper_emergency_position_velocity_active = true;
+  }
+  paper_emergency_measured_forward_speed_mps =
+      emergency_forward_speed_mps;
+#else
+  const float emergency_signed_forward_speed_mps =
+      path_local.dot(x0.segment<3>(6));
+  const float emergency_forward_speed_mps =
+      path_local.dot(x0.segment<3>(6));
+  const float emergency_lateral_speed_mps =
+      route_lateral_local.dot(x0.segment<3>(6));
+#endif
   const struct quat measured_attitude = qnormalize(attitude);
   const float body_z_world_z = fminf(fmaxf(
       1.0f - 2.0f * (measured_attitude.x * measured_attitude.x +
@@ -2805,12 +2987,242 @@ static void applyVisionNavigation(
       isfinite(dodge_feedback.body_rate_rad_s) &&
       isfinite(dodge_feedback.rejoin_heading_error_rad) &&
       isfinite(dodge_feedback.loop_scan_heading_error_rad);
+#if TINYMPC_GATE_OLGMD_ENABLE
+  bool olgmd_force_hold_anchor = false;
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+  if (gate_olgmd_resume_refractory_cycles > 0u) {
+    --gate_olgmd_resume_refractory_cycles;
+  }
+#endif
+  float olgmd_gate_depth_m = INFINITY;
+  const bool olgmd_gate_geometry_valid = olgmd_gate_available &&
+      olgmd_gate.valid && tinyMpcGateOlgmdDepthMeters(
+          olgmd_gate.corners_xy,
+          (float)TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED,
+          (float)TINYMPC_GATE_CORNER_SPAN_M, &olgmd_gate_depth_m);
+  /*
+   * The current corner-regression head has no calibrated presence/objectness
+   * output. Until that exists, it must not veto the independent safety sensor:
+   * obstacle-only footage is otherwise classified as a nearby gate.
+   */
+  const bool olgmd_gate_align_or_transit = false;
+  const bool olgmd_stationary =
+      fabsf(dodge_feedback.forward_speed_mps) <=
+      (float)TINYMPC_OLGMD_MOVING_SPEED_MPS;
+  const TinyMpcGateOlgmdInput olgmd_input = {
+    olgmd_threat_available ||
+        (TINYMPC_OLGMD_CLEAR_RESUME_ENABLE && olgmd_stationary),
+    (olgmd_threat_available &&
+         olgmd_threat.received_age_ms <= navigation_config.maximum_age_ms) ||
+        (TINYMPC_OLGMD_CLEAR_RESUME_ENABLE && olgmd_stationary),
+    olgmd_threat.sample,
+    olgmd_threat.imminent_threat &&
+        (!TINYMPC_OLGMD_CLEAR_RESUME_ENABLE ||
+         (gate_olgmd_resume_refractory_cycles == 0u &&
+          dodge_feedback.forward_speed_mps >
+              (float)TINYMPC_OLGMD_MOVING_SPEED_MPS)),
+    olgmd_gate_available,
+    olgmd_gate_available &&
+        olgmd_gate.received_age_ms <= navigation_config.maximum_age_ms,
+    olgmd_gate.sample,
+    olgmd_gate_geometry_valid,
+    olgmd_gate_align_or_transit,
+    olgmd_gate_depth_m,
+    TINYMPC_OLGMD_CLEAR_RESUME_ENABLE &&
+            fabsf(dodge_feedback.forward_speed_mps) < 0.35f
+        ? 0.0f
+        : dodge_feedback.forward_speed_mps,
+  };
+  const TinyMpcGateOlgmdOutput olgmd_output =
+      tinyMpcGateOlgmdStep(&gate_olgmd_state, &olgmd_input);
+  gate_olgmd_near_gate_suppression = olgmd_output.near_gate_suppression;
+  if (olgmd_output.triggered) {
+    ++gate_olgmd_trigger_count;
+    DEBUG_PRINT(
+        "oLGMD brake latched threat=%u fresh=%u near_gate=%u depth=%.2fm\n",
+        (unsigned)olgmd_threat.imminent_threat,
+        (unsigned)olgmd_input.threat_fresh,
+        (unsigned)olgmd_output.near_gate_suppression,
+        (double)olgmd_gate_depth_m);
+  }
+  if (olgmd_output.released) {
+    ++gate_olgmd_release_count;
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+    if (paper_emergency_terminal_stop_latched) {
+      dodge_state.phase = TINYRACER_DODGE_BACKTRACK_SETTLE;
+      dodge_state.backtrack_settle_samples = 0u;
+      dodge_state.emergency_forward_speed_mps = 0.0f;
+      dodge_state.recovery_forward_speed_mps = 0.0f;
+      dodge_state.recovery_forward_speed_active = false;
+      memset(&dodge_intent, 0, sizeof(dodge_intent));
+      dodge_intent.phase = TINYRACER_DODGE_BACKTRACK_SETTLE;
+      olgmd_force_hold_anchor = true;
+    }
+#else
+    tinyRacerDodgeReset(&dodge_state);
+    memset(&dodge_intent, 0, sizeof(dodge_intent));
+#endif
+    DEBUG_PRINT("oLGMD brake released after five fresh clear frames\n");
+  }
+  if (olgmd_output.brake_latched) {
+    /* Present the binary safety decision through the existing emergency path.
+     * Reassertion keeps the generic FSM from advancing into backtrack while the
+     * safety latch owns the reference. */
+    navigation_intent.active = true;
+    navigation_intent.new_sample = true;
+    navigation_intent.forward_speed_mps = fmaxf(
+        navigation_intent.forward_speed_mps,
+        fmaxf(dodge_feedback.forward_speed_mps, 0.0f));
+    navigation_intent.center_collision_probability = 1.0f;
+    navigation_intent.collision_probability = 1.0f;
+  }
+#endif
   const TinyRacerDodgePhase previous_phase = dodge_state.phase;
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+  bool olgmd_rearmed_this_cycle = false;
+  if (paper_emergency_terminal_stop_latched &&
+      dodge_state.phase == TINYRACER_DODGE_BACKTRACK_SETTLE &&
+      !gate_olgmd_state.brake_latched) {
+    ++gate_olgmd_stop_hold_cycles;
+    if (gate_olgmd_stop_hold_cycles == 1u) {
+      DEBUG_PRINT("oLGMD CLEAR_RESUME stationary hold started duration=%.1fs\n",
+                  (double)TINYMPC_OLGMD_STOP_HOLD_S);
+    }
+    const uint32_t required_hold_cycles =
+        (uint32_t)ceilf((float)TINYMPC_OLGMD_STOP_HOLD_S / DT);
+    if (gate_olgmd_stop_hold_cycles >= required_hold_cycles) {
+      paper_emergency_terminal_stop_latched = false;
+      gate_olgmd_stop_hold_cycles = 0u;
+      gate_olgmd_resume_refractory_cycles = (uint32_t)ceilf(
+          (float)TINYMPC_OLGMD_RESUME_REFRACTORY_S / DT);
+      tinyRacerDodgeReset(&dodge_state);
+      memset(&dodge_intent, 0, sizeof(dodge_intent));
+      olgmd_rearmed_this_cycle = true;
+      DEBUG_PRINT(
+          "oLGMD CLEAR_RESUME rearmed after %.1fs stationary hold refractory=%.1fs\n",
+          (double)TINYMPC_OLGMD_STOP_HOLD_S,
+          (double)TINYMPC_OLGMD_RESUME_REFRACTORY_S);
+    }
+  } else if (!paper_emergency_terminal_stop_latched) {
+    gate_olgmd_stop_hold_cycles = 0u;
+  }
+#endif
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+  if (!paper_emergency_terminal_stop_latched &&
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+      !olgmd_rearmed_this_cycle &&
+#endif
+      navigation_intent.new_sample &&
+      navigation_intent.center_collision_probability >
+          dodge_config.emergency_brake_probability) {
+    paper_emergency_terminal_stop_latched = true;
+#if TINYMPC_PITCH_THROUGH_BRAKE_ENABLE
+    pitch_through_brake_reference_active = true;
+    pitch_through_brake_entry_altitude_world_m =
+        active_local_frame.origin_z + x0(2);
+    pitch_through_brake_internal_up_position_m = 0.0f;
+    pitch_through_brake_internal_up_speed_mps = 0.0f;
+    ++pitch_through_brake_trigger_count;
+#if defined(TINYMPC_USE_ACTUATOR_LTI)
+    resetLevelActuatorDuals();
+#endif
+    DEBUG_PRINT(
+        "PITCH_THROUGH enter speed=%.3fm/s altitude=%.3fm pitch=%.3frad pitch_rate=%.3frad/s target=%.1f..%.1fdeg altitude_budget=%.2fm z_aiding=disabled internal_vertical_prediction=1 trigger=%lu\n",
+        (double)emergency_signed_forward_speed_mps,
+        (double)(active_local_frame.origin_z + x0(2)),
+        (double)levelStatePitchRad(x0),
+        (double)x0(10),
+        (double)(pitch_through_brake_config.minimum_braking_pitch_rad *
+            57.2957795f),
+        (double)(pitch_through_brake_config.maximum_braking_pitch_rad *
+            57.2957795f),
+        (double)pitch_through_brake_config.maximum_altitude_loss_m,
+        (unsigned long)pitch_through_brake_trigger_count);
+#endif
+    DEBUG_PRINT(
+        "PAPER_EMERGENCY terminal stop latched center_risk=%.3f speed=%.3fm/s decel=%.1fm/s2 cache=%u pitch_through=%u\n",
+        (double)navigation_intent.center_collision_probability,
+        (double)dodge_feedback.forward_speed_mps,
+        (double)dodge_config.emergency_brake_deceleration_mps2,
+        (unsigned)TINYMPC_BRAKING_CACHE_ENABLE,
+        (unsigned)TINYMPC_PITCH_THROUGH_BRAKE_ENABLE);
+  }
+  if (paper_emergency_terminal_stop_latched &&
+      dodge_state.phase == TINYRACER_DODGE_BACKTRACK_SETTLE) {
+    /* The fixed measured-position anchor was captured on entry below.  Keep
+     * emitting the stationary recovery profile without running the generic
+     * settle/recovery transitions again. */
+    memset(&dodge_intent, 0, sizeof(dodge_intent));
+    dodge_intent.phase = TINYRACER_DODGE_BACKTRACK_SETTLE;
+    dodge_intent.lateral_offset_m = dodge_state.lateral_offset_m;
+    dodge_intent.avoidance_probability = fmaxf(
+        dodge_state.center_collision_probability,
+        fmaxf(dodge_state.left_collision_probability,
+              dodge_state.right_collision_probability));
+  } else {
+#endif
   tinyRacerDodgeUpdate(
       &dodge_state, &navigation_intent, &dodge_config, &dodge_feedback, DT,
       &dodge_intent);
+#if TINYMPC_GATE_OLGMD_ENABLE
+  if (gate_olgmd_state.brake_latched &&
+      dodge_state.phase != TINYRACER_DODGE_EMERGENCY_BRAKE) {
+    dodge_state.phase = TINYRACER_DODGE_EMERGENCY_BRAKE;
+    dodge_state.emergency_forward_speed_mps = 0.0f;
+    dodge_intent.phase = TINYRACER_DODGE_EMERGENCY_BRAKE;
+    dodge_intent.forward_speed_mps = 0.0f;
+    dodge_intent.lateral_rate_mps = 0.0f;
+  }
+#endif
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+    if (paper_emergency_terminal_stop_latched &&
+        dodge_state.phase == TINYRACER_DODGE_BACKTRACK &&
+        !(TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+              ? (fabsf(emergency_signed_forward_speed_mps) < 0.35f &&
+                 fabsf(emergency_lateral_speed_mps) < 0.20f)
+              : tinyMpcEmergencyStopReady(
+                    emergency_signed_forward_speed_mps,
+                    emergency_lateral_speed_mps, 0.10f,
+                    levelStatePitchRad(x0), x0.segment<3>(9).norm(),
+                    0.08726646f, 0.75f))) {
+      /* The generic FSM's finite reference schedule has reached zero, but
+       * the vehicle has not. Keep rebuilding the 6 m/s^2 horizon from
+       * measured motion; otherwise STOP_HOLD captures a coasting pose. */
+      dodge_state.phase = TINYRACER_DODGE_EMERGENCY_BRAKE;
+      dodge_intent.phase = TINYRACER_DODGE_EMERGENCY_BRAKE;
+      dodge_intent.forward_speed_mps = emergency_forward_speed_mps;
+      dodge_intent.lateral_rate_mps = 0.0f;
+    } else if (paper_emergency_terminal_stop_latched &&
+        dodge_state.phase == TINYRACER_DODGE_BACKTRACK) {
+      /* The generic FSM requests a retreat after the 6 m/s^2 schedule has
+       * reached zero.  The paper emergency arm instead enters a permanent,
+       * fixed-position zero-velocity hold at the measured stopping pose. */
+      dodge_state.phase = TINYRACER_DODGE_BACKTRACK_SETTLE;
+      dodge_state.backtrack_settle_samples = 0u;
+      dodge_state.recovery_forward_speed_mps = 0.0f;
+      dodge_state.recovery_forward_speed_active = false;
+      dodge_intent.phase = TINYRACER_DODGE_BACKTRACK_SETTLE;
+      dodge_intent.forward_speed_mps = 0.0f;
+      dodge_intent.lateral_rate_mps = 0.0f;
+#if TINYMPC_PITCH_THROUGH_BRAKE_ENABLE
+      pitch_through_brake_reference_active = false;
+      resetLevelActuatorDuals();
+#endif
+      DEBUG_PRINT(
+          "PAPER_EMERGENCY transition EMERGENCY_BRAKE -> STOP_HOLD measured=(forward=%.3f lateral=%.3f)m/s pitch=%.3frad body_rate=%.3frad/s\n",
+          (double)emergency_signed_forward_speed_mps,
+          (double)emergency_lateral_speed_mps,
+          (double)levelStatePitchRad(x0),
+          (double)x0.segment<3>(9).norm());
+    }
+  }
+#endif
   if (dodge_state.phase == TINYRACER_DODGE_BACKTRACK_SETTLE &&
-      previous_phase != TINYRACER_DODGE_BACKTRACK_SETTLE) {
+      (previous_phase != TINYRACER_DODGE_BACKTRACK_SETTLE
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+       || olgmd_force_hold_anchor
+#endif
+       )) {
     /* BACKTRACK is receding-horizon anchored at x0. Latch that same position
      * at the zero-speed handoff; returning to the frozen route anchor here
      * creates a multi-metre reference step and rails opposing motors. */
@@ -3083,6 +3495,13 @@ static void applyVisionNavigation(
       stationary_rejoin_scan || stationary_loop_scan;
   const bool camera_yaw_reference_profile =
       camera_yaw_phase(dodge_intent.phase);
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+  const bool paper_terminal_stop_hold =
+      paper_emergency_terminal_stop_latched &&
+      dodge_intent.phase == TINYRACER_DODGE_BACKTRACK_SETTLE;
+#else
+  const bool paper_terminal_stop_hold = false;
+#endif
   const Eigen::Vector3f recovery_anchor_local = Xref[0].head<3>();
   const float recovery_hold_yaw_rad = levelStateYawRad(Xref[0]);
   const struct quat recovery_level_attitude = rpy2quat(mkvec(
@@ -3188,26 +3607,57 @@ static void applyVisionNavigation(
 #if defined(TINYMPC_USE_ACTUATOR_LTI)
       const float measured_forward_speed_mps = fmaxf(
           x0.segment<3>(6).dot(profile_path_local), 0.0f);
-      const float cache_schedule_speed_mps = fmaxf(
+      const float brake_schedule_speed_mps = fmaxf(
           future_brake_speed_mps,
           measured_forward_speed_mps
               - dodge_config.emergency_brake_deceleration_mps2
                   * (float)(k + 1) * DT);
-      const uint8_t braking_tier = tinyMpcNearestBrakingSpeedTier(
-          cache_schedule_speed_mps);
-      const float braking_pitch_rad = cache_schedule_speed_mps > 1.0e-4f
-          ? tinyMpcBrakingNominalPitchRad(
-              braking_tier, &level_braking_selector_config)
+      const float target_braking_pitch_rad =
+          brake_schedule_speed_mps > 1.0e-4f
+          ? tinyMpcEmergencyPitchForNetDeceleration(
+              dodge_config.emergency_brake_deceleration_mps2,
+              brake_schedule_speed_mps,
+              TINYMPC_BANK_MODEL_DRAG_X_N_PER_MPS,
+              TINYMPC_BANK_MODEL_MASS_KG, 9.81f)
           : 0.0f;
+      /* A frozen braking chart is a steady equilibrium, not a transition
+       * model.  The old emergency path stepped directly from level flight to
+       * that equilibrium and produced 8--10 rad/s pitch motion plus opposing
+       * motor saturation.  Keep this one-shot safety path on the level chart
+       * and present it with a dynamically consistent, bounded pitch capture. */
+      const float previous_horizon_pitch_rad = emergency_horizon_pitch_rad;
+      emergency_horizon_pitch_rad = tinyMpcEmergencySlewAttitude(
+          previous_horizon_pitch_rad, target_braking_pitch_rad,
+          (float)TINYMPC_PAPER_EMERGENCY_PITCH_RATE_LIMIT_RAD_S, DT);
+      const float pitch_step_rad =
+          emergency_horizon_pitch_rad - previous_horizon_pitch_rad;
       const struct quat braking_attitude = rpy2quat(mkvec(
-          0.0f, braking_pitch_rad, recovery_hold_yaw_rad));
+          0.0f, emergency_horizon_pitch_rad, recovery_hold_yaw_rad));
       const float attitude_denominator = fabsf(braking_attitude.w) > 1.0e-6f
           ? braking_attitude.w : copysignf(1.0e-6f, braking_attitude.w);
       Xref[k](3) = braking_attitude.x / attitude_denominator;
       Xref[k](4) = braking_attitude.y / attitude_denominator;
       Xref[k](5) = braking_attitude.z / attitude_denominator;
-#endif
+      Xref[k].segment<3>(9) <<
+          0.0f, pitch_step_rad / DT, 0.0f;
+      if (k < NHORIZON - 1) {
+        const float cosine_pitch = fmaxf(
+            cosf(emergency_horizon_pitch_rad), 0.10f);
+        const float per_motor_thrust_n = T_MIN(
+            TINYMPC_BANK_MODEL_MASS_KG * 9.81f /
+                ((float)NINPUTS * cosine_pitch),
+            TINYMPC_LEVEL_MAX_MOTOR_THRUST_N);
+        const float collective_delta_n =
+            per_motor_thrust_n - TINYMPC_LEVEL_HOVER_THRUST_N;
+        for (int motor = 0; motor < NINPUTS; ++motor) {
+          Uref[k](motor) = T_MIN(T_MAX(
+              collective_delta_n, lcu(motor)), ucu(motor));
+        }
+      }
+#else
       Xref[k].segment<3>(9).setZero();
+#endif
+      }
     } else if (dodge_intent.phase == TINYRACER_DODGE_BACKTRACK ||
                dodge_intent.phase == TINYRACER_DODGE_BACKTRACK_SETTLE) {
       commanded_forward_speed_mps = dodge_intent.forward_speed_mps;
@@ -6623,6 +7073,9 @@ static void updateLevelActuatorModelSelection(void) {
       0.0f);
   const float braking_cache_deceleration_mps2 =
 #if TINYMPC_BRAKING_CACHE_ENABLE
+#if defined(TINYMPC_PAPER_EMERGENCY_TERMINAL_STOP)
+      !paper_emergency_terminal_stop_latched &&
+#endif
       fabsf(reference_deceleration_mps2
           - TINYMPC_BRAKING_DECELERATION_MPS2) <= 1.0f
       ? TINYMPC_BRAKING_DECELERATION_MPS2 : 0.0f;
