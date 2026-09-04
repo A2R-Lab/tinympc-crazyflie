@@ -19,8 +19,9 @@ The generated firmware artifacts are written to `build/`.
 
 Build the STM32 half of the pure obstacle-stopping experiment with the named
 profile below. It compiles the straight 9 m reference at 0.50 m/s, accepts only
-fresh oLGMD threat packets as vision authority, commands a 10 m/s^2 terminal
-brake, holds for 3 s after five fresh clear frames at rest, then rearms with a
+fresh oLGMD threat packets as vision authority, commands the cache-free,
+speed-indexed pitch-through maneuver for a 10 m/s^2 terminal brake, holds
+for 3 s after five fresh clear frames at rest, then rearms with a
 2 s refractory interval. Gate packet ingestion, near-gate threat suppression,
 gate association, and gate visual servo authority are all compiled out. Pair
 this STM32 branch with `tinympc-nanocockpit` branch
@@ -48,14 +49,16 @@ apptainer exec /home/cchen/containers/bitcraze-builder.sif \
 The profile exposes `TINYMPC_OLGMD_CLEAR_RESUME_ENABLE`,
 `TINYMPC_OLGMD_MOVING_SPEED_MPS`, `TINYMPC_OLGMD_STOP_HOLD_S`,
 `TINYMPC_OLGMD_RESUME_REFRACTORY_S`,
-`TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2`, and the paired camera calibration
+`TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2`,
+`TINYMPC_PITCH_THROUGH_BRAKE_ENABLE`, and the paired camera calibration
 values `TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED`,
 `TINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED`, and
 `TINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED`. The camera values are recorded for
 pairing with the GAP8 build but are intentionally unused by this STM32 profile:
 the STM32 receives a binary threat decision and never interprets image pixels
-or gate geometry. The 10 m/s^2 profile disables the checked-in 6 m/s^2 braking
-model cache instead of silently using a mismatched cache.
+or gate geometry. The 10 m/s^2 profile enables the direct-motor pitch-through formulation
+and disables the checked-in 6 m/s^2 braking model cache instead of silently using
+a mismatched cache.
 
 After inspecting `build/cf21bl.bin`, flash that exact profile (do not omit the
 profile on `cload`, because `cload` rebuilds before transfer):
