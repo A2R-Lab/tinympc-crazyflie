@@ -9,6 +9,7 @@ APPTAINER_IMAGE=""
 TRAJECTORY="circle"
 ACTUATOR_LTI=1
 RATE_CASCADE=0
+BRAKING_CACHE="auto"
 DIRECT_PLAN_REPLAY=0
 RATE_IDENTIFICATION=0
 MPC_DIAG_MODE="off"
@@ -18,7 +19,7 @@ PROGRESS_SAMPLE_LIMIT=0
 PROGRESS_SPEED_MPS=""
 PROGRESS_LAPS=1
 PROGRESS_ENTRY_ACCELERATION_MPS2="1.0"
-PROGRESS_TERMINAL_DECELERATION_MPS2="1.5"
+PROGRESS_TERMINAL_DECELERATION_MPS2="6.0"
 PROGRESS_REWARD_WEIGHT="0.40"
 FLIP_ENABLE=0
 FLIP_TRIGGER_S_M="1.0"
@@ -31,6 +32,14 @@ POWER_LOOP_TRIGGER_WINDOW_M="0.25"
 POWER_LOOP_RADIUS_M="1.2"
 POWER_LOOP_BOTTOM_SPEED_MPS="2.2"
 POWER_LOOP_TOP_SPEED_MPS="4.0"
+REACTIVE_POWER_LOOP=0
+PITCH_THROUGH_BRAKE=0
+VERTICAL_ACTIVE_SENSING=0
+YAW_SPIN_TEST=0
+YAW_SPIN_RATE_RAD_S="2.0"
+YAW_SPIN_REVOLUTIONS="4.0"
+YAW_SPIN_STRAIGHT_SPEED_MPS="0.0"
+YAW_SPIN_STRAIGHT_DURATION_S="2.0"
 PROGRESS_REFERENCE_LIMITS_EFFECTIVE="uncapped"
 DURATION=10
 LAUNCH_TIME=1
@@ -53,8 +62,11 @@ STOP_ON_CONTACT=1
 VISION_MODEL=""
 VISION_ADAPTER="auto"
 VISION_SCENE="obstacle"
+VISION_SCENE_EXPLICIT=0
 VISION_LATENCY_FRAMES=1
 CAMERA_FPS=30
+VISION_CONTROL_ENABLE_AFTER_S=0
+VISION_CONTROL_ENABLE_AT_X_M=""
 VISION_PASSIVE=0
 CAMERA_ONLY=0
 IMAV22_MODE=""
@@ -93,7 +105,7 @@ Usage: tools/crazysim_mujoco/run.sh [options]
   --progress-entry-acceleration-mps2 MPS2  Maximum command-speed ramp rate
                             in progress mode (default: 1.0)
   --progress-terminal-deceleration-mps2 MPS2  Maximum cooldown braking rate
-                            in progress mode (default: 1.5)
+                            in progress mode (default: 6.0)
   --progress-reward-weight LAMBDA  Weight for -lambda*tangent_dot_velocity
                             in progress mode (default: 0.40)
   --flip 0|1              Enable the one-shot pitch-flip primitive (default: 0)
@@ -192,6 +204,7 @@ while [[ $# -gt 0 ]]; do
     --trajectory) TRAJECTORY="$2"; shift 2 ;;
     --actuator-lti) ACTUATOR_LTI="$2"; shift 2 ;;
     --rate-cascade) RATE_CASCADE="$2"; shift 2 ;;
+    --braking-cache) BRAKING_CACHE="$2"; shift 2 ;;
     --direct-plan-replay) DIRECT_PLAN_REPLAY="$2"; shift 2 ;;
     --rate-identification) RATE_IDENTIFICATION=1; shift ;;
     --mpc-diag-mode) MPC_DIAG_MODE="$2"; shift 2 ;;
@@ -213,9 +226,20 @@ while [[ $# -gt 0 ]]; do
     --power-loop-radius-m) POWER_LOOP_RADIUS_M="$2"; shift 2 ;;
     --power-loop-bottom-speed-mps) POWER_LOOP_BOTTOM_SPEED_MPS="$2"; shift 2 ;;
     --power-loop-top-speed-mps) POWER_LOOP_TOP_SPEED_MPS="$2"; shift 2 ;;
+    --reactive-power-loop) REACTIVE_POWER_LOOP="$2"; shift 2 ;;
+    --pitch-through-brake) PITCH_THROUGH_BRAKE="$2"; shift 2 ;;
+    --vertical-active-sensing) VERTICAL_ACTIVE_SENSING="$2"; shift 2 ;;
+    --yaw-spin-test) YAW_SPIN_TEST="$2"; shift 2 ;;
+    --yaw-spin-rate-rad-s) YAW_SPIN_RATE_RAD_S="$2"; shift 2 ;;
+    --yaw-spin-revolutions) YAW_SPIN_REVOLUTIONS="$2"; shift 2 ;;
+    --yaw-spin-straight-speed-mps) YAW_SPIN_STRAIGHT_SPEED_MPS="$2"; shift 2 ;;
+    --yaw-spin-straight-duration-s) YAW_SPIN_STRAIGHT_DURATION_S="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --launch-time) LAUNCH_TIME="$2"; shift 2 ;;
     --spawn-z) SPAWN_Z="$2"; shift 2 ;;
+    --spawn-yaw-deg)
+      [[ "${EXTRA_SIM_ARGS[0]}" == __none__ ]] && EXTRA_SIM_ARGS=()
+      EXTRA_SIM_ARGS+=(--spawn-yaw-deg "$2"); shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     --mass) MASS="$2"; shift 2 ;;
     --pwm-thrust-full) PWM_THRUST_FULL="$2"; shift 2 ;;
@@ -231,8 +255,11 @@ while [[ $# -gt 0 ]]; do
     --out) OUT="$2"; shift 2 ;;
     --vision-model) VISION_MODEL="$2"; shift 2 ;;
     --vision-adapter) VISION_ADAPTER="$2"; shift 2 ;;
-    --vision-scene) VISION_SCENE="$2"; shift 2 ;;
+    --vision-scene) VISION_SCENE="$2"; VISION_SCENE_EXPLICIT=1; shift 2 ;;
     --vision-latency-frames) VISION_LATENCY_FRAMES="$2"; shift 2 ;;
+    --camera-fps) CAMERA_FPS="$2"; shift 2 ;;
+    --vision-control-enable-after-s) VISION_CONTROL_ENABLE_AFTER_S="$2"; shift 2 ;;
+    --vision-control-enable-at-x-m) VISION_CONTROL_ENABLE_AT_X_M="$2"; shift 2 ;;
     --vision-passive) VISION_PASSIVE=1; shift ;;
     --camera-only) CAMERA_ONLY=1; shift ;;
     --imav22-mode) IMAV22_MODE="$2"; shift 2 ;;
@@ -281,6 +308,23 @@ if [[ "$RATE_CASCADE" != 0 && "$RATE_CASCADE" != 1 ]]; then
   echo "--rate-cascade must be 0 or 1" >&2
   exit 2
 fi
+if [[ "$RATE_CASCADE" == 1 && "$ACTUATOR_LTI" == 1 ]]; then
+  echo "WARNING: --rate-cascade 1 bypasses the direct actuator-LTI braking cache; use --rate-cascade 0 to exercise BRAKE model switching." >&2
+fi
+case "$BRAKING_CACHE" in
+  auto)
+    BRAKING_CACHE_EFFECTIVE=0
+    [[ "$ACTUATOR_LTI" == 1 && "$RATE_CASCADE" == 0 ]] && \
+      BRAKING_CACHE_EFFECTIVE=1 ;;
+  0) BRAKING_CACHE_EFFECTIVE=0 ;;
+  1)
+    [[ "$ACTUATOR_LTI" == 1 && "$RATE_CASCADE" == 0 ]] || {
+      echo "--braking-cache 1 requires --actuator-lti 1 --rate-cascade 0" >&2
+      exit 2
+    }
+    BRAKING_CACHE_EFFECTIVE=1 ;;
+  *) echo "--braking-cache must be auto, 0, or 1" >&2; exit 2 ;;
+esac
 if [[ "$DIRECT_PLAN_REPLAY" != 0 && "$DIRECT_PLAN_REPLAY" != 1 ]]; then
   echo "--direct-plan-replay must be 0 or 1" >&2
   exit 2
@@ -332,8 +376,8 @@ if [[ ! "$PROGRESS_LAPS" =~ ^[1-8]$ ]]; then
   exit 2
 fi
 if [[ "$PROGRESS_LAPS" != 1 ]]; then
-  if [[ "$TRAJECTORY" != circle ]]; then
-    echo "--progress-laps greater than 1 requires --trajectory circle" >&2
+  if [[ "$TRAJECTORY" != circle && "$TRAJECTORY" != imav22_circle ]]; then
+    echo "--progress-laps greater than 1 requires a closed circle trajectory" >&2
     exit 2
   fi
 fi
@@ -398,6 +442,71 @@ if [[ "$POWER_LOOP_ENABLE" == 1 && "$ACTUATOR_LTI" != 1 ]]; then
 fi
 if [[ "$POWER_LOOP_ENABLE" == 1 && "$FLIP_ENABLE" == 1 ]]; then
   echo "--power-loop and --flip are mutually exclusive" >&2
+  exit 2
+fi
+if [[ "$REACTIVE_POWER_LOOP" != 0 && "$REACTIVE_POWER_LOOP" != 1 ]]; then
+  echo "--reactive-power-loop must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$REACTIVE_POWER_LOOP" == 1 && "$ACTUATOR_LTI" != 1 ]]; then
+  echo "--reactive-power-loop 1 requires --actuator-lti 1" >&2
+  exit 2
+fi
+if [[ "$REACTIVE_POWER_LOOP" == 1 && "$RATE_CASCADE" != 0 ]]; then
+  echo "--reactive-power-loop 1 requires direct motors (--rate-cascade 0)" >&2
+  exit 2
+fi
+if [[ "$REACTIVE_POWER_LOOP" == 1 && "$POWER_LOOP_ENABLE" == 1 ]]; then
+  echo "--reactive-power-loop and --power-loop are mutually exclusive" >&2
+  exit 2
+fi
+if [[ "$REACTIVE_POWER_LOOP" == 1 && "$FLIP_ENABLE" == 1 ]]; then
+  echo "--reactive-power-loop and --flip are mutually exclusive" >&2
+  exit 2
+fi
+if [[ "$PITCH_THROUGH_BRAKE" != 0 && "$PITCH_THROUGH_BRAKE" != 1 ]]; then
+  echo "--pitch-through-brake must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$PITCH_THROUGH_BRAKE" == 1 &&
+      ( "$ACTUATOR_LTI" != 1 || "$RATE_CASCADE" != 0 ) ]]; then
+  echo "--pitch-through-brake 1 requires --actuator-lti 1 --rate-cascade 0" >&2
+  exit 2
+fi
+if [[ "$PITCH_THROUGH_BRAKE" == 1 &&
+      ( "$POWER_LOOP_ENABLE" == 1 || "$REACTIVE_POWER_LOOP" == 1 ||
+        "$FLIP_ENABLE" == 1 ) ]]; then
+  echo "--pitch-through-brake is mutually exclusive with loop/flip primitives" >&2
+  exit 2
+fi
+if [[ "$VERTICAL_ACTIVE_SENSING" != 0 && "$VERTICAL_ACTIVE_SENSING" != 1 ]]; then
+  echo "--vertical-active-sensing must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$YAW_SPIN_TEST" != 0 && "$YAW_SPIN_TEST" != 1 ]]; then
+  echo "--yaw-spin-test must be 0 or 1" >&2
+  exit 2
+fi
+if ! python3 - "$YAW_SPIN_RATE_RAD_S" "$YAW_SPIN_REVOLUTIONS" \
+    "$YAW_SPIN_STRAIGHT_SPEED_MPS" "$YAW_SPIN_STRAIGHT_DURATION_S" <<'PY'
+import math
+import sys
+try:
+    rate, revolutions, straight_speed, straight_duration = map(float, sys.argv[1:])
+except ValueError:
+    raise SystemExit("yaw-spin parameters must be finite numbers")
+if not all(map(math.isfinite, (rate, revolutions, straight_speed, straight_duration))):
+    raise SystemExit("yaw-spin parameters must be finite numbers")
+if rate == 0.0 or revolutions <= 0.0:
+    raise SystemExit("yaw-spin rate must be nonzero and revolutions must be positive")
+if straight_speed < 0.0 or straight_duration < 0.0:
+    raise SystemExit("yaw-spin straight speed and duration must be nonnegative")
+PY
+then
+  exit 2
+fi
+if [[ "$YAW_SPIN_TEST" == 1 && ( "$ACTUATOR_LTI" != 1 || "$RATE_CASCADE" != 0 ) ]]; then
+  echo "--yaw-spin-test 1 requires --actuator-lti 1 --rate-cascade 0" >&2
   exit 2
 fi
 if ! python3 - "$FLIP_TRIGGER_S_M" "$FLIP_TRIGGER_WINDOW_M" "$FLIP_DURATION_S" <<'PY'
@@ -578,6 +687,49 @@ if [[ -n "$VISION_MODEL" ]]; then
       # established adapter by merely being present on disk.
       VISION_MODEL="$SCRIPT_DIR/models/vision_rl_gate_joint"
       VISION_ADAPTER=joint_gate_rl ;;
+    espnet-v7-legacy-residual|espnetv2-imav22-residual)
+      echo "WARNING: ESPNet v7 PPO residual actor is legacy and excluded from current flight/acceptance testing." >&2
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_residual_v7"
+      VISION_ADAPTER=espnet_v7_residual ;;
+    espnet-v7-pid)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_pid ;;
+    tinyvpc-pid)
+      VISION_MODEL="$SCRIPT_DIR/models/tinyvpc_navigation_v1"
+      VISION_ADAPTER=tinyvpc_pid ;;
+    tinyvpc-emergency)
+      VISION_MODEL="$SCRIPT_DIR/models/tinyvpc_navigation_v1"
+      VISION_ADAPTER=tinyvpc_emergency ;;
+    oracle-brake)
+      VISION_MODEL="$SCRIPT_DIR/models/oracle_brake"
+      VISION_ADAPTER=oracle_brake ;;
+    oracle-brake-pid)
+      VISION_MODEL="$SCRIPT_DIR/models/oracle_brake"
+      VISION_ADAPTER=oracle_brake_pid ;;
+    espnet-v7|espnet-v7-dronet|espnetv2-imav22-dronet)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_dronet ;;
+    espnet-v7-reactive|espnetv2-imav22-reactive)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_reactive ;;
+    espnet-v7-emergency|espnetv2-imav22-emergency)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_emergency ;;
+    espnet-v7-straight-brake|espnetv2-imav22-straight-brake)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_straight_brake ;;
+    espnet-v7-gap8|espnet-v7-gap8-dronet)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gap8_v12"
+      VISION_ADAPTER=espnet_v7_dronet_gap8 ;;
+    espnet-v7-gap8-reactive)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gap8_close_rail_v9"
+      VISION_ADAPTER=espnet_v7_reactive_gap8 ;;
+    espnet-v7-float|espnet-v7-float-dronet)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_gate_rail_v2"
+      VISION_ADAPTER=espnet_v7_dronet ;;
+    espnet-v7-float-legacy|espnet-v7-float-collision-only)
+      VISION_MODEL="$SCRIPT_DIR/models/espnetv2_imav22_dronet_v7"
+      VISION_ADAPTER=espnet_v7_dronet ;;
     tinyracer|espnet)
       VISION_MODEL="$SCRIPT_DIR/models/espnet_dronet_gate_v1/espnet_dronet_gate_seed2027_float.onnx"
       VISION_ADAPTER=espnet ;;
@@ -722,8 +874,14 @@ python3 - "$OUT/run_config.json" "$REPO_DIR" "$SCRIPT_DIR/run.sh" \
   "$PROGRESS_REFERENCE_LIMITS_EFFECTIVE" "$PROGRESS_LAPS" "$PROGRESS_ENTRY_ACCELERATION_MPS2" "$PROGRESS_TERMINAL_DECELERATION_MPS2" "$PROGRESS_REWARD_WEIGHT" \
   "$FLIP_ENABLE" "$FLIP_TRIGGER_S_M" "$FLIP_TRIGGER_WINDOW_M" "$FLIP_DURATION_S" "$FLIP_PITCH_DIRECTION" \
   "$POWER_LOOP_ENABLE" "$POWER_LOOP_TRIGGER_S_M" "$POWER_LOOP_TRIGGER_WINDOW_M" "$POWER_LOOP_RADIUS_M" "$POWER_LOOP_BOTTOM_SPEED_MPS" "$POWER_LOOP_TOP_SPEED_MPS" \
+  "$VERTICAL_ACTIVE_SENSING" \
   "$CAMERA_ONLY" "$VISION_PASSIVE" "$FLOWDECK_ENABLED" "$RATE_IDENTIFICATION" "$DIRECT_PLAN_REPLAY" "$MPC_DIAG_MODE" "$TICK_US" \
   "$IMAV22_MODE" "$IMAV22_RELOCATION_PERIOD_S" "$IMAV22_RELOCATION_CLEARANCE_M" "$IMAV22_RELOCATION_DURATION_S" "$IMAV22_OBJECT_SET" \
+  "$CAMERA_FPS" "$VISION_CONTROL_ENABLE_AFTER_S" "${VISION_CONTROL_ENABLE_AT_X_M:-null}" \
+  "$BRAKING_CACHE" "$BRAKING_CACHE_EFFECTIVE" \
+  "$YAW_SPIN_TEST" "$YAW_SPIN_RATE_RAD_S" "$YAW_SPIN_REVOLUTIONS" \
+  "$YAW_SPIN_STRAIGHT_SPEED_MPS" "$YAW_SPIN_STRAIGHT_DURATION_S" \
+  "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" \
   "${EXTRA_SIM_ARGS[@]}" <<'PY'
 import hashlib
 import importlib.util
@@ -744,9 +902,15 @@ import sys
  flip_pitch_direction,
  power_loop_enable, power_loop_trigger_s_m, power_loop_trigger_window_m,
  power_loop_radius_m, power_loop_bottom_speed_mps, power_loop_top_speed_mps,
+ vertical_active_sensing,
  camera_only, vision_passive, flowdeck_enabled, rate_identification, direct_plan_replay, mpc_diag_mode, tick_us,
  imav22_mode, imav22_relocation_period_s, imav22_relocation_clearance_m,
  imav22_relocation_duration_s, imav22_object_set,
+ camera_fps, vision_control_enable_after_s, vision_control_enable_at_x_m,
+ braking_cache_mode_requested, braking_cache_enabled,
+ yaw_spin_test, yaw_spin_rate_rad_s, yaw_spin_revolutions,
+ yaw_spin_straight_speed_mps, yaw_spin_straight_duration_s,
+ reactive_power_loop, pitch_through_brake,
  *extra) = sys.argv[1:]
 
 def sha256(path):
@@ -841,9 +1005,18 @@ config = {
             "apps/controller_tinympc_eigen/src/tinyracer_interface.h",
             "apps/controller_tinympc_eigen/src/tinympc_generated_params.h",
             "apps/controller_tinympc_eigen/src/tinympc_level_actuator_lti.h",
+            "apps/controller_tinympc_eigen/src/tinympc_bank_selector.h",
+            "apps/controller_tinympc_eigen/src/tinympc_braking_selector.h",
             "apps/controller_tinympc_eigen/src/tinympc_progress_path.h",
             "apps/controller_tinympc_eigen/src/tinympc_flip_primitive.h",
             "apps/controller_tinympc_eigen/src/tinympc_power_loop.h",
+            "apps/controller_tinympc_eigen/src/tinympc_reactive_power_loop.h",
+            "apps/controller_tinympc_eigen/src/tinympc_pitch_through_brake.h",
+            "apps/controller_tinympc_eigen/src/tinympc_vertical_active_sensing.h",
+            "apps/controller_tinympc_eigen/src/tiny_pulp_dronet_v3_servo.h",
+            "apps/controller_tinympc_eigen/src/pulp_dronet_v2_brake.h",
+            "apps/controller_tinympc_eigen/src/trajectories/50hz/traj_reactive_power_loop_360_50hz.h",
+            "apps/controller_tinympc_eigen/src/trajectories/50hz/ltv/stored_ltv_reactive_power_loop_360_50hz.h",
         )
     },
     "trajectory_header_sha256": sha256(
@@ -853,6 +1026,8 @@ config = {
     "trajectory": trajectory,
     "actuator_lti": bool(int(actuator_lti)),
     "rate_cascade": bool(int(rate_cascade)),
+    "braking_cache_enabled": bool(int(braking_cache_enabled)),
+    "braking_cache_mode_requested": braking_cache_mode_requested,
     "direct_plan_replay": bool(int(direct_plan_replay)),
     "rate_identification": bool(int(rate_identification)),
     "reference_mode": reference_mode,
@@ -875,6 +1050,42 @@ config = {
     "power_loop_radius_m": float(power_loop_radius_m),
     "power_loop_bottom_speed_mps": float(power_loop_bottom_speed_mps),
     "power_loop_top_speed_mps": float(power_loop_top_speed_mps),
+    "reactive_power_loop": {
+        "enabled": bool(int(reactive_power_loop)),
+        "maximum_center_risk": 0.20,
+        "clear_samples_required": 1,
+        "cache": "power_loop_vertical_360_phase_ltv_current_cf21b",
+        "one_shot": True,
+        "direct_motors": True,
+    },
+    "pitch_through_brake": {
+        "enabled": bool(int(pitch_through_brake)),
+        "cache": None,
+        "direct_motors": True,
+        "speed_indexed_pitch_deg": [50.0, 65.0],
+        "speed_index_range_mps": [1.0, 4.0],
+        "maximum_pitch_rate_rad_s": 4.5,
+        "maximum_pitch_acceleration_rad_s2": 60.0,
+        "maximum_altitude_loss_m": 0.20,
+        "reverse_recovery_allowed": True,
+        "vertical_state_source_during_maneuver": "internal_thrust_attitude_propagation",
+        "flow_and_downward_range_aiding_during_maneuver": False,
+    },
+    "vertical_active_sensing": {
+        "enabled": bool(int(vertical_active_sensing)),
+        "waveform": "square",
+        "amplitude_m": 0.10,
+        "period_s": 2.0,
+        "initial_phase": "low",
+        "clock": "elapsed_controller_flight_time",
+    },
+    "yaw_spin_test": {
+        "enabled": bool(int(yaw_spin_test)),
+        "rate_rad_s": float(yaw_spin_rate_rad_s),
+        "revolutions": float(yaw_spin_revolutions),
+        "straight_speed_mps": float(yaw_spin_straight_speed_mps),
+        "straight_duration_s": float(yaw_spin_straight_duration_s),
+    },
     "duration_s": float(duration),
     "launch_time_s": float(launch_time),
     "spawn_z_m": float(spawn_z),
@@ -901,7 +1112,11 @@ config = {
         "object_set": imav22_object_set,
     } if imav22_mode else None),
     "vision_latency_frames": int(vision_latency_frames),
-    "camera_fps": 30.0,
+    "camera_fps": float(camera_fps),
+    "vision_control_enable_after_s": float(vision_control_enable_after_s),
+    "vision_control_enable_at_x_m": (
+        None if vision_control_enable_at_x_m == "null"
+        else float(vision_control_enable_at_x_m)),
     "camera_calibration": ({
         "model": "Himax HM01B0",
         "resolution": [160, 160],
@@ -927,24 +1142,24 @@ config = {
             "ai_deck_optical_center_body_m": [0.0, 0.0, 0.030],
         },
         "mujoco_vertical_fov_deg": (94.0387229678 if course_name in gate_camera_courses
-                                      and vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl")
+                                      and vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl")
                                       else 83.6091095),
         "distortion_applied_in_mujoco": False,
         "bridge_calibration_transform_enabled": course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl"),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl"),
         "poc_overscan_render_resolution": ([192, 192] if course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl") else None),
         "poc_source_focal_px": (89.4608171623 if course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl") else None),
         "poc_transform": ("principal_point+plumb_bob+isaac_gray_response+seeded_noise"
             if course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl") else None),
         "poc_sensor_seed": (int(random_seed) if course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl") else None),
         "poc_sensor_response_note": (
             "Isaac's lightweight HM01B0 gray response/noise proxy; it is not a measured proof of exact physical sensor response"
             if course_name in gate_camera_courses and
-            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl") else None),
+            vision_adapter in ("hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl") else None),
         "source_repository": "isaacsim-workspace shared-home working tree",
         "source_commit": "045ca8b59622b99a408092124377c66346e8d9c2",
         "source_note": (
@@ -970,7 +1185,7 @@ config = {
                 "sha256": "b931ab0e6b4726e8af731ecfbcb449d99529df4746ac9a7a7bfdb9d0256d094b",
             },
         },
-    } if (vision_adapter in ("dronet", "hybrid_rl", "combined_gate_rl", "joint_gate_rl")
+    } if (vision_adapter in ("dronet", "hybrid_rl", "combined_gate_rl", "joint_gate_rl", "joint_residual_rl")
           or imav22_mode) else None),
     "camera_only_enabled": bool(int(camera_only)),
     "camera_capture_enabled": bool(int(camera_only)) or bool(int(vision_enabled)),
@@ -1020,6 +1235,8 @@ config = {
             Path(repository) / "apps/controller_tinympc_eigen/src/tinympc_banked_model_bank.h"),
         "bank_provenance_sha256": sha256(
             Path(repository) / "apps/controller_tinympc_eigen/src/tinympc_banked_model_bank.provenance.json"),
+        "braking_selector_sha256": sha256(
+            Path(repository) / "apps/controller_tinympc_eigen/src/tinympc_braking_selector.h"),
         "progress_path_sha256": sha256(
             Path(repository) / "apps/controller_tinympc_eigen/src/tinympc_progress_path.h"),
         "frenet_error_sha256": sha256(
@@ -1044,13 +1261,16 @@ config = {
 Path(output).write_text(json.dumps(config, indent=2) + "\n")
 PY
 
-"$SCRIPT_DIR/setup.sh"
+# Shared-home Slurm tasks see one pinned dependency checkout. Serialize the
+# idempotent submodule/patch probe so concurrent nodes cannot contend on Git's
+# module config locks.
+flock "$SCRIPT_DIR/.setup.lock" "$SCRIPT_DIR/setup.sh"
 repo_rel_out="${OUT#"$REPO_DIR"/}"
 if [[ "$CONTAINER_ENGINE" == docker ]]; then
   docker build -q -t "$IMAGE" "$SCRIPT_DIR" >/dev/null
   docker_args=(--rm --interactive --volume "$REPO_DIR:/workspace" --workdir /workspace)
   if [[ "$VISION_ENABLED" == 1 ]]; then
-    if [[ "$VISION_ADAPTER" == combined_gate_rl ]]; then docker_args+=(--volume "$VISION_MODEL_MOUNT:/vision_model:ro")
+    if [[ "$VISION_ADAPTER" == combined_gate_rl || "$VISION_ADAPTER" == espnet_v7_dronet || "$VISION_ADAPTER" == espnet_v7_pid || "$VISION_ADAPTER" == espnet_v7_reactive || "$VISION_ADAPTER" == espnet_v7_dronet_gap8 || "$VISION_ADAPTER" == espnet_v7_reactive_gap8 || "$VISION_ADAPTER" == espnet_v7_emergency || "$VISION_ADAPTER" == espnet_v7_straight_brake ]]; then docker_args+=(--volume "$VISION_MODEL_MOUNT:/vision_model:ro")
     elif [[ -d "$VISION_MODEL" ]]; then docker_args+=(--volume "$VISION_MODEL_MOUNT:$VISION_MODEL_CONTAINER:ro")
     else docker_args+=(--volume "$VISION_MODEL_MOUNT:/vision_bundle:ro"); fi
   fi
@@ -1060,7 +1280,7 @@ else
   # Docker.  No Docker executable is consulted on a Slurm compute node.
   container_command=(apptainer exec --bind "$REPO_DIR:/workspace" --pwd /workspace)
   if [[ "$VISION_ENABLED" == 1 ]]; then
-    if [[ "$VISION_ADAPTER" == combined_gate_rl ]]; then container_command+=(--bind "$VISION_MODEL_MOUNT:/vision_model:ro")
+    if [[ "$VISION_ADAPTER" == combined_gate_rl || "$VISION_ADAPTER" == espnet_v7_dronet || "$VISION_ADAPTER" == espnet_v7_pid || "$VISION_ADAPTER" == espnet_v7_reactive || "$VISION_ADAPTER" == espnet_v7_dronet_gap8 || "$VISION_ADAPTER" == espnet_v7_reactive_gap8 || "$VISION_ADAPTER" == espnet_v7_emergency || "$VISION_ADAPTER" == espnet_v7_straight_brake ]]; then container_command+=(--bind "$VISION_MODEL_MOUNT:/vision_model:ro")
     elif [[ -d "$VISION_MODEL" ]]; then container_command+=(--bind "$VISION_MODEL_MOUNT:$VISION_MODEL_CONTAINER:ro")
     else container_command+=(--bind "$VISION_MODEL_MOUNT:/vision_bundle:ro"); fi
   fi
@@ -1080,8 +1300,14 @@ set +e
     "$PROGRESS_LAPS" "$PROGRESS_ENTRY_ACCELERATION_MPS2" "$PROGRESS_TERMINAL_DECELERATION_MPS2" "$PROGRESS_REWARD_WEIGHT" \
     "$FLIP_ENABLE" "$FLIP_TRIGGER_S_M" "$FLIP_TRIGGER_WINDOW_M" "$FLIP_DURATION_S" "$FLIP_PITCH_DIRECTION" \
     "$POWER_LOOP_ENABLE" "$POWER_LOOP_TRIGGER_S_M" "$POWER_LOOP_TRIGGER_WINDOW_M" "$POWER_LOOP_RADIUS_M" "$POWER_LOOP_BOTTOM_SPEED_MPS" "$POWER_LOOP_TOP_SPEED_MPS" \
+    "$VERTICAL_ACTIVE_SENSING" \
     "$DIRECT_PLAN_REPLAY" "$MPC_DIAG_MODE" \
     "$IMAV22_MODE" "$IMAV22_RELOCATION_PERIOD_S" "$IMAV22_RELOCATION_CLEARANCE_M" "$IMAV22_RELOCATION_DURATION_S" "$IMAV22_OBJECT_SET" \
+    "$CAMERA_FPS" "$VISION_CONTROL_ENABLE_AFTER_S" "${VISION_CONTROL_ENABLE_AT_X_M:-none}" \
+    "$BRAKING_CACHE_EFFECTIVE" \
+    "$YAW_SPIN_TEST" "$YAW_SPIN_RATE_RAD_S" "$YAW_SPIN_REVOLUTIONS" \
+    "$YAW_SPIN_STRAIGHT_SPEED_MPS" "$YAW_SPIN_STRAIGHT_DURATION_S" \
+    "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" \
     --realtime-factor "$REALTIME_FACTOR" \
     "${EXTRA_SIM_ARGS[@]}" <<'CONTAINER_SCRIPT'
 set -euo pipefail
@@ -1331,11 +1557,17 @@ if [[ "$course" == gate_obstacle_poc || \
   # The matched obstacle-only control keeps the visual-association code active
   # so false gates can be measured as a real regression. Every normal course
   # remains on the unchanged controller path.
-  if [[ "$vision_adapter" == joint_gate_rl ]]; then
+  if [[ "$vision_adapter" == joint_residual_rl ]]; then
+    course_compile_flag=""
+  elif [[ "$vision_adapter" == joint_gate_rl ]]; then
     course_compile_flag="-DTINYMPC_JOINT_GATE_RL_ENABLE=1"
   else
     course_compile_flag="-DTINYMPC_GATE_OBSTACLE_POC_ENABLE=1"
   fi
+fi
+if [[ "$vision_scene" == imav22 && ( "$vision_adapter" == espnet_v7_dronet || \
+      "$vision_adapter" == espnet_v7_dronet_gap8 ) ]]; then
+  course_compile_flag="-DTINYMPC_GATE_OBSTACLE_POC_ENABLE=1 -DTINYMPC_GATE_CORNER_SPAN_M=0.494f"
 fi
 case "$course" in
   gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only)
@@ -1433,8 +1665,34 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
     # 192/2 divided by the calibrated fy gives this source FOV.  It is under
     # one UDP datagram (36,864 bytes) and leaves a bounded overscan margin.
     camera_fovy=94.0387229678
+  elif [[ "$vision_adapter" == tiny_dronet_v3_direct ||
+          "$vision_adapter" == tinyvpc_square_opening ||
+          "$vision_adapter" == tinyvpc_navigation ||
+          "$vision_adapter" == tinyvpc_pid ||
+          "$vision_adapter" == tinyvpc_emergency ||
+          "$vision_adapter" == pulp_dronet_v3_pid ||
+          "$vision_adapter" == pulp_dronet_v3_emergency ||
+          "$vision_adapter" == pulp_dronet_v3_paper ||
+          "$vision_adapter" == pulp_dronet_v3_straight_brake ||
+          "$vision_adapter" == dronet_v2_paper ||
+          "$vision_adapter" == dronet_v2_pid ||
+          "$vision_adapter" == dronet_v2_emergency ]]; then
+    # Match the 200x200 TinyVPC/PULP-DroNet standard from an upstream QVGA
+    # capture (centered for TinyVPC/v3; center-bottom in the v2 adapter).
+    camera_width=324; camera_height=244
+    camera_fovy=83.6091095
   elif [[ "$vision_adapter" == dronet || "$vision_adapter" == hybrid_rl ||
-        "$vision_adapter" == combined_gate_rl || "$vision_adapter" == joint_gate_rl ]]; then
+        "$vision_adapter" == combined_gate_rl || "$vision_adapter" == joint_gate_rl ||
+        "$vision_adapter" == joint_residual_rl ||
+        "$vision_adapter" == espnet_v7_residual ||
+        "$vision_adapter" == espnet_v7_dronet ||
+        "$vision_adapter" == espnet_v7_pid ||
+        "$vision_adapter" == espnet_frame_ablation ||
+        "$vision_adapter" == espnet_v7_dronet_gap8 ||
+        "$vision_adapter" == espnet_v7_reactive_gap8 ||
+        "$vision_adapter" == espnet_v7_emergency ||
+        "$vision_adapter" == espnet_v7_straight_brake ||
+        "$vision_adapter" == espnet_v7_reactive ]]; then
     # Use one raw HM01B0/Isaac-calibrated camera stream for the baseline and
     # learned policy. DroNet is resized to its legacy 200x200 network input;
     # the RL policy consumes two consecutive raw 160x160 frames.
@@ -1447,17 +1705,20 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
     camera_fovy=47.168554
   fi
   if [[ -n "$imav22_mode" ]]; then
-    # Match the Isaac IMAV/HM01B0 square render contract for both passive
-    # captures and policy-driven flights.
-    camera_width=160; camera_height=160
-    camera_fovy=83.6091095
+    # Render an overscan pinhole source, then apply Isaac's measured K,
+    # plumb-bob distortion, principal point, gray response, and seeded noise.
+    camera_width=192; camera_height=192
+    camera_fovy=94.0387229678
   fi
   sim_command+=(--camera --cam-width "$camera_width" --cam-height "$camera_height" --cam-fps "$camera_fps" --cam-port 5200)
   [[ -z "$camera_fovy" ]] || sim_command+=(--cam-fovy "$camera_fovy")
   [[ "$vision_scene" == none || -n "$imav22_mode" ]] || sim_command+=(--scene "$scene")
   if [[ "$camera_only" == 1 ]]; then
+    imav22_camera_args=()
+    [[ -z "$imav22_mode" ]] || imav22_camera_args=(--hm01b0-poc --sensor-seed "$random_seed")
     python3 -u /workspace/tools/crazysim_mujoco/vision_bridge.py \
       --camera-only --camera-port 5200 --camera-fps "$camera_fps" \
+      "${imav22_camera_args[@]}" \
       --log "$out/camera.csv" --frames-dir "$out/camera_frames" \
       --camera-video "$out/fpv_camera.mp4" \
       >"$out/camera_bridge.log" 2>&1 &
@@ -1466,11 +1727,17 @@ if [[ "$vision_enabled" == 1 || "$camera_only" == 1 ]]; then
     passive_arg=()
     [[ "$vision_passive" != 1 ]] || passive_arg=(--passive)
     hm01b0_poc_args=()
-    if [[ "$hm01b0_poc_camera" == 1 ]]; then
+    if [[ "$hm01b0_poc_camera" == 1 || -n "$imav22_mode" ]]; then
       hm01b0_poc_args=(--hm01b0-poc --sensor-seed "$random_seed")
     fi
+    reveal_position_args=()
+    [[ "$vision_control_enable_at_x_m" == none ]] || \
+      reveal_position_args=(--control-enable-at-x-m "$vision_control_enable_at_x_m")
     python3 -u /workspace/tools/crazysim_mujoco/vision_bridge.py \
       --model "$vision_model" --adapter "$vision_adapter" \
+      --target-speed-mps "$progress_speed_mps" \
+      --control-enable-after-s "$vision_control_enable_after_s" \
+      "${reveal_position_args[@]}" \
       --camera-port 5200 --camera-fps "$camera_fps" --firmware-port 19960 --log "$out/vision.csv" \
       --delivery-latency-frames "$vision_latency_frames" \
       "${hm01b0_poc_args[@]}" \
@@ -1502,6 +1769,14 @@ fi
 for sim_arg in "$@"; do
   [[ "$sim_arg" == __none__ ]] || sim_command+=("$sim_arg")
 done
+if [[ "$trajectory" == imav22_circle ]]; then
+  # The replica is centered at world (0,0).  The training route is local to
+  # the arena entrance, so spawn at its west edge and keep the firmware path
+  # local: its +3.6 m center then coincides with the replica's origin.  The
+  # option terminator is required because the positional X coordinate is
+  # negative, and this is deliberately appended after every simulator option.
+  sim_command+=(-- "-3.6,0")
+fi
 
 # Bind the simulator socket before booting firmware. Starting firmware first
 # let its wall-clock start delay expire while Docker/Python was still loading,
@@ -1521,11 +1796,19 @@ if [[ "$simulator_ready" != 1 ]]; then
   exit 1
 fi
 
+actor_state_environment=()
+[[ "$vision_adapter" != espnet_v7_residual ]] || \
+  actor_state_environment=(TINYMPC_ACTOR_STATE_PORT=19961)
 if [[ "$mpc_diag_mode" == taskless ]]; then
-  TINYMPC_DIAG_MODE=taskless TINYMPC_DIAG_PATH="$diagnostic_path" \
+  env "${actor_state_environment[@]}" \
+    TINYMPC_DIAG_MODE=taskless TINYMPC_DIAG_PATH="$diagnostic_path" \
     stdbuf -oL -eL "$build/cf2" 19950 >"$out/firmware.log" 2>&1 &
 else
-  stdbuf -oL -eL "$build/cf2" 19950 >"$out/firmware.log" 2>&1 &
+  if [[ ${#actor_state_environment[@]} -gt 0 ]]; then
+    env "${actor_state_environment[@]}" stdbuf -oL -eL "$build/cf2" 19950 >"$out/firmware.log" 2>&1 &
+  else
+    stdbuf -oL -eL "$build/cf2" 19950 >"$out/firmware.log" 2>&1 &
+  fi
 fi
 firmware_pid=$!
 if [[ "$stop_on_contact" == 1 ]]; then
@@ -1542,6 +1825,7 @@ simulator_pid = int(sys.argv[2])
 marker = Path(sys.argv[3])
 offset = 0
 contact_index = None
+column_count = None
 while True:
     try:
         os.kill(simulator_pid, 0)
@@ -1555,8 +1839,14 @@ while True:
                 if contact_index is None:
                     if "contacts" in row:
                         contact_index = row.index("contacts")
+                        column_count = len(row)
                     continue
-                if len(row) > contact_index and float(row[contact_index]) > 0.0:
+                # Ignore a partial row if the reader resumes while the simulator
+                # is still appending it.  Otherwise shifted columns can make an
+                # RPM value look like a contact.
+                if len(row) != column_count:
+                    continue
+                if float(row[contact_index]) > 0.0:
                     marker.write_text(f"first contact row: {line}")
                     os.kill(simulator_pid, signal.SIGTERM)
                     raise SystemExit(0)
