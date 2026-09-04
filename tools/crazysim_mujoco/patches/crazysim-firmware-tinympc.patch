@@ -2,7 +2,7 @@ diff --git a/sitl_make/CMakeLists.txt b/sitl_make/CMakeLists.txt
 index 834317c6..3dcae15d 100644
 --- a/sitl_make/CMakeLists.txt
 +++ b/sitl_make/CMakeLists.txt
-@@ -244,6 +244,103 @@ set(SRCS
+@@ -244,6 +244,115 @@ set(SRCS
  # Create an executable
  add_executable(cf2 ${SRCS})
  
@@ -31,6 +31,7 @@ index 834317c6..3dcae15d 100644
 +    ${TINYMPC_APP_DIR}/src/tinyracer_racing.c
 +    ${TINYMPC_APP_DIR}/src/tinyracer_debug.c
 +    ${TINYMPC_SITL_SUPPORT_DIR}/sequential_obstacle_link_sitl.c
++    ${TINYMPC_SITL_SUPPORT_DIR}/tinympc_actor_state_link_sitl.c
 +    ${TINYMPC_CORE_DIR}/utils.cpp
 +    ${TINYMPC_CORE_DIR}/model.cpp
 +    ${TINYMPC_CORE_DIR}/auxil.cpp
@@ -88,6 +89,8 @@ index 834317c6..3dcae15d 100644
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CORRIDOR=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "canonical_circle")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_CANONICAL_CIRCLE=1)
++  elseif(TINYMPC_TRAJECTORY STREQUAL "imav22_circle")
++    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_IMAV22_CIRCLE=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "figure8")
 +    target_compile_definitions(cf2 PRIVATE TINYMPC_TRAJECTORY_FIGURE8=1)
 +  elseif(TINYMPC_TRAJECTORY STREQUAL "oval")
@@ -115,7 +118,7 @@ index 834317c6..3dcae15d 100644
  target_link_libraries(cf2 ${CMAKE_THREAD_LIBS_INIT} m)
  
  target_compile_options(cf2 PUBLIC -DCONFIG_DECK_FORCE -DCONFIG_ESTIMATOR_KALMAN_ENABLE -DCONFIG_ESTIMATOR_UKF_ENABLE -DCRAZYFLIE_FW -DCONFIG_PLATFORM_SITL -DARCH_64)
-@@ -267,4 +363,4 @@ set_target_properties(
+@@ -267,4 +374,4 @@ set_target_properties(
    cf2 PROPERTIES LINK_FLAGS "-Wl,--gc-sections${NO_WARN_RWX_FLAG},-T${CMAKE_CURRENT_SOURCE_DIR}/log_param_linker.ld"
  )
  
@@ -138,7 +141,35 @@ index 68bb3a9c..76dfd0ab 100644
  }
  
  static void sensorsTask(void *param)
-@@ -709,4 +713,4 @@ PARAM_GROUP_START(imu_tests)
+@@ -200,6 +204,7 @@ static void sensorsTask(void *param)
+   {
+     // Wait for a new sensor message to arrive
+     crtpReceivePacketBlock(CRTP_PORT_SETPOINT_SIM, &p);
++    bool imuDataReady = false;
+     switch (p.data[0])
+     {
+       case SENSOR_GYRO_ACC_SIM:
+@@ -212,6 +217,7 @@ static void sensorsTask(void *param)
+         estimatorEnqueue(&measurement);
+         xQueueOverwrite(accelerometerDataQueue, &sensors.acc);
+         xQueueOverwrite(gyroDataQueue, &sensors.gyro);
++        imuDataReady = true;
+         break;
+       case SENSOR_MAG_SIM:
+         processMagnetometerMeasurements(&(p.data[1]));
+@@ -276,6 +282,10 @@ static void sensorsTask(void *param)
+       lastGyroBiasFound =  gyroBiasFound;
+       crtpSendPacket(&p);
+     }
+-    xSemaphoreGive(dataReady);
++    // The stabilizer is a 1 kHz IMU-driven loop. Barometer and range packets
++    // update estimator inputs but must not create extra controller iterations.
++    if (imuDataReady) {
++      xSemaphoreGive(dataReady);
++    }
+   }
+ }
+@@ -709,4 +719,4 @@ PARAM_GROUP_START(imu_tests)
  PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, MPU6500_SIM, &isMpu6500TestPassed)
  PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, HMC5883L_SIM, &isAK8963TestPassed)
  PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, MS5611_SIM, &isLPS25HTestPassed) // TODO: Rename MS5611 to LPS25H. Client needs to be updated at the same time.
@@ -171,10 +202,25 @@ index ca32f506..617dbc3e 100644
      #define CONTROLLER ControllerTypeAutoSelect
    #endif
 diff --git a/src/modules/src/power_distribution_sitl.c b/src/modules/src/power_distribution_sitl.c
-index f9fe7e88..4d16fdb3 100644
+index f9fe7e88..3dcdd8e7 100644
 --- a/src/modules/src/power_distribution_sitl.c
 +++ b/src/modules/src/power_distribution_sitl.c
-@@ -138,7 +138,17 @@ static void powerDistributionForceTorque(const control_t *control, motors_thrust
+@@ -57,4 +57,6 @@ static struct {
+   uint16_t m2;
+   uint16_t m3;
+   uint16_t m4;
++  uint32_t firmwareTick;
++  uint32_t stabilizerSequence;
+ } __attribute__((packed)) motorPower;
+@@ -83,6 +85,6 @@ uint16_t powerDistributionStopRatio(uint32_t id)
+ void powerDistributionInit(void)
+ {
+   lastSentTime = xTaskGetTickCount();
+-  p.size = 4 * sizeof(uint16_t);
++  p.size = sizeof(motorPower);
+   p.header = CRTP_HEADER(CRTP_PORT_SETPOINT_SIM, 0);
+ }
+@@ -138,7 +140,17 @@ static void powerDistributionForceTorque(const control_t *control, motors_thrust
  }
  
  static void powerDistributionForce(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped) {
@@ -193,7 +239,7 @@ index f9fe7e88..4d16fdb3 100644
  }
  
  void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped)
-@@ -153,6 +163,9 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
+@@ -153,6 +165,9 @@ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motor
      case controlModeForce:
        powerDistributionForce(control, motorThrustUncapped);
        break;
@@ -203,7 +249,16 @@ index f9fe7e88..4d16fdb3 100644
      default:
        // Nothing here
        break;
-@@ -269,4 +282,4 @@ LOG_ADD_CORE(LOG_UINT16, m3, &motorPower.m3)
+@@ -210,5 +225,7 @@ void motorsSetRatio(const motors_thrust_pwm_t* motorPwm)
+   motorPower.m2 = motorPwm->motors.m2;
+   motorPower.m3 = motorPwm->motors.m3;
+   motorPower.m4 = motorPwm->motors.m4;
++  motorPower.firmwareTick = xTaskGetTickCount();
++  motorPower.stabilizerSequence++;
+-
++
+   if (xTaskGetTickCount() - lastSentTime >= M2T(1)){
+@@ -269,4 +286,4 @@ LOG_ADD_CORE(LOG_UINT16, m3, &motorPower.m3)
   * @brief Motor power (PWM value) for M4 [0 - UINT16_MAX]
   */
  LOG_ADD_CORE(LOG_UINT16, m4, &motorPower.m4)
