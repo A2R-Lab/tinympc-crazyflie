@@ -165,7 +165,7 @@ Usage: tools/crazysim_mujoco/run.sh [options]
                           espnet_v7_reactive_gap8, gate_frontnet_olgmd,
                           tinyvpc_square_opening, or legacy
                           espnet_v7_residual (default: auto)
-  --vision-scene NAME     obstacle, gate, corridor, corridor_obstacles,
+  --vision-scene NAME     obstacle, gate, gate_right, gate_indoor_left, gate_indoor_right, corridor, corridor_obstacles,
                           circle_obstacles, figure8_obstacles, imav22, or none
                           (default: obstacle; gate-frontnet-olgmd defaults to gate)
   --vision-latency-frames N  Fixed camera-frame delivery delay (default: 1)
@@ -571,7 +571,7 @@ if duration >= period:
     raise SystemExit("IMAV22 relocation duration must be shorter than its period")
 PY
 fi
-case "$VISION_SCENE" in obstacle|gate|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|imav22|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8|straight_approach_9m|straight_approach_9m_dronet|paper_headon_9m|hallway_textured_square_9m) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
+case "$VISION_SCENE" in obstacle|gate|gate_centered|gate_right|gate_indoor_left|gate_indoor_right|corridor|corridor_obstacles|circle_obstacles|figure8_obstacles|imav22|none|straight_offset|straight_slalom|turn_left|canonical_corridor|canonical_circle|canonical_figure8|canonical_chicane|canonical_hairpin|dronet_u|gate_obstacle_poc|gate_obstacle_poc_obstacle_only|gate_obstacle_easy_transition|gate_obstacle_easy_transition_obstacle_only|heldout_room_straight|heldout_room_circle|heldout_room_oval|heldout_room_figure8|straight_approach_9m|straight_approach_9m_dronet|paper_headon_9m|hallway_textured_square_9m) ;; *) echo "Invalid --vision-scene" >&2; exit 2 ;; esac
 [[ "$VISION_LATENCY_FRAMES" =~ ^[0-9]+$ ]] || { echo "--vision-latency-frames must be a nonnegative integer" >&2; exit 2; }
 if [[ "$CAMERA_ONLY" == 1 && -n "$VISION_MODEL" ]]; then
   echo "--camera-only and --vision-model are mutually exclusive" >&2
@@ -1564,6 +1564,13 @@ if [[ "$course" == gate_obstacle_poc || \
   else
     course_compile_flag="-DTINYMPC_GATE_OBSTACLE_POC_ENABLE=1"
   fi
+fi
+if [[ ( "$vision_scene" == gate || "$vision_scene" == gate_centered ||
+        "$vision_scene" == gate_right ||
+        "$vision_scene" == gate_indoor_left ||
+        "$vision_scene" == gate_indoor_right ) &&
+      "$vision_adapter" == gate_frontnet_olgmd ]]; then
+  course_compile_flag="-DTINYMPC_GATE_OBSTACLE_POC_ENABLE=1 -DTINYMPC_GATE_TRANSIT_ALTITUDE_M=1.5f"
 fi
 if [[ "$vision_scene" == imav22 && ( "$vision_adapter" == espnet_v7_dronet || \
       "$vision_adapter" == espnet_v7_dronet_gap8 ) ]]; then

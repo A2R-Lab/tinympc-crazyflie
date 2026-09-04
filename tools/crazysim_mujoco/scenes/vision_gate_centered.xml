@@ -1,0 +1,63 @@
+<mujoco model="TinyRacer vision gate">
+  <option integrator="RK4" density="1.225" viscosity="1.8e-5" timestep="0.001"/>
+  <compiler inertiafromgeom="false" autolimits="true"/>
+  <statistic center="1 0 1" extent="2.5"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.5 0.5 0.5" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 0" fog="1 1 1 0"/>
+    <map fogstart="0" fogend="0"/>
+    <global azimuth="0" elevation="-20" ellipsoidinertia="true"/>
+  </visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0"
+             width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8"
+             width="512" height="512"/>
+    <material name="groundplane" texture="groundplane" texuniform="true"
+              texrepeat="2 2" reflectance="0.2"/>
+    <texture type="2d" name="newbeedrone_gate_texture"
+             file="textures/newbeedrone_gate_front_rgba_v1.png"/>
+    <material name="newbeedrone_gate" texture="newbeedrone_gate_texture"
+              texuniform="false" rgba="1 1 1 1" specular="0.08"
+              shininess="0.12"/>
+    <mesh name="newbeedrone_gate_top"
+          file="meshes/newbeedrone_gate_top.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_bottom"
+          file="meshes/newbeedrone_gate_bottom.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_left"
+          file="meshes/newbeedrone_gate_left.obj" scale="1 0.9 0.9"/>
+    <mesh name="newbeedrone_gate_right"
+          file="meshes/newbeedrone_gate_right.obj" scale="1 0.9 0.9"/>
+  </asset>
+  <worldbody>
+    <light pos="0 0 4" dir="0 0 -1" directional="true"/>
+    <camera name="crazyflie_preview" pos="0 0 1.5"
+            xyaxes="0 -1 0 0 0 1" fovy="47.168554"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <!-- Pinned NewBeeDrone contract: 0.45 m opening, 0.108 m rails,
+         0.555 m rail-center span, and 0.666 m outer size. -->
+    <body name="newbeedrone_gate" pos="2.2 0 1.5">
+      <geom type="mesh" mesh="newbeedrone_gate_top"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_bottom"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_left"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom type="mesh" mesh="newbeedrone_gate_right"
+            material="newbeedrone_gate" contype="0" conaffinity="0"/>
+      <geom name="gate_left" type="box" pos="0 -0.279 0"
+            size="0.025 0.054 0.225" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_right" type="box" pos="0 0.279 0"
+            size="0.025 0.054 0.225" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_top" type="box" pos="0 0 0.2775"
+            size="0.025 0.333 0.054" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+      <geom name="gate_bottom" type="box" pos="0 0 -0.2775"
+            size="0.025 0.333 0.054" rgba="0 0 0 0"
+            contype="1" conaffinity="1"/>
+    </body>
+  </worldbody>
+</mujoco>

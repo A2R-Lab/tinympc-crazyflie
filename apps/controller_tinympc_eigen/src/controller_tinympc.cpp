@@ -993,6 +993,9 @@ static Eigen::Vector3f gate_visual_velocity_world = Eigen::Vector3f::Zero();
 static bool gate_visual_center_valid = false;
 static bool gate_visual_velocity_valid = false;
 static uint8_t gate_visual_rearm_clear_samples = 0u;
+static Eigen::Vector3f gate_visual_transit_start_world =
+    Eigen::Vector3f::Zero();
+static bool gate_visual_transit_start_valid = false;
 #endif
 #if TINYMPC_JOINT_GATE_RL_ENABLE
 /* A 20-frame geometry-outage bound bridges only a short near-plane gap. A
@@ -2281,6 +2284,8 @@ static void resetPerceptionFilter() {
   gate_visual_center_valid = false;
   gate_visual_velocity_valid = false;
   gate_visual_rearm_clear_samples = 0u;
+  gate_visual_transit_start_world.setZero();
+  gate_visual_transit_start_valid = false;
 #endif
 #endif
 #if TINYMPC_GATE_OBSTACLE_POC_ENABLE || TINYMPC_JOINT_GATE_RL_ENABLE
@@ -2414,6 +2419,29 @@ static bool updateGateVisualEstimate(
    * bearing under roll. Use the standardized opening center for altitude;
    * horizontal gate position and approach direction remain vision-only. */
   measured_center_world.z() = TINYMPC_GATE_TRANSIT_ALTITUDE_M;
+  /* Gate9 is a bearing detector, not a globally consistent pose estimator.
+   * Bound its center correction around the nominal route so a biased
+   * near-field corner estimate cannot walk the target beyond a small gate.
+   * For the 0.45 m opening and 0.10 m vehicle radius, a 0.10 m shift retains
+   * 0.045 m of conservative clearance for a gate offset by 0.18 m. */
+  Eigen::Vector3f route_forward_world = localVectorToWorld(
+      active_local_frame, Xref[0].segment<3>(6));
+  route_forward_world.z() = 0.0f;
+  if (route_forward_world.head<2>().norm() > 0.10f) {
+    route_forward_world.normalize();
+    const Eigen::Vector3f route_lateral_world(
+        -route_forward_world.y(), route_forward_world.x(), 0.0f);
+    const Eigen::Vector3f route_reference_world = origin_world +
+        localVectorToWorld(active_local_frame, Xref[0].head<3>());
+    const float measured_cross_track_m = route_lateral_world.dot(
+        measured_center_world - route_reference_world);
+    constexpr float maximum_gate_center_shift_m = 0.10f;
+    const float bounded_cross_track_m = T_MIN(T_MAX(
+        measured_cross_track_m, -maximum_gate_center_shift_m),
+        maximum_gate_center_shift_m);
+    measured_center_world += route_lateral_world *
+        (bounded_cross_track_m - measured_cross_track_m);
+  }
   if (!gate_visual_center_valid) {
     gate_visual_center_world = measured_center_world;
     gate_visual_center_valid = true;
@@ -2582,15 +2610,11 @@ static void updateGatePocAssociation(
     return;
   }
   if (gate_visual_phase == GATE_VISUAL_TRANSIT) {
+    /* The crossing segment is deliberately open-loop with respect to Gate9.
+     * Once alignment is accepted, late corner jitter must not move the target
+     * or heading. Keep only sample bookkeeping until the fixed-distance
+     * transit completes. */
     if (new_sample) {
-      float depth_m = 0.0f;
-      float lateral_m = 0.0f;
-      float vertical_m = 0.0f;
-      /* A single coarse corner estimate can miss a 0.4 m opening. Continue
-       * visual servo refinement while the gate is ahead, then retain the last
-       * estimate through the near-plane geometry dropout. */
-      (void)updateGateVisualEstimate(
-          observation, true, &depth_m, &lateral_m, &vertical_m);
       gate_poc_last_sample = observation.sample;
     }
     return;
@@ -2679,6 +2703,7 @@ static void updateGatePocAssociation(
     if (updateGateVisualEstimate(
             observation, false, &depth_m, &lateral_m, &vertical_m)) {
       if (gate_poc_associated && gate_visual_phase == GATE_VISUAL_ALIGN &&
+          depth_m <= 1.00f &&
           fabsf(lateral_m) <= 0.08f && fabsf(vertical_m) <= 0.08f) {
         Eigen::Vector3f route_forward = localVectorToWorld(
             active_local_frame, Xref[0].segment<3>(6));
@@ -2696,6 +2721,15 @@ static void updateGatePocAssociation(
               active_local_frame, x0.segment<3>(6));
           const float lateral_speed_mps = fabsf(
               route_lateral.dot(measured_velocity_world));
+          const Eigen::Vector3f current_position_world(
+              active_local_frame.origin_x,
+              active_local_frame.origin_y,
+              active_local_frame.origin_z);
+          const float retained_lateral_error_m = fabsf(
+              route_lateral.dot(
+                  gate_visual_center_world - current_position_world));
+          const float retained_vertical_error_m = fabsf(
+              gate_visual_center_world.z() - current_position_world.z());
           const struct quat measured_attitude = qnormalize(attitude);
           const float body_z_world_z = T_MIN(T_MAX(
               1.0f - 2.0f *
@@ -2707,17 +2741,30 @@ static void updateGatePocAssociation(
           constexpr float maximum_gate_entry_heading_error_rad =
               0.0872664626f;
           constexpr float maximum_gate_entry_lateral_speed_mps = 0.15f;
+          constexpr float maximum_gate_entry_lateral_error_m = 0.02f;
+          constexpr float maximum_gate_entry_vertical_error_m = 0.05f;
           constexpr float maximum_gate_entry_tilt_rad = 0.3490658504f;
           constexpr float maximum_gate_entry_body_rate_rad_s = 0.75f;
           if (heading_error_rad <= maximum_gate_entry_heading_error_rad &&
               lateral_speed_mps <= maximum_gate_entry_lateral_speed_mps &&
+              retained_lateral_error_m <=
+                  maximum_gate_entry_lateral_error_m &&
+              retained_vertical_error_m <=
+                  maximum_gate_entry_vertical_error_m &&
               tilt_rad <= maximum_gate_entry_tilt_rad &&
               body_rate_rad_s <= maximum_gate_entry_body_rate_rad_s) {
             gate_visual_forward_world = route_forward;
             gate_visual_phase = GATE_VISUAL_TRANSIT;
+            gate_visual_transit_start_world = Eigen::Vector3f(
+                active_local_frame.origin_x,
+                active_local_frame.origin_y,
+                active_local_frame.origin_z);
+            gate_visual_transit_start_valid = true;
             DEBUG_PRINT(
-                "Gate visual TRANSIT committed depth=%.2f bearing=(%.2f,%.2f) heading_error=%.1fdeg lateral_speed=%.2fm/s\n",
+                "Gate visual TRANSIT committed depth=%.2f bearing=(%.2f,%.2f) retained_error=(%.3f,%.3f)m heading_error=%.1fdeg lateral_speed=%.2fm/s\n",
                 (double)depth_m, (double)lateral_m, (double)vertical_m,
+                (double)retained_lateral_error_m,
+                (double)retained_vertical_error_m,
                 (double)(heading_error_rad * 57.2957795131f),
                 (double)lateral_speed_mps);
           }
@@ -4478,6 +4525,7 @@ static void __attribute__((unused)) applyGateVisualServo(
       gate_poc_associated = false;
       gate_visual_center_valid = false;
       gate_visual_rearm_clear_samples = 0u;
+      gate_visual_transit_start_valid = false;
       gate_poc_consecutive_samples = 0u;
       gate_poc_dropout_steps = 0u;
 #if TINYMPC_RATE_CASCADE
@@ -4492,13 +4540,19 @@ static void __attribute__((unused)) applyGateVisualServo(
           (double)measured_body_rate_rad_s);
     }
   }
+  const float gate_visual_transit_distance_m =
+      gate_visual_transit_start_valid
+          ? gate_visual_forward_world.dot(
+                position_world - gate_visual_transit_start_world)
+          : 0.0f;
   if (gate_visual_phase == GATE_VISUAL_TRANSIT &&
-      gate_visual_forward_world.dot(to_center) < -0.55f) {
+      gate_visual_transit_distance_m >= 1.00f) {
     gate_visual_phase = GATE_VISUAL_REARM;
     exit_blend = true;
     gate_poc_associated = false;
     gate_visual_center_valid = false;
     gate_visual_rearm_clear_samples = 0u;
+    gate_visual_transit_start_valid = false;
     gate_poc_consecutive_samples = 0u;
     gate_poc_dropout_steps = 0u;
 #if TINYMPC_RATE_CASCADE
@@ -4506,7 +4560,9 @@ static void __attribute__((unused)) applyGateVisualServo(
 #elif defined(TINYMPC_USE_ACTUATOR_LTI)
     resetLevelActuatorDuals();
 #endif
-    DEBUG_PRINT("Gate visual transit complete; returning to route\n");
+    DEBUG_PRINT(
+        "Gate visual blind transit complete distance=%.2fm; returning to route\n",
+        (double)gate_visual_transit_distance_m);
   }
 
   Eigen::Vector3f forward_world = gate_visual_forward_world;
@@ -4566,6 +4622,17 @@ static void __attribute__((unused)) applyGateVisualServo(
           cosf(blended_yaw_world_rad), sinf(blended_yaw_world_rad), 0.0f);
       gate_visual_forward_world = forward_world;
     }
+  } else if (gate_visual_phase == GATE_VISUAL_TRANSIT) {
+    /* Freeze lateral position and heading after centering. The only feedback
+     * retained during the one-meter blind crossing is altitude hold. */
+    forward_world = gate_visual_forward_world;
+    forward_speed_mps = 0.25f;
+    const float vertical_speed_mps = T_MIN(T_MAX(
+        1.8f * (TINYMPC_GATE_TRANSIT_ALTITUDE_M - position_world.z()),
+        -0.30f), 0.30f);
+    desired_velocity_world =
+        forward_world * forward_speed_mps +
+        Eigen::Vector3f::UnitZ() * vertical_speed_mps;
   } else {
     /* Keep turning with the nominal course while centering the detected
      * opening. This approaches a tangent gate normal to its plane instead of
