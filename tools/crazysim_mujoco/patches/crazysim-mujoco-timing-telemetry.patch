@@ -1,49 +1,127 @@
-diff --git a/simulator_files/mujoco/crazysim.py b/simulator_files/mujoco/crazysim.py
 --- a/simulator_files/mujoco/crazysim.py
 +++ b/simulator_files/mujoco/crazysim.py
-@@ -701,6 +701,8 @@ class DroneAgent:
-         self._rpm_ref = np.zeros(4)
-         self._rpm_dot = np.zeros(4)  # RPM/s for gyroscopic z-torque
+@@ -704,2 +704,4 @@
          self._motor_command_packet_count = 0
 +        self._firmware_tick = 0
 +        self._stabilizer_sequence = 0
          self._motor_command_logged_count = 0
-         self._motor_command_last_sim_time = math.nan
-         self._motor_lock = threading.Lock()
-@@ -827,6 +829,9 @@ class DroneAgent:
-                 m0, m1, m2, m3 = struct.unpack_from('<HHHH', data, 1)
-                 with self._motor_lock:
+@@ -830,2 +832,5 @@
                      self._rpm_ref[:] = [self._pwm_to_rpm(p) for p in (m0, m1, m2, m3)]
 +                    if len(data) >= 17:
 +                        self._firmware_tick, self._stabilizer_sequence = \
 +                            struct.unpack_from('<II', data, 9)
                      self._motor_command_packet_count += 1
-             elif hdr == CRTP_HDR_LED and len(data) >= 5:
-                 # LED RGB packet (SIM port, channel 1): [pos, R, G, B]
-@@ -1590,7 +1595,7 @@ class CrazySimMuJoCo:
-                 'rpm_1', 'rpm_2', 'rpm_3', 'rpm_4', 'contacts', 'airborne',
-                 'rpm_ref_1', 'rpm_ref_2', 'rpm_ref_3', 'rpm_ref_4',
+@@ -1207,3 +1212,5 @@
+                  state_log: str | None = None,
++                 stop_on_contact: bool = False,
+                  spawn_z: float = 0.0,
++                 spawn_yaw_deg: float = 0.0,
+                  launch_time: float = 0.0,
+@@ -1227,3 +1234,7 @@
+         self._state_log = state_log
++        self._stop_on_contact = stop_on_contact
+         self._spawn_z = spawn_z
++        if not math.isfinite(spawn_yaw_deg):
++            raise ValueError('spawn_yaw_deg must be finite')
++        self._spawn_yaw_rad = math.radians(spawn_yaw_deg)
+         self._launch_time = launch_time
+@@ -1353,3 +1364,25 @@
+
+-        obstacle_prefixes = ('imav_orange_pole_', 'imav_black_panel_', 'imav_flag_')
++        obstacle_prefixes = ('imav_black_panel_', 'imav_flag_', 'imav_orange_pole_')
++        # Gates are part of both full-complexity modes. Re-enable their eight
++        # invisible collision rails explicitly and validate both visual meshes
++        # so a scene/default change cannot silently turn dynamic into a
++        # gate-free course.
++        if self._imav22_mode in ('static', 'dynamic'):
++            gate_geoms = 0
++            for geom_id in range(self.model.ngeom):
++                name = mujoco.mj_id2name(
++                    self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or ''
++                if not name.startswith(('imav_gate_1_', 'imav_gate_2_')):
++                    continue
++                gate_geoms += 1
++                if name.endswith('_visual'):
++                    self.model.geom_contype[geom_id] = 0
++                    self.model.geom_conaffinity[geom_id] = 0
++                else:
++                    self.model.geom_contype[geom_id] = 1
++                    self.model.geom_conaffinity[geom_id] = 1
++            if gate_geoms != 10:
++                raise ValueError(
++                    f'IMAV22 {self._imav22_mode} mode expected 10 gate geoms, '
++                    f'found {gate_geoms}')
+         if self._imav22_mode == 'gates':
+@@ -1380,2 +1413,25 @@
+                     f'IMAV22 extended set expected 11 extra geoms, found {enabled}')
++        # Reproducible Isaac-style surface-specific appearance sampling. Numpy
++        # is seeded from --random-seed before the simulator is constructed.
++        appearance_pools = {
++            'imav_scoring_floor': ('imav_grass_green', 'imav_grass_black', 'imav_grass_blue'),
++            'imav_floor_black': ('imav_grass_black', 'imav_grass_green'),
++            'imav_floor_blue': ('imav_grass_blue', 'imav_grass_green'),
++            'imav_curtain_wall': ('imav_cyberzoo_curtain', 'imav_cyberzoo_net'),
++            'imav_panel_1': ('imav_panel_1_texture', 'imav_panel_3_texture'),
++            'imav_panel_3': ('imav_panel_1_texture', 'imav_panel_3_texture'),
++            'imav_pole': ('imav_pole_fabric', 'imav_padded_post_texture'),
++        }
++        selected_appearance = []
++        for material_name, texture_names in appearance_pools.items():
++            material_id = mujoco.mj_name2id(
++                self.model, mujoco.mjtObj.mjOBJ_MATERIAL, material_name)
++            texture_name = str(np.random.choice(texture_names))
++            texture_id = mujoco.mj_name2id(
++                self.model, mujoco.mjtObj.mjOBJ_TEXTURE, texture_name)
++            if material_id < 0 or texture_id < 0:
++                raise ValueError(f'IMAV22 appearance asset missing: {material_name}/{texture_name}')
++            self.model.mat_texid[material_id] = texture_id
++            selected_appearance.append(f'{material_name}={texture_name}')
++        print('[crazysim] IMAV22 appearance : ' + ','.join(selected_appearance))
+         if self._imav22_mode == 'dynamic':
+@@ -1489,2 +1545,5 @@
+             self.data.qpos[qpos_adr + 2] = self._spawn_z
++            half_yaw = 0.5 * self._spawn_yaw_rad
++            self.data.qpos[qpos_adr + 3:qpos_adr + 7] = (
++                math.cos(half_yaw), 0.0, 0.0, math.sin(half_yaw))
+             self.data.qvel[dof_adr:dof_adr + 6] = 0.0
+@@ -1555,3 +1614,5 @@
+             os.makedirs(state_dir, exist_ok=True)
+-            state_file = open(self._state_log, 'w', newline='')
++            # The experiment supervisor consumes ground truth online to verify
++            # a real stop, so each CSV row must be externally visible.
++            state_file = open(self._state_log, 'w', newline='', buffering=1)
+             state_writer = csv.writer(state_file)
+@@ -1565,3 +1626,3 @@
                  'motor_cmd_packet_count', 'motor_cmd_last_packet_sim_time_s',
 -                'motor_cmd_age_s',
 +                'motor_cmd_age_s', 'firmware_tick', 'stabilizer_sequence',
              ])
-         imav22_event_file = None
-         if self._imav22_event_log:
-@@ -1637,6 +1642,8 @@ class CrazySimMuJoCo:
-                         agent._motor_command_last_sim_time = self.data.time
-                         agent._motor_command_logged_count = motor_command_packet_count
+@@ -1610,2 +1671,4 @@
                      motor_command_last_sim_time = agent._motor_command_last_sim_time
 +                    firmware_tick = agent._firmware_tick
 +                    stabilizer_sequence = agent._stabilizer_sequence
                  motor_command_age = (
-                     self.data.time - motor_command_last_sim_time
-                     if math.isfinite(motor_command_last_sim_time) else math.nan)
-@@ -1652,6 +1659,8 @@ class CrazySimMuJoCo:
-                     motor_command_packet_count,
-                     motor_command_last_sim_time,
+@@ -1625,3 +1688,8 @@
                      motor_command_age,
 +                    firmware_tick,
 +                    stabilizer_sequence,
                  ])
-             if (self._stop_on_contact and self._launch_applied and
-                     self.data.ncon > 0):
++            if (self._stop_on_contact and self._launch_applied and
++                    self.data.ncon > 0):
++                self._running = False
+             if self._duration is not None and self.data.time >= self._duration:
+@@ -1762,4 +1830,8 @@
+                    help='Write first-agent MuJoCo ground truth to CSV')
++    p.add_argument('--stop-on-contact', action='store_true',
++                   help='Stop on the first post-launch MuJoCo contact step')
+     p.add_argument('--spawn-z', type=float, default=0.0,
+                    help='Initial free-joint altitude [m]')
++    p.add_argument('--spawn-yaw-deg', type=float, default=0.0,
++                   help='Initial free-joint yaw applied at airborne handoff [deg]')
+     p.add_argument('--launch-time', type=float, default=0.0,
+@@ -1922,3 +1994,5 @@
+         state_log=args.state_log,
++        stop_on_contact=args.stop_on_contact,
+         spawn_z=args.spawn_z,
++        spawn_yaw_deg=args.spawn_yaw_deg,
+         launch_time=args.launch_time,
