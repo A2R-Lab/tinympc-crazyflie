@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef TINYMPC_OLGMD_OBSTACLE_ONLY
+#define TINYMPC_OLGMD_OBSTACLE_ONLY 0
+#endif
+
 typedef struct {
   bool brake_latched;
   bool has_threat_sample;
@@ -95,10 +99,16 @@ static inline bool tinyMpcGateOlgmdDepthMeters(
 static inline TinyMpcGateOlgmdOutput tinyMpcGateOlgmdStep(
     TinyMpcGateOlgmdState *state, const TinyMpcGateOlgmdInput *input) {
   TinyMpcGateOlgmdOutput output = {0};
+#if TINYMPC_OLGMD_OBSTACLE_ONLY
+  /* Defense in depth: a valid-looking gate packet can never suppress a
+   * positive threat when this experiment profile is compiled. */
+  const bool gate_near = false;
+#else
   const bool gate_near = input->gate_available && input->gate_fresh &&
       input->gate_valid &&
       isfinite(input->gate_depth_m) && input->gate_depth_m <= 1.5f &&
       input->gate_depth_m > 0.0f;
+#endif
   if (!gate_near) {
     state->valid_near_gate_frames = 0u;
   } else if (!state->has_gate_sample ||

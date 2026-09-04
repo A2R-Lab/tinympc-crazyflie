@@ -15,6 +15,57 @@ make
 
 The generated firmware artifacts are written to `build/`.
 
+### Pure oLGMD obstacle-stop hardware profile
+
+Build the STM32 half of the pure obstacle-stopping experiment with the named
+profile below. It compiles the straight 9 m reference at 0.50 m/s, accepts only
+fresh oLGMD threat packets as vision authority, commands a 10 m/s^2 terminal
+brake, holds for 3 s after five fresh clear frames at rest, then rearms with a
+2 s refractory interval. Gate packet ingestion, near-gate threat suppression,
+gate association, and gate visual servo authority are all compiled out. Pair
+this STM32 branch with `tinympc-nanocockpit` branch
+`codex/olgmd-obstacle-stop-gap8` (commit
+`1113199d8d321330bf0e4cd28c47f122d1e3f463`), which emits only the existing
+16-byte oLGMD threat ABI and no gate packets.
+
+```bash
+cd /home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen
+make clean
+make TINYMPC_PROFILE=olgmd_obstacle_stop
+```
+
+Start at the conservative default. To compile a different straight-line test
+speed while retaining the same safety profile, override the exposed speed:
+
+```bash
+make clean
+make TINYMPC_PROFILE=olgmd_obstacle_stop TINYMPC_PROGRESS_SPEED_MPS=1.0
+```
+
+The profile exposes `TINYMPC_OLGMD_CLEAR_RESUME_ENABLE`,
+`TINYMPC_OLGMD_MOVING_SPEED_MPS`, `TINYMPC_OLGMD_STOP_HOLD_S`,
+`TINYMPC_OLGMD_RESUME_REFRACTORY_S`,
+`TINYMPC_PAPER_EMERGENCY_DECELERATION_MPS2`, and the paired camera calibration
+values `TINYMPC_GATE_CAMERA_FOCAL_NORMALIZED`,
+`TINYMPC_GATE_CAMERA_CENTER_X_NORMALIZED`, and
+`TINYMPC_GATE_CAMERA_CENTER_Y_NORMALIZED`. The camera values are recorded for
+pairing with the GAP8 build but are intentionally unused by this STM32 profile:
+the STM32 receives a binary threat decision and never interprets image pixels
+or gate geometry. The 10 m/s^2 profile disables the checked-in 6 m/s^2 braking
+model cache instead of silently using a mismatched cache.
+
+After inspecting `build/cf21bl.bin`, flash that exact profile (do not omit the
+profile on `cload`, because `cload` rebuilds before transfer):
+
+```bash
+CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" \
+  make TINYMPC_PROFILE=olgmd_obstacle_stop cload
+```
+
+No flight should begin until the deck UART is observed producing fresh threat
+packets: transport startup/staleness intentionally fails closed and latches a
+stop. The default `make` behavior is unchanged (`TINYMPC_PROFILE=default`).
+
 The visual residual policy remains opt-in.  To compile its V4 reference-rate
 receiver and TinyMPC reference integration for the hardware target, use
 `make TINYMPC_VISION_RL_RESIDUAL_ENABLE=1`; the default is `0` and preserves

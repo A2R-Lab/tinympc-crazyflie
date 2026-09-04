@@ -100,7 +100,16 @@ int main(void) {
   input.gate_sample = 3u;
   input.gate_align_or_transit = true;
   output = tinyMpcGateOlgmdStep(&state, &input);
+#if TINYMPC_OLGMD_OBSTACLE_ONLY
+  assert(!output.near_gate_suppression);
+#if TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
+  input.threat_sample = 4u;
+  output = tinyMpcGateOlgmdStep(&state, &input);
+#endif
+  assert(output.triggered && output.brake_latched);
+#else
   assert(output.near_gate_suppression && !output.brake_latched);
+#endif
 
   /* Suppression never clears an already-active latch. */
   tinyMpcGateOlgmdReset(&state);
@@ -120,7 +129,11 @@ int main(void) {
     input.gate_depth_m = 1.0f;
     output = tinyMpcGateOlgmdStep(&state, &input);
   }
+#if TINYMPC_OLGMD_OBSTACLE_ONLY
+  assert(!output.near_gate_suppression && output.brake_latched);
+#else
   assert(output.near_gate_suppression && output.brake_latched);
+#endif
 
   /* A stale cycle fails closed and erases partial clear evidence. */
   input = clearInput(5u);

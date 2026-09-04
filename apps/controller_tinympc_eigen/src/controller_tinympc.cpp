@@ -134,6 +134,9 @@ extern "C" {
 #ifndef TINYMPC_GATE_OLGMD_ENABLE
 #define TINYMPC_GATE_OLGMD_ENABLE 0
 #endif
+#ifndef TINYMPC_OLGMD_OBSTACLE_ONLY
+#define TINYMPC_OLGMD_OBSTACLE_ONLY 0
+#endif
 #ifndef TINYMPC_OLGMD_CLEAR_RESUME_ENABLE
 #define TINYMPC_OLGMD_CLEAR_RESUME_ENABLE 0
 #endif
@@ -441,7 +444,8 @@ static_assert(MAX_HS >= 5, "path tunnel and perception require five halfspaces")
 #ifndef TINYMPC_GATE_OBSTACLE_POC_ENABLE
 /* The split gate/oLGMD mode uses the existing bounded visual gate state
  * machine to establish SEARCH/ALIGN/TRANSIT context. */
-#define TINYMPC_GATE_OBSTACLE_POC_ENABLE TINYMPC_GATE_OLGMD_ENABLE
+#define TINYMPC_GATE_OBSTACLE_POC_ENABLE \
+  (TINYMPC_GATE_OLGMD_ENABLE && !TINYMPC_OLGMD_OBSTACLE_ONLY)
 #endif
 /* The joint gate/obstacle policy is deliberately a distinct experiment from
  * the older two-teacher POC.  It may use the same bounded gate association and
@@ -2806,8 +2810,15 @@ static void applyVisionNavigation(
   SequentialObstacleGateObservation olgmd_gate = {};
   const bool olgmd_threat_available =
       sequentialObstacleLinkGetLatestThreat(&olgmd_threat);
+#if TINYMPC_OLGMD_OBSTACLE_ONLY
+  /* Do not even ingest the independently framed gate packet in the pure
+   * stopping experiment. The state-machine header also hard-disables gate
+   * suppression, and the gate POC/servo is compiled out above. */
+  const bool olgmd_gate_available = false;
+#else
   const bool olgmd_gate_available =
       sequentialObstacleLinkGetLatestGate(&olgmd_gate);
+#endif
   TinyRacerPerceptionObservation olgmd_gate_observation = {};
   olgmd_gate_observation.valid = olgmd_gate_available;
   olgmd_gate_observation.gate_valid = olgmd_gate.valid;
@@ -7019,6 +7030,12 @@ static void __attribute__((unused)) applyRaceIntent(void) {
 static void __attribute__((unused)) updateRaceIntent(const state_t *state) {
   TinyRacerPerceptionObservation observation = {};
   sequentialObstacleLinkGetLatest(&observation);
+#if TINYMPC_OLGMD_OBSTACLE_ONLY
+  /* The obstacle-stop profile has one vision authority. Ignore all generic
+   * navigation/gate packets here; applyVisionNavigation() separately reads
+   * only the dedicated oLGMD threat channel. */
+  observation = {};
+#endif
 #if defined(TINYMPC_PAPER_ABLATION_ENABLE_GATE)
   /* The paper-ablation course accelerates under the nominal straight-flight
    * controller and enables perception at x=3 m.  This keeps approach-speed
