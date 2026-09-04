@@ -30,16 +30,19 @@ this STM32 branch with `tinympc-nanocockpit` branch
 
 ```bash
 cd /home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen
-make clean
-make TINYMPC_PROFILE=olgmd_obstacle_stop
+apptainer exec /home/cchen/containers/bitcraze-builder.sif make clean
+apptainer exec /home/cchen/containers/bitcraze-builder.sif \
+  make TINYMPC_PROFILE=olgmd_obstacle_stop
 ```
 
 Start at the conservative default. To compile a different straight-line test
 speed while retaining the same safety profile, override the exposed speed:
 
 ```bash
-make clean
-make TINYMPC_PROFILE=olgmd_obstacle_stop TINYMPC_PROGRESS_SPEED_MPS=1.0
+apptainer exec /home/cchen/containers/bitcraze-builder.sif make clean
+apptainer exec /home/cchen/containers/bitcraze-builder.sif \
+  make TINYMPC_PROFILE=olgmd_obstacle_stop \
+       TINYMPC_PROGRESS_SPEED_MPS=1.0
 ```
 
 The profile exposes `TINYMPC_OLGMD_CLEAR_RESUME_ENABLE`,
@@ -58,8 +61,10 @@ After inspecting `build/cf21bl.bin`, flash that exact profile (do not omit the
 profile on `cload`, because `cload` rebuilds before transfer):
 
 ```bash
-CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" \
-  make TINYMPC_PROFILE=olgmd_obstacle_stop cload
+apptainer exec /home/cchen/containers/bitcraze-builder.sif sh -lc \
+  'cd /home/cchen/tinympc-crazyflie/apps/controller_tinympc_eigen &&
+   CLOAD_CMDS="-w radio://0/80/2M/E7E7E7E7E7" \
+   make TINYMPC_PROFILE=olgmd_obstacle_stop cload'
 ```
 
 No flight should begin until the deck UART is observed producing fresh threat

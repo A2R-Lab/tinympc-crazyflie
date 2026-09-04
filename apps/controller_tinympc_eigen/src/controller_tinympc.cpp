@@ -1210,7 +1210,7 @@ static bool flip_recovery_active = false;
 static uint16_t flip_recovery_settle_steps = 0u;
 static uint32_t flip_recovery_elapsed_steps = 0u;
 static TinyMpcFlipInputKnot flip_input_knots[5];
-static TinyMpcFlipConfig flip_config = {
+static TinyMpcFlipConfig __attribute__((unused)) flip_config = {
     (float)TINYMPC_FLIP_TRIGGER_S_M,
     (float)TINYMPC_FLIP_TRIGGER_S_M + (float)TINYMPC_FLIP_TRIGGER_WINDOW_M,
     (float)TINYMPC_FLIP_DURATION_S,
@@ -1976,7 +1976,7 @@ static Eigen::Vector3f trajectoryPointWorld(uint32_t knot) {
       trajectory_reference_data[knot][2]);
 }
 
-static int8_t trajectoryOutsidePassSide() {
+static int8_t __attribute__((unused)) trajectoryOutsidePassSide() {
   const uint32_t first = T_MIN(step + 4u, traj_length - 1u);
   const uint32_t middle = T_MIN(step + 12u, traj_length - 1u);
   const uint32_t last = T_MIN(step + 20u, traj_length - 1u);
@@ -4825,7 +4825,7 @@ static void __attribute__((unused)) applyGateVisualServo(
 #endif
 }
 
-static void maybeFuseGatePose(
+static void __attribute__((unused)) maybeFuseGatePose(
     const TinyRacerPerceptionObservation& observation,
     const state_t& estimated_state) {
 #if TINYMPC_GATE_POSITION_FUSION_ENABLE && TINYMPC_GATE_PNP_FUSION_ENABLE
@@ -9684,7 +9684,8 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
 #else
   const bool motors_allowed = supervisorAreMotorsAllowedToRun();
 #endif
-  const bool motors_allowed_changed = motors_allowed != motors_were_allowed;
+  const bool __attribute__((unused)) motors_allowed_changed =
+      motors_allowed != motors_were_allowed;
   bool has_run_snapshot = false;
   uint32_t plan_start_tick_snapshot = 0;
   float motor_command_snapshot[NINPUTS] = {0.0f};

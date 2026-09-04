@@ -170,7 +170,7 @@ static inline float tinyMpcPitchThroughBrakingPitch(
 static inline TinyMpcPitchThroughBrakeSample tinyMpcPitchThroughAdvance(
     const TinyMpcPitchThroughBrakeConfig *config,
     const TinyMpcPitchThroughBrakeState *initial, float dt_s) {
-  TinyMpcPitchThroughBrakeSample sample = {0};
+  TinyMpcPitchThroughBrakeSample sample = {};
   if (!tinyMpcPitchThroughConfigValid(config) || initial == NULL ||
       !isfinite(dt_s) || dt_s <= 0.0f ||
       !isfinite(initial->forward_position_m) ||
