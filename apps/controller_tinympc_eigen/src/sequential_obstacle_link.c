@@ -97,6 +97,10 @@ static bool acceptPacket(const sequential_obstacle_packet_t *packet) {
   latest_observation.has_sector_danger = false;
   latest_observation.has_navigation_command = false;
   latest_observation.has_residual_reference = false;
+  latest_observation.has_square_opening = false;
+  latest_observation.has_collision_probability = false;
+  latest_observation.has_normalized_yaw_rate = false;
+  latest_observation.square_opening_visible_probability = 0.0f;
   latest_observation.lateral_reference_rate_mps = 0.0f;
   latest_observation.vertical_reference_rate_mps = 0.0f;
   latest_observation.progress_speed_scale = 1.0f;
@@ -197,6 +201,10 @@ static bool acceptVisionPayload(
   latest_observation.has_navigation_command =
       (payload->flags & TINYRACER_VISION_HAS_NAVIGATION_COMMAND) != 0;
   latest_observation.has_residual_reference = has_residual_reference;
+  latest_observation.has_square_opening = false;
+  latest_observation.has_collision_probability = false;
+  latest_observation.has_normalized_yaw_rate = false;
+  latest_observation.square_opening_visible_probability = 0.0f;
   latest_observation.gate_valid =
       (payload->flags & TINYRACER_VISION_GATE_VALID) != 0;
   memcpy(latest_observation.clearance_m, payload->clearance_m,
@@ -642,7 +650,19 @@ static void sequentialObstacleRxTask(void *parameters) {
       memset(header_window, 0, sizeof(header_window));
       continue;
     }
-    const uint32_t checksum = is_v6
+    const uint32_t checksum = is_gate
+        ? crc32CalculateBuffer(&gate_packet,
+              TINYRACER_VISION_HEADER_LEN + sizeof(gate_packet.payload))
+        : is_threat
+        ? crc32CalculateBuffer(&threat_packet,
+              TINYRACER_VISION_HEADER_LEN + sizeof(threat_packet.payload))
+        : is_v8
+        ? crc32CalculateBuffer(&packet_v8,
+              TINYRACER_VISION_HEADER_LEN + sizeof(packet_v8.payload))
+        : is_v7
+        ? crc32CalculateBuffer(&packet_v7,
+              TINYRACER_VISION_HEADER_LEN + sizeof(packet_v7.payload))
+        : is_v6
         ? crc32CalculateBuffer(&packet_v6,
               TINYRACER_VISION_HEADER_LEN + sizeof(packet_v6.payload))
         : is_v5
@@ -659,17 +679,29 @@ static void sequentialObstacleRxTask(void *parameters) {
               TINYRACER_VISION_HEADER_LEN + sizeof(packet_v2.payload))
         : crc32CalculateBuffer(&packet,
               SEQUENTIAL_OBSTACLE_HEADER_LEN + sizeof(packet.payload));
-    const uint32_t expected = is_v6 ? packet_v6.checksum
+    const uint32_t expected = is_gate ? gate_packet.checksum
+        : (is_threat ? threat_packet.checksum
+        : (is_v8 ? packet_v8.checksum
+        : (is_v7 ? packet_v7.checksum
+        : (is_v6 ? packet_v6.checksum
         : (is_v5 ? packet_v5.checksum
         : (is_v4 ? packet_v4.checksum
         : (is_v3 ? packet_v3.checksum
-        : (is_v2 ? packet_v2.checksum : packet.checksum))));
+        : (is_v2 ? packet_v2.checksum : packet.checksum))))))));
     if (checksum != expected) {
       crc_errors++;
       memset(header_window, 0, sizeof(header_window));
       continue;
     }
-    if (is_v6) {
+    if (is_gate) {
+      acceptGatePacket(&gate_packet);
+    } else if (is_threat) {
+      acceptThreatPacket(&threat_packet);
+    } else if (is_v8) {
+      acceptV8Packet(&packet_v8);
+    } else if (is_v7) {
+      acceptV7Packet(&packet_v7);
+    } else if (is_v6) {
       acceptV6Packet(&packet_v6);
     } else if (is_v5) {
       acceptV5Packet(&packet_v5);
@@ -691,6 +723,8 @@ void sequentialObstacleLinkInit(void) {
     return;
   }
   memset(&latest_observation, 0, sizeof(latest_observation));
+  memset(&latest_threat, 0, sizeof(latest_threat));
+  memset(&latest_gate, 0, sizeof(latest_gate));
   uart1Init(SEQUENTIAL_OBSTACLE_BAUD);
   const BaseType_t created = xTaskCreate(
       sequentialObstacleRxTask, "SEQRX", 2 * configMINIMAL_STACK_SIZE,
@@ -774,6 +808,8 @@ LOG_ADD(LOG_UINT32, rxOk, &accepted_packets)
 LOG_ADD(LOG_UINT32, crcErr, &crc_errors)
 LOG_ADD(LOG_UINT32, invalid, &invalid_packets)
 LOG_ADD(LOG_UINT32, shortRx, &short_reads)
+LOG_ADD(LOG_UINT32, threatOk, &accepted_threat_packets)
+LOG_ADD(LOG_UINT32, gateOk, &accepted_gate_packets)
 LOG_ADD(LOG_FLOAT, d0, &latest_observation.clearance_m[0])
 LOG_ADD(LOG_FLOAT, d1, &latest_observation.clearance_m[1])
 LOG_ADD(LOG_FLOAT, d2, &latest_observation.clearance_m[2])
@@ -785,5 +821,8 @@ LOG_ADD(LOG_FLOAT, c3, &latest_observation.confidence[3])
 LOG_ADD(LOG_FLOAT, p0, &latest_observation.danger_probability[0])
 LOG_ADD(LOG_FLOAT, p1, &latest_observation.danger_probability[1])
 LOG_ADD(LOG_FLOAT, p2, &latest_observation.danger_probability[2])
+LOG_ADD(LOG_FLOAT, yawNorm, &latest_observation.steering_command)
+LOG_ADD(LOG_FLOAT, collision, &latest_observation.collision_probability)
 LOG_ADD(LOG_FLOAT, gateCf, &latest_observation.gate_confidence)
+LOG_ADD(LOG_FLOAT, sqOpen, &latest_observation.square_opening_visible_probability)
 LOG_GROUP_STOP(seqRx)

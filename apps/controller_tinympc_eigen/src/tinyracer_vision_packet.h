@@ -27,6 +27,12 @@
 #define TINYRACER_VISION_V6_HAS_COLLISION (1u << 0)
 #define TINYRACER_VISION_V6_HAS_RECOVERY (1u << 1)
 
+#define TINYRACER_VISION_V7_HAS_COLLISION (1u << 0)
+#define TINYRACER_VISION_V7_HAS_SQUARE_OPENING (1u << 1)
+
+#define TINYRACER_VISION_V8_HAS_NAVIGATION (1u << 0)
+#define TINYRACER_VISION_V8_HAS_SQUARE_OPENING (1u << 1)
+
 typedef struct __attribute__((packed)) {
   uint32_t source_timestamp_ms;
   uint16_t sequence;

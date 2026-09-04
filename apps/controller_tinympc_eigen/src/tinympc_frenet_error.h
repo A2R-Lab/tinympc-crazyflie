@@ -131,6 +131,70 @@ static inline void tinyMpcFrenetErrorEncode(
   error[11] = actual[11] - reference_rate_actual_body[2];
 }
 
+/* Encode the error coordinates used by the stored acrobatic LTV generator.
+ * Unlike the level-flight Frenet chart above, position and velocity errors
+ * are resolved in the complete reference-attitude frame. This distinction is
+ * essential once pitch or roll approaches 90 degrees: yaw-only rotation would
+ * present vertical error to a cache axis that was linearized as longitudinal
+ * error (and vice versa). Attitude and body-rate errors use the same
+ * reference-relative definitions as the offline generator. */
+static inline void tinyMpcStoredLtvErrorEncodeQuaternions(
+    const float actual[12], const float reference[12],
+    TinyMpcFrenetQuaternion actual_q,
+    TinyMpcFrenetQuaternion reference_q, float error[12]) {
+  actual_q = tinyMpcFrenetQuaternionNormalize(actual_q);
+  reference_q = tinyMpcFrenetQuaternionNormalize(reference_q);
+  const TinyMpcFrenetQuaternion reference_inverse =
+      tinyMpcFrenetQuaternionConjugate(reference_q);
+  const float position_delta[3] = {
+      actual[0] - reference[0],
+      actual[1] - reference[1],
+      actual[2] - reference[2],
+  };
+  tinyMpcFrenetQuaternionRotate(reference_inverse, position_delta, error);
+  TinyMpcFrenetQuaternion error_q = tinyMpcFrenetQuaternionMultiply(
+      reference_inverse, actual_q);
+  if (error_q.w < 0.0f) {
+    error_q.w = -error_q.w;
+    error_q.x = -error_q.x;
+    error_q.y = -error_q.y;
+    error_q.z = -error_q.z;
+  }
+  const float denominator = fabsf(error_q.w) > 1.0e-6f
+      ? error_q.w : copysignf(1.0e-6f, error_q.w);
+  error[3] = error_q.x / denominator;
+  error[4] = error_q.y / denominator;
+  error[5] = error_q.z / denominator;
+  const float velocity_delta[3] = {
+      actual[6] - reference[6],
+      actual[7] - reference[7],
+      actual[8] - reference[8],
+  };
+  tinyMpcFrenetQuaternionRotate(
+      reference_inverse, velocity_delta, &error[6]);
+  float reference_rate_world[3];
+  float reference_rate_actual_body[3];
+  tinyMpcFrenetQuaternionRotate(
+      reference_q, &reference[9], reference_rate_world);
+  tinyMpcFrenetQuaternionRotate(
+      tinyMpcFrenetQuaternionConjugate(actual_q),
+      reference_rate_world, reference_rate_actual_body);
+  error[9] = actual[9] - reference_rate_actual_body[0];
+  error[10] = actual[10] - reference_rate_actual_body[1];
+  error[11] = actual[11] - reference_rate_actual_body[2];
+}
+
+/* Convenience wrapper for nonsingular Rodrigues state charts. Acrobatic
+ * firmware should call the quaternion overload above: the individual
+ * Rodrigues states become singular when the vehicle is exactly inverted,
+ * even though their reference-relative attitude error remains small. */
+static inline void tinyMpcStoredLtvErrorEncode(
+    const float actual[12], const float reference[12], float error[12]) {
+  tinyMpcStoredLtvErrorEncodeQuaternions(
+      actual, reference, tinyMpcFrenetQuaternionFromRodrigues(actual),
+      tinyMpcFrenetQuaternionFromRodrigues(reference), error);
+}
+
 static inline void tinyMpcFrenetErrorDecode(
     const float error[12], const float reference[12], float actual[12]) {
   const TinyMpcFrenetQuaternion reference_q =

@@ -25,6 +25,9 @@ typedef struct {
   bool has_sector_danger;
   bool has_navigation_command;
   bool has_residual_reference;
+  bool has_square_opening;
+  bool has_collision_probability;
+  bool has_normalized_yaw_rate;
   bool gate_valid;
   float clearance_m[TINYRACER_CLEARANCE_SECTORS];
   float confidence[TINYRACER_CLEARANCE_SECTORS];
@@ -39,6 +42,8 @@ typedef struct {
   /* Normalized image coordinates, ordered TL, TR, BR, BL. */
   float gate_corners_xy[TINYRACER_GATE_CORNERS * 2];
   float gate_confidence;
+  /* Versioned square-opening advisory cue. It is never a navigation command. */
+  float square_opening_visible_probability;
   float gate_fx_normalized;
   float gate_fy_normalized;
   float gate_cx_normalized;

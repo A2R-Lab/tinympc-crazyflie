@@ -1,4 +1,5 @@
 #include "sequential_obstacle_link.h"
+#include "tinympc_vision_residual_authority.h"
 #include "tinyracer_vision_packet.h"
 
 #include "FreeRTOS.h"
@@ -86,7 +87,8 @@ static bool validPayload(
 static void acceptPayload(
     const TinyRacerVisionV2Payload *payload,
     float gate_fx_normalized, float gate_fy_normalized,
-    float gate_cx_normalized, float gate_cy_normalized) {
+    float gate_cx_normalized, float gate_cy_normalized,
+    const TinyRacerVisionV4Payload *v4_payload) {
   if (payload->sequence == latest_sequence) {
     return;
   }
@@ -100,16 +102,29 @@ static void acceptPayload(
       (payload->flags & TINYRACER_VISION_HAS_SECTOR_DANGER) != 0;
   latest_observation.has_navigation_command =
       (payload->flags & TINYRACER_VISION_HAS_NAVIGATION_COMMAND) != 0;
+  latest_observation.has_residual_reference = v4_payload != NULL &&
+      (payload->flags & TINYRACER_VISION_HAS_RESIDUAL_REFERENCE) != 0;
   latest_observation.gate_valid =
       (payload->flags & TINYRACER_VISION_GATE_VALID) != 0;
   memcpy(latest_observation.clearance_m, payload->clearance_m,
          sizeof(latest_observation.clearance_m));
   memcpy(latest_observation.confidence, payload->confidence,
          sizeof(latest_observation.confidence));
-  memcpy(latest_observation.danger_probability, payload->danger_probability,
-         sizeof(latest_observation.danger_probability));
+  latest_observation.danger_probability[TINYRACER_DANGER_LEFT] =
+      payload->danger_probability[0];
+  latest_observation.danger_probability[TINYRACER_DANGER_CENTER] = fmaxf(
+      payload->danger_probability[1], payload->danger_probability[2]);
+  latest_observation.danger_probability[TINYRACER_DANGER_RIGHT] =
+      payload->danger_probability[3];
   latest_observation.steering_command = payload->steering_command;
   latest_observation.collision_probability = payload->collision_probability;
+  if (latest_observation.has_residual_reference) {
+    latest_observation.lateral_reference_rate_mps =
+        v4_payload->lateral_reference_rate_mps;
+    latest_observation.vertical_reference_rate_mps =
+        v4_payload->vertical_reference_rate_mps;
+    latest_observation.progress_speed_scale = v4_payload->progress_speed_scale;
+  }
   memcpy(latest_observation.gate_corners_xy, payload->gate_corners_xy,
          sizeof(latest_observation.gate_corners_xy));
   latest_observation.gate_confidence = payload->gate_confidence;
@@ -453,7 +468,7 @@ bool sequentialObstacleLinkGetLatest(
               packet.v3.payload.gate_fx_normalized,
               packet.v3.payload.gate_fy_normalized,
               packet.v3.payload.gate_cx_normalized,
-              packet.v3.payload.gate_cy_normalized);
+              packet.v3.payload.gate_cy_normalized, false);
       const bool is_v2 = received == (ssize_t)sizeof(packet.v2) &&
           memcmp(packet.v2.header, TINYRACER_VISION_V2_HEADER,
                  TINYRACER_VISION_HEADER_LEN) == 0 &&
@@ -462,23 +477,47 @@ bool sequentialObstacleLinkGetLatest(
                   packet.v2.checksum &&
           validPayload(
               &packet.v2.payload, LEGACY_GATE_FX_NORMALIZED,
-              LEGACY_GATE_FY_NORMALIZED, 0.5f, 0.5f);
-      if (is_v3) {
+              LEGACY_GATE_FY_NORMALIZED, 0.5f, 0.5f, false);
+      if (is_threat) {
+        acceptThreatPayload(&packet.threat.payload);
+      } else if (is_gate) {
+        acceptGatePayload(&packet.gate.payload);
+      } else if (is_v8) {
+        acceptV8Payload(&packet.v8.payload);
+      } else if (is_v7) {
+        acceptV7Payload(&packet.v7.payload);
+      } else if (is_v5) {
+        acceptV5Payload(&packet.v5.payload);
+      } else if (is_v4) {
+        acceptPayload(
+            &packet.v4.payload.base.base,
+            packet.v4.payload.base.gate_fx_normalized,
+            packet.v4.payload.base.gate_fy_normalized,
+            packet.v4.payload.base.gate_cx_normalized,
+            packet.v4.payload.base.gate_cy_normalized,
+            &packet.v4.payload);
+      } else if (is_v3) {
         acceptPayload(
             &packet.v3.payload.base,
             packet.v3.payload.gate_fx_normalized,
             packet.v3.payload.gate_fy_normalized,
             packet.v3.payload.gate_cx_normalized,
-            packet.v3.payload.gate_cy_normalized);
+            packet.v3.payload.gate_cy_normalized, NULL);
       } else if (is_v2) {
         acceptPayload(
             &packet.v2.payload, LEGACY_GATE_FX_NORMALIZED,
-            LEGACY_GATE_FY_NORMALIZED, 0.5f, 0.5f);
+            LEGACY_GATE_FY_NORMALIZED, 0.5f, 0.5f, NULL);
       } else if (rejected_packet_count++ == 0) {
         fprintf(stderr,
-                "TinyRacer vision rejected first datagram: bytes=%ld expected=%lu/%lu\n",
+                "TinyRacer vision rejected first datagram: bytes=%ld expected=%lu/%lu/%lu/%lu/%lu/%lu/%lu/%lu\n",
                 (long)received, (unsigned long)sizeof(packet.v2),
-                (unsigned long)sizeof(packet.v3));
+                (unsigned long)sizeof(packet.v3),
+                (unsigned long)sizeof(packet.v4),
+                (unsigned long)sizeof(packet.v5),
+                (unsigned long)sizeof(packet.v7),
+                (unsigned long)sizeof(packet.v8),
+                (unsigned long)sizeof(packet.threat),
+                (unsigned long)sizeof(packet.gate));
       }
     }
   }

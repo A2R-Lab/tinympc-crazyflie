@@ -13,8 +13,10 @@ extern "C" {
 /* Deliberately small, route-free policy:
  *
  *   CRUISE --center risk >= trigger--> BRAKE
- *   BRAKE --vehicle settled--> TURN_SCAN (ordinary obstacle)
- *   BRAKE --confirmed rail opening--> TRANSLATE_OPENING
+ *   CRUISE --all sector risks >= all-sector trigger--> BRAKE
+ *   BRAKE --vehicle settled--> BACKTRACK
+ *   BACKTRACK --distance reached and settled--> TURN_SCAN (ordinary obstacle)
+ *   BACKTRACK --distance reached and settled, confirmed rail--> TRANSLATE_OPENING
  *   TURN_SCAN --center risk <= release for N frames--> CRUISE
  *   TRANSLATE_OPENING --center risk <= release for N frames--> CRUISE
  *
@@ -23,16 +25,20 @@ extern "C" {
 typedef enum {
   TINYRACER_REACTIVE_CRUISE = 0,
   TINYRACER_REACTIVE_BRAKE = 1,
-  TINYRACER_REACTIVE_TURN_SCAN = 2,
-  TINYRACER_REACTIVE_TRANSLATE_OPENING = 3,
+  TINYRACER_REACTIVE_BACKTRACK = 2,
+  TINYRACER_REACTIVE_TURN_SCAN = 3,
+  TINYRACER_REACTIVE_TRANSLATE_OPENING = 4,
 } TinyRacerReactivePhase;
 
 typedef struct {
   float cruise_speed_mps;
   float trigger_probability;
+  float all_sector_trigger_probability;
   float release_probability;
   float turn_rate_deg_s;
   float translation_speed_mps;
+  float backtrack_speed_mps;
+  float backtrack_distance_m;
   float side_ambiguity_margin;
   uint8_t settled_samples_required;
   uint8_t minimum_maneuver_samples;
@@ -51,6 +57,7 @@ typedef struct {
   int8_t rail_candidate_direction;
   uint8_t rail_cue_samples;
   bool rail_direction_latched;
+  bool backtrack_distance_reached;
 } TinyRacerReactiveState;
 
 typedef struct {
@@ -66,10 +73,13 @@ static inline TinyRacerReactiveConfig tinyRacerReactiveDefaultConfig(
     float cruise_speed_mps) {
   const TinyRacerReactiveConfig config = {
       cruise_speed_mps,
-      0.85f,
+      0.90f,
+      0.80f,
       0.55f,
-      28.64788976f, /* 0.50 rad/s medium scan rate. */
+      37.24225668f, /* 0.65 rad/s faster, bounded scan rate. */
       0.25f,
+      0.25f,
+      0.30f,
       0.05f,
       6u,
       24u,
@@ -93,6 +103,7 @@ static inline void tinyRacerReactiveReset(TinyRacerReactiveState *state) {
   state->rail_candidate_direction = 0;
   state->rail_cue_samples = 0u;
   state->rail_direction_latched = false;
+  state->backtrack_distance_reached = false;
 }
 
 static inline bool tinyRacerReactiveConfigValid(
@@ -100,13 +111,20 @@ static inline bool tinyRacerReactiveConfigValid(
   return config != NULL && isfinite(config->cruise_speed_mps) &&
       config->cruise_speed_mps > 0.0f &&
       isfinite(config->trigger_probability) &&
+      isfinite(config->all_sector_trigger_probability) &&
       isfinite(config->release_probability) &&
       config->trigger_probability > config->release_probability &&
       config->trigger_probability <= 1.0f &&
+      config->all_sector_trigger_probability > config->release_probability &&
+      config->all_sector_trigger_probability <= 1.0f &&
       config->release_probability >= 0.0f &&
       isfinite(config->turn_rate_deg_s) && config->turn_rate_deg_s > 0.0f &&
       isfinite(config->translation_speed_mps) &&
       config->translation_speed_mps > 0.0f &&
+      isfinite(config->backtrack_speed_mps) &&
+      config->backtrack_speed_mps > 0.0f &&
+      isfinite(config->backtrack_distance_m) &&
+      config->backtrack_distance_m > 0.0f &&
       isfinite(config->side_ambiguity_margin) &&
       config->side_ambiguity_margin >= 0.0f &&
       config->settled_samples_required > 0u &&
@@ -133,7 +151,8 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStepWithRail(
     TinyRacerReactiveState *state, const TinyRacerReactiveConfig *config,
     float left_probability, float center_probability,
     float right_probability, bool rail_direction_valid,
-    int8_t rail_opening_direction, bool vehicle_settled) {
+    int8_t rail_opening_direction, bool vehicle_settled,
+    bool backtrack_complete) {
   TinyRacerReactiveCommand command = {
       0.0f, 0.0f, 0.0f, TINYRACER_REACTIVE_BRAKE, 0, false};
   if (state == NULL || !tinyRacerReactiveConfigValid(config) ||
@@ -145,9 +164,13 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStepWithRail(
   const float left = fminf(fmaxf(left_probability, 0.0f), 1.0f);
   const float center = fminf(fmaxf(center_probability, 0.0f), 1.0f);
   const float right = fminf(fmaxf(right_probability, 0.0f), 1.0f);
-
+  const bool center_emergency = center >= config->trigger_probability;
+  const bool all_sector_emergency =
+      left >= config->all_sector_trigger_probability &&
+      center >= config->all_sector_trigger_probability &&
+      right >= config->all_sector_trigger_probability;
   if (state->phase == TINYRACER_REACTIVE_CRUISE &&
-      center >= config->trigger_probability) {
+      (center_emergency || all_sector_emergency)) {
     state->phase = TINYRACER_REACTIVE_BRAKE;
     state->turn_direction = tinyRacerReactiveChooseDirection(
         state, left, right, config->side_ambiguity_margin);
@@ -159,6 +182,7 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStepWithRail(
     state->rail_candidate_direction = 0;
     state->rail_cue_samples = 0u;
     state->rail_direction_latched = false;
+    state->backtrack_distance_reached = false;
     command.changed = true;
   } else if (state->phase == TINYRACER_REACTIVE_BRAKE) {
     if (vehicle_settled) {
@@ -193,6 +217,22 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStepWithRail(
         state->rail_candidate_direction = 0;
         state->rail_cue_samples = 0u;
       }
+    }
+    if (state->settled_samples >= config->settled_samples_required) {
+      state->phase = TINYRACER_REACTIVE_BACKTRACK;
+      state->settled_samples = 0u;
+      command.changed = true;
+    }
+  } else if (state->phase == TINYRACER_REACTIVE_BACKTRACK) {
+    if (backtrack_complete) {
+      state->backtrack_distance_reached = true;
+    }
+    if (state->backtrack_distance_reached && vehicle_settled) {
+      if (state->settled_samples < UINT8_MAX) {
+        ++state->settled_samples;
+      }
+    } else {
+      state->settled_samples = 0u;
     }
     if (state->settled_samples >= config->settled_samples_required) {
       state->phase = state->rail_direction_latched
@@ -248,6 +288,9 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStepWithRail(
   command.turn_direction = state->turn_direction;
   if (state->phase == TINYRACER_REACTIVE_CRUISE) {
     command.forward_speed_mps = config->cruise_speed_mps;
+  } else if (state->phase == TINYRACER_REACTIVE_BACKTRACK &&
+             !state->backtrack_distance_reached) {
+    command.forward_speed_mps = -config->backtrack_speed_mps;
   } else if (state->phase == TINYRACER_REACTIVE_TURN_SCAN &&
              !state->scan_clear_latched) {
     command.yaw_rate_deg_s =
@@ -266,7 +309,7 @@ static inline TinyRacerReactiveCommand tinyRacerReactiveStep(
     float right_probability, bool vehicle_settled) {
   return tinyRacerReactiveStepWithRail(
       state, config, left_probability, center_probability, right_probability,
-      false, 0, vehicle_settled);
+      false, 0, vehicle_settled, false);
 }
 
 #ifdef __cplusplus
