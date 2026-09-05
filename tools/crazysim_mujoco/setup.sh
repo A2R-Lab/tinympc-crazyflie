@@ -38,14 +38,22 @@ git -C "$CRAZYSIM_DIR/crazyflie-firmware" submodule update --init \
   vendor/FreeRTOS tools/crazyflie-simulation
 git -C "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation" \
   submodule update --init simulator_files/mujoco/drone-models
+THRUST_FW_PATCH="$SCRIPT_DIR/patches/direct_thrust_firmware.patch"
+# The overlay changes context in the base patch; probe the final layer first.
+if ! git -C "$CRAZYSIM_DIR/crazyflie-firmware" apply --reverse --check "$THRUST_FW_PATCH" >/dev/null 2>&1; then
+  apply_once "$CRAZYSIM_DIR/crazyflie-firmware" \
+    "$SCRIPT_DIR/patches/crazysim-firmware-tinympc.patch"
+  apply_once "$CRAZYSIM_DIR/crazyflie-firmware" "$THRUST_FW_PATCH"
+fi
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware" \
-  "$SCRIPT_DIR/patches/crazysim-firmware-tinympc.patch"
+  "$SCRIPT_DIR/patches/controller_cleanup_firmware.patch"
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/vendor/FreeRTOS" \
   "$SCRIPT_DIR/patches/freertos-posix-sim-time.patch"
 SIMULATION_REPO="$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation"
 TIMING_PATCH="$SCRIPT_DIR/patches/crazysim-mujoco-timing-telemetry.patch"
-if ! git -C "$SIMULATION_REPO" apply --reverse --check "$TIMING_PATCH" \
-    >/dev/null 2>&1; then
+THRUST_SIM_PATCH="$SCRIPT_DIR/patches/direct_thrust_receiver.patch"
+if ! git -C "$SIMULATION_REPO" apply --reverse --check "$THRUST_SIM_PATCH" >/dev/null 2>&1 && \
+   ! git -C "$SIMULATION_REPO" apply --reverse --check "$TIMING_PATCH" >/dev/null 2>&1; then
   if ! grep -q "motor_command_packet_count" \
       "$SIMULATION_REPO/simulator_files/mujoco/crazysim.py"; then
     apply_once "$SIMULATION_REPO" \
@@ -55,6 +63,7 @@ if ! git -C "$SIMULATION_REPO" apply --reverse --check "$TIMING_PATCH" \
     "$SCRIPT_DIR/patches/crazysim-imav22-complexity.patch"
   apply_once "$SIMULATION_REPO" "$TIMING_PATCH"
 fi
+apply_once "$SIMULATION_REPO" "$THRUST_SIM_PATCH"
 apply_once "$SIMULATION_REPO" \
   "$SCRIPT_DIR/patches/crazysim-hallway-clear-obstacle.patch"
 apply_once "$CRAZYSIM_DIR/crazyflie-firmware/tools/crazyflie-simulation/simulator_files/mujoco/drone-models" \

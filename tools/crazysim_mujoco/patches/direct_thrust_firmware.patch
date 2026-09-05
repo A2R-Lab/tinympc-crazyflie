@@ -1,0 +1,78 @@
+--- a/src/modules/interface/stabilizer_types.h
++++ b/src/modules/interface/stabilizer_types.h
+@@ -188,6 +188,9 @@
+   controlModeForceTorque = 1,
+   controlModeForce       = 2,
+   controlModePWM         = 4,
++#ifdef CONFIG_PLATFORM_SITL
++  controlModeMotorThrustSI = 5, // simulation-only per-motor newtons
++#endif
+ } control_mode_t;
+ 
+ typedef struct control_s {
+@@ -217,6 +220,9 @@
+ 
+     // controlModeForce
+     float normalizedForces[STABILIZER_NR_OF_MOTORS]; // 0.0 ... 1.0
++#ifdef CONFIG_PLATFORM_SITL
++    float motorThrustN[STABILIZER_NR_OF_MOTORS]; // physical newtons, not PWM
++#endif
+   };
+ 
+   control_mode_t controlMode;
+--- a/src/modules/src/power_distribution_sitl.c
++++ b/src/modules/src/power_distribution_sitl.c
+@@ -61,6 +61,14 @@
+   uint32_t stabilizerSequence;
+ } __attribute__((packed)) motorPower;
+ 
++// SIM channel 3: four little-endian float32 newtons, tick, sequence.
++static bool directThrustMode = false;
++static float directThrustN[4];
++
++static void packU32LE(uint8_t *dst, uint32_t value) {
++  for (unsigned i = 0; i < 4; ++i) dst[i] = (uint8_t)(value >> (8 * i));
++}
++
+ static uint32_t lastSentTime = 0;
+ static CRTPPacket p;
+ 
+@@ -155,6 +163,15 @@
+ 
+ void powerDistribution(const control_t *control, motors_thrust_uncapped_t* motorThrustUncapped)
+ {
++  directThrustMode = control->controlMode == controlModeMotorThrustSI;
++  if (directThrustMode) {
++    for (unsigned i = 0; i < 4; ++i) {
++      const float thrust = control->motorThrustN[i];
++      directThrustN[i] = isfinite(thrust) && thrust >= 0.0f ? thrust : 0.0f;
++      motorThrustUncapped->list[i] = 0; // do not route SI through PWM caps
++    }
++    return;
++  }
+   switch (control->controlMode) {
+     case controlModeLegacy:
+       powerDistributionLegacy(control, motorThrustUncapped);
+@@ -229,7 +246,21 @@
+   motorPower.stabilizerSequence++;
+ 
+   if (xTaskGetTickCount() - lastSentTime >= M2T(1)){
+-    memcpy(p.data , (uint8_t *) &motorPower , p.size);
++    if (directThrustMode) {
++      p.header = CRTP_HEADER(CRTP_PORT_SETPOINT_SIM, 3);
++      p.size = 24;
++      for (unsigned i = 0; i < 4; ++i) {
++        uint32_t bits;
++        memcpy(&bits, &directThrustN[i], sizeof(bits));
++        packU32LE(&p.data[4 * i], bits);
++      }
++      packU32LE(&p.data[16], motorPower.firmwareTick);
++      packU32LE(&p.data[20], motorPower.stabilizerSequence);
++    } else {
++      p.header = CRTP_HEADER(CRTP_PORT_SETPOINT_SIM, 0);
++      p.size = sizeof(motorPower);
++      memcpy(p.data, &motorPower, p.size);
++    }
+     crtpSendPacket(&p);
+     lastSentTime = xTaskGetTickCount();
+   }

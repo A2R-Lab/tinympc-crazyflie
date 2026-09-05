@@ -1,0 +1,120 @@
+--- a/simulator_files/mujoco/crazysim.py
++++ b/simulator_files/mujoco/crazysim.py
+@@ -34,6 +34,12 @@
+   Motor packet (firmware → sim, CRTP port 0x09 ch 0):
+     byte 0    : header = 0x90
+     bytes 1-8 : 4 × uint16 motor PWM [0..65535]
++
++  Thrust packet (firmware → sim, CRTP port 0x09 ch 3):
++    byte 0     : header = 0x93
++    bytes 1-16 : 4 × float32 nonnegative finite thrust in N (motor order unchanged)
++    bytes 17-24: uint32 firmware tick, uint32 stabilizer sequence
++    Exactly 25 bytes. Retains simulator RPM limits and motor dynamics.
+ 
+ Supported model types (--model-type):
+   cf2x_L250   Loco-250 props   thrust_max=0.12 N/motor  (drone-models params)
+@@ -79,6 +85,7 @@
+ CRTP_HDR_SIM     = (CRTP_PORT_SIM << 4) | 0           # 0x90  (SIM port, ch 0 — motors)
+ CRTP_HDR_LED     = (CRTP_PORT_SIM << 4) | 1           # 0x91  (SIM port, ch 1 — LED RGB)
+ CRTP_HDR_HEADLIGHT = (CRTP_PORT_SIM << 4) | 2         # 0x92  (SIM port, ch 2 — headlight)
++CRTP_HDR_THRUST  = (CRTP_PORT_SIM << 4) | 3         # 0x93: explicit motor thrust N
+ CRTP_HDR_LOC     = (CRTP_PORT_LOC << 4) | (1 << 2) | 1  # 0x65
+ 
+ SENSOR_GYRO_ACC  = 0
+@@ -700,6 +707,8 @@
+         # Motor state (tracked in RPM to match drone-models polynomial coefficients)
+         self._rpm = np.zeros(4)
+         self._rpm_ref = np.zeros(4)
++        self._thrust_requested = np.zeros(4)  # Before RPM limits / motor dynamics
++        self._motor_command_mode = 0  # 0: legacy PWM, 1: explicit thrust N
+         self._rpm_dot = np.zeros(4)  # RPM/s for gyroscopic z-torque
+         self._motor_command_packet_count = 0
+         self._firmware_tick = 0
+@@ -782,6 +791,14 @@
+             return 0.0
+         normalized_speed = pwm / 65535.0
+         thrust = normalized_speed * normalized_speed * self._params.pwm_thrust_full
++        return self._thrust_to_rpm(thrust)
++
++    def _thrust_to_rpm(self, thrust: float) -> float:
++        """Desired N to target RPM; no normalized-command thrust curve."""
++        if not math.isfinite(thrust) or thrust < 0.0:
++            raise ValueError('motor thrust must be finite and nonnegative')
++        if thrust == 0.0:
++            return 0.0
+         a, b, c = self._params.rpm2thrust
+         # Solve c*rpm² + b*rpm + (a - thrust) = 0
+         disc = b * b - 4.0 * c * (a - thrust)
+@@ -789,6 +806,23 @@
+             return 0.0
+         rpm = (-b + math.sqrt(disc)) / (2.0 * c)
+         return min(max(rpm, 0.0), self._params.max_rpm)
++
++    def _accept_thrust_packet(self, data: bytes) -> bool:
++        """Atomically accept a versioned-by-channel, exact-size SI thrust packet."""
++        if len(data) != 25 or data[0] != CRTP_HDR_THRUST:
++            return False
++        *forces, tick, sequence = struct.unpack_from('<ffffII', data, 1)
++        if any(not math.isfinite(t) or t < 0.0 for t in forces):
++            return False
++        targets = [self._thrust_to_rpm(t) for t in forces]
++        with self._motor_lock:
++            self._thrust_requested[:] = forces
++            self._rpm_ref[:] = targets
++            self._firmware_tick = tick
++            self._stabilizer_sequence = sequence
++            self._motor_command_mode = 1
++            self._motor_command_packet_count += 1
++        return True
+ 
+     def handshake(self):
+         print(f'[crazysim] Agent {self.agent_id}: waiting for firmware on port {self._fw_port} ...')
+@@ -825,11 +859,18 @@
+             if len(data) < 1:
+                 continue
+             hdr = data[0]
+-            if hdr == CRTP_HDR_SIM and len(data) >= 9:
++            if hdr == CRTP_HDR_THRUST:
++                # Invalid thrust packets are discarded, never forwarded as CRTP.
++                self._accept_thrust_packet(data)
++            elif hdr == CRTP_HDR_SIM and len(data) >= 9:
+                 # Motor PWM packet (SIM port, channel 0)
+                 m0, m1, m2, m3 = struct.unpack_from('<HHHH', data, 1)
+                 with self._motor_lock:
+                     self._rpm_ref[:] = [self._pwm_to_rpm(p) for p in (m0, m1, m2, m3)]
++                    self._thrust_requested[:] = [
++                        0.0 if p < 7000 else (p / 65535.0)**2 * self._params.pwm_thrust_full
++                        for p in (m0, m1, m2, m3)]
++                    self._motor_command_mode = 0
+                     if len(data) >= 17:
+                         self._firmware_tick, self._stabilizer_sequence = \
+                             struct.unpack_from('<II', data, 9)
+@@ -1678,6 +1719,9 @@
+                 'rpm_ref_1', 'rpm_ref_2', 'rpm_ref_3', 'rpm_ref_4',
+                 'motor_cmd_packet_count', 'motor_cmd_last_packet_sim_time_s',
+                 'motor_cmd_age_s', 'firmware_tick', 'stabilizer_sequence',
++                *[f'thrust_requested_{i}_N' for i in range(1, 5)],
++                *[f'thrust_realized_{i}_N' for i in range(1, 5)],
++                'motor_command_mode',
+             ])
+         imav22_event_file = None
+         if self._imav22_event_log:
+@@ -1718,6 +1762,8 @@
+                 qvel = self.data.qvel[agent._qvel_adr:agent._qvel_adr + 6]
+                 with agent._motor_lock:
+                     rpm_ref = agent._rpm_ref.copy()
++                    thrust_requested = agent._thrust_requested.copy()
++                    motor_command_mode = agent._motor_command_mode
+                     motor_command_packet_count = agent._motor_command_packet_count
+                     if motor_command_packet_count != agent._motor_command_logged_count:
+                         agent._motor_command_last_sim_time = self.data.time
+@@ -1742,6 +1788,9 @@
+                     motor_command_age,
+                     firmware_tick,
+                     stabilizer_sequence,
++                    *thrust_requested,
++                    *self.data.ctrl[agent._act_force],
++                    motor_command_mode,
+                 ])
+             if (self._stop_on_contact and self._launch_applied and
+                     self.data.ncon > 0):

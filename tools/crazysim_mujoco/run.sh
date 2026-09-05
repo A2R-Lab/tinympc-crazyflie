@@ -9,6 +9,7 @@ APPTAINER_IMAGE=""
 TRAJECTORY="circle"
 ACTUATOR_LTI=1
 RATE_CASCADE=0
+TINYMPC_PROFILE="${TINYMPC_PROFILE:-hover_lqr_test}"
 BRAKING_CACHE="auto"
 DIRECT_PLAN_REPLAY=0
 RATE_IDENTIFICATION=0
@@ -295,6 +296,12 @@ if [[ "$FLOWDECK_ENABLED" == 1 ]]; then
   [[ "${EXTRA_SIM_ARGS[0]}" == __none__ ]] && EXTRA_SIM_ARGS=()
   EXTRA_SIM_ARGS+=(--flowdeck)
 fi
+
+case "$TINYMPC_PROFILE" in
+  hover_lqr_test) ACTUATOR_LTI=0; RATE_CASCADE=0 ;;
+  hover_pitch_step_test|hover_height_step_test) ACTUATOR_LTI=0; RATE_CASCADE=0; MPC_DIAG_MODE=taskless ;;
+  *) echo "TINYMPC_PROFILE must be hover_lqr_test, hover_pitch_step_test, or hover_height_step_test" >&2; exit 2 ;;
+esac
 
 case "$TRAJECTORY" in
   straight|straight_long|straight_9m|straight_20m|canonical_corridor|canonical_circle|figure8|oval|canonical_figure8|circle|imav22_circle|chicane|canonical_chicane|hairpin_180|canonical_hairpin|dronet_u) ;;
@@ -881,7 +888,7 @@ python3 - "$OUT/run_config.json" "$REPO_DIR" "$SCRIPT_DIR/run.sh" \
   "$BRAKING_CACHE" "$BRAKING_CACHE_EFFECTIVE" \
   "$YAW_SPIN_TEST" "$YAW_SPIN_RATE_RAD_S" "$YAW_SPIN_REVOLUTIONS" \
   "$YAW_SPIN_STRAIGHT_SPEED_MPS" "$YAW_SPIN_STRAIGHT_DURATION_S" \
-  "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" \
+  "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" "$TINYMPC_PROFILE" \
   "${EXTRA_SIM_ARGS[@]}" <<'PY'
 import hashlib
 import importlib.util
@@ -910,7 +917,7 @@ import sys
  braking_cache_mode_requested, braking_cache_enabled,
  yaw_spin_test, yaw_spin_rate_rad_s, yaw_spin_revolutions,
  yaw_spin_straight_speed_mps, yaw_spin_straight_duration_s,
- reactive_power_loop, pitch_through_brake,
+ reactive_power_loop, pitch_through_brake, tinympc_profile,
  *extra) = sys.argv[1:]
 
 def sha256(path):
@@ -1024,6 +1031,27 @@ config = {
         / f"traj_{trajectory}_50hz.h"
     ),
     "trajectory": trajectory,
+    "tinympc_profile": tinympc_profile,
+    "motor_command_interface": "per_motor_thrust_N_v1" if tinympc_profile != "default" else "legacy_pwm",
+    "actuator_event_first_action_units": "N" if tinympc_profile != "default" else "normalized_command",
+    "hover_height_step": {
+        "enabled": tinympc_profile == "hover_height_step_test",
+        "height_increment_m": 1.0,
+        "delay_after_hover_snapshot_s": 2.0,
+        "clock": "firmware_solve_tick",
+        "step_entire_horizon": True,
+        "anticipation": False,
+    },
+    "hover_pitch_step": {
+        "enabled": tinympc_profile == "hover_pitch_step_test",
+        "from_pitch_deg": 0.0,
+        "to_pitch_deg": 60.0,
+        "delay_after_hover_snapshot_s": 3.0,
+        "clock": "firmware_solve_tick",
+        "position_target": "initial_hover_snapshot",
+        "step_entire_horizon": True,
+        "anticipation": False,
+    },
     "actuator_lti": bool(int(actuator_lti)),
     "rate_cascade": bool(int(rate_cascade)),
     "braking_cache_enabled": bool(int(braking_cache_enabled)),
@@ -1203,8 +1231,29 @@ config = {
     "mpc_diagnostic": {
         "mode": mpc_diag_mode,
         "enabled": mpc_diag_mode == "taskless",
-        "schema": "tinympc-sitl-diag-v2" if mpc_diag_mode == "taskless" else None,
+        "schema": "tinympc-sitl-diag-v3" if mpc_diag_mode == "taskless" else None,
         "path": "mpc_diag.bin" if mpc_diag_mode == "taskless" else None,
+        "record_layout": ({
+            "endianness": "little",
+            "record_size_bytes": 3848,
+            "solve_event": 1,
+            "horizon_knots": 20,
+            "input_knots": 19,
+            "state_dimension": 12,
+            "input_dimension": 4,
+            "state_order": ["x", "y", "z", "rodrigues_x", "rodrigues_y", "rodrigues_z", "vx", "vy", "vz", "body_p", "body_q", "body_r"],
+            "float32_offsets_bytes": {
+                "local_frame_origin_xyz_yaw": 296,
+                "initial_state": 312,
+                "horizon_reference": 360,
+                "horizon_primal_state": 1320,
+                "horizon_projected_state": 2280,
+                "horizon_primal_input": 3240,
+                "horizon_projected_input": 3544,
+            },
+            "horizon_frame": "solve-local NWU; local origin xyz and world yaw are stored per solve",
+            "input_semantics": "solver coordinates for the active model; inspect model_id and build profile",
+        } if mpc_diag_mode == "taskless" else None),
         "container": ({
             "format": "tinympc-sitl-diag-mmap-v1",
             "path": "mpc_diag.mmap",
@@ -1212,9 +1261,9 @@ config = {
             "version": 1,
             "header_size_bytes": 4096,
             "capacity": 16384,
-            "slot_size_bytes": 320,
-            "expected_size_bytes": 5246976,
-            "checksum": "fnv1a32-slot-bytes-8-through-311",
+            "slot_size_bytes": 3872,
+            "expected_size_bytes": 63442944,
+            "checksum": "fnv1a32-slot-bytes-8-through-3863",
             "size_bytes": None,
             "sha256": None,
             "validation": None,
@@ -1307,7 +1356,7 @@ set +e
     "$BRAKING_CACHE_EFFECTIVE" \
     "$YAW_SPIN_TEST" "$YAW_SPIN_RATE_RAD_S" "$YAW_SPIN_REVOLUTIONS" \
     "$YAW_SPIN_STRAIGHT_SPEED_MPS" "$YAW_SPIN_STRAIGHT_DURATION_S" \
-    "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" \
+    "$REACTIVE_POWER_LOOP" "$PITCH_THROUGH_BRAKE" "$TINYMPC_PROFILE" \
     --realtime-factor "$REALTIME_FACTOR" \
     "${EXTRA_SIM_ARGS[@]}" <<'CONTAINER_SCRIPT'
 set -euo pipefail
@@ -1347,7 +1396,8 @@ yaw_spin_straight_speed_mps="${62}"
 yaw_spin_straight_duration_s="${63}"
 reactive_power_loop="${64}"
 pitch_through_brake="${65}"
-shift 65
+tinympc_profile="${66}"
+shift 66
 export PYTHONPATH="/workspace/tools/crazysim_mujoco/.runtime_deps${PYTHONPATH:+:$PYTHONPATH}"
 course_build="${course:-none}"
 hm01b0_poc_camera=0
@@ -1440,7 +1490,7 @@ PY
     square_opening_threshold=disabled
   fi
 fi
-build_signature="${trajectory}-course${course_build}-gatemode${gate_controller_mode}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-brakecache${braking_cache_enabled}-pitchthrough${pitch_through_brake}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}-vas${vertical_active_sensing}-reactiveloop${reactive_power_loop}-sqopen${square_opening_threshold}-yawspin${yaw_spin_test}-yawrate${yaw_spin_rate_rad_s}-yawrev${yaw_spin_revolutions}-yawstraight${yaw_spin_straight_speed_mps}x${yaw_spin_straight_duration_s}"
+build_signature="profile${tinympc_profile}-${trajectory}-course${course_build}-gatemode${gate_controller_mode}-${reference_mode}-${actuator_lti}-cascade${rate_cascade}-brakecache${braking_cache_enabled}-pitchthrough${pitch_through_brake}-replay${direct_plan_replay}-rateid${rate_identification}-${level_cost_mode}-${progress_sample_limit}-speed${progress_speed_mps}-${progress_reference_limits}-laps${progress_laps}-accel${progress_entry_acceleration_mps2}-decel${progress_terminal_deceleration_mps2}-reward${progress_reward_weight}-flip${flip_enable}-powerloop${power_loop_enable}-at${power_loop_trigger_s_m}-r${power_loop_radius_m}-vb${power_loop_bottom_speed_mps}-vt${power_loop_top_speed_mps}-vas${vertical_active_sensing}-reactiveloop${reactive_power_loop}-sqopen${square_opening_threshold}-yawspin${yaw_spin_test}-yawrate${yaw_spin_rate_rad_s}-yawrev${yaw_spin_revolutions}-yawstraight${yaw_spin_straight_speed_mps}x${yaw_spin_straight_duration_s}"
 build_hash="$(printf '%s' "$build_signature" | sha256sum | cut -c1-16)"
 build="$firmware/sitl_make/build-tinympc-${trajectory}-${build_hash}"
 actuator_lti_flag=OFF
@@ -1453,6 +1503,16 @@ case "$level_cost_mode" in
   yaw_diff_r_quarter) cost_compile_flag="-DTINYMPC_LEVEL_COST_YAW_DIFF_R_QUARTER=1" ;;
   *) echo "Unsupported level cost mode: $level_cost_mode" >&2; exit 2 ;;
 esac
+profile_compile_flag=""
+case "$tinympc_profile" in
+  default) ;;
+  hover_lqr_test) profile_compile_flag="-DTINYMPC_HOVER_ONLY=1 -DTINYMPC_LQR_FEEDBACK=1 -DTINYMPC_RIGID_ADMM_ITERATIONS=2 -DTINYMPC_SITL_LQR_EQUIVALENCE=1" ;;
+  hover_height_step_test) profile_compile_flag="-DTINYMPC_HOVER_ONLY=1 -DTINYMPC_LQR_FEEDBACK=1 -DTINYMPC_RIGID_ADMM_ITERATIONS=2 -DTINYMPC_SITL_LQR_EQUIVALENCE=1 -DTINYMPC_HOVER_HEIGHT_STEP_TEST=1" ;;
+  hover_pitch_step_test) profile_compile_flag="-DTINYMPC_HOVER_ONLY=1 -DTINYMPC_LQR_FEEDBACK=1 -DTINYMPC_RIGID_ADMM_ITERATIONS=2 -DTINYMPC_SITL_LQR_EQUIVALENCE=1 -DTINYMPC_HOVER_PITCH_STEP_TEST=1" ;;
+esac
+if [[ "$tinympc_profile" != default ]]; then
+  profile_compile_flag+=" -DTINYMPC_SITL_DIRECT_THRUST=1"
+fi
 rate_identification_compile_flag=""
 [[ "$rate_identification" == 1 ]] && \
   rate_identification_compile_flag="-DTINYMPC_RATE_IDENTIFICATION=1"
@@ -1597,7 +1657,8 @@ cmake -S "$firmware/sitl_make" -B "$build" \
   -DTINYMPC_TRAJECTORY="$trajectory" \
   -DTINYMPC_COURSE="$course_build" \
   -DTINYMPC_ACTUATOR_LTI="$actuator_lti_flag" \
-  -DCMAKE_CXX_FLAGS="$cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $residual_reference_compile_flag $direct_dronet_compile_flag $paper_ablation_compile_flag $paper_emergency_terminal_stop_compile_flag $reactive_reference_compile_flag $square_opening_compile_flag $dronet_v2_compile_flag $oracle_action_compile_flag $espnet_dronet_compile_flag $gate_position_compile_flag $gate_olgmd_compile_flag $course_compile_flag $trajectory_compile_flag -DTINYMPC_REACTIVE_POWER_LOOP_ENABLE=$reactive_power_loop -DTINYMPC_PITCH_THROUGH_BRAKE_ENABLE=$pitch_through_brake -DTINYMPC_BRAKING_CACHE_ENABLE=$braking_cache_enabled -DTINYMPC_VERTICAL_ACTIVE_SENSING_ENABLE=$vertical_active_sensing -DTINYMPC_YAW_SPIN_TEST_ENABLE=$yaw_spin_test -DTINYMPC_YAW_SPIN_TEST_RATE_RAD_S=${yaw_spin_rate_rad_s}f -DTINYMPC_YAW_SPIN_TEST_REVOLUTIONS=${yaw_spin_revolutions}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_SPEED_MPS=${yaw_spin_straight_speed_mps}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_DURATION_S=${yaw_spin_straight_duration_s}f -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
+  -DCMAKE_C_FLAGS="$profile_compile_flag" \
+  -DCMAKE_CXX_FLAGS="$profile_compile_flag $cost_compile_flag $rate_identification_compile_flag $direct_plan_replay_compile_flag $residual_reference_compile_flag $direct_dronet_compile_flag $paper_ablation_compile_flag $paper_emergency_terminal_stop_compile_flag $reactive_reference_compile_flag $square_opening_compile_flag $dronet_v2_compile_flag $oracle_action_compile_flag $espnet_dronet_compile_flag $gate_position_compile_flag $gate_olgmd_compile_flag $course_compile_flag $trajectory_compile_flag -DTINYMPC_REACTIVE_POWER_LOOP_ENABLE=$reactive_power_loop -DTINYMPC_PITCH_THROUGH_BRAKE_ENABLE=$pitch_through_brake -DTINYMPC_BRAKING_CACHE_ENABLE=$braking_cache_enabled -DTINYMPC_VERTICAL_ACTIVE_SENSING_ENABLE=$vertical_active_sensing -DTINYMPC_YAW_SPIN_TEST_ENABLE=$yaw_spin_test -DTINYMPC_YAW_SPIN_TEST_RATE_RAD_S=${yaw_spin_rate_rad_s}f -DTINYMPC_YAW_SPIN_TEST_REVOLUTIONS=${yaw_spin_revolutions}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_SPEED_MPS=${yaw_spin_straight_speed_mps}f -DTINYMPC_YAW_SPIN_TEST_STRAIGHT_DURATION_S=${yaw_spin_straight_duration_s}f -DTINYMPC_RATE_CASCADE=$rate_cascade -DTINYMPC_PROGRESS_SAMPLE_LIMIT=$progress_sample_limit -DTINYMPC_PROGRESS_SPEED_MPS=$progress_speed_mps -DTINYMPC_PROGRESS_LAPS=$progress_laps -DTINYMPC_PROGRESS_ENTRY_ACCELERATION_MPS2=$progress_entry_acceleration_mps2 -DTINYMPC_PROGRESS_TERMINAL_DECELERATION_MPS2=$progress_terminal_deceleration_mps2 -DTINYMPC_PROGRESS_REWARD_WEIGHT=$progress_reward_weight -DTINYMPC_FLIP_ENABLE=$flip_enable -DTINYMPC_FLIP_TRIGGER_S_M=$flip_trigger_s_m -DTINYMPC_FLIP_TRIGGER_WINDOW_M=$flip_trigger_window_m -DTINYMPC_FLIP_DURATION_S=$flip_duration_s -DTINYMPC_FLIP_PITCH_DIRECTION=$flip_pitch_direction -DTINYMPC_POWER_LOOP_ENABLE=$power_loop_enable -DTINYMPC_POWER_LOOP_TRIGGER_S_M=$power_loop_trigger_s_m -DTINYMPC_POWER_LOOP_TRIGGER_WINDOW_M=$power_loop_trigger_window_m -DTINYMPC_POWER_LOOP_RADIUS_M=$power_loop_radius_m -DTINYMPC_POWER_LOOP_BOTTOM_SPEED_MPS=$power_loop_bottom_speed_mps -DTINYMPC_POWER_LOOP_TOP_SPEED_MPS=$power_loop_top_speed_mps" \
   -DTINYMPC_SITL_START_DELAY_MS="$delay_ms" \
   -DTINYMPC_SITL_TICK_US="$tick_us" \
   >"$out/configure.log" 2>&1
@@ -1943,12 +2004,12 @@ container = diagnostic["container"]
 MMAP_MAGIC = 0x544D444D
 MMAP_VERSION = 1
 HEADER_SIZE = 4096
-SLOT_SIZE = 320
-RECORD_SIZE = 296
+SLOT_SIZE = 3872
+RECORD_SIZE = 3848
 CAPACITY = 16384
-FILE_SIZE = 5246976
+FILE_SIZE = 63442944
 PAYLOAD_MAGIC = 0x544D5043
-PAYLOAD_VERSION = 2
+PAYLOAD_VERSION = 3
 FNV_OFFSET_BASIS = 2166136261
 FNV_PRIME = 16777619
 
@@ -2041,9 +2102,9 @@ if container_path.is_file():
             slot_offset = HEADER_SIZE + index * SLOT_SIZE
             commit_sequence, reservation_sequence = struct.unpack_from(
                 "<QQ", raw, slot_offset)
-            payload = raw[slot_offset + 16:slot_offset + 312]
+            payload = raw[slot_offset + 16:slot_offset + 3864]
             checksum, slot_reserved = struct.unpack_from(
-                "<II", raw, slot_offset + 312)
+                "<II", raw, slot_offset + 3864)
             expected_sequence = index + 1
             if index >= reserved_in_capacity:
                 if any(raw[slot_offset:slot_offset + SLOT_SIZE]):
@@ -2060,7 +2121,7 @@ if container_path.is_file():
             if slot_reserved != 0:
                 slot_errors.append(f"reserved={slot_reserved}")
             calculated_checksum = fnv1a32(
-                raw[slot_offset + 8:slot_offset + 312])
+                raw[slot_offset + 8:slot_offset + 3864])
             if checksum != calculated_checksum:
                 slot_errors.append(
                     f"checksum=0x{checksum:08x},expected=0x{calculated_checksum:08x}")

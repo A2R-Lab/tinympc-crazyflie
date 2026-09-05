@@ -1,0 +1,21 @@
+--- a/sitl_make/CMakeLists.txt
++++ b/sitl_make/CMakeLists.txt
+@@ -258,18 +258,12 @@
+   if(NOT EXISTS "${TINYMPC_APP_DIR}/src/controller_tinympc.cpp")
+     message(FATAL_ERROR "TINYMPC_APP_DIR does not contain controller_tinympc.cpp")
+   endif()
+-  if(NOT EXISTS "${TINYMPC_SITL_SUPPORT_DIR}/sequential_obstacle_link_sitl.c")
+-    message(FATAL_ERROR "TINYMPC_SITL_SUPPORT_DIR is invalid")
+-  endif()
+ 
+   enable_language(CXX)
+   set(TINYMPC_CORE_DIR "${TINYMPC_APP_DIR}/TinyMPC-ADMM/src/tinympc")
+   target_sources(cf2 PRIVATE
+     ${TINYMPC_APP_DIR}/src/controller_tinympc.cpp
+-    ${TINYMPC_APP_DIR}/src/tinyracer_racing.c
+     ${TINYMPC_APP_DIR}/src/tinyracer_debug.c
+-    ${TINYMPC_SITL_SUPPORT_DIR}/sequential_obstacle_link_sitl.c
+-    ${TINYMPC_SITL_SUPPORT_DIR}/tinympc_actor_state_link_sitl.c
+     ${TINYMPC_CORE_DIR}/utils.cpp
+     ${TINYMPC_CORE_DIR}/model.cpp
+     ${TINYMPC_CORE_DIR}/auxil.cpp
