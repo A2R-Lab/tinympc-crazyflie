@@ -1,2 +1,6 @@
 obj-y += controller_tinympc.o
+obj-y += espnet_collision_link.o
 obj-y += ../TinyMPC-ADMM/src/tinympc/
+
+# Speed optimization for the numerical hot path; preserve IEEE checks.
+ccflags-y += -O3

@@ -35,8 +35,13 @@ enum tiny_ErrorCode tiny_BackwardPassGrad(tiny_AdmmWorkspace* work) {
 
         /* Compute p[k] .= q[k] + AmBKt*p[k+1] - Kinf'*r[k] + coeff_d2p*d[k] */
         work->soln->p[k] = work->data->q[k];
-        (work->soln->p[k]).noalias() += (*(work->AmBKt_s)).lazyProduct(work->soln->p[k+1])
-                          - ((*(work->soln->Kinf_s)).transpose()).lazyProduct(work->data->r_tilde[k]) + (*(work->coeff_d2p_s)).lazyProduct(work->soln->d[k]);   
+        if (work->data->coeff_d2p_s_zero) {
+          (work->soln->p[k]).noalias() += (*(work->AmBKt_s)).lazyProduct(work->soln->p[k+1])
+                            - ((*(work->soln->Kinf_s)).transpose()).lazyProduct(work->data->r_tilde[k]);
+        } else {
+          (work->soln->p[k]).noalias() += (*(work->AmBKt_s)).lazyProduct(work->soln->p[k+1])
+                            - ((*(work->soln->Kinf_s)).transpose()).lazyProduct(work->data->r_tilde[k]) + (*(work->coeff_d2p_s)).lazyProduct(work->soln->d[k]);
+        }
       }
       else {
         // printf("Normal\n");
@@ -53,8 +58,13 @@ enum tiny_ErrorCode tiny_BackwardPassGrad(tiny_AdmmWorkspace* work) {
 
         /* Compute p[k] .= q[k] + AmBKt*p[k+1] - Kinf'*r[k] + coeff_d2p*d[k] */
         work->soln->p[k] = work->data->q[k];
-        (work->soln->p[k]).noalias() += (*(work->AmBKt)).lazyProduct(work->soln->p[k+1])
-                          - ((*(work->soln->Kinf)).transpose()).lazyProduct(work->data->r_tilde[k]) + (*(work->coeff_d2p)).lazyProduct(work->soln->d[k]);   
+        if (work->data->coeff_d2p_zero) {
+          (work->soln->p[k]).noalias() += (*(work->AmBKt)).lazyProduct(work->soln->p[k+1])
+                            - ((*(work->soln->Kinf)).transpose()).lazyProduct(work->data->r_tilde[k]);
+        } else {
+          (work->soln->p[k]).noalias() += (*(work->AmBKt)).lazyProduct(work->soln->p[k+1])
+                            - ((*(work->soln->Kinf)).transpose()).lazyProduct(work->data->r_tilde[k]) + (*(work->coeff_d2p)).lazyProduct(work->soln->d[k]);
+        }
         if (model[0].affine) {
           (work->soln->p[k]) += *(work->APf);
         }

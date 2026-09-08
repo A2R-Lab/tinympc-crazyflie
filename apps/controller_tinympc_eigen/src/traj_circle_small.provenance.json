@@ -1,0 +1,45 @@
+{
+  "radius_m": 0.5,
+  "altitude_m": 0.5,
+  "duration_s": 5.0,
+  "sample_rate_hz": 100,
+  "state_samples": 501,
+  "input_samples": 500,
+  "speed_mps": 0.6283185307179586,
+  "centripetal_acceleration_mps2": 0.7895683520871486,
+  "direction": "counterclockwise viewed from above",
+  "yaw_rad": 0,
+  "center_world_xy_m": [
+    0,
+    0
+  ],
+  "model_dt_s": 0.02,
+  "model_header_sha256": "46371a6315b0aed78b0b0eaa6f014a53104993fb0ab39bdb3ff0b432901598f4",
+  "legacy_hover_commands": [
+    0.7,
+    0.663,
+    0.7373,
+    0.633
+  ],
+  "continuous_dynamics_max_residual": 3.0095548706260945e-16,
+  "position_derivative_velocity_max_error": 4.0245584642661925e-16,
+  "discrete_model_reconstruction_max_error": 1.0658141036401503e-14,
+  "harmonic_system_condition_number": 9768.953268594478,
+  "model_zoh_residual_max_by_state": [
+    4.178136447238902e-11,
+    4.178136620711186e-11,
+    5.548319953341228e-23,
+    1.0647443389744084e-07,
+    1.0647443387054996e-07,
+    4.874789488476057e-23,
+    1.0445251925900513e-08,
+    1.0445252036923003e-08,
+    5.6051788359818694e-21,
+    3.194249845783333e-05,
+    3.1942498457847446e-05,
+    8.741339081882897e-21
+  ],
+  "max_abs_motor_thrust_delta_n": 3.044536037927952e-05,
+  "reference_model": "linearized hover, fixed world yaw",
+  "endpoint": "duplicate periodic start; nonzero velocity; no entry or stop ramp"
+}

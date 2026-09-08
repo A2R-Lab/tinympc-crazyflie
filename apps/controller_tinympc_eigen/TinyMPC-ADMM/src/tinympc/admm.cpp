@@ -3,6 +3,7 @@
 #include "admm.h"
 #include "rho_benchmark.h"
 #include "types.h"
+#include "position_projection.h"
 
 # ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,11 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
     PrintHeader();
   }
 
+  // Warm-start slacks and duals must enter the first primal solve too.
+  if (work->data->q_base && work->data->terminal_base)
+    tiny_UpdateLinearCost(work);
+  tiny_UpdateConstrainedLinearCost(work);
+
   // Main ADMM algorithm
   for (iter = 1; iter <= work->stgs->max_iter; iter++) {
     /* ADMM STEPS */
@@ -72,7 +78,7 @@ enum tiny_ErrorCode tiny_SolveAdmm(tiny_AdmmWorkspace* work) {
     tiny_UpdateConstrainedLinearCost(work);
 
      // Update rho every 5 iterations
-    if (iter > 1 && iter % 5 == 0) {
+    if (!work->stgs->en_cstr_states && iter > 1 && iter % 5 == 0) {
       RhoBenchmarkResult rho_result;
       
       // Use existing residuals from work->info
@@ -140,6 +146,7 @@ enum tiny_ErrorCode UpdatePrimal(tiny_AdmmWorkspace* work) {
 
 enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
   int N = work->data->model[0].nhorizon;
+  work->data->xy_hs_projection_failed = 0;
 
   if (work->stgs->en_cstr_inputs) {
     for (int k = 0; k < N - 1; ++k) {
@@ -152,13 +159,27 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
   
   // State constraints (including obstacle avoidance)
   if (work->stgs->en_cstr_states) {
-    for (int k = 0; k < N; ++k) {
+    // x0 is a measured equality, not a decision that can satisfy a box.
+    work->ZX_new[0] = work->soln->X[0];
+    work->soln->YX[0].setZero();
+    for (int k = 1; k < N; ++k) {
       // ADMM update: y = y + x
       work->soln->YX[k] = work->soln->YX[k] + work->soln->X[k];
       
       // Half-space projection for obstacle avoidance (position only)
       // Match eigen_task: full projection without clamping
-      if (work->data->en_hs[k]) {
+      work->ZX_new[k] = work->soln->YX[k].cwiseMin(*(work->data->ucx)).cwiseMax(*(work->data->lcx));
+      if (work->data->count_xy_hs[k]) {
+        Eigen::Vector2f projected;
+        Eigen::Vector2f metric=Eigen::Vector2f::Ones();
+        if(work->data->state_constraint_weights)
+          metric=work->data->state_constraint_weights->head<2>();
+        if(tiny_ProjectXY(work->soln->YX[k].head<2>(),
+            work->data->a_xy_hs[k],work->data->b_xy_hs[k],work->data->count_xy_hs[k],
+            work->data->lcx->head<2>(),work->data->ucx->head<2>(),metric,projected))
+          work->ZX_new[k].head<2>()=projected;
+        else work->data->xy_hs_projection_failed=1;
+      } else if (work->data->en_hs[k]) {
         Eigen::Vector3f y_pos = work->soln->YX[k].head(3);
         Eigen::Vector3f a = work->data->a_hs[k];
         float b = work->data->b_hs[k];
@@ -167,10 +188,7 @@ enum tiny_ErrorCode UpdateSlackDual(tiny_AdmmWorkspace* work) {
         if (dist > 0) {
           // Project fully onto half-space: z = y - dist * a (since ||a|| = 1)
           Eigen::Vector3f z_pos = y_pos - dist * a;
-          work->ZX_new[k] = work->soln->YX[k];
           work->ZX_new[k].head(3) = z_pos;
-        } else {
-          work->ZX_new[k] = work->soln->YX[k];
         }
       } else {
         // Box constraint fallback (original behavior)
@@ -193,7 +211,7 @@ enum tiny_ErrorCode ComputePrimalResidual(tiny_AdmmWorkspace* work) {
     }
   }
   if (work->stgs->en_cstr_states) {
-    for (int k = 0; k < N; ++k) {    
+    for (int k = 1; k < N; ++k) {
       work->info->pri_res = T_MAX(work->info->pri_res, (work->soln->X[k] - work->ZX_new[k]).cwiseAbs().maxCoeff());
     }
   }
@@ -210,9 +228,11 @@ enum tiny_ErrorCode ComputeDualResidual(tiny_AdmmWorkspace* work) {
     }
   }
   if (work->stgs->en_cstr_states) {
-    for (int k = 0; k < N; ++k) {
-      work->info->dua_res = T_MAX(work->info->dua_res, 
-                          (work->ZX_new[k] - work->ZX[k]).cwiseAbs().maxCoeff());
+    for (int k = 1; k < N; ++k) {
+      Eigen::VectorNf difference = work->ZX_new[k] - work->ZX[k];
+      if (work->data->state_constraint_weights)
+        difference = work->data->state_constraint_weights->cwiseProduct(difference).eval();
+      work->info->dua_res = T_MAX(work->info->dua_res, difference.cwiseAbs().maxCoeff());
     }
     }
   work->info->dua_res = work->info->dua_res * work->rho;

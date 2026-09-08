@@ -6,3 +6,7 @@ obj-y += lqr.o
 obj-y += constraint_linear.o
 obj-y += admm.o
 obj-y += rho_benchmark.o
+
+
+
+ccflags-y += -O3

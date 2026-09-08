@@ -127,9 +127,17 @@ typedef struct {
   tiny_Model* model_s;   ///< Stretched model
   Eigen::VectorNf* x0;
 
+  Eigen::VectorNf* state_constraint_weights; ///< Optional diagonal ADMM state metric; null means identity
   Eigen::MatrixNf* Q;
   Eigen::MatrixMf* R;
   Eigen::VectorNf* q;
+  // Optional preallocated baseline buffers, refreshed once per ADMM solve.
+  // Both must be supplied together; q_base has horizon - 1 entries.
+  Eigen::VectorNf* q_base;
+  Eigen::VectorNf* terminal_base;
+  // Explicit generated-cache invariants; default false keeps generic products.
+  bool coeff_d2p_zero;
+  bool coeff_d2p_s_zero;
   Eigen::VectorMf* r;
   Eigen::VectorMf* r_tilde;
   
@@ -147,6 +155,12 @@ typedef struct {
   Eigen::Vector3f a_hs[TINY_MAX_HORIZON_KNOTS];
   float b_hs[TINY_MAX_HORIZON_KNOTS];
   int en_hs[TINY_MAX_HORIZON_KNOTS];
+  // Up to two vertical planes in the current local XY chart. Takes precedence
+  // over the legacy plane above. Caller rebuilds these at every frame recenter.
+  Eigen::Vector2f a_xy_hs[TINY_MAX_HORIZON_KNOTS][2];
+  float b_xy_hs[TINY_MAX_HORIZON_KNOTS][2];
+  int count_xy_hs[TINY_MAX_HORIZON_KNOTS];
+  int xy_hs_projection_failed; // Reset on each projection update; infeasible input.
   
   int data_size;
 } tiny_AdmmData;
