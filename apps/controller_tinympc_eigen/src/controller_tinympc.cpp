@@ -54,6 +54,7 @@ extern "C" {
 #if TINYMPC_ESPNET_STRAIGHT_TEST
 #include "espnet_collision_link.h"
 #include "tinympc_depthgate_planes.h"
+#include "tinympc_depthgate_timing.h"
 #include "tinympc_espnet_straight.h"
 #include "tinympc_vision_stop.h"
 #include "tinympc_vision_brake.h"
@@ -448,7 +449,8 @@ static uint32_t gate_print_tick;
 
 // Explicit opt-in: old ESPNet flight behavior remains selected until enabled.
 static uint8_t dg_enable, dg_fresh, dg_count, dg_mode, dg_fault;
-static float dg_speed = .5f, dg_clearance = .5f;
+static float dg_speed = .1f, dg_clearance = .5f;
+static TinyDepthGateHistory dg_pose_history = {};
 // Symmetric center rays from calibrated HM01B0 fx=89.15584 at width160.
 static float dg_ray_slope = .598203f, dg_activation = 2.f;
 static uint32_t dg_age_ms = UINT32_MAX, dg_sample, dg_tick;
@@ -500,32 +502,39 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const Eigen::Vector3f vel(state.velocity.x,state.velocity.y,state.velocity.z);
   if(!dg_tick) {
     dg_hold=pos; dg_have_planes=false; dg_count=dg_mode=0;
+    dg_pose_history = {};
     dg_command_speed=dg_elapsed=0; dg_was_moving=false;
     if(esp_test_run) dg_fault=7; // Require RUN release after mode changes.
   }
   const float dt = dg_tick ? fminf((tick-dg_tick)*portTICK_PERIOD_MS*.001f,.1f) : DT;
   dg_tick=tick;
+  tinyDepthGateRecord(&dg_pose_history, {tick*portTICK_PERIOD_MS,
+      pos.x(),pos.y(),active_local_frame.yaw_world});
   DepthGateObservation obs={};
   const bool received=depthGateLinkGetLatest(&obs);
   dg_age_ms=received ? obs.received_age_ms : UINT32_MAX;
-  dg_fresh=received && obs.valid && obs.received_age_ms<=200 &&
-      obs.inference_us>0 && obs.inference_us<=150000;
-  const bool config_ok=std::isfinite(dg_speed) && dg_speed>=0 && dg_speed<=.5f;
+  dg_fresh=received && tinyDepthGateFresh(obs.valid,obs.received_age_ms,obs.inference_us);
+  const float padding=DG_MAX_SPEED*(DG_MAX_RECEIVE_AGE_MS*.001f+.05f);
+  const bool config_ok=std::isfinite(dg_speed) && dg_speed>=0 && dg_speed<=DG_MAX_SPEED &&
+      std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance+padding<=2.f &&
+      std::isfinite(dg_ray_slope) && dg_ray_slope>=.05f && dg_ray_slope<=2.f &&
+      std::isfinite(dg_activation) && dg_activation>dg_clearance+padding && dg_activation<=6.f;
   if (!esp_test_run) { dg_fault=0; dg_elapsed=0; }
   if (dg_fresh && (!dg_have_planes || obs.sample!=dg_sample)) {
-    // Infer pose at camera capture from current velocity and minimum latency.
-    // Add one inference interval of translation padding for queued camera frames.
-    const float delay=obs.received_age_ms*.001f+obs.inference_us*1e-6f+.007f;
-    const float padding=vel.head<2>().norm()*(obs.inference_us*1e-6f+.02f);
+    // Anchor each plane to measured capture pose. Camera capture and inference
+    // are synchronous; allow travel before the following result arrives.
+    TinyDepthGatePose capture_pose = {};
+    const bool have_pose=tinyDepthGateCapturePose(&dg_pose_history,
+        tick*portTICK_PERIOD_MS,obs.received_age_ms,obs.inference_us,&capture_pose);
     const TinyDepthGatePlanes planes=tinyDepthGatePlanes(obs.inverse_depth,
         dg_ray_slope,dg_clearance+padding,dg_activation,6.f,dg_mode);
-    if (!planes.valid || !pos.allFinite() || !vel.allFinite()) dg_fresh=0;
+    if (!have_pose || !planes.valid || !pos.allFinite() || !vel.allFinite()) dg_fresh=0;
     else {
       dg_sample=obs.sample; dg_sequence=obs.sequence; dg_have_planes=true;
       dg_count=planes.count; dg_mode=planes.mode;
-      const float yaw=active_local_frame.yaw_world-x0(11)*delay;
+      const float yaw=capture_pose.yaw;
       const float cy=cosf(yaw),sy=sinf(yaw);
-      const Eigen::Vector2f capture=pos.head<2>()-vel.head<2>()*delay;
+      const Eigen::Vector2f capture(capture_pose.x,capture_pose.y);
       for(int i=0;i<3;++i) dg_depth[i]=planes.depth[i];
       for(unsigned i=0;i<planes.count;++i) {
         dg_world_n[i]=Eigen::Vector2f(cy*planes.nx[i]-sy*planes.ny[i],
@@ -538,7 +547,7 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   if (esp_test_run && (!dg_fresh || !config_ok)) dg_fault=1;
   if (esp_test_run && (fabsf(state.attitude.roll)>15.f ||
                       fabsf(state.attitude.pitch)>15.f)) dg_fault=2;
-  if (esp_test_run && (!vel.allFinite() || vel.head<2>().norm()>.7f)) dg_fault=8;
+  if (esp_test_run && (!pos.allFinite() || !vel.allFinite() || vel.head<2>().norm()>DG_MAX_SPEED)) dg_fault=8;
   for(int k=0;k<NHORIZON;++k) {
     data.count_xy_hs[k]=(k>0 && dg_have_planes)?dg_count:0;
     for(unsigned i=0;i<dg_count;++i) {

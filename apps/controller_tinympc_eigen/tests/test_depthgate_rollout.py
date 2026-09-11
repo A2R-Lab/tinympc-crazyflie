@@ -27,7 +27,8 @@ t+=r'''int main(int argc,char**argv){
  }
  Vector2f refs[NHORIZON];
  for(int k=0;k<NHORIZON;k++) {
-   Vector2f target(.5f*(k*DT),0);
+   const float targetSpeed=std::getenv("DG_TARGET_SPEED")?atof(std::getenv("DG_TARGET_SPEED")):.5f;
+   Vector2f target(targetSpeed*(k*DT),0);
    if(!tiny_ProjectXY(target,data.a_xy_hs[k],data.b_xy_hs[k],data.count_xy_hs[k],
        Vector2f(-100,-100),Vector2f(100,100),Vector2f(1,1),refs[k]))std::abort();
  }
@@ -103,7 +104,7 @@ if os.environ.get('DG_RAMP_LOOP'):
  at=t.rfind('}');t=t[:at]+loop+t[at:]
 (out/'test.cpp').write_text(t)
 solver=app/'TinyMPC-ADMM/src/tinympc'
-c=['clang++','-std=c++17','-O2','-Wno-deprecated-declarations','-DEIGEN_INITIALIZE_MATRICES_BY_ZERO','-DEIGEN_NO_MALLOC','-I'+str(app/'src'),'-I'+str(app/'TinyMPC-ADMM/ext/Eigen'),'-I'+str(app/'TinyMPC-ADMM/src'),str(out/'test.cpp')]+[str(solver/(n+'.cpp')) for n in ['utils','model','auxil','cost_lqr','lqr','constraint_linear','admm','rho_benchmark']]+['-o',str(out/'test')]
+c=[os.environ.get('CXX','clang++'),'-std=c++17','-O2','-Wno-deprecated-declarations','-DEIGEN_INITIALIZE_MATRICES_BY_ZERO','-DEIGEN_NO_MALLOC','-I'+str(app/'src'),'-I'+str(app/'TinyMPC-ADMM/ext/Eigen'),'-I'+str(app/'TinyMPC-ADMM/src'),str(out/'test.cpp')]+[str(solver/(n+'.cpp')) for n in ['utils','model','auxil','cost_lqr','lqr','constraint_linear','admm','rho_benchmark']]+['-o',str(out/'test')]
 subprocess.run(c,check=True)
 for iterations in map(int,os.environ.get('DG_ITERS','5').split(',')):
  for bound in (.1,.3):

@@ -31,6 +31,15 @@ therefore remain telemetry/input data until a calibrated model contract is
 selected. Packets with the `DANGER_RAW_U8` flag contain an 8-bit danger value
 in the first two nibbles and do not contain inverse range.
 
+### Recovered DDND obstacle avoidance
+
+The recovered two-head DDND model is in the separate
+[NanoCockpit repository](https://github.com/cookacola/tinympc-nanocockpit/tree/f253e39219b4528c185b5f802acac4a8bc41943c/src/gap/examples/ddnd).
+Use its compact DepthGate build at 115200 baud and the opt-in `dgAvoid` mode.
+See [DEPTHGATE_AVOIDANCE.md](DEPTHGATE_AVOIDANCE.md) for the half-space geometry,
+1.45-second inference handling, low-speed limits and validation status.
+The local `tinympc-nanocockpit/` folder is a separate Git checkout.
+
 ## Generate TinyMPC firmware parameters
 
 The controller consumes a fixed-size specialization generated from the current

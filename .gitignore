@@ -3,3 +3,7 @@ build/
 *.tmp
 *.o
 *:Zone.Identifier
+
+__pycache__/
+# Separate NanoCockpit repository, committed and pushed independently.
+/tinympc-nanocockpit/
