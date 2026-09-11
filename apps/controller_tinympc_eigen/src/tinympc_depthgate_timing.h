@@ -11,7 +11,7 @@
 #define DG_MAX_INFERENCE_US 2000000u
 #define DG_MAX_RECEIVE_AGE_MS 1800u
 #define DG_UART_MS 7u /* 80 bytes, 8N1 at 115200 baud, rounded up */
-#define DG_MAX_SPEED .2f
+#define DG_MAX_SPEED 2.f
 typedef struct { uint32_t ms; float x, y, yaw; } TinyDepthGatePose;
 typedef struct {
   TinyDepthGatePose poses[DG_POSE_CAPACITY];

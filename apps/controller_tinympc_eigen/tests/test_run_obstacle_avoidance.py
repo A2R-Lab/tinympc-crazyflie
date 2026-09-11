@@ -53,6 +53,20 @@ class Rig:
         return state
 
 class Lifecycle(unittest.TestCase):
+    def test_speed_endpoints_and_zero_hold(self):
+        self.assertEqual(m.parse_args(['--speed','2']).speed,2)
+        args=m.parse_args(['--fly','--speed','0','--timeout','2'])
+        rig=Rig();original=rig.snapshot
+        def snapshot():
+            state=original()
+            state.update({'stateEstimate.x':0.,'dgAvoid.travel':0.,'dgAvoid.fault':0})
+            return state
+        rig.snapshot=snapshot;result={'completed':False}
+        m.fly(rig.cf,rig,args,result,rig.clock)
+        self.assertTrue(result['completed'])
+        self.assertEqual(result['stop_reason'],'hold duration')
+        self.assertEqual(rig.values['dgAvoid.speed'],'0.0')
+
     def run_rig(self,failure=None):
         rig=Rig(failure); result={'completed':False};args=m.parse_args(['--fly','--speed','.12','--distance','.4'])
         if failure in ('fault','stale','startup','interrupt'):
@@ -70,7 +84,7 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(calls[names.index('land')][1][0],.17)
         self.assertEqual([c[1] for c in calls if c[0]=='arm'],[(True,),(False,)])
         release=names.index('release');self.assertFalse(any(c[0]=='position' for c in calls[release:]))
-        stopped=next(c for c in calls if c[0]=='event' and c[1][0].startswith('DISTANCE'))
+        stopped=next(c for c in calls if c[0]=='event' and c[1][0].startswith('STOP: distance'))
         self.assertGreaterEqual(calls[names.index('land')][2]-stopped[2],.5)
     def test_startup_failure_never_arms(self):
         rig,result=self.run_rig('startup');self.assertFalse(result['completed'])

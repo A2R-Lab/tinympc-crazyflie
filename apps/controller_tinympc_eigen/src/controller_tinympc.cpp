@@ -520,11 +520,12 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const bool received=depthGateLinkGetLatest(&obs);
   dg_age_ms=received ? obs.received_age_ms : UINT32_MAX;
   dg_fresh=received && tinyDepthGateFresh(obs.valid,obs.received_age_ms,obs.inference_us);
-  const float padding=DG_MAX_SPEED*(DG_MAX_RECEIVE_AGE_MS*.001f+.05f);
+  // Keep the original low-speed margin; scale it for faster requested runs.
+  const float padding=fmaxf(.2f,dg_speed)*(DG_MAX_RECEIVE_AGE_MS*.001f+.05f);
   const bool config_ok=std::isfinite(dg_speed) && dg_speed>=0 && dg_speed<=DG_MAX_SPEED &&
-      std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance+padding<=2.f &&
+      std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance<=2.f && dg_clearance+padding<6.f &&
       std::isfinite(dg_ray_slope) && dg_ray_slope>=.05f && dg_ray_slope<=2.f &&
-      std::isfinite(dg_activation) && dg_activation>dg_clearance+padding && dg_activation<=6.f &&
+      std::isfinite(dg_activation) && dg_activation>dg_clearance && dg_activation<=6.f &&
       tinyDepthGateRunConfig(dg_distance,dg_timeout);
   if (!esp_test_run) dg_fault=0;
   const uint8_t run_reason=tinyDepthGateRunUpdate(&dg_run,esp_test_run,
@@ -537,7 +538,7 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
     const bool have_pose=tinyDepthGateCapturePose(&dg_pose_history,
         tick*portTICK_PERIOD_MS,obs.received_age_ms,obs.inference_us,&capture_pose);
     const TinyDepthGatePlanes planes=tinyDepthGatePlanes(obs.inverse_depth,
-        dg_ray_slope,dg_clearance+padding,dg_activation,6.f,dg_mode);
+        dg_ray_slope,dg_clearance+padding,fmaxf(dg_activation,dg_clearance+padding+.1f),6.f,dg_mode);
     if (!have_pose || !planes.valid || !pos.allFinite() || !vel.allFinite()) dg_fresh=0;
     else {
       dg_sample=obs.sample; dg_sequence=obs.sequence; dg_have_planes=true;

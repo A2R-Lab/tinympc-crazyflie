@@ -38,7 +38,7 @@ frame. Capture pose is interpolated from a 96-entry STM32 pose history sampled e
 50ms, using local arrival age plus reported inference and 7ms UART time.
 Yaw interpolation follows the short arc across wrap. Missing history or a
 control gap rejects the observation. The GAP8 camera is synchronous, with no
-queued next frame. A further 0.37m margin covers 0.2m/s travel over the receive
+queued next frame. A further speed-dependent margin (at least 0.37m) covers requested-speed travel over the receive
 budget plus 50ms. Geometry assumes static obstacles and approximately level
 flight. Nearest pixels can include the floor, and a sector center is not their
 true bearing; this remains an approximation, not a monocular safety bound.
@@ -50,7 +50,7 @@ Set it before controller handoff with `espTest.run=0`. Changing modes while RUN
 is asserted requires releasing RUN. Controller selection remains the existing
 OOT handoff procedure; no automatic arming is added.
 
-`dgAvoid.speed=0.1` m/s (accepted range0..0.2), `clearance=0.5` m,
+`dgAvoid.speed=0.1` m/s (accepted range0..2), `clearance=0.5` m,
 `raySlope=0.598203`, `range=2.0` m. `espTest.run=1` requests forward motion
 along the handoff heading at the handoff altitude; speed ramps at0.5m/s².
 Reference positions are projected onto the same plane intersection, and
@@ -72,7 +72,7 @@ is rejected each cycle. Other hold faults:
 2=roll/pitch exceeds15degrees, 3=current pose violates clearance,
 4=configured time limit, 5=reference projection failed, 6=solver projection failure,
 nonfinite rollout or >5cm predicted violation, 7=mode change with RUN asserted,
-8=horizontal measured speed exceeds0.2m/s or position/velocity is nonfinite,
+8=horizontal measured speed exceeds2m/s or position/velocity is nonfinite,
 9=requested forward distance reached. The first stop reason remains latched.
 For fault6 hold is latched for the next100Hz update; there is no second solve
 in the same cycle. User explicitly chose five iterations and accepts some violation.

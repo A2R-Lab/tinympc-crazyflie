@@ -17,7 +17,7 @@ static inline TinyDepthGatePlanes tinyDepthGatePlanes(
     float activation, float max_depth, unsigned previous_mode) {
   TinyDepthGatePlanes out = {0};
   if (!inverse || !isfinite(slope) || slope < .05f || slope > 2.f ||
-      !isfinite(clearance) || clearance < 0.f || clearance > 2.f ||
+      !isfinite(clearance) || clearance < 0.f || clearance >= 6.f ||
       !isfinite(activation) || activation <= clearance ||
       !isfinite(max_depth) || max_depth < activation) return out;
   for (int i=0;i<3;++i) {

@@ -35,7 +35,7 @@ def parse_args(argv=None):
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--fly',action='store_true',help='Take off, run the test, hold, and land')
     mode.add_argument('--record',action='store_true',help='Record telemetry only; send no flight/parameter commands')
-    p.add_argument('--speed',type=float,default=.1,help='Forward target speed, 0 < speed <= 0.2 m/s')
+    p.add_argument('--speed',type=float,default=.1,help='Forward target speed, 0 <= speed <= 2 m/s; zero holds for timeout')
     p.add_argument('--distance',type=float,default=.5,help='Forward displacement at which to stop, meters')
     p.add_argument('--height',type=float,default=.5,help='Takeoff climb above current Z (default .5 m)')
     p.add_argument('--timeout',type=float,help='Mission limit, default distance/speed + 10 seconds, max 120')
@@ -43,14 +43,16 @@ def parse_args(argv=None):
     p.add_argument('--uri',default='radio://0/80/2M/E7E7E7E7E7')
     p.add_argument('--output',type=Path,default=Path('obstacle-recordings')/time.strftime('%Y%m%d-%H%M%S'))
     a = p.parse_args(argv)
-    for key,lo,hi in [('speed',0,.2),('distance',0,20),('height',0,1),('seconds',0,600)]:
+    for key,lo,hi in [('distance',0,20),('height',0,1),('seconds',0,600)]:
         if not math.isfinite(getattr(a,key)) or not lo < getattr(a,key) <= hi:
             p.error(f'--{key} must be finite and in ({lo}, {hi}]')
+    if not math.isfinite(a.speed) or not 0 <= a.speed <= 2:
+        p.error('--speed must be finite and in [0, 2]')
     if a.height < .2: p.error('--height must be at least 0.2 m')
-    if a.timeout is None: a.timeout = a.distance/a.speed+10
+    if a.timeout is None: a.timeout = a.distance/a.speed+10 if a.speed > 0 else 10
     if not math.isfinite(a.timeout) or not 1 <= a.timeout <= 120:
         p.error('--timeout (including its default) must be 1–120 seconds; shorten distance or specify a timeout')
-    if a.timeout <= a.distance/a.speed:
+    if a.speed > 0 and a.timeout <= a.distance/a.speed:
         p.error('--timeout must exceed distance/speed to allow acceleration and avoidance')
     return a
 
@@ -208,13 +210,15 @@ def fly(cf, log, a, result, clock=time):
             travel = forward_distance(state,origin,heading)
             result.update(forward_distance_m=travel,firmware_travel_m=state['dgAvoid.travel'])
             fault = int(state['dgAvoid.fault'])
+            if a.speed == 0 and fault in (0,4) and (fault == 4 or clock.monotonic()-start >= a.timeout-.1):
+                result['stop_reason']='hold duration'; break
             if fault and fault!=9: raise RuntimeError('Firmware stopped: '+FAULTS.get(fault,str(fault)))
             if fault==9 or travel>=a.distance:
                 result['stop_reason']='distance'; break
             if clock.monotonic()-start>a.timeout+1: raise RuntimeError('Host mission timeout')
             clock.sleep(.02)
         set_parameter(cf,'espTest.run',0,clock)
-        log.event('DISTANCE REACHED: TinyMPC hold')
+        log.event(f"STOP: {result['stop_reason']}; TinyMPC hold")
         stable = None
         def stopped(s):
             nonlocal stable

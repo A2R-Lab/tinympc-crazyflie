@@ -31,10 +31,11 @@ From the repository root:
 ```
 
 `--uri` selects the radio (default `radio://0/80/2M/E7E7E7E7E7`). Speed must be
-positive and no more than 0.2 m/s; default 0.1 m/s reflects the approximately
+between 0 and 2 m/s inclusive; default 0.1 m/s reflects the approximately
 1.45-second DDND inference. Distance defaults to 0.5 m. `--timeout` defaults to
 `distance/speed + 10` seconds and must be no more than 120 seconds and greater
-than `distance/speed`. The allowance accommodates acceleration and avoidance;
+than `distance/speed`. With speed 0, the drone holds for `--timeout` (default 10 seconds), then lands;
+the distance target is not used. The allowance accommodates acceleration and avoidance;
 it does not guarantee reaching an obstructed target. `--height` is climb above
 current estimated Z, default 0.5 m. Output directories must be new.
 
@@ -101,3 +102,7 @@ inputs and latched completion. The updated CF21BL build passed (354,312 bytes fl
 ```sh
 .venv/bin/python -m unittest discover -s apps/controller_tinympc_eigen/tests -p 'test_*obstacle_avoidance.py'
 ```
+
+The delay margin scales with requested speed (minimum 0.2 m/s allowance). At
+2 m/s it adds 3.7 m to clearance, so nearby obstacles can prevent forward motion.
+The range is accepted by the software; 2 m/s avoidance has not been flight validated.
