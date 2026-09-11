@@ -13,6 +13,24 @@ make
 
 The generated firmware artifacts are written to `build/`.
 
+### GAP8 dense perception maps
+
+The UART vision receiver accepts NanoCockpit perception-map wire version 2 in
+addition to the legacy ESPNet, gate, and DepthGate packets. The map header is
+`90 19 08 37`; each CRC-protected 222-byte sample carries a `10x10` grid with
+four packed 4-bit channels per cell: collision, inverse range, uncertainty,
+and gate opening. Firmware consumers can obtain a coherent snapshot with
+`perceptionMapLinkGetLatest()` and decode cells with `perceptionMapValue()`.
+The `pmap` log group exposes reception, age, version, shape, flag, CRC, and
+validation telemetry.
+
+The receiver intentionally preserves the model-native quantized values. It
+does not interpret inverse-range nibbles as metres: the NanoCockpit v2 packet
+does not carry the model's scale, offset, or physical calibration. Dense maps
+therefore remain telemetry/input data until a calibrated model contract is
+selected. Packets with the `DANGER_RAW_U8` flag contain an 8-bit danger value
+in the first two nibbles and do not contain inverse range.
+
 ## Generate TinyMPC firmware parameters
 
 The controller consumes a fixed-size specialization generated from the current

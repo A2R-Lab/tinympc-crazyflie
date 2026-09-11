@@ -11,14 +11,20 @@
 
 #define ESPN_PACKET_SIZE 22u
 #define ESPN_GATE_PACKET_SIZE 52u
+#define PERCEPTION_MAP_PACKET_SIZE 222u
 #define ESPN_UART_BAUD 115200
 static const uint8_t header[4] = {0x90, 0x19, 0x08, 0x43};
 static const uint8_t gate_header[4] = {0x90, 0x19, 0x08, 0x47};
+static const uint8_t perception_map_header[4] = {0x90, 0x19, 0x08, 0x37};
 static EspnetCollisionObservation latest;
 static EspnetGateObservation gate_latest;
 static uint32_t gate_received_tick, gate_crc_errors, gate_invalid_packets;
 static uint32_t received_tick, crc_errors, invalid_packets;
 static bool initialized;
+
+static PerceptionMapObservation perception_map_latest;
+static uint32_t perception_map_received_tick;
+static uint32_t perception_map_crc_errors, perception_map_invalid_packets;
 
 static DepthGatePayload latest_depthgate;
 static uint32_t dg_rx_ok, dg_crc_errors, dg_invalid, dg_stale, dg_short;
@@ -77,6 +83,83 @@ static uint32_t readLe32(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
       ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
+
+uint8_t perceptionMapValue(const PerceptionMapObservation *observation,
+                           unsigned x, unsigned y,
+                           PerceptionMapChannel channel) {
+  if (observation == NULL || x >= PERCEPTION_MAP_WIDTH ||
+      y >= PERCEPTION_MAP_HEIGHT || channel > PERCEPTION_MAP_GATE_OPENING) {
+    return 0u;
+  }
+  const unsigned nibble =
+      4u * (y * PERCEPTION_MAP_WIDTH + x) + (unsigned)channel;
+  const uint8_t packed = observation->packed_u4[nibble >> 1];
+  return (nibble & 1u) ? (packed >> 4) : (packed & 0x0fu);
+}
+
+static bool acceptPerceptionMapPacket(
+    const uint8_t packet[PERCEPTION_MAP_PACKET_SIZE]) {
+  if (memcmp(packet, perception_map_header, sizeof(perception_map_header)) != 0) {
+    return false;
+  }
+  if (crc32CalculateBuffer(packet, PERCEPTION_MAP_PACKET_SIZE - 4u) !=
+      readLe32(packet + PERCEPTION_MAP_PACKET_SIZE - 4u)) {
+    ++perception_map_crc_errors;
+    return false;
+  }
+  const uint16_t sequence = readLe16(packet + 12);
+  const uint8_t version = packet[14];
+  const uint8_t width = packet[15];
+  const uint8_t height = packet[16];
+  const uint8_t flags = packet[17];
+  if (sequence == 0u || version != PERCEPTION_MAP_WIRE_VERSION ||
+      width != PERCEPTION_MAP_WIDTH || height != PERCEPTION_MAP_HEIGHT ||
+      (flags & ~PERCEPTION_MAP_FLAG_DANGER_RAW_U8) != 0u) {
+    ++perception_map_invalid_packets;
+    return false;
+  }
+  taskENTER_CRITICAL();
+  if (sequence == perception_map_latest.sequence) {
+    taskEXIT_CRITICAL();
+    return false;
+  }
+  memcpy(perception_map_latest.packed_u4, packet + 18,
+         sizeof(perception_map_latest.packed_u4));
+  perception_map_latest.gap8_timestamp_us = readLe32(packet + 4);
+  perception_map_latest.stm32_timestamp_echo = readLe32(packet + 8);
+  perception_map_latest.sequence = sequence;
+  perception_map_latest.version = version;
+  perception_map_latest.width = width;
+  perception_map_latest.height = height;
+  perception_map_latest.flags = flags;
+  ++perception_map_latest.sample;
+  perception_map_received_tick = xTaskGetTickCount();
+  taskEXIT_CRITICAL();
+  return true;
+}
+
+bool perceptionMapLinkGetLatest(PerceptionMapObservation *observation) {
+  if (observation == NULL) return false;
+  taskENTER_CRITICAL();
+  *observation = perception_map_latest;
+  const bool received = perception_map_latest.sequence != 0u;
+  observation->received_age_ms = received
+      ? (xTaskGetTickCount() - perception_map_received_tick) * portTICK_PERIOD_MS
+      : UINT32_MAX;
+  taskEXIT_CRITICAL();
+  return received;
+}
+
+static uint32_t logPerceptionMapAge(uint32_t timestamp, void *data) {
+  (void)timestamp;
+  (void)data;
+  PerceptionMapObservation observation;
+  perceptionMapLinkGetLatest(&observation);
+  return observation.received_age_ms;
+}
+static logByFunction_t perception_map_age_log = {
+  .acquireUInt32 = logPerceptionMapAge, .data = NULL
+};
 
 /* Header + 14-byte payload + CRC32(header,payload), little endian.
  * Payload: source_ms:u32, sequence:u16, probabilities[3]:u16, valid:u8,
@@ -215,7 +298,7 @@ static void acceptDepthGateBytes(const uint8_t *bytes) {
 
 static void collisionRxTask(void *unused) {
   (void)unused;
-  uint8_t window[sizeof(DepthGatePacket)];
+  uint8_t window[PERCEPTION_MAP_PACKET_SIZE];
   unsigned count = 0;
   systemWaitStart();
   for (;;) {
@@ -234,7 +317,9 @@ static void collisionRxTask(void *unused) {
     window[count++] = byte;
     if (count >= ESPN_PACKET_SIZE) acceptPacket(window + count - ESPN_PACKET_SIZE);
     if (count >= ESPN_GATE_PACKET_SIZE) acceptGatePacket(window + count - ESPN_GATE_PACKET_SIZE);
-    if (count == sizeof(DepthGatePacket)) acceptDepthGateBytes(window);
+    if (count >= sizeof(DepthGatePacket))
+      acceptDepthGateBytes(window + count - sizeof(DepthGatePacket));
+    if (count == PERCEPTION_MAP_PACKET_SIZE) acceptPerceptionMapPacket(window);
   }
 }
 
@@ -286,6 +371,18 @@ LOG_ADD(LOG_FLOAT, rbX, &gate_latest.corner_x[3])
 LOG_ADD(LOG_FLOAT, rbY, &gate_latest.corner_y[3])
 LOG_ADD(LOG_FLOAT, rbConf, &gate_latest.corner_confidence[3])
 LOG_GROUP_STOP(gate)
+
+LOG_GROUP_START(pmap)
+LOG_ADD(LOG_UINT16, seq, &perception_map_latest.sequence)
+LOG_ADD(LOG_UINT8, version, &perception_map_latest.version)
+LOG_ADD(LOG_UINT8, width, &perception_map_latest.width)
+LOG_ADD(LOG_UINT8, height, &perception_map_latest.height)
+LOG_ADD(LOG_UINT8, flags, &perception_map_latest.flags)
+LOG_ADD(LOG_UINT32, rxOk, &perception_map_latest.sample)
+LOG_ADD(LOG_UINT32, crcErr, &perception_map_crc_errors)
+LOG_ADD(LOG_UINT32, invalid, &perception_map_invalid_packets)
+LOG_ADD_BY_FUNCTION(LOG_UINT32, ageMs, &perception_map_age_log)
+LOG_GROUP_STOP(pmap)
 
 /* Host logger includes sequence in each block to expose sample boundaries. */
 LOG_GROUP_START(dg)

@@ -70,6 +70,7 @@ static void *writer(void *unused) {
 }
 int main(void) {
   (void)initialized; (void)age_log; (void)gate_age_log; (void)dg_age_log;
+  (void)perception_map_age_log;
   assert(crc32CalculateBuffer("123456789", 9) == 0xcbf43926u);
   EspnetCollisionObservation out;
   assert(!espnetCollisionLinkGetLatest(NULL));
@@ -169,6 +170,35 @@ int main(void) {
   put16(g + 8, 1); put32(g + 48, crc32CalculateBuffer(g, 48));
   append(g, 52); receive();
   assert(espnetGateLinkGetLatest(&gate) && gate.sample == 4 && gate.sequence == 1);
+  /* NanoCockpit dense perception-map v2 coexists on the same byte stream. */
+  PerceptionMapObservation map;
+  assert(!perceptionMapLinkGetLatest(NULL));
+  assert(!perceptionMapLinkGetLatest(&map) && map.received_age_ms == UINT32_MAX);
+  uint8_t m[PERCEPTION_MAP_PACKET_SIZE] = {0};
+  memcpy(m, perception_map_header, 4);
+  put32(m + 4, 900000); put32(m + 8, 321); put16(m + 12, 7);
+  m[14] = PERCEPTION_MAP_WIRE_VERSION;
+  m[15] = PERCEPTION_MAP_WIDTH; m[16] = PERCEPTION_MAP_HEIGHT;
+  /* cell (3,4): collision=1, inverse range=10, uncertainty=2, gate=15 */
+  const unsigned cell = 4 * PERCEPTION_MAP_WIDTH + 3;
+  m[18 + 2 * cell] = 0xa1; m[18 + 2 * cell + 1] = 0xf2;
+  put32(m + 218, crc32CalculateBuffer(m, 218));
+  now = 500; append(m, 91); append(m + 91, sizeof(m) - 91); receive();
+  assert(perceptionMapLinkGetLatest(&map) && map.sample == 1);
+  assert(map.sequence == 7 && map.gap8_timestamp_us == 900000);
+  assert(map.stm32_timestamp_echo == 321 && map.received_age_ms == 0);
+  assert(perceptionMapValue(&map, 3, 4, PERCEPTION_MAP_COLLISION) == 1);
+  assert(perceptionMapValue(&map, 3, 4, PERCEPTION_MAP_INVERSE_RANGE) == 10);
+  assert(perceptionMapValue(&map, 3, 4, PERCEPTION_MAP_UNCERTAINTY) == 2);
+  assert(perceptionMapValue(&map, 3, 4, PERCEPTION_MAP_GATE_OPENING) == 15);
+  assert(perceptionMapValue(&map, 10, 0, PERCEPTION_MAP_COLLISION) == 0);
+  now = 525; append(m, sizeof(m)); receive();
+  assert(perceptionMapLinkGetLatest(&map) && map.sample == 1);
+  assert(map.received_age_ms == 25); /* Duplicate does not refresh age. */
+  m[14] = 3; put32(m + 218, crc32CalculateBuffer(m, 218));
+  append(m, sizeof(m)); receive(); assert(perception_map_invalid_packets == 1);
+  m[14] = PERCEPTION_MAP_WIRE_VERSION; m[221] ^= 1;
+  append(m, sizeof(m)); receive(); assert(perception_map_crc_errors == 1);
   return 0;
 }
 '''

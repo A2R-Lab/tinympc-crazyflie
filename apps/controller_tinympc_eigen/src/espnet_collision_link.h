@@ -44,6 +44,37 @@ typedef struct {
   uint32_t sample; /* accepted packet counter; sequence may restart/wrap */
 } DepthGateObservation;
 
+/* NanoCockpit perception-map v2. Four unsigned 4-bit channels are packed for
+ * each 10x10 cell in this order: collision, inverse range, uncertainty, gate
+ * opening. Values are the model's quantized outputs; physical calibration is
+ * deliberately left to the consumer rather than guessed in the UART driver. */
+#define PERCEPTION_MAP_WIDTH 10u
+#define PERCEPTION_MAP_HEIGHT 10u
+#define PERCEPTION_MAP_CELLS (PERCEPTION_MAP_WIDTH * PERCEPTION_MAP_HEIGHT)
+#define PERCEPTION_MAP_PACKED_BYTES 200u
+#define PERCEPTION_MAP_WIRE_VERSION 2u
+#define PERCEPTION_MAP_FLAG_DANGER_RAW_U8 (1u << 0)
+
+typedef enum {
+  PERCEPTION_MAP_COLLISION = 0,
+  PERCEPTION_MAP_INVERSE_RANGE = 1,
+  PERCEPTION_MAP_UNCERTAINTY = 2,
+  PERCEPTION_MAP_GATE_OPENING = 3,
+} PerceptionMapChannel;
+
+typedef struct {
+  uint8_t packed_u4[PERCEPTION_MAP_PACKED_BYTES];
+  uint32_t gap8_timestamp_us;
+  uint32_t stm32_timestamp_echo;
+  uint16_t sequence;
+  uint8_t version;
+  uint8_t width;
+  uint8_t height;
+  uint8_t flags;
+  uint32_t received_age_ms;
+  uint32_t sample;
+} PerceptionMapObservation;
+
 void espnetCollisionLinkInit(void);
 /* Task-context coherent snapshot. True includes invalid inference packets;
  * callers must check valid and local received_age_ms before using the result.
@@ -54,6 +85,12 @@ bool espnetGateLinkGetLatest(EspnetGateObservation *observation);
  * received_age_ms == UINT32_MAX. Age excludes inference and UART transit;
  * GAP-local source_timestamp_ms must not be subtracted from STM32 time. */
 bool depthGateLinkGetLatest(DepthGateObservation *observation);
+/* Receives NanoCockpit's dense perception-map v2 packet (header 90 19 08 37).
+ * Use perceptionMapValue() to read one raw 4-bit cell/channel. */
+bool perceptionMapLinkGetLatest(PerceptionMapObservation *observation);
+uint8_t perceptionMapValue(const PerceptionMapObservation *observation,
+                           unsigned x, unsigned y,
+                           PerceptionMapChannel channel);
 
 #ifdef __cplusplus
 }
