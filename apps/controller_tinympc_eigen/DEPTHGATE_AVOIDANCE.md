@@ -15,33 +15,41 @@ by the STM32 controller. No dense tensor is buffered on STM32.
 
 ## Geometry
 
-Convert the three positive inverse depths to optical-axis metres with `z=1/d`.
-Approximate each sector statistic at its center ray:
-`L=(zL,+s*zL)`, `C=(zC,0)`, `R=(zR,-s*zR)` in body XY (+X forward, +Y left).
-The calibrated HM01B0 `fx=89.1558392549` at width160 gives symmetric
-`s=(160/3)/fx=0.598203`. This approximation omits principal-point asymmetry,
-distortion, and the actual bearing of the nearest region within a sector.
+Convert positive inverse depths to optical-axis metres. Project the previous
+actuator rollout into the image captured by GAP8, then extend it to the forward
+mission goal, bounded by `dgAvoid.range` and the remaining mission distance.
+This spatial lookahead does not change obstacle depth or add a speed margin.
 
-Each adjacent pair defines a vertical plane with unit horizontal normal pointing
-forward. The permitted side is `n dot p <= b`; subtract the requested **0.5m**
-clearance from b, measured perpendicular to the plane. Clearance is never
-silently clipped when the current pose is already outside it.
+The packet supplies three full-height image strips: [0,53), [53,106), [106,160).
+For approximately level flight, horizontal projection is
+`u = 80 - fx * camera_left / camera_forward`, with
+`fx = (160/3) / raySlope` (default about 89.16 pixels). Clip each trajectory
+segment to the image strip and test it against that strip's depth minus fixed
+clearance. Segment clipping catches crossings between prediction knots. Points
+behind the camera and outside the horizontal field of view do not create planes.
+This is sector-level horizontal projection, not a pixelwise 3D collision test;
+the packet cannot tell where vertically the nearest obstacle occurs.
 
-- Center closest: use the pair toward the more open side, with a 0.15m tie band.
-- One side closest: use that side-to-center pair.
-- Center deeper than both nearby sides: use both pairs (0.15m enter, 0.05m retain).
-- All three depths beyond activation range (default2m): no planes.
+At a detected intersection, place a vertical plane at the observed depth and
+subtract `dgAvoid.clearance` (default 0.5 m) along its unit normal. Angle the
+normal 30 degrees toward the blocked side so movement toward the clearer side
+relaxes the inequality. A side must have at least 0.15 m more depth clearance to
+select it; equal clearance gives a front-facing stop plane. The solver accepts
+at most two planes, so the first two intersected sectors along the path are used.
+A nearby sector that the trajectory does not enter supplies no constraint.
 
-The selected allowed regions are intersected. Plane positions are held in world
-coordinates between new accepted frames, then transformed into each MPC local
-frame. Capture pose is interpolated from a 96-entry STM32 pose history sampled every
-50ms, using local arrival age plus reported inference and 7ms UART time.
-Yaw interpolation follows the short arc across wrap. Missing history or a
-control gap rejects the observation. The GAP8 camera is synchronous, with no
-queued next frame. A further speed-dependent margin (at least 0.37m) covers requested-speed travel over the receive
-budget plus 50ms. Geometry assumes static obstacles and approximately level
-flight. Nearest pixels can include the floor, and a sector center is not their
-true bearing; this remains an approximation, not a monocular safety bound.
+The permitted side is `n dot p <= b`. Transform the plane from the image capture
+pose into world coordinates and then into the current MPC frame. A 96-entry
+STM32 history, sampled every 50 ms, estimates capture pose from arrival age,
+reported inference time and 7 ms UART time. Keep this delay correction even
+though no velocity-scaled obstacle inflation is applied. Geometry is recomputed
+as the predicted path changes; `dgAvoid.sample` identifies a plane update, while
+`dgAvoid.seq` identifies the GAP8 image. Missing history rejects the observation.
+
+This uses static obstacles, a level-camera approximation, symmetric principal
+point, and full-height sector minima that can include floor pixels. It does not
+provide a full image depth map or resolve occluded obstacles. No new GAP8 firmware
+or packet format is needed.
 
 ## Controller and parameters
 
@@ -67,16 +75,16 @@ age must be <=1800ms and reported inference in (0,2000]ms. This permits nearly
 `dgAvoid.fresh=1` with RUN released before requesting motion so capture history
 is populated. A stale/invalid observation or unavailable capture pose latches
 hold until RUN is released. Set geometry parameters while RUN is released;
-valid changes take effect on the next accepted frame. Invalid configuration
+valid changes take effect on the next geometry update. Invalid configuration
 is rejected each cycle. Other hold faults:
-2=roll/pitch exceeds15degrees, 3=current pose violates clearance,
+2=roll/pitch exceeds45degrees, 3=current pose violates clearance,
 4=configured time limit, 5=reference projection failed, 6=solver projection failure,
 nonfinite rollout or >5cm predicted violation, 7=mode change with RUN asserted,
 8=horizontal measured speed exceeds2m/s or position/velocity is nonfinite,
 9=requested forward distance reached. The first stop reason remains latched.
 For fault6 hold is latched for the next100Hz update; there is no second solve
 in the same cycle. User explicitly chose five iterations and accepts some violation.
-Previously observed planes remain active during hold. A hold request cannot
+Previously observed planes remain active when data becomes stale. A hold request cannot
 guarantee immediate stopping or restoration of already-violated clearance.
 
 The core supports exactly two XY halfspaces plus the existing tilt/rate box.

@@ -103,6 +103,8 @@ inputs and latched completion. The updated CF21BL build passed (354,312 bytes fl
 .venv/bin/python -m unittest discover -s apps/controller_tinympc_eigen/tests -p 'test_*obstacle_avoidance.py'
 ```
 
-The delay margin scales with requested speed (minimum 0.2 m/s allowance). At
-2 m/s it adds 3.7 m to clearance, so nearby obstacles can prevent forward motion.
-The range is accepted by the software; 2 m/s avoidance has not been flight validated.
+Obstacle planes use fixed clearance, not a speed-scaled margin. The controller
+projects the predicted/forward path into the three image sectors and creates
+planes only for intersections. A plane tilts toward the side with more clearance.
+The 0–2 m/s range is accepted by software; the new geometry has not been flight
+validated. The packet supports horizontal sector projection, not pixelwise 3D depth.

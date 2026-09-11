@@ -456,6 +456,9 @@ static float dg_speed = .1f, dg_clearance = .5f;
 static float dg_distance, dg_timeout = 10.f;
 static TinyDepthGateRun dg_run = {};
 static TinyDepthGateHistory dg_pose_history = {};
+static TinyDepthGatePose dg_capture_pose = {};
+static uint32_t dg_observation_sample;
+static float dg_inverse[3];
 // Symmetric center rays from calibrated HM01B0 fx=89.15584 at width160.
 static float dg_ray_slope = .598203f, dg_activation = 2.f;
 static uint32_t dg_age_ms = UINT32_MAX, dg_sample, dg_tick;
@@ -520,10 +523,8 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const bool received=depthGateLinkGetLatest(&obs);
   dg_age_ms=received ? obs.received_age_ms : UINT32_MAX;
   dg_fresh=received && tinyDepthGateFresh(obs.valid,obs.received_age_ms,obs.inference_us);
-  // Keep the original low-speed margin; scale it for faster requested runs.
-  const float padding=fmaxf(.2f,dg_speed)*(DG_MAX_RECEIVE_AGE_MS*.001f+.05f);
   const bool config_ok=std::isfinite(dg_speed) && dg_speed>=0 && dg_speed<=DG_MAX_SPEED &&
-      std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance<=2.f && dg_clearance+padding<6.f &&
+      std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance<=2.f &&
       std::isfinite(dg_ray_slope) && dg_ray_slope>=.05f && dg_ray_slope<=2.f &&
       std::isfinite(dg_activation) && dg_activation>dg_clearance && dg_activation<=6.f &&
       tinyDepthGateRunConfig(dg_distance,dg_timeout);
@@ -531,22 +532,44 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const uint8_t run_reason=tinyDepthGateRunUpdate(&dg_run,esp_test_run,
       pos.x(),pos.y(),esp_test_yaw,dt,dg_distance,dg_timeout);
   if (!dg_fault && run_reason) dg_fault=run_reason;
-  if (dg_fresh && (!dg_have_planes || obs.sample!=dg_sample)) {
-    // Anchor each plane to measured capture pose. Camera capture and inference
-    // are synchronous; allow travel before the following result arrives.
+  if (dg_fresh && (!dg_have_planes || obs.sample!=dg_observation_sample)) {
     TinyDepthGatePose capture_pose = {};
-    const bool have_pose=tinyDepthGateCapturePose(&dg_pose_history,
-        tick*portTICK_PERIOD_MS,obs.received_age_ms,obs.inference_us,&capture_pose);
-    const TinyDepthGatePlanes planes=tinyDepthGatePlanes(obs.inverse_depth,
-        dg_ray_slope,dg_clearance+padding,fmaxf(dg_activation,dg_clearance+padding+.1f),6.f,dg_mode);
-    if (!have_pose || !planes.valid || !pos.allFinite() || !vel.allFinite()) dg_fresh=0;
+    if (!tinyDepthGateCapturePose(&dg_pose_history,tick*portTICK_PERIOD_MS,
+        obs.received_age_ms,obs.inference_us,&capture_pose)) dg_fresh=0;
     else {
-      dg_sample=obs.sample; dg_sequence=obs.sequence; dg_have_planes=true;
-      dg_count=planes.count; dg_mode=planes.mode;
-      const float yaw=capture_pose.yaw;
-      const float cy=cosf(yaw),sy=sinf(yaw);
-      const Eigen::Vector2f capture(capture_pose.x,capture_pose.y);
+      dg_capture_pose=capture_pose; dg_observation_sample=obs.sample;
+      dg_sequence=obs.sequence;
+      for(int i=0;i<3;++i) dg_inverse[i]=obs.inverse_depth[i];
+    }
+  }
+  if (dg_fresh && config_ok && pos.allFinite() && vel.allFinite()) {
+    // Project the previous actuator rollout into the capture image, then
+    // continue to the straight mission goal (bounded by the spatial range).
+    // This changes which obstacles are relevant, never their measured depth.
+    static TinyDepthGatePoint path[NHORIZON+1];
+    const float cy=cosf(dg_capture_pose.yaw),sy=sinf(dg_capture_pose.yaw);
+    VectorNf predicted=x0;
+    for(int k=0;k<NHORIZON;++k) {
+      if(k) predicted=(A*predicted+B*ZU_new[k-1]+f).eval();
+      const float wx=pos.x()+active_local_frame.cos_yaw*predicted(0)-active_local_frame.sin_yaw*predicted(1);
+      const float wy=pos.y()+active_local_frame.sin_yaw*predicted(0)+active_local_frame.cos_yaw*predicted(1);
+      const float dx=wx-dg_capture_pose.x,dy=wy-dg_capture_pose.y;
+      path[k]={cy*dx+sy*dy,-sy*dx+cy*dy};
+    }
+    float lookahead=dg_activation;
+    if(dg_distance>0.f) lookahead=fminf(lookahead,fmaxf(0.f,dg_distance-dg_run.travel));
+    if(dg_speed==0.f || dg_fault) lookahead=0.f;
+    const float dx=pos.x()+cosf(esp_test_yaw)*lookahead-dg_capture_pose.x;
+    const float dy=pos.y()+sinf(esp_test_yaw)*lookahead-dg_capture_pose.y;
+    path[NHORIZON]={cy*dx+sy*dy,-sy*dx+cy*dy};
+    const TinyDepthGatePlanes planes=tinyDepthGatePlanes(dg_inverse,
+        dg_ray_slope,dg_clearance,6.f,path,NHORIZON+1);
+    if(!planes.valid) dg_fresh=0;
+    else {
+      dg_have_planes=true; dg_count=planes.count; dg_mode=planes.mode;
+      ++dg_sample; // Plane geometry can change between camera frames.
       for(int i=0;i<3;++i) dg_depth[i]=planes.depth[i];
+      const Eigen::Vector2f capture(dg_capture_pose.x,dg_capture_pose.y);
       for(unsigned i=0;i<planes.count;++i) {
         dg_world_n[i]=Eigen::Vector2f(cy*planes.nx[i]-sy*planes.ny[i],
                                     sy*planes.nx[i]+cy*planes.ny[i]);
