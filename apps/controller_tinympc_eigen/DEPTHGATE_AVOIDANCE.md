@@ -139,3 +139,7 @@ dgAvoid.enable=1, speed=.5, clearance=.5; PID selected, espTest.run=0, motors0.
 Live GAP8 inference packets were received throughout the disarmed check.
 User confirmed launch area ready for a0.5m altitude,3second forward test.
 Flight execution/results are pending.
+
+The measured-attitude RUN abort threshold is 45 degrees on either roll or pitch
+(previously 15 degrees). This is an abort threshold, not a requested tilt or a
+change to the MPC attitude bounds. The flight supervisor remains unchanged.

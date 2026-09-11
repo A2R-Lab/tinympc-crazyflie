@@ -556,8 +556,8 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   }
   // A dropout latches hold until RUN is released; never auto-resume blind.
   if (esp_test_run && !dg_fault && (!dg_fresh || !config_ok)) dg_fault=1;
-  if (esp_test_run && !dg_fault && (fabsf(state.attitude.roll)>15.f ||
-                      fabsf(state.attitude.pitch)>15.f)) dg_fault=2;
+  if (esp_test_run && !dg_fault && (fabsf(state.attitude.roll)>45.f ||
+                      fabsf(state.attitude.pitch)>45.f)) dg_fault=2;
   if (esp_test_run && !dg_fault && (!pos.allFinite() || !vel.allFinite() || vel.head<2>().norm()>DG_MAX_SPEED)) dg_fault=8;
   for(int k=0;k<NHORIZON;++k) {
     data.count_xy_hs[k]=(k>0 && dg_have_planes)?dg_count:0;
