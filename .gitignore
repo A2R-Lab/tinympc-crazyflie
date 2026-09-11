@@ -7,3 +7,5 @@ build/
 __pycache__/
 # Separate NanoCockpit repository, committed and pushed independently.
 /tinympc-nanocockpit/
+
+obstacle-recordings/

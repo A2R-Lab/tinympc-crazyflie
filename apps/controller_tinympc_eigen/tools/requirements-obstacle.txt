@@ -1,0 +1,3 @@
+cflib==0.1.33
+matplotlib>=3.7
+imageio-ffmpeg>=0.6

@@ -55,7 +55,11 @@ OOT handoff procedure; no automatic arming is added.
 along the handoff heading at the handoff altitude; speed ramps at0.5m/s².
 Reference positions are projected onto the same plane intersection, and
 reference velocities follow the projected horizon. Gate corner navigation
-does not own references in this mode. The run is bounded to10seconds.
+does not own references in this mode. The default run limit is 10 seconds. `dgAvoid.timeout` accepts 1–120 seconds;
+`dgAvoid.distance` accepts 0–20m, where zero disables the distance stop. The test
+script sets both. Signed forward distance is measured from the RUN rising pose
+along the handoff heading; distance completion (reason 9) latches hold until RUN
+is released. Releasing RUN resets distance/time tracking.
 
 The recovered network was measured at approximately 1.45s per frame. Arrival
 age must be <=1800ms and reported inference in (0,2000]ms. This permits nearly
@@ -66,9 +70,10 @@ hold until RUN is released. Set geometry parameters while RUN is released;
 valid changes take effect on the next accepted frame. Invalid configuration
 is rejected each cycle. Other hold faults:
 2=roll/pitch exceeds15degrees, 3=current pose violates clearance,
-4=10second limit, 5=reference projection failed, 6=solver projection failure,
+4=configured time limit, 5=reference projection failed, 6=solver projection failure,
 nonfinite rollout or >5cm predicted violation, 7=mode change with RUN asserted,
-8=horizontal measured speed exceeds0.2m/s or position/velocity is nonfinite.
+8=horizontal measured speed exceeds0.2m/s or position/velocity is nonfinite,
+9=requested forward distance reached. The first stop reason remains latched.
 For fault6 hold is latched for the next100Hz update; there is no second solve
 in the same cycle. User explicitly chose five iterations and accepts some violation.
 Previously observed planes remain active during hold. A hold request cannot
@@ -105,9 +110,11 @@ cc -std=c99 -Wall -Wextra -Werror -Isrc tests/test_tinympc_depthgate_planes.c -l
 
 ## Telemetry and historical validation
 
-`dgAvoid` logs enabled, fresh, count, mode, fault, seq, ageMs, left/center/right
+`dgAvoid` logs enabled, active, fresh, count, mode, fault, seq, sample, travel, ageMs, left/center/right
 in metres, local bound0/bound1, actual motor-input rollout violation, cmdSpeed.
-Existing `dg`, corner, `dgRx`, and `mpcCstr` telemetry is preserved. The packet
+Existing `dg`, corner, `dgRx`, and `mpcCstr` telemetry is preserved. The `dgPlane0/1` groups report actual world nx/ny/b and matching sample IDs.
+`active` distinguishes applied TinyMPC constraints from enabled configuration
+while PID is selected. The packet
 receiver validates CRC/finiteness and provides a coherent critical-section copy.
 
 Host geometry and packet tests pass. Production-core two-plane projection tests

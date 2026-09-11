@@ -39,6 +39,8 @@ Use its compact DepthGate build at 115200 baud and the opt-in `dgAvoid` mode.
 See [DEPTHGATE_AVOIDANCE.md](DEPTHGATE_AVOIDANCE.md) for the half-space geometry,
 1.45-second inference handling, low-speed limits and validation status.
 The local `tinympc-nanocockpit/` folder is a separate Git checkout.
+For a speed/distance straight-line test, cfclient-style takeoff, telemetry and
+a constraint video, see [OBSTACLE_TEST.md](OBSTACLE_TEST.md).
 
 ## Generate TinyMPC firmware parameters
 

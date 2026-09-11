@@ -49,12 +49,14 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "autoconf.h"
 #include "controller.h"
 #include "supervisor.h"
 #if TINYMPC_ESPNET_STRAIGHT_TEST
 #include "espnet_collision_link.h"
 #include "tinympc_depthgate_planes.h"
 #include "tinympc_depthgate_timing.h"
+#include "tinympc_depthgate_run.h"
 #include "tinympc_espnet_straight.h"
 #include "tinympc_vision_stop.h"
 #include "tinympc_vision_brake.h"
@@ -448,8 +450,11 @@ static float gate_distance;
 static uint32_t gate_print_tick;
 
 // Explicit opt-in: old ESPNet flight behavior remains selected until enabled.
+static bool esp_test_initialized;
 static uint8_t dg_enable, dg_fresh, dg_count, dg_mode, dg_fault;
 static float dg_speed = .1f, dg_clearance = .5f;
+static float dg_distance, dg_timeout = 10.f;
+static TinyDepthGateRun dg_run = {};
 static TinyDepthGateHistory dg_pose_history = {};
 // Symmetric center rays from calibrated HM01B0 fx=89.15584 at width160.
 static float dg_ray_slope = .598203f, dg_activation = 2.f;
@@ -458,9 +463,9 @@ static uint16_t dg_sequence;
 static float dg_depth[3], dg_violation, dg_command_speed;
 static Eigen::Vector2f dg_world_n[2];
 static float dg_world_b[2], dg_local_b[2];
+static float dg_world_nx[2], dg_world_ny[2]; // Scalar telemetry of actual world planes.
 static Eigen::Vector3f dg_hold;
 static bool dg_have_planes, dg_was_moving;
-static float dg_elapsed;
 static bool dg_cache_selected;
 
 static void selectDepthGateCache(bool enabled) {
@@ -503,7 +508,8 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   if(!dg_tick) {
     dg_hold=pos; dg_have_planes=false; dg_count=dg_mode=0;
     dg_pose_history = {};
-    dg_command_speed=dg_elapsed=0; dg_was_moving=false;
+    dg_command_speed=0; dg_was_moving=false;
+    tinyDepthGateRunReset(&dg_run);
     if(esp_test_run) dg_fault=7; // Require RUN release after mode changes.
   }
   const float dt = dg_tick ? fminf((tick-dg_tick)*portTICK_PERIOD_MS*.001f,.1f) : DT;
@@ -518,8 +524,12 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const bool config_ok=std::isfinite(dg_speed) && dg_speed>=0 && dg_speed<=DG_MAX_SPEED &&
       std::isfinite(dg_clearance) && dg_clearance>=0 && dg_clearance+padding<=2.f &&
       std::isfinite(dg_ray_slope) && dg_ray_slope>=.05f && dg_ray_slope<=2.f &&
-      std::isfinite(dg_activation) && dg_activation>dg_clearance+padding && dg_activation<=6.f;
-  if (!esp_test_run) { dg_fault=0; dg_elapsed=0; }
+      std::isfinite(dg_activation) && dg_activation>dg_clearance+padding && dg_activation<=6.f &&
+      tinyDepthGateRunConfig(dg_distance,dg_timeout);
+  if (!esp_test_run) dg_fault=0;
+  const uint8_t run_reason=tinyDepthGateRunUpdate(&dg_run,esp_test_run,
+      pos.x(),pos.y(),esp_test_yaw,dt,dg_distance,dg_timeout);
+  if (!dg_fault && run_reason) dg_fault=run_reason;
   if (dg_fresh && (!dg_have_planes || obs.sample!=dg_sample)) {
     // Anchor each plane to measured capture pose. Camera capture and inference
     // are synchronous; allow travel before the following result arrives.
@@ -540,14 +550,15 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
         dg_world_n[i]=Eigen::Vector2f(cy*planes.nx[i]-sy*planes.ny[i],
                                     sy*planes.nx[i]+cy*planes.ny[i]);
         dg_world_b[i]=planes.b[i]+dg_world_n[i].dot(capture);
+        dg_world_nx[i]=dg_world_n[i].x(); dg_world_ny[i]=dg_world_n[i].y();
       }
     }
   }
   // A dropout latches hold until RUN is released; never auto-resume blind.
-  if (esp_test_run && (!dg_fresh || !config_ok)) dg_fault=1;
-  if (esp_test_run && (fabsf(state.attitude.roll)>15.f ||
+  if (esp_test_run && !dg_fault && (!dg_fresh || !config_ok)) dg_fault=1;
+  if (esp_test_run && !dg_fault && (fabsf(state.attitude.roll)>15.f ||
                       fabsf(state.attitude.pitch)>15.f)) dg_fault=2;
-  if (esp_test_run && (!pos.allFinite() || !vel.allFinite() || vel.head<2>().norm()>DG_MAX_SPEED)) dg_fault=8;
+  if (esp_test_run && !dg_fault && (!pos.allFinite() || !vel.allFinite() || vel.head<2>().norm()>DG_MAX_SPEED)) dg_fault=8;
   for(int k=0;k<NHORIZON;++k) {
     data.count_xy_hs[k]=(k>0 && dg_have_planes)?dg_count:0;
     for(unsigned i=0;i<dg_count;++i) {
@@ -556,11 +567,9 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
       data.a_xy_hs[k][i]=n.head<2>();
       dg_local_b[i]=dg_world_b[i]-dg_world_n[i].dot(pos.head<2>());
       data.b_xy_hs[k][i]=dg_local_b[i];
-      if (esp_test_run && dg_local_b[i]<0.f) dg_fault=3;
+      if (esp_test_run && !dg_fault && dg_local_b[i]<0.f) dg_fault=3;
     }
   }
-  if(esp_test_run) dg_elapsed+=dt;
-  if(dg_elapsed>=10.f) dg_fault=4;
   const bool moving=esp_test_run && dg_fresh && !dg_fault;
   if(!moving && dg_was_moving) dg_hold=pos;
   dg_was_moving=moving;
@@ -630,7 +639,8 @@ static void resetEspnetStraightTest(const state_t& state, uint32_t tick,
   esp_test_brake_elapsed = 0.0f;
   esp_test_brake_start_distance = 0.0f;
   dg_hold=esp_test_origin; dg_have_planes=false; dg_count=dg_mode=dg_fault=0;
-  dg_tick=0; dg_command_speed=dg_elapsed=0; dg_was_moving=false;
+  dg_tick=0; dg_command_speed=0; dg_was_moving=false;
+  tinyDepthGateRunReset(&dg_run);
   ++esp_test_handoff; // First OOT solve initialized; flight script may request RUN.
 }
 
@@ -1008,10 +1018,19 @@ static void updateEspnetStraightReference(const state_t& state, uint32_t tick) {
 
 // Firmware's C macros use void* for function pointers and mutable string
 // declarations. Register the identical tables with C++-typed null pointers.
+static uint8_t depthGateActiveLog(uint32_t, void*) {
+  // Read the selected controller at log time: the OOT callback stops running
+  // during PID landing, so a cached flag could falsely report active planes.
+  return dg_enable && esp_test_initialized &&
+      controllerGetType()==ControllerTypeOot && supervisorAreMotorsAllowedToRun();
+}
+static logByFunction_t dg_active_log = {{depthGateActiveLog},nullptr};
 static struct param_s dg_params[] __attribute__((section(".param.dgAvoid"),used)) = {
   {PARAM_GROUP|PARAM_START,0,const_cast<char*>("dgAvoid"),nullptr,nullptr,nullptr},
   {PARAM_UINT8,0,const_cast<char*>("enable"),&dg_enable,nullptr,nullptr},
   {PARAM_FLOAT,0,const_cast<char*>("speed"),&dg_speed,nullptr,nullptr},
+  {PARAM_FLOAT,0,const_cast<char*>("distance"),&dg_distance,nullptr,nullptr},
+  {PARAM_FLOAT,0,const_cast<char*>("timeout"),&dg_timeout,nullptr,nullptr},
   {PARAM_FLOAT,0,const_cast<char*>("clearance"),&dg_clearance,nullptr,nullptr},
   {PARAM_FLOAT,0,const_cast<char*>("raySlope"),&dg_ray_slope,nullptr,nullptr},
   {PARAM_FLOAT,0,const_cast<char*>("range"),&dg_activation,nullptr,nullptr},
@@ -1020,11 +1039,14 @@ static struct param_s dg_params[] __attribute__((section(".param.dgAvoid"),used)
 static const struct log_s dg_avoid_logs[] __attribute__((section(".log.dgAvoid"),used)) = {
   {LOG_GROUP|LOG_START,const_cast<char*>("dgAvoid"),nullptr},
   {LOG_UINT8,const_cast<char*>("enabled"),&dg_enable},
+  {LOG_UINT8|LOG_BY_FUNCTION,const_cast<char*>("active"),&dg_active_log},
   {LOG_UINT8,const_cast<char*>("fresh"),&dg_fresh},
   {LOG_UINT8,const_cast<char*>("count"),&dg_count},
   {LOG_UINT8,const_cast<char*>("mode"),&dg_mode},
   {LOG_UINT8,const_cast<char*>("fault"),&dg_fault},
   {LOG_UINT16,const_cast<char*>("seq"),&dg_sequence},
+  {LOG_UINT32,const_cast<char*>("sample"),&dg_sample},
+  {LOG_FLOAT,const_cast<char*>("travel"),&dg_run.travel},
   {LOG_UINT32,const_cast<char*>("ageMs"),&dg_age_ms},
   {LOG_FLOAT,const_cast<char*>("left"),&dg_depth[0]},
   {LOG_FLOAT,const_cast<char*>("center"),&dg_depth[1]},
@@ -1034,6 +1056,22 @@ static const struct log_s dg_avoid_logs[] __attribute__((section(".log.dgAvoid")
   {LOG_FLOAT,const_cast<char*>("violation"),&dg_violation},
   {LOG_FLOAT,const_cast<char*>("cmdSpeed"),&dg_command_speed},
   {LOG_GROUP|LOG_STOP,const_cast<char*>("stop_dgAvoid"),nullptr},
+};
+static const struct log_s dg_plane0_logs[] __attribute__((section(".log.dgPlane0"),used)) = {
+  {LOG_GROUP|LOG_START,const_cast<char*>("dgPlane0"),nullptr},
+  {LOG_FLOAT,const_cast<char*>("nx"),&dg_world_nx[0]},
+  {LOG_FLOAT,const_cast<char*>("ny"),&dg_world_ny[0]},
+  {LOG_FLOAT,const_cast<char*>("b"),&dg_world_b[0]},
+  {LOG_UINT32,const_cast<char*>("sample"),&dg_sample},
+  {LOG_GROUP|LOG_STOP,const_cast<char*>("stop_dgPlane0"),nullptr},
+};
+static const struct log_s dg_plane1_logs[] __attribute__((section(".log.dgPlane1"),used)) = {
+  {LOG_GROUP|LOG_START,const_cast<char*>("dgPlane1"),nullptr},
+  {LOG_FLOAT,const_cast<char*>("nx"),&dg_world_nx[1]},
+  {LOG_FLOAT,const_cast<char*>("ny"),&dg_world_ny[1]},
+  {LOG_FLOAT,const_cast<char*>("b"),&dg_world_b[1]},
+  {LOG_UINT32,const_cast<char*>("sample"),&dg_sample},
+  {LOG_GROUP|LOG_STOP,const_cast<char*>("stop_dgPlane1"),nullptr},
 };
 static struct param_s esp_test_params[]
     __attribute__((section(".param.espTest"), used)) = {
@@ -1085,7 +1123,6 @@ static const struct log_s mpc_constraint_logs[]
   {LOG_FLOAT, const_cast<char*>("solveUs"), &mpc_constraints[3]},
   {LOG_GROUP | LOG_STOP, const_cast<char*>("stop_mpcLimit"), nullptr},
 };
-static bool esp_test_initialized;
 static uint32_t esp_test_last_control_tick;
 // Numeric telemetry avoids console bursts in the stabilizer task.
 static float mpc_direction[9];
@@ -1323,6 +1360,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     else updateEspnetStraightReference(*state, tick);
     if (!dg_enable) {
       dg_tick=0;
+      tinyDepthGateRunReset(&dg_run);
       for(int k=0;k<NHORIZON;++k) data.count_xy_hs[k]=0;
     }
 #else
