@@ -55,6 +55,7 @@ extern "C" {
 #if TINYMPC_ESPNET_STRAIGHT_TEST
 #include "espnet_collision_link.h"
 #include "tinympc_depthgate_planes.h"
+#include "tinympc_depthgate_heading.h"
 #include "tinympc_depthgate_timing.h"
 #include "tinympc_depthgate_run.h"
 #include "tinympc_espnet_straight.h"
@@ -454,6 +455,7 @@ static bool esp_test_initialized;
 static uint8_t dg_enable, dg_fresh, dg_count, dg_mode, dg_fault;
 static float dg_speed = .1f, dg_clearance = .5f;
 static float dg_distance, dg_timeout = 10.f;
+static float dg_yaw_reference, dg_yaw_log[6];
 static TinyDepthGateRun dg_run = {};
 static TinyDepthGateHistory dg_pose_history = {};
 static TinyDepthGatePose dg_capture_pose = {};
@@ -499,7 +501,7 @@ static void setDepthGateHoldReference(const Eigen::Vector3f& position) {
   dg_hold=position; dg_hold.z()=esp_test_origin.z();
   dg_command_speed=0; dg_was_moving=false;
   for(int k=0;k<NHORIZON;++k) {
-    setLocalReferenceState(Xref[k],dg_hold,rpy2quat(mkvec(0,0,esp_test_yaw)),
+    setLocalReferenceState(Xref[k],dg_hold,rpy2quat(mkvec(0,0,dg_yaw_reference)),
         Eigen::Vector3f::Zero(),Eigen::Vector3f::Zero());
     if(k<NHORIZON-1) Uref[k]=ug;
   }
@@ -509,7 +511,7 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
   const Eigen::Vector3f pos(state.position.x,state.position.y,state.position.z);
   const Eigen::Vector3f vel(state.velocity.x,state.velocity.y,state.velocity.z);
   if(!dg_tick) {
-    dg_hold=pos; dg_have_planes=false; dg_count=dg_mode=0;
+    dg_hold=pos; dg_yaw_reference=esp_test_yaw; dg_have_planes=false; dg_count=dg_mode=0;
     dg_pose_history = {};
     dg_command_speed=0; dg_was_moving=false;
     tinyDepthGateRunReset(&dg_run);
@@ -611,12 +613,28 @@ static void updateDepthGateReference(const state_t& state, uint32_t tick) {
     refs[k]=pos+Eigen::Vector3f(active_local_frame.cos_yaw*projected.x()-active_local_frame.sin_yaw*projected.y(),
         active_local_frame.sin_yaw*projected.x()+active_local_frame.cos_yaw*projected.y(),local.z());
   }
+  static float headings[NHORIZON];
+  float heading=dg_yaw_reference;
+  for(int k=0;k<NHORIZON;++k) {
+    const Eigen::Vector3f tangent=moving && k<NHORIZON-1 ?
+        Eigen::Vector3f((refs[k+1]-refs[k])/DT):Eigen::Vector3f::Zero();
+    heading=tinyDepthGateHeading(heading,tangent.x(),tangent.y(),k?DT:dt);
+    headings[k]=heading;
+  }
+  dg_yaw_reference=headings[0];
   for(int k=0;k<NHORIZON;++k) {
     const Eigen::Vector3f desired_v=moving && k<NHORIZON-1 ?
         Eigen::Vector3f((refs[k+1]-refs[k])/DT):Eigen::Vector3f::Zero();
-    setLocalReferenceState(Xref[k],refs[k],rpy2quat(mkvec(0,0,esp_test_yaw)),desired_v,Eigen::Vector3f::Zero());
+    const float yaw_rate=k<NHORIZON-1 ? tinyDepthGateAngle(headings[k+1]-headings[k])/DT:0.f;
+    setLocalReferenceState(Xref[k],refs[k],rpy2quat(mkvec(0,0,headings[k])),
+        desired_v,Eigen::Vector3f(0,0,yaw_rate));
     if(k<NHORIZON-1) Uref[k]=ug;
+    if(!k) dg_yaw_log[2]=degrees(yaw_rate);
   }
+  dg_yaw_log[0]=degrees(dg_yaw_reference);
+  dg_yaw_log[1]=degrees(active_local_frame.yaw_world);
+  dg_yaw_log[3]=degrees(x0(11));
+  dg_yaw_log[4]=degrees(tinyDepthGateAngle(dg_yaw_reference-active_local_frame.yaw_world));
   if(dg_fault && moving) setDepthGateHoldReference(pos);
   esp_test_fresh=dg_fresh; esp_test_age_ms=dg_age_ms;
   esp_test_speed=forward.dot(vel); esp_test_phase=moving?1:0;
@@ -1081,6 +1099,17 @@ static const struct log_s dg_avoid_logs[] __attribute__((section(".log.dgAvoid")
   {LOG_FLOAT,const_cast<char*>("cmdSpeed"),&dg_command_speed},
   {LOG_GROUP|LOG_STOP,const_cast<char*>("stop_dgAvoid"),nullptr},
 };
+static const struct log_s dg_yaw_logs[] __attribute__((section(".log.dgYaw"),used)) = {
+  {LOG_GROUP | LOG_START,const_cast<char*>("dgYaw"),nullptr},
+  {LOG_FLOAT,const_cast<char*>("ref"),&dg_yaw_log[0]},
+  {LOG_FLOAT,const_cast<char*>("actual"),&dg_yaw_log[1]},
+  {LOG_FLOAT,const_cast<char*>("rateRef"),&dg_yaw_log[2]},
+  {LOG_FLOAT,const_cast<char*>("rate"),&dg_yaw_log[3]},
+  {LOG_FLOAT,const_cast<char*>("error"),&dg_yaw_log[4]},
+  {LOG_FLOAT,const_cast<char*>("diffN"),&dg_yaw_log[5]},
+  {LOG_GROUP | LOG_STOP,const_cast<char*>("stop_dgYaw"),nullptr},
+};
+
 static const struct log_s dg_plane0_logs[] __attribute__((section(".log.dgPlane0"),used)) = {
   {LOG_GROUP|LOG_START,const_cast<char*>("dgPlane0"),nullptr},
   {LOG_FLOAT,const_cast<char*>("nx"),&dg_world_nx[0]},
@@ -1411,6 +1440,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     mpc_constraints[0] = mpc_constraints[1] = 0.0f;
 #if TINYMPC_ESPNET_STRAIGHT_TEST
     dg_violation=0.f;
+    dg_yaw_log[5]=-ZU_new[0](0)+ZU_new[0](1)-ZU_new[0](2)+ZU_new[0](3);
 #endif
     // Roll out the projected actuator commands, not just the state slack.
     VectorNf predicted = x0;

@@ -11,7 +11,13 @@ constexpr int NINPUTS = 4;
 struct sensorData_t { vec gyro; };
 struct Attitude { float roll, pitch, yaw; };
 struct state_t { vec position, velocity; quat attitudeQuaternion; };
-struct setpoint_t { vec position, velocity; Attitude attitude, attitudeRate; };
+constexpr float DT = TINYMPC_GENERATED_MODEL_DT_S;
+constexpr int modeAbs = 1;
+struct setpoint_t {
+  vec position, velocity; Attitude attitude, attitudeRate;
+  vec acceleration{}; quat attitudeQuaternion{};
+  struct { int quat=0; } mode{};
+};
 static VectorNf x0, xg, Xref[NHORIZON];
 static VectorMf ug = VectorMf::Zero(), Uref[NHORIZON - 1];
 static int work;

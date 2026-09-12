@@ -12,6 +12,7 @@ CFCLIENT_SOURCE = ('https://github.com/bitcraze/crazyflie-clients-python/blob/'
                    '8396d2854575d9c679fabb1f936e24679d553ce2/src/cfclient/ui/tabs/FlightTab.py')
 GROUPS = {
     'position': [(f'stateEstimate.{n}', 'float') for n in ('x','y','z','vx','vy','vz')],
+    'yaw_control': [(f'dgYaw.{n}','float') for n in ('ref','actual','rateRef','rate','error','diffN')],
     'attitude': [(f'stateEstimate.{n}', 'float') for n in ('roll','pitch','yaw')],
     'avoid': [('dgAvoid.sample','uint32_t')] + [(f'dgAvoid.{n}','uint8_t') for n in
               ('count','mode','fresh','fault','enabled','active')] + [('dgAvoid.seq','uint16_t'),

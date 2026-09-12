@@ -108,3 +108,24 @@ projects the predicted/forward path into the three image sectors and creates
 planes only for intersections. A plane tilts toward the side with more clearance.
 The 0–2 m/s range is accepted by software; the new geometry has not been flight
 validated. The packet supports horizontal sector projection, not pixelwise 3D depth.
+
+## Tangent heading correction
+
+Obstacle mode now derives yaw from the projected reference trajectory, with a
+60 degree/s slew limit and corresponding yaw-rate references across the horizon.
+Below 0.03 m/s reference speed it retains heading to avoid turning toward noise.
+The original mission heading still defines distance and forward progress; turning
+the camera does not rotate the mission goal. Release/fault hold retains the last
+heading reference.
+
+The new `yaw_control` block logs `dgYaw.ref`, `actual`, `rateRef`, `rate`, `error`
+(in degrees or degrees/s), and `diffN` (signed model motor-thrust difference for
+yaw). `actual` uses the same quaternion yaw as the controller. These logs require
+the updated firmware.
+
+Run-04 also showed yaw drift before forward motion. The production solver's
+model test corrects a +/-50 degree initial error to about 2.6 degrees after one
+second and near zero after three seconds. It therefore does not reproduce that
+physical drift; no speculative motor-sign or gain change was made. The next
+physical run must verify tracking using the new yaw logs. This correction has
+not yet been flight validated.
