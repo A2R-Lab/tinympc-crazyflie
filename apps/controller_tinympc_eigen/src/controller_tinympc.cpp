@@ -60,21 +60,39 @@ extern "C" {
 #include "tinympc/tinympc.h"
 #define TINYMPC_TASK_STACKSIZE        (3 * configMINIMAL_STACK_SIZE)
 
-// Rodriguez parameters conversion function (needed for old firmware compatibility)
-static inline struct vec quat2rp(struct quat q) {
-  struct vec v;
-  float w_abs = fabsf(q.w);
-  if (w_abs > 1e-6f) { // Avoid division by near-zero
-    v.x = q.x / q.w;
-    v.y = q.y / q.w;
-    v.z = q.z / q.w;
-  } else {
-    // Handle singular case
-    v.x = 0.0f;
-    v.y = 0.0f;
-    v.z = 0.0f;
-  }
-  return v;
+// Express each solve in a position/yaw frame with world-aligned z.
+struct MpcLocalFrame {
+  float origin_x;
+  float origin_y;
+  float origin_z;
+  float yaw_world;
+  float cos_yaw;
+  float sin_yaw;
+};
+
+static Eigen::Vector3f worldVectorToLocal(
+    const MpcLocalFrame& frame, const Eigen::Vector3f& vector_world) {
+  return Eigen::Vector3f(
+      frame.cos_yaw * vector_world.x() + frame.sin_yaw * vector_world.y(),
+      -frame.sin_yaw * vector_world.x() + frame.cos_yaw * vector_world.y(),
+      vector_world.z());
+}
+
+static struct vec worldQuaternionToLocalRodrigues(
+    const MpcLocalFrame& frame, struct quat quaternion_world_body) {
+  const float half_yaw = 0.5f * frame.yaw_world;
+  const float c = cosf(half_yaw);
+  const float s = sinf(half_yaw);
+  const struct quat quaternion_local_body = mkquat(
+      c * quaternion_world_body.x + s * quaternion_world_body.y,
+      c * quaternion_world_body.y - s * quaternion_world_body.x,
+      c * quaternion_world_body.z - s * quaternion_world_body.w,
+      c * quaternion_world_body.w + s * quaternion_world_body.z);
+  const float denominator = fabsf(quaternion_local_body.w) > 1e-6f
+      ? quaternion_local_body.w : copysignf(1e-6f, quaternion_local_body.w);
+  return mkvec(quaternion_local_body.x / denominator,
+      quaternion_local_body.y / denominator,
+      quaternion_local_body.z / denominator);
 }
 
 // Edit the debug name to get nice debug prints
@@ -166,9 +184,7 @@ static uint32_t traj_idx = 0;
 static const float legacy_hover_command[NINPUTS] = {
     0.7f, 0.663f, 0.7373f, 0.633f};
 
-static struct vec desired_rpy;
-static struct quat attitude;
-static struct vec phi;
+static MpcLocalFrame active_local_frame;
 
 // Basic mode - no obstacle avoidance constraints
 
@@ -211,27 +227,47 @@ static void loadGeneratedSolverData(void) {
 }
 
 void updateInitialState(const sensorData_t *sensors, const state_t *state) {
-  x0(0) = state->position.x;
-  x0(1) = state->position.y;
-  x0(2) = state->position.z;
-  // Body velocity error, [m/s]                          
-  x0(6) = state->velocity.x;
-  x0(7) = state->velocity.y;
-  x0(8) = state->velocity.z;
-  // Angular rate error, [rad/s]
-  x0(9)  = radians(sensors->gyro.x);   
-  x0(10) = radians(sensors->gyro.y);
-  x0(11) = radians(sensors->gyro.z);
-  attitude = mkquat(
-    state->attitudeQuaternion.x,
-    state->attitudeQuaternion.y,
-    state->attitudeQuaternion.z,
-    state->attitudeQuaternion.w);  // current attitude
-  phi = quat2rp(qnormalize(attitude));  // quaternion to Rodriquez parameters  
-  // Attitude error
-  x0(3) = phi.x;
-  x0(4) = phi.y;
-  x0(5) = phi.z;
+  const struct quat attitude = qnormalize(mkquat(
+      state->attitudeQuaternion.x,
+      state->attitudeQuaternion.y,
+      state->attitudeQuaternion.z,
+      state->attitudeQuaternion.w));
+  active_local_frame.origin_x = state->position.x;
+  active_local_frame.origin_y = state->position.y;
+  active_local_frame.origin_z = state->position.z;
+  active_local_frame.yaw_world = quat2rpy(attitude).z;
+  active_local_frame.cos_yaw = cosf(active_local_frame.yaw_world);
+  active_local_frame.sin_yaw = sinf(active_local_frame.yaw_world);
+
+  const Eigen::Vector3f velocity_local = worldVectorToLocal(
+      active_local_frame,
+      Eigen::Vector3f(state->velocity.x, state->velocity.y, state->velocity.z));
+  const struct vec attitude_local =
+      worldQuaternionToLocalRodrigues(active_local_frame, attitude);
+  x0.head(3).setZero();
+  x0.segment<3>(3) << attitude_local.x, attitude_local.y, attitude_local.z;
+  x0.segment<3>(6) = velocity_local;
+  // Gyroscope rates already use body axes; do not yaw-rotate them.
+  x0.segment<3>(9) << radians(sensors->gyro.x),
+      radians(sensors->gyro.y), radians(sensors->gyro.z);
+}
+
+static void setLocalReferenceState(
+    VectorNf& target, const Eigen::Vector3f& position_world,
+    struct quat attitude_world_body, const Eigen::Vector3f& velocity_world,
+    const Eigen::Vector3f& angular_velocity_body) {
+  const Eigen::Vector3f position_local = worldVectorToLocal(
+      active_local_frame, position_world - Eigen::Vector3f(
+          active_local_frame.origin_x, active_local_frame.origin_y,
+          active_local_frame.origin_z));
+  const Eigen::Vector3f velocity_local =
+      worldVectorToLocal(active_local_frame, velocity_world);
+  const struct vec attitude_local =
+      worldQuaternionToLocalRodrigues(active_local_frame, attitude_world_body);
+  target << position_local.x(), position_local.y(), position_local.z(),
+      attitude_local.x, attitude_local.y, attitude_local.z,
+      velocity_local.x(), velocity_local.y(), velocity_local.z(),
+      angular_velocity_body.x(), angular_velocity_body.y(), angular_velocity_body.z();
 }
 
 void updateHorizonReference(const setpoint_t *setpoint) {
@@ -239,41 +275,41 @@ void updateHorizonReference(const setpoint_t *setpoint) {
   if (en_traj) {
     if (step % traj_hold == 0) {
       traj_idx = step / traj_hold;
-      for (int i = 0; i < NHORIZON; ++i) {
-        for (int j = 0; j < NSTATES; ++j) {
-          Xref[i](j) = X_ref_data[traj_idx][j];
-        }
-        if (i < NHORIZON - 1) {
-          for (int j = 0; j < NINPUTS; ++j) {
-            const float legacy_command =
-                legacy_hover_command[j] + U_ref_data[traj_idx][j];
-            Uref[i](j) =
-                tinympc_generated_normalized_command_to_thrust(legacy_command)
-                - tinympc_generated_normalized_command_to_thrust(
-                    legacy_hover_command[j]);
-          }
+    }
+    // Even a held world reference must be expressed in this solve's frame.
+    for (int i = 0; i < NHORIZON; ++i) {
+      // Retain the legacy 12-state table: reconstruct its Rodrigues attitude
+      // before transforming, rather than replacing it with a new trajectory.
+      const float* reference = X_ref_data[traj_idx];
+      const struct quat reference_attitude = qnormalize(mkquat(
+          reference[3], reference[4], reference[5], 1.0f));
+      setLocalReferenceState(Xref[i],
+          Eigen::Vector3f(reference[0], reference[1], reference[2]),
+          reference_attitude,
+          Eigen::Vector3f(reference[6], reference[7], reference[8]),
+          Eigen::Vector3f(reference[9], reference[10], reference[11]));
+      if (i < NHORIZON - 1) {
+        for (int j = 0; j < NINPUTS; ++j) {
+          const float legacy_command =
+              legacy_hover_command[j] + U_ref_data[traj_idx][j];
+          Uref[i](j) =
+              tinympc_generated_normalized_command_to_thrust(legacy_command)
+              - tinympc_generated_normalized_command_to_thrust(
+                  legacy_hover_command[j]);
         }
       }
     }
   }
   else {
-    xg(0)  = setpoint->position.x;
-    xg(1)  = setpoint->position.y;
-    xg(2)  = setpoint->position.z;
-    xg(6)  = setpoint->velocity.x;
-    xg(7)  = setpoint->velocity.y;
-    xg(8)  = setpoint->velocity.z;
-    xg(9)  = radians(setpoint->attitudeRate.roll);
-    xg(10) = radians(setpoint->attitudeRate.pitch);
-    xg(11) = radians(setpoint->attitudeRate.yaw);
-    desired_rpy = mkvec(radians(setpoint->attitude.roll), 
-                        radians(setpoint->attitude.pitch), 
-                        radians(setpoint->attitude.yaw));
-    attitude = rpy2quat(desired_rpy);
-    phi = quat2rp(qnormalize(attitude));  
-    xg(3) = phi.x;
-    xg(4) = phi.y;
-    xg(5) = phi.z;
+    const struct quat reference_attitude = rpy2quat(mkvec(
+        radians(setpoint->attitude.roll), radians(setpoint->attitude.pitch),
+        radians(setpoint->attitude.yaw)));
+    setLocalReferenceState(xg,
+        Eigen::Vector3f(setpoint->position.x, setpoint->position.y, setpoint->position.z),
+        reference_attitude,
+        Eigen::Vector3f(setpoint->velocity.x, setpoint->velocity.y, setpoint->velocity.z),
+        Eigen::Vector3f(radians(setpoint->attitudeRate.roll),
+            radians(setpoint->attitudeRate.pitch), radians(setpoint->attitudeRate.yaw)));
     tiny_SetGoalState(&work, Xref, &xg);
     tiny_SetGoalInput(&work, Uref, &ug);
     // // xg(1) = 1.0;
@@ -374,7 +410,7 @@ void controllerOutOfTree(control_t *control, const setpoint_t *setpoint, const s
     // Detailed logging every 0.5 seconds
     static uint32_t mpc_log_counter = 0;
     if (mpc_log_counter % 50 == 0) {
-      DEBUG_PRINT("MPC: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n", 
+      DEBUG_PRINT("MPC local: pos=(%.2f,%.2f,%.2f) ref=(%.2f,%.2f,%.2f)\n",
                   (double)x0(0), (double)x0(1), (double)x0(2),
                   (double)Xref[0](0), (double)Xref[0](1), (double)Xref[0](2));
       DEBUG_PRINT("MPC: thrust=(%.2f,%.2f,%.2f,%.2f) iter=%d\n",
