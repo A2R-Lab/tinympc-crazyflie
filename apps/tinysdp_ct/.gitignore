@@ -1,0 +1,8 @@
+build/
+*.o
+.*.cmd
+*.cmd
+*.a
+cache/
+__pycache__/
+*.csv

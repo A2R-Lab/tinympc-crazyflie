@@ -1,0 +1,9 @@
+# Crazyflie 2.1 Brushless (as the lab's working build: DShot 300 kHz, motor arming).
+# For a brushed Crazyflie 2.x: make OOT_CONFIG=$PWD/app-config-cf2
+CONFIG_PLATFORM_CF21BL=y
+CONFIG_MOTORS_REQUIRE_ARMING=y
+CONFIG_MOTORS_ESC_PROTOCOL_DSHOT=y
+CONFIG_MOTORS_DSHOT_PWM_300KHZ=y
+CONFIG_APP_ENABLE=y
+CONFIG_APP_PRIORITY=1
+CONFIG_APP_STACKSIZE=2048

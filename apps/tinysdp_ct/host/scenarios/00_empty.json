@@ -1,0 +1,2 @@
+{"start": [0.0, 0.0, 0.5], "goal": [1.5, 0.0, 0.5], "obstacles": [],
+ "vmax": 1.0, "amax": 3.0, "cruise": 0.4, "margin": 0.05, "robot_radius": 0.08, "budget_ms": 30}

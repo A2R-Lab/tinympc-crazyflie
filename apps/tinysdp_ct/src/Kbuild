@@ -1,0 +1,2 @@
+obj-y += tsdp_app.o
+obj-y += tsdp_planner.o

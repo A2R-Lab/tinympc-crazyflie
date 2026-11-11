@@ -1,0 +1,5 @@
+{"start": [0.0, 0.0, 0.5], "goal": [2.5, 0.0, 0.5],
+ "obstacles": [{"center": [0.8, 0.1, 0.5], "velocity": [0.0, 0.0, 0.0], "radius": 0.2},
+               {"center": [1.6, -0.3, 0.5], "velocity": [0.0, 0.2, 0.0], "radius": 0.2},
+               {"center": [1.6, 0.6, 0.5], "velocity": [0.0, -0.1, 0.0], "radius": 0.15}],
+ "vmax": 1.5, "amax": 4.0, "cruise": 0.5, "margin": 0.05, "robot_radius": 0.08, "budget_ms": 30}

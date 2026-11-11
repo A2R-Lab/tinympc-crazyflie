@@ -1,0 +1,12 @@
+diff --git a/Makefile b/Makefile
+index 025628a7..385a935b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -37,6 +37,7 @@ LIB = $(srctree)/src/lib
+ PROCESSOR = -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
+ LINKER_DIR = $(srctree)/tools/make/F405/linker
+ 
++LDFLAGS := $(filter-out --specs=nosys.specs --specs=nano.specs $(PROCESSOR) -nostdlib,$(LDFLAGS))
+ LDFLAGS += --specs=nosys.specs --specs=nano.specs $(PROCESSOR) -nostdlib
+ image_LDFLAGS += -z noexecstack
+ image_LDFLAGS += -Wl,-Map=$(PROG).map,--cref,--gc-sections,--undefined=uxTopUsedPriority
