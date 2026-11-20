@@ -48,9 +48,13 @@ LOG_BLOCKS = {
               ("tsdp.obs", "uint8_t"), ("tsdp.obsAgeMs", "uint16_t"), ("tsdp.late", "uint32_t")],
     "health": [("tsdp.failures", "uint32_t"), ("tsdp.stackPl", "uint16_t"), ("tsdp.stackSp", "uint16_t"),
                ("pm.vbat", "float"), ("tsdp.base", "uint8_t")],
+    # Commitment rule: committed arrival minus the switch time (ms, -1 none), certified plan rejected (1 later than
+    # promised, 2 costlier than the tail), promises made. 9 bytes.
+    "commit": [("tsdp.promiseMs", "int32_t"), ("tsdp.reject", "uint8_t"), ("tsdp.recommits", "uint32_t")],
 }
 PARAMS_READ_BACK = ["tsdp.run", "tsdp.gx", "tsdp.gy", "tsdp.gz", "tsdp.budgetMs", "tsdp.vmax", "tsdp.amax", "tsdp.cruise",
-                    "tsdp.margin", "tsdp.robotR", "tsdp.resetD", "tsdp.obsTimeout", "tsdp.footprint", "stabilizer.controller"]
+                    "tsdp.margin", "tsdp.robotR", "tsdp.resetD", "tsdp.obsTimeout", "tsdp.footprint", "tsdp.commit",
+                    "stabilizer.controller"]
 FIRMWARE_PARAMS = ["firmware.revision0", "firmware.revision1", "firmware.modified"]
 
 
@@ -82,14 +86,25 @@ def main():
     ap.add_argument("--controller", type=int, default=1, choices=[1, 2],
                     help="1 PID (default; tuned for the Brushless), 2 Mellinger (tune its gains/massThrust first)")
     ap.add_argument("--dry-run", action="store_true", help="no takeoff, run stays 0: checks, params and logging only")
+    ap.add_argument("--bench", action="store_true",
+                    help="props off: motors are never armed, tsdp.run = 1 for --timeout s. The planner runs on board against "
+                         "the streamed obstacles and follows its own reference (tsdp.resetD is raised for the run and restored), "
+                         "so planning time, stack headroom and the commitment logs are measured without flying")
+    ap.add_argument("--commit", type=int, choices=[0, 1], help="set tsdp.commit (1 commitment rule, 0 first certified); "
+                    "default: leave the firmware's value (1)")
+    ap.add_argument("--build-commit", default=None, help="source commit the flashed firmware was built from (recorded in meta)")
     a = ap.parse_args()
     sc = json.load(open(a.scenario))
     obstacles = sc.get("obstacles", [])[:8]
     os.makedirs(a.out_dir, exist_ok=True)
-    name = f"{os.path.splitext(os.path.basename(a.scenario))[0]}_{time.strftime('%Y%m%d_%H%M%S')}" + ("_dry" if a.dry_run else "")
+    if a.dry_run and a.bench: ap.error("--dry-run and --bench exclude each other")
+    flying = not (a.dry_run or a.bench)
+    name = (f"{os.path.splitext(os.path.basename(a.scenario))[0]}_{time.strftime('%Y%m%d_%H%M%S')}"
+            + ("_dry" if a.dry_run else "_bench" if a.bench else "") + ("" if a.commit is None else f"_commit{a.commit}"))
     csv_path, meta_path = os.path.join(a.out_dir, name + ".csv"), os.path.join(a.out_dir, name + ".meta.json")
 
     meta = {"scenario_file": a.scenario, "scenario": sc, "args": vars(a), "cflib": getattr(cflib, "__version__", "?"),
+            "build_commit": a.build_commit, "mode": "dry run" if a.dry_run else "bench (props off)" if a.bench else "flight",
             "host_start": time.strftime("%Y-%m-%dT%H:%M:%S"), "outcome": None}
     stop = {"count": 0}
     signal.signal(signal.SIGINT, lambda *_: stop.__setitem__("count", stop["count"] + 1))
@@ -104,7 +119,7 @@ def main():
         toc = cf.log.toc
         missing = [n for block in LOG_BLOCKS.values() for n, _ in block if toc.get_element_by_complete_name(n) is None]
         if missing:
-            print(f"ABORT: firmware lacks log variables {missing}: flash apps/tinysdp_ct first"); return 2
+            print(f"ABORT: firmware lacks log variables {missing}: flash the current app (with the commitment rule) first"); return 2
         meta["firmware"] = {p: param_value(cf, p) for p in FIRMWARE_PARAMS}
         p = cf.param.set_value
         p("tsdp.run", "0")
@@ -114,6 +129,9 @@ def main():
             if key in sc: p(f"tsdp.{pname}", str(sc[key]))
         for c, axis in enumerate("xyz"):
             p(f"tsdp.g{axis}", str(sc["goal"][c]))
+        if a.commit is not None: p("tsdp.commit", str(a.commit))
+        reset_d_saved = param_value(cf, "tsdp.resetD")
+        if a.bench: p("tsdp.resetD", "100")   # the drone does not move: plan from the reference, never from the estimate
         time.sleep(0.5)
         meta["params"] = {n: param_value(cf, n) for n in PARAMS_READ_BACK}
 
@@ -137,19 +155,19 @@ def main():
         vbat = latest.get("pm.vbat")
         meta["vbat_start"] = vbat
         print(f"firmware {meta['firmware']}; planner footprint {meta['params'].get('tsdp.footprint')} bytes; battery {vbat} V")
-        if not a.dry_run and (vbat is None or vbat < a.min_vbat):
+        if flying and (vbat is None or vbat < a.min_vbat):
             print(f"ABORT: battery {vbat} V below {a.min_vbat} V"); meta["outcome"] = "aborted: battery"
         else:
             p("kalman.resetEstimation", "1"); time.sleep(0.1); p("kalman.resetEstimation", "0"); time.sleep(2.0)
             hl = cf.high_level_commander
             start = sc["start"]
-            if not a.dry_run:
+            if flying:
                 cf.platform.send_arming_request(True); time.sleep(1.0)
                 hl.takeoff(start[2], 2.0); time.sleep(2.5)
                 hl.go_to(start[0], start[1], start[2], 0.0, 3.0); time.sleep(3.5)
             cf.appchannel.send_packet(struct.pack("<B", 0xFF) + bytes(28))   # clear obstacles
             state["t_run"] = time.time()
-            if not a.dry_run:
+            if not a.dry_run:   # flight or bench
                 p("tsdp.run", "1"); state["run"] = 1
             outcome = "timeout"
             while time.time() - state["t_run"] < a.timeout:
@@ -159,15 +177,19 @@ def main():
                     cf.appchannel.send_packet(obstacle_packet(i, pos, o["velocity"], o["radius"]))
                 x = [latest.get(f"stateEstimate.{k}", 0.0) for k in "xyz"]
                 v = [latest.get(f"stateEstimate.v{k}", 0.0) for k in "xyz"]
-                if not a.dry_run and not all(a.fence[c] <= x[c] <= a.fence[c + 3] for c in range(3)):
+                if flying and not all(a.fence[c] <= x[c] <= a.fence[c + 3] for c in range(3)):
                     outcome = f"geofence at {[round(c, 3) for c in x]}"; break
-                if math.dist(x, sc["goal"]) < 0.1 and math.hypot(*v) < 0.1:
+                if a.bench:   # the reference (setpoint) is what moves on the bench
+                    sp = [latest.get(f"tsdp.sp{k}") for k in "xyz"]
+                    if None not in sp and math.dist(sp, sc["goal"]) < 0.1: outcome = "reference reached goal"; break
+                elif math.dist(x, sc["goal"]) < 0.1 and math.hypot(*v) < 0.1:
                     outcome = "reached"; break
                 time.sleep(0.05)
             meta["outcome"] = outcome
             meta["time_to_outcome_s"] = time.time() - state["t_run"]
             p("tsdp.run", "0"); state["run"] = 0
-            if not a.dry_run:
+            if a.bench and reset_d_saved is not None: p("tsdp.resetD", str(reset_d_saved))
+            if flying:
                 if stop["count"] > 1:
                     cf.commander.send_stop_setpoint()
                 else:

@@ -54,7 +54,8 @@ static int run_scenario(const scenario_t* sc, int rule) {
   if (log_csv) {
     fprintf(log_csv, "host_t,cf_ts_ms,run,t_run,stateEstimate.x,stateEstimate.y,stateEstimate.z,stateEstimate.vx,stateEstimate.vy,stateEstimate.vz,"
                      "tsdp.spx,tsdp.spy,tsdp.spz,tsdp.trackErr,tsdp.rho,tsdp.decision,tsdp.frames,tsdp.planUs,tsdp.frameUs,tsdp.iters,"
-                     "tsdp.attempts,tsdp.reset,tsdp.obs,tsdp.obsAgeMs,tsdp.late,tsdp.failures,tsdp.stackPl,tsdp.stackSp,pm.vbat,tsdp.base");
+                     "tsdp.attempts,tsdp.reset,tsdp.obs,tsdp.obsAgeMs,tsdp.late,tsdp.failures,tsdp.stackPl,tsdp.stackSp,pm.vbat,tsdp.base,"
+                     "tsdp.promiseMs,tsdp.reject,tsdp.recommits");
     for (int i = 0; i < sc->n; ++i) fprintf(log_csv, ",obs%d_x,obs%d_y,obs%d_z,obs%d_r", i, i, i, i);
     fprintf(log_csv, "\n");
   }
@@ -98,10 +99,11 @@ static int run_scenario(const scenario_t* sc, int rule) {
       executed_effort += (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) * 1e-3f;
       if (log_csv && k % 10 == 0) {   /* 100 Hz rows, perfect tracking: estimate = setpoint */
         const float tr = (float)now * 1e-6f;
-        fprintf(log_csv, "%.6f,%u,1,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,0,%.5f,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,1000,400,3.9,%u",
+        fprintf(log_csv, "%.6f,%u,1,%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,0,%.5f,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,1000,400,3.9,%u,%d,%u,%u",
                 tr, (unsigned)(now / 1000), tr, p[0], p[1], p[2], vv[0], vv[1], vv[2], p[0], p[1], p[2], log_rho, log_decision,
                 (unsigned)log_frames, (unsigned)log_plan_us, (unsigned)log_frame_us, log_iterations, log_attempts, log_reset, log_obstacles,
-                log_obs_age_ms, (unsigned)log_late, (unsigned)log_failures, log_base);
+                log_obs_age_ms, (unsigned)log_late, (unsigned)log_failures, log_base,
+                (int)log_promise_ms, (unsigned)log_reject, (unsigned)log_recommits);
         for (int i = 0; i < sc->n; ++i) {
           const int present = !(sc->appear_s > 0 && i == sc->n - 1 && tr < sc->appear_s);
           float oc[3]; true_obstacle(&sc->obs[i], tr, oc);

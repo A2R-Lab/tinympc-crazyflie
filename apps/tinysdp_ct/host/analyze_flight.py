@@ -97,6 +97,36 @@ def analyze(csv_path, meta=None):
             clear.append(math.dist(x, c) - rad - robot_r)
     out["true_clearance_m"] = {"min": min(clear) if clear else None, "samples_in_contact": sum(c < 0 for c in clear)}
 
+    # Commitment rule (logged by firmware with tsdp.commit; absent in older logs). The promise is an absolute time on the
+    # drone's clock: the frame's log timestamp plus one period (the switch time) plus promiseMs.
+    if any(r.get("tsdp.promiseMs") not in (None, "") for r in frames):
+        prom, moved_later, rejects = [], 0, {1: 0, 2: 0}
+        last = None
+        for r in frames:
+            pm, rc, ts = num(r.get("tsdp.promiseMs")), num(r.get("tsdp.recommits")), num(r.get("cf_ts_ms"))
+            rj = num(r.get("tsdp.reject"))
+            if rj in (1, 2): rejects[int(rj)] += 1
+            if pm is None or pm < 0 or ts is None: last = None; continue
+            absolute = (ts + 40 + pm) / 1000.0
+            if last and last[1] == rc and absolute > last[0] + 0.05: moved_later += 1   # 50 ms of log-timestamp jitter
+            prom.append((absolute, rc)); last = (absolute, rc)
+        run_ts = [num(r.get("cf_ts_ms")) for r in flying if num(r.get("cf_ts_ms")) is not None]
+        first = (prom[0][0] - run_ts[0] / 1000.0) if prom and run_ts else None
+        commits = [rc for _, rc in prom if rc is not None]
+        out["commitment"] = {
+            "commit_param": meta.get("params", {}).get("tsdp.commit"),
+            "promises_made": int(max(commits) - min(commits) + 1) if commits else 0,
+            "first_promise_s_after_run": first,
+            # How far the promised arrival slid over the run, whatever the commitments: about 0 when the first promise is
+            # kept, large when every new plan promises a fresh horizon (first-certified execution).
+            "last_minus_first_promise_s": (prom[-1][0] - prom[0][0]) if prom else None,
+            "promise_moved_later_within_a_commitment": moved_later,
+            "rejected_later_than_promised": rejects[1], "rejected_costlier_than_tail": rejects[2],
+        }
+        t_out = meta.get("time_to_outcome_s")
+        if first is not None and t_out is not None and meta.get("outcome") in ("reached", "reference reached goal"):
+            out["commitment"]["arrival_minus_first_promise_s"] = t_out - first   # host time; about 0.05 s of jitter
+
     out["health"] = {
         "stack_free_words_planner_min": min([num(r.get("tsdp.stackPl")) for r in flying if num(r.get("tsdp.stackPl"))] or [None]),
         "stack_free_words_setpoint_min": min([num(r.get("tsdp.stackSp")) for r in flying if num(r.get("tsdp.stackSp"))] or [None]),
@@ -127,6 +157,11 @@ def report(s):
     h = s["health"]
     print(f"  health             stack free (words) planner {f(h['stack_free_words_planner_min'])}, setpoint {f(h['stack_free_words_setpoint_min'])};"
           f" obstacle age max {f(h['obstacle_age_ms_max'])} ms; battery min {f(h['vbat_min'])} V")
+    c = s.get("commitment")
+    if c:
+        print(f"  commitment         tsdp.commit {c['commit_param']}; promises {c['promises_made']}, first at {f(c['first_promise_s_after_run'])} s;"
+              f" slid {f(c['last_minus_first_promise_s'])} s; moved later within a commitment {c['promise_moved_later_within_a_commitment']}; rejected later/costlier {c['rejected_later_than_promised']}/"
+              f"{c['rejected_costlier_than_tail']}; arrival - first promise {f(c.get('arrival_minus_first_promise_s'))} s")
 
 
 def main():

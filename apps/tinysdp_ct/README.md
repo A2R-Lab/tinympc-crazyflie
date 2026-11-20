@@ -2,7 +2,7 @@
 
 This folder holds the on-board continuous-time SDP planner of the VOTUM paper, with its commitment rule, as a Crazyflie 2.x out-of-tree app. It builds against this repository's `crazyflie-firmware` submodule.
 
-**Source of truth.** This is a copy of `embedded/tinysdp-ct-crazyflie/` and `include/tinysdp_ct_embedded/` from the paper repository (`ishaanamahajan/sdp-diffusion`, commit `3d21c627`), laid out for this repository: the app at the top of this folder, the planner headers in `include/`. Make changes there first and copy them here.
+**Source of truth.** This is a copy of `embedded/tinysdp-ct-crazyflie/` and `include/tinysdp_ct_embedded/` from the paper repository (`ishaanamahajan/sdp-diffusion`, commit `3d21c627`; host scripts and SIL from `e4b74751`), laid out for this repository: the app at the top of this folder, the planner headers in `include/`. Make changes there first and copy them here.
 
 **Firmware patch (required).** At the pinned firmware commit (`de14ff9f`), the firmware's recursive make appends `--specs=nosys.specs` twice when the app uses C++, and the link fails with "attempt to rename spec 'link_gcc_c_sequence'". `firmware-ldflags.patch` is the one-line fix (it de-duplicates `LDFLAGS`), the same change as in the lab's working firmware checkout. Apply it once before building:
 
@@ -129,8 +129,16 @@ Effort above 1 with the rule only follows a new promise (the obstacle that appea
 
 ```bash
 python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/scenarios/00_empty.json --dry-run
-python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/scenarios/00_empty.json
+python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/scenarios/01_static_sphere.json --bench --build-commit <sha>
+python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/scenarios/00_empty.json --commit 1 --build-commit <sha>
 ```
+
+Modes:
+- `--dry-run`: no takeoff, `tsdp.run` stays 0. Checks, parameters and logging only.
+- `--bench` (**props off**): the motors are never armed, and `tsdp.run = 1` for `--timeout` seconds. The planner runs on board against the streamed obstacles and follows its own reference (`tsdp.resetD` is raised to 100 m for the run and restored), so planning time, stack headroom and the commitment logs are measured without flying. The run ends when the reference reaches the goal.
+- default: flight.
+
+`--commit 1` / `--commit 0` sets `tsdp.commit` (commitment rule / first certified) for rule-on vs rule-off runs; without it the firmware's value (1) is kept and read back. `--build-commit` records the source commit the firmware was built from in the meta file. Use both on every recorded run.
 
 The script:
 0. runs pre-flight checks: every log variable exists (the right firmware is flashed), battery at least `--min-vbat`, parameters read back;
@@ -138,7 +146,7 @@ The script:
 2. **arms the motors** (the Brushless requires it), then takes off to `start` with the high-level commander;
 3. streams obstacles at 20 Hz;
 4. sets `tsdp.run = 1`;
-5. logs four blocks at 100 Hz (state, track, frame, health) into one CSV row per state sample, plus the true positions of the virtual obstacles at that row's host time;
+5. logs five blocks at 100 Hz (state, track, frame, health, commit) into one CSV row per state sample, plus the true positions of the virtual obstacles at that row's host time;
 6. stops at the goal or the timeout, sets `tsdp.run = 0`, lands, and disarms.
 
 When `run` returns to 0 the app relaxes its priority, the firmware tells the high-level commander the current state, and the script sends `go_to` the current position and lands. A geofence breach or Ctrl-C releases and lands; a second Ctrl-C sends the emergency stop.
@@ -155,7 +163,8 @@ The analysis reports:
 - tracking error;
 - certified ρ against the measured deviation δ. With virtual obstacles δ is the tracking error, so this is the hardware version of §4.5;
 - true clearance to every obstacle;
-- stack headroom, obstacle age and battery.
+- stack headroom, obstacle age and battery;
+- the commitment rule (logs with `tsdp.promiseMs`): promises made, the first promise after `run`, how far the promise slid over the run (about 0 when the first promise is kept), promises moved later within a commitment (must be 0 with the rule), certified plans rejected as later than promised or costlier than the tail, and arrival minus the first promise. In the SIL logs, three spheres: rule 1 promise, slid 0.00 s, 89 plans rejected as costlier; first certified 125 promises, slid 2.28 s.
 
 `test/run_sil.sh` runs the same analysis on the simulated flights, so the logging-to-numbers pipeline is checked before any flight.
 
