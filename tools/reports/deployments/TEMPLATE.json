@@ -1,0 +1,87 @@
+{
+  "recorded_at": null,
+  "app": null,
+  "platform": null,
+  "uri": null,
+  "deployment": null,
+  "binary": null,
+  "binary_bytes": null,
+  "binary_sha256": null,
+  "build_summary_bytes": {
+    "flash_used": null,
+    "flash_capacity": null,
+    "ram_used": null,
+    "ram_capacity": null,
+    "ccm_used": null,
+    "ccm_capacity": null
+  },
+  "elf_details_bytes": {
+    "flash_image_used": null,
+    "ram_data_bss": null,
+    "ram_noinit": null,
+    "ram_reserved_minimum_stack": null,
+    "ram_linked_total": null,
+    "ram_unallocated": null,
+    "ccm_linked_total": null
+  },
+  "planner_object_bytes": null,
+  "allocated_freertos_heap_bytes": null,
+  "startup_free_heap_bytes": null,
+  "planner_task_stack_allocated_bytes": null,
+  "setpoint_task_stack_allocated_bytes": null,
+  "telemetry": {
+    "first_sample": {
+      "pm.vbat": null,
+      "timestamp_ms": null,
+      "tsdp.frames": null,
+      "tsdp.stackPl": null,
+      "tsdp.stackSp": null
+    },
+    "heap_log_variables": null,
+    "last_sample": {
+      "pm.vbat": null,
+      "timestamp_ms": null,
+      "tsdp.frames": null,
+      "tsdp.stackPl": null,
+      "tsdp.stackSp": null
+    },
+    "minimum_stack_words": {
+      "tsdp.stackPl": null,
+      "tsdp.stackSp": null
+    },
+    "parameters": {
+      "cpu.flash": null,
+      "firmware.modified": null,
+      "firmware.revision0": null,
+      "firmware.revision1": null,
+      "system.selftestPassed": null,
+      "tsdp.footprint": null,
+      "tsdp.run": null
+    },
+    "sample_count": null,
+    "uri": null
+  },
+  "notes": [
+    "Memory totals include the entire STM32 application firmware, not only the planner.",
+    "Planner object, task stacks, and reserved FreeRTOS heap are already included in the RAM totals.",
+    "<Describe accounting differences between the build summary and ELF details.>",
+    "<State the workload, measurement duration, and whether planning was exercised.>",
+    "<Explain unavailable measurements and raw zero readings; do not treat unsampled stack logs as exhausted stacks.>",
+    "<Record startup/self-test/storage results, actual commands, relative log paths, and remaining limitations.>"
+  ],
+  "report_id": null,
+  "source": {
+    "commit": null,
+    "dirty": null,
+    "submodules": [],
+    "patches": [],
+    "untracked_inputs": [],
+    "changes": null,
+    "compared_with": null,
+    "configurations": [],
+    "build_flags": [],
+    "compiler": null,
+    "container_image": null,
+    "container_image_id": null
+  }
+}
