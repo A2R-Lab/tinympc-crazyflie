@@ -3,3 +3,5 @@ build/
 *.tmp
 *.o
 *:Zone.Identifier
+.cf-container/
+__pycache__/

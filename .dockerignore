@@ -1,0 +1,5 @@
+# build requires only the Dockerfile and .dockerignore files, rest of the files are mounted as volumes at runtime
+
+**
+!Dockerfile
+!.dockerignore
