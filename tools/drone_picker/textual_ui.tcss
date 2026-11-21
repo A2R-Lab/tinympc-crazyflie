@@ -1,0 +1,84 @@
+Screen {
+    background: #0c131c;
+    color: #dce6ef;
+}
+
+#body { align-horizontal: center; }
+#workspace { width: 100%; max-width: 108; height: 1fr; min-height: 22; padding: 1 2; }
+#brand { height: 3; }
+#mark { width: 5; height: 3; color: #8ce6d0; content-align: center middle; }
+#heading { width: 1fr; height: 3; padding-top: 0; }
+#title { height: 1; text-style: bold; color: #edf4fa; }
+#intro { height: 2; color: #91a4b7; }
+#mode {
+    width: 9; height: 3; border: round #3c5967;
+    color: #8ce6d0; content-align: center middle; text-style: bold;
+}
+
+#fleet {
+    height: 1fr; min-height: 6; border: round #304356;
+    border-title-color: #dce6ef; border-title-style: bold;
+    border-subtitle-color: #91a4b7; padding: 0 1; background: #111d29;
+}
+#robots { height: 1fr; background: #111d29; scrollbar-size: 1 1; }
+DataTable > .datatable--header { background: #111d29; color: #91a4b7; text-style: none; }
+DataTable > .datatable--cursor { background: #244451; color: #eefcf9; text-style: bold; }
+DataTable > .datatable--hover { background: #1b3340; }
+DataTable:focus { border: none; }
+#empty { height: auto; padding: 1; color: #91a4b7; }
+#status { height: 2; padding: 0 1; color: #91a4b7; content-align-vertical: middle; }
+#status.error { color: #ffb4ac; }
+
+#manual {
+    height: 5; border: round #304356; border-title-color: #91a4b7;
+    padding: 0 1; background: #111d29;
+}
+Input {
+    height: 3; background: #111d29; border: round #304356;
+    color: #dce6ef; padding: 0 1;
+}
+Input:focus { border: round #8ce6d0; background: #142735; }
+Input > .input--placeholder { color: #91a4b7; }
+#uri { width: 2fr; }
+#nickname { width: 1fr; min-width: 15; margin-left: 1; }
+
+Button {
+    height: 3; min-width: 10; width: auto; padding: 0 2;
+    border: round #435a70; background: #182837; color: #dce6ef;
+    text-style: none;
+}
+Button:hover { background: #263e50; border: round #8ce6d0; }
+Button:focus { border: round #b9f3e3; text-style: bold; }
+Button:disabled { opacity: 45%; }
+#manual-use { margin-left: 1; }
+#buttons { height: 3; margin-top: 1; }
+#button-spacer { width: 1fr; }
+#rename { margin-left: 1; }
+#cancel { margin-right: 1; background: #0c131c; }
+#choose { background: #8ce6d0; color: #0c2423; border: round #8ce6d0; text-style: bold; }
+#choose:hover, #choose:focus { background: #b9f3e3; border: round #b9f3e3; }
+
+Footer { background: #0c131c; color: #91a4b7; }
+Footer > .footer-key--key { background: #0c131c; color: #8ce6d0; }
+
+.compact #workspace { min-height: 28; padding: 0 1; }
+.compact #mark { display: none; }
+.compact #manual { height: 11; layout: vertical; }
+.compact #uri, .compact #nickname { width: 100%; margin: 0; }
+.compact #manual-use { margin: 0; width: 100%; }
+.compact #choose { padding: 0 1; }
+
+RenameDialog { align: center middle; background: #0c131c 75%; }
+#rename-dialog {
+    width: 60; max-width: 95%; height: auto; padding: 1 2;
+    border: round #8ce6d0; background: #111d29;
+}
+#rename-title { height: 1; margin-bottom: 1; text-style: bold; color: #edf4fa; }
+#rename-uri { height: 2; color: #91a4b7; }
+#rename-name { width: 100%; }
+#rename-hint { height: 2; color: #91a4b7; }
+#rename-hint.error { color: #ffb4ac; }
+#rename-buttons { height: 3; align-horizontal: right; }
+#rename-cancel { margin-right: 1; }
+#rename-save { background: #8ce6d0; color: #0c2423; border: round #8ce6d0; text-style: bold; }
+#rename-save:hover, #rename-save:focus { background: #b9f3e3; border: round #b9f3e3; }
