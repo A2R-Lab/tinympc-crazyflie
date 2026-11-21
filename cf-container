@@ -1,0 +1,309 @@
+#!/bin/sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+image=cf-container:24.04
+apps='tinysdp_ct, controller_tinympc_eigen, eigen_test'
+
+style_reset= style_bold= style_dim= style_accent= style_good= style_warning= style_error=
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+    style_reset=$(printf '\033[0m')
+    style_bold=$(printf '\033[1m')
+    style_dim=$(printf '\033[2m')
+    style_accent=$(printf '\033[36m')
+    style_good=$(printf '\033[32m')
+    style_warning=$(printf '\033[33m')
+    style_error=$(printf '\033[31m')
+fi
+
+setup_section() {
+    printf '\n%s%s/3  %s%s\n' "$style_bold$style_accent" "$1" "$2" "$style_reset"
+}
+
+setup_status() {
+    setup_label=$1
+    shift
+    case "$setup_label" in
+        Ready|Done) setup_style=$style_good ;;
+        Admin|Next) setup_style=$style_warning ;;
+        Error) setup_style=$style_error ;;
+        *) setup_style=$style_dim ;;
+    esac
+    printf '  %s%-10s%s %s\n' "$setup_style" "$setup_label" "$style_reset" "$*"
+}
+
+fail() {
+    if [ "${action:-}" = setup ]; then
+        printf '\n' >&2
+        setup_status Error "$*" >&2
+        printf '  Setup stopped.\n' >&2
+    else
+        printf 'cf-container: %s\n' "$*" >&2
+    fi
+    exit 1
+}
+
+show_command() {
+    printf '    %s$%s' "$style_dim" "$style_reset"
+    for argument do
+        case "$argument" in
+            ''|*[!a-zA-Z0-9_./:=,@+-]*)
+                escaped=$(printf '%s' "$argument" | sed 's/[\\"$`]/\\&/g')
+                printf ' "%s"' "$escaped"
+                ;;
+            *) printf ' %s' "$argument" ;;
+        esac
+    done
+    printf '\n'
+}
+
+run_admin() {
+    show_command sudo "$@"
+    sudo "$@" || fail 'The administrator command shown above did not complete.'
+}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  ./cf-container setup                 Build the image and set up Linux USB permissions
+  ./cf-container image                 Build or rebuild the development image
+  ./cf-container interactive [--usb]   Open Bash with the repo mounted at /workspace
+  ./cf-container build APP             Build an app, preserving its existing configuration
+  ./cf-container tests APP             Run an app's desktop tests
+  ./cf-container flash APP URI         Flash an existing build through Crazyradio
+  ./cf-container pick [--demo]         Choose a drone using the interactive menu
+
+Apps: tinysdp_ct, controller_tinympc_eigen, eigen_test
+New builds use Brushless for tinysdp_ct and cf2 for the other apps.
+eigen_test has hardware-only tests and cannot be tested with this command.
+Flashing requires the drone's radio URI, for example radio://0/80/2M/E7E7E7E7E7.
+Docker must already be installed, running, and accessible to your user.
+Run setup once on each Linux computer; it uses sudo for USB permissions.
+Picker demo mode uses simulated drones and does not expose USB devices.
+EOF
+}
+
+[ "$#" -gt 0 ] || { usage >&2; exit 1; }
+action=$1
+app=
+uri=
+usb=false
+demo=false
+case "$action" in
+    help|-h|--help) [ "$#" -eq 1 ] || fail 'Help takes no arguments.'; usage; exit 0 ;;
+    setup) [ "$#" -eq 1 ] || fail 'Usage: ./cf-container setup' ;;
+    image) [ "$#" -eq 1 ] || fail 'Usage: ./cf-container image' ;;
+    interactive)
+        if [ "$#" -eq 2 ] && [ "$2" = --usb ]; then
+            usb=true
+        else
+            [ "$#" -eq 1 ] || fail 'Usage: ./cf-container interactive [--usb]'
+        fi
+        ;;
+    build|tests)
+        [ "$#" -eq 2 ] || fail "Usage: ./cf-container $action APP. Available apps: $apps"
+        app=$2
+        ;;
+    flash)
+        [ "$#" -eq 3 ] || fail 'Usage: ./cf-container flash APP radio://INDEX/CHANNEL/RATE/ADDRESS'
+        app=$2
+        uri=$3
+        usb=true
+        case "$uri" in
+            radio://[0-9]*/*/*/*) ;;
+            *) fail 'Expected a radio URI such as radio://0/80/2M/E7E7E7E7E7.' ;;
+        esac
+        case "$uri" in
+            *[![:alnum:]/:]*) fail 'Use a plain radio URI without spaces or query options.' ;;
+        esac
+        ;;
+    pick)
+        if [ "$#" -eq 2 ] && [ "$2" = --demo ]; then
+            demo=true
+        else
+            [ "$#" -eq 1 ] || fail 'Usage: ./cf-container pick [--demo]'
+            usb=true
+        fi
+        ;;
+    *) fail "Unknown command '$action'. Use setup, image, interactive, build, tests, flash, or pick; see --help." ;;
+esac
+if [ -n "$app" ]; then
+    case "$app" in
+        tinysdp_ct|controller_tinympc_eigen|eigen_test) ;;
+        *) fail "Unknown app '$app'. Available apps: $apps" ;;
+    esac
+fi
+
+if [ "$action" = tests ] && [ "$app" = eigen_test ]; then
+    fail 'eigen_test runs on the drone. No desktop tests are registered; see apps/eigen_test/README.md.'
+fi
+if [ "$action" = build ] || [ "$action" = flash ] || { [ "$action" = tests ] && [ "$app" = controller_tinympc_eigen ]; }; then
+    [ -f "$repo_dir/crazyflie-firmware/Makefile" ] ||
+        fail 'Firmware submodule is missing. From the repo root run: git submodule update --init --recursive crazyflie-firmware'
+fi
+case "$action:$app" in
+    build:eigen_test)
+        [ -f "$repo_dir/apps/eigen_test/Eigen/Eigen/Core" ] ||
+            fail 'Eigen submodule is missing. From the repo root run: git submodule update --init --recursive apps/eigen_test/Eigen'
+        ;;
+    build:controller_tinympc_eigen|tests:controller_tinympc_eigen)
+        [ -f "$repo_dir/apps/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen/Eigen/Core" ] ||
+            fail 'Bundled Eigen headers are missing from apps/controller_tinympc_eigen/TinyMPC-ADMM/ext/Eigen.'
+        ;;
+esac
+if [ "$action" = flash ]; then
+    [ -f "$repo_dir/apps/$app/build/include/config/auto.conf" ] ||
+        fail "Build $app first: ./cf-container build $app"
+    set -- "$repo_dir/apps/$app/build/"*.bin
+    [ -f "$1" ] || fail "No firmware binary found. Run: ./cf-container build $app"
+fi
+if [ "$usb" = true ]; then
+    [ -d /dev/bus/usb ] || fail 'USB devices are unavailable at /dev/bus/usb. USB passthrough requires a Linux host with USB access.'
+fi
+if [ "$action" = interactive ] || [ "$action" = pick ]; then
+    [ -t 0 ] && [ -t 1 ] || fail "$action requires a terminal. Run it directly in your terminal."
+fi
+
+if [ "$action" = setup ]; then
+    trap 'printf "\n" >&2; setup_status Next "Setup cancelled." >&2; exit 130' INT TERM
+    printf '\n%sCF CONTAINER%s  %ssetup%s\n' "$style_bold" "$style_reset" "$style_accent" "$style_reset"
+    printf '%sBuild the development environment and enable USB access.%s\n' "$style_dim" "$style_reset"
+    setup_section 1 'Check this computer'
+    [ "$(uname -s)" = Linux ] || fail 'setup requires a Linux computer with udev.'
+    [ "$(id -u)" -ne 0 ] || fail 'Run setup as your normal user. It will use sudo when needed.'
+    for required in sudo udevadm getent cmp stat; do
+        command -v "$required" > /dev/null 2>&1 || fail "setup requires $required on the host."
+    done
+    [ -f "$repo_dir/tools/99-cf-container.rules" ] || fail 'USB rules are missing: tools/99-cf-container.rules'
+    setup_status Ready 'Linux, required tools, and USB rules'
+fi
+
+command -v docker > /dev/null 2>&1 || fail 'Docker is not installed or is not on PATH.'
+docker info > /dev/null || fail 'Cannot reach Docker. Check that Docker is running and your user has access.'
+if [ "$action" = image ]; then
+    printf 'Building development image %s...\n' "$image"
+    exec docker build -t "$image" "$repo_dir"
+fi
+if [ "$action" = setup ]; then
+    setup_status Ready 'Docker is running and accessible'
+    setup_section 2 'Build the development image'
+    show_command docker build -t "$image" "$repo_dir"
+    docker build -t "$image" "$repo_dir" || fail 'Image build failed. USB permissions were not changed.'
+    setup_status Ready "$image"
+
+    setup_section 3 'Set up USB access'
+    printf '  Allow your account to use Crazyradio, Crazyflie, and their bootloaders.\n'
+    printf '  System changes require sudo; each command is shown before it runs.\n\n'
+    if getent group plugdev > /dev/null 2>&1; then
+        setup_status Unchanged 'plugdev group already exists'
+    else
+        setup_status Admin 'Create the system USB-access group'
+        run_admin groupadd plugdev
+        setup_status Done 'Created plugdev group'
+    fi
+    setup_user=$(id -un)
+    case " $(id -nG "$setup_user") " in
+        *" plugdev "*) setup_status Unchanged "$setup_user already belongs to plugdev" ;;
+        *)
+            setup_status Admin "Add $setup_user to the USB-access group"
+            run_admin usermod -a -G plugdev "$setup_user"
+            setup_status Done "Added $setup_user to plugdev"
+            ;;
+    esac
+    setup_rules_source="$repo_dir/tools/99-cf-container.rules"
+    setup_rules_destination=/etc/udev/rules.d/99-cf-container.rules
+    if cmp -s "$setup_rules_source" "$setup_rules_destination" &&
+        [ "$(stat -c '%a:%u:%g' "$setup_rules_destination")" = 644:0:0 ]; then
+        setup_status Unchanged "$setup_rules_destination"
+    else
+        printf '\n'
+        setup_status Admin 'Install the system USB permission rules'
+        printf '  Destination: %s\n  File contents:\n' "$setup_rules_destination"
+        sed 's/^/    /' "$setup_rules_source"
+        run_admin install -m 0644 "$setup_rules_source" "$setup_rules_destination"
+        setup_status Done 'Installed USB rules (owner root, permissions 0644)'
+    fi
+    printf '\n'
+    setup_status Admin 'Load the USB rules and apply them to connected devices'
+    printf '  Refreshing also completes a previously interrupted setup.\n'
+    run_admin udevadm control --reload-rules
+    for usb_device in 1915:7777 1915:0101 35f0:bad2 0483:5740; do
+        run_admin udevadm trigger --action=change --subsystem-match=usb \
+            --attr-match="idVendor=${usb_device%:*}" --attr-match="idProduct=${usb_device#*:}"
+    done
+    run_admin udevadm settle --timeout=10
+    setup_status Done 'USB rules loaded; matching connected devices refreshed'
+    printf '\n%sSetup complete%s\n' "$style_bold$style_good" "$style_reset"
+    case " $(id -nG) " in
+        *" plugdev "*) ;;
+        *) setup_status Next 'Log out and back in to activate your plugdev membership' ;;
+    esac
+    setup_status Next 'Open the drone menu: ./cf-container pick'
+    exit 0
+fi
+docker image inspect "$image" > /dev/null 2>&1 ||
+    fail 'Development image is missing. Run: ./cf-container image'
+
+workdir=/workspace
+[ -z "$app" ] || workdir=/workspace/apps/$app
+set -- docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp \
+    -v "$repo_dir:/workspace" -w "$workdir"
+if [ "$usb" = true ]; then
+    set -- "$@" --mount type=bind,source=/dev/bus/usb,target=/dev/bus/usb \
+        --device-cgroup-rule 'c 189:* rwm'
+    usb_group=$(getent group plugdev | cut -d: -f3)
+    if [ -n "$usb_group" ]; then
+        case " $(id -G) " in
+            *" $usb_group "*) set -- "$@" --group-add "$usb_group" ;;
+        esac
+    fi
+fi
+case "$action" in
+    pick)
+        set -- "$@" -it --env "COLORTERM=${COLORTERM:-truecolor}" \
+            "$image" python3 -m tools.drone_picker.textual_ui
+        [ "$demo" = false ] || set -- "$@" --demo
+        exec "$@"
+        ;;
+    interactive)
+        printf 'Opening Ubuntu shell in /workspace...\n'
+        exec "$@" -it "$image" bash
+        ;;
+    flash)
+        printf 'Flashing %s to %s...\n' "$app" "$uri"
+        set -- "$@" "$image" bash -ec '
+            command -v cfloader > /dev/null || {
+                echo "cfloader is missing. Rebuild the image: ./cf-container image" >&2
+                exit 1
+            }
+            exec make cload "CLOAD_CMDS=-w $1"' sh "$uri"
+        ;;
+    build)
+        config=cf2_defconfig
+        [ "$app" != tinysdp_ct ] || config=cf21bl_defconfig
+        printf 'Building %s...\n' "$app"
+        set -- "$@" "$image" bash -ec '
+            if [ ! -f build/.config ]; then
+                printf "Initializing %s...\n" "$1"
+                make "$1" < /dev/null
+            else
+                printf "Using existing build/.config\n"
+            fi
+            exec make -j4 < /dev/null' sh "$config"
+        ;;
+    tests)
+        printf 'Running desktop tests for %s...\n' "$app"
+        case "$app" in
+            tinysdp_ct) set -- "$@" "$image" bash test/run_sil.sh ;;
+            controller_tinympc_eigen) set -- "$@" "$image" python3 tests/test_local_frame.py ;;
+        esac
+        ;;
+esac
+
+if "$@"; then
+    printf '%s: %s completed successfully.\n' "$app" "$action"
+else
+    status=$?
+    printf '%s: %s failed (exit %s). See the output above.\n' "$app" "$action" "$status" >&2
+    exit "$status"
+fi
