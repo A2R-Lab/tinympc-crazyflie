@@ -1,0 +1,110 @@
+{
+  "recorded_at": "2026-11-19T21:59:18-05:00",
+  "app": "tinysdp_ct",
+  "platform": "Crazyflie 2.1 Brushless",
+  "uri": "radio://0/80/2M/E7E7E7E7E7",
+  "deployment": "flashed_and_boot_verified",
+  "binary": "apps/tinysdp_ct/build/cf21bl.bin",
+  "binary_bytes": 303832,
+  "binary_sha256": "aa36662eb1f012faa4b1e425e967cf288040568f8d6d99a79e3b97af7ad504a4",
+  "build_summary_bytes": {
+    "flash_used": 303376,
+    "flash_capacity": 1032192,
+    "ram_used": 119488,
+    "ram_capacity": 131072,
+    "ccm_used": 55648,
+    "ccm_capacity": 65536
+  },
+  "elf_details_bytes": {
+    "flash_image_used": 303832,
+    "ram_data_bss": 119488,
+    "ram_noinit": 40,
+    "ram_reserved_minimum_stack": 256,
+    "ram_linked_total": 119784,
+    "ram_unallocated": 11288,
+    "ccm_linked_total": 55648
+  },
+  "planner_object_bytes": 24668,
+  "allocated_freertos_heap_bytes": 30000,
+  "startup_free_heap_bytes": 17936,
+  "planner_task_stack_allocated_bytes": 8192,
+  "setpoint_task_stack_allocated_bytes": 1600,
+  "telemetry": {
+    "first_sample": {
+      "pm.vbat": 3.943108558654785,
+      "timestamp_ms": 78785,
+      "tsdp.frames": 0,
+      "tsdp.stackPl": 0,
+      "tsdp.stackSp": 0
+    },
+    "heap_log_variables": [],
+    "last_sample": {
+      "pm.vbat": 3.943108558654785,
+      "timestamp_ms": 80685,
+      "tsdp.frames": 0,
+      "tsdp.stackPl": 0,
+      "tsdp.stackSp": 0
+    },
+    "minimum_stack_words": {
+      "tsdp.stackPl": 0,
+      "tsdp.stackSp": 0
+    },
+    "parameters": {
+      "cpu.flash": "1024",
+      "firmware.modified": "1",
+      "firmware.revision0": "3725918111",
+      "firmware.revision1": "2222",
+      "system.selftestPassed": "1",
+      "tsdp.footprint": "24668",
+      "tsdp.run": "0"
+    },
+    "sample_count": 20,
+    "uri": "radio://0/80/2M/E7E7E7E7E7"
+  },
+  "notes": [
+    "Memory totals include the entire STM32 application firmware, not only the planner.",
+    "Planner object, task stacks, and reserved FreeRTOS heap are already included in the RAM totals.",
+    "The standard build summary omits Flash vector/padding/libc bytes and RAM .nzds / ._usrstack reservations; ELF details include them.",
+    "Startup free heap is a single boot-time measurement; minimum-ever free heap is not exposed by this firmware.",
+    "Both TinySDP stack logs are zero because tsdp.run remained zero and no planning frames were executed. Stack headroom under load was not measured.",
+    "Flash success, readback of TinySDP parameters, and system.selftestPassed=1 were verified. The startup console reports Storage check [OK].",
+    "This report was migrated from .cf-container/deployments/tinysdp_ct/report.json; no build, flash, or hardware measurements were repeated. The original recorded_at was 2026-11-19T21:59:18.472962-05:00; it was normalized to seconds precision for the report naming convention.",
+    "Evidence: build.log, flash.log, and check.log are byte-for-byte copies of the original captured logs.",
+    "Commands used for the original deployment: ./cf-container build tinysdp_ct; ./cf-container flash tinysdp_ct radio://0/80/2M/E7E7E7E7E7. Read-only inspection used cflib SyncCrazyflie/SyncLogger with tsdp.run=0.",
+    "Runtime conditions: 20 telemetry samples at a 100 ms period, spanning 1900 ms; zero planning frames. Planner/setpoint stack margins were not exercised. Planner footprint and startup free heap were measured; minimum-ever free heap was unavailable.",
+    "Provenance recovery: the root revision and dirty state were recorded in the deployment session; firmware revision and modified state are corroborated by build.log and check.log. The documented firmware Makefile patch was applied before the build; crazyflie-firmware.patch records the matching diff recovered during migration.",
+    "Compiler identity was recovered from the existing ELF .comment section. The current binary SHA-256 still matches the original deployed image. build.config and app-config were recovered from the unchanged build inputs; the generated configuration and ELF retain their original build timestamps.",
+    "Historical provenance limitation: the deployment-time container image ID and a complete snapshot of untracked host tooling were not saved. source.container_image_id and source.untracked_inputs are null; no current environment identity is substituted for historical evidence."
+  ],
+  "report_id": "20261119T215918-0500-tinysdp_ct-bc16eba7e790",
+  "source": {
+    "commit": "bc16eba7e790ada529b678f254b093331a7f259b",
+    "dirty": true,
+    "submodules": [
+      {
+        "path": "crazyflie-firmware",
+        "commit": "de14ff9f08ae80cbb36ffd37859efc2bedfbf6bf",
+        "dirty": true
+      }
+    ],
+    "patches": [
+      "crazyflie-firmware.patch"
+    ],
+    "untracked_inputs": null,
+    "changes": "TinySDP-CT from the recorded repository revision, built against the firmware submodule with the documented LDFLAGS filtering fix. Host container tooling was also uncommitted; no contemporaneous full root-worktree snapshot was saved.",
+    "compared_with": null,
+    "configurations": [
+      "app-config (copy of apps/tinysdp_ct/app-config)",
+      "build.config (copy of the existing generated Brushless configuration)"
+    ],
+    "build_flags": [
+      "-DTSDP_MAX_OBS=4",
+      "-DTSDP_MAX_WORLD=8",
+      "-DTSDP_MEMORY=0",
+      "OOT_USES_CXX=1"
+    ],
+    "compiler": "arm-none-eabi GCC: (15:13.2.rel1-2) 13.2.1 20231009",
+    "container_image": "cf-container:24.04",
+    "container_image_id": null
+  }
+}

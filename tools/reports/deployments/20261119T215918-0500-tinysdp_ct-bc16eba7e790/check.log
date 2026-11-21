@@ -1,0 +1,32 @@
+Connecting to the deployed TinySDP firmware...
+PARAMETERS {"cpu.flash": "1024", "firmware.modified": "1", "firmware.revision0": "3725918111", "firmware.revision1": "2222", "system.selftestPassed": "1", "tsdp.footprint": "24668", "tsdp.run": "0"}
+REPORT {"first_sample": {"pm.vbat": 3.943108558654785, "timestamp_ms": 78785, "tsdp.frames": 0, "tsdp.stackPl": 0, "tsdp.stackSp": 0}, "heap_log_variables": [], "last_sample": {"pm.vbat": 3.943108558654785, "timestamp_ms": 80685, "tsdp.frames": 0, "tsdp.stackPl": 0, "tsdp.stackSp": 0}, "minimum_stack_words": {"tsdp.stackPl": 0, "tsdp.stackSp": 0}, "parameters": {"cpu.flash": "1024", "firmware.modified": "1", "firmware.revision0": "3725918111", "firmware.revision1": "2222", "system.selftestPassed": "1", "tsdp.footprint": "24668", "tsdp.run": "0"}, "sample_count": 20, "uri": "radio://0/80/2M/E7E7E7E7E7"}
+CONSOLE BEGIN
+SYS: ----------------------------
+SYS: Crazyflie 2.1 Brushless is up and running!
+SYS: Build 0:de14ff9f08ae (NA) MODIFIED
+SYS: I am 0x33323336303451070042004D and I have 1024KB of flash!
+CFGBLK: v1, verification [OK]
+DECK_DISCOVERY: Backend found: onewire
+DECK_DISCOVERY: Backend found: deckctrl
+DECK_CORE: 0 deck(s) found
+IMU: BMI088: Using I2C interface.
+IMU: BMI088 Gyro connection [OK].
+IMU: BMI088 Accel connection [OK]
+IMU: BMP390 I2C connection [OK]
+ESTIMATOR: Using Complementary (1) estimator
+CONTROLLER: Using PID (1) controller
+MTR-DRV: Using brushless motor driver
+SYS: About to run tests in system.c.
+SYS: NRF51 version: 2024.10 (C21B)
+EEPROM: I2C connection [OK].
+STORAGE: Storage check [OK].
+IMU: BMI088 gyro self-test [OK]
+SYS: Self test passed!
+STAB: Wait for sensor calibration...
+SYS: Free heap: 17936 bytes
+TinySDP-CT planner app, planner object 24668 bytes
+STAB: Starting stabilizer loop
+
+CONSOLE END
+PASS: deployed app connected, startup self-test passed, planner remained disabled, and memory telemetry was read.

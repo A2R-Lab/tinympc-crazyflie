@@ -1,0 +1,45 @@
+Building tinysdp_ct...
+Using existing build/.config
+Merging /workspace/apps/tinysdp_ct/app-config into .config
+Using /workspace/apps/tinysdp_ct/build/.config as base
+Merging /workspace/apps/tinysdp_ct/app-config
+#
+# merged configuration written to /workspace/apps/tinysdp_ct/build/.config (needs make)
+#
+make KBUILD_OUTPUT=/workspace/apps/tinysdp_ct/build -C /workspace/apps/tinysdp_ct/../../crazyflie-firmware OOT=/workspace/apps/tinysdp_ct EXTRA_CFLAGS="-I/workspace/apps/tinysdp_ct/include -DTSDP_MAX_OBS=4 -DTSDP_MAX_WORLD=8 -DTSDP_MEMORY=0 -Wno-double-promotion" OOT_USES_CXX=1 oldconfig
+make[1]: Entering directory '/workspace/crazyflie-firmware'
+make[2]: Entering directory '/workspace/apps/tinysdp_ct/build'
+  GEN     ./Makefile
+scripts/kconfig/conf  --oldconfig Kconfig
+#
+# configuration written to .config
+#
+make[2]: Leaving directory '/workspace/apps/tinysdp_ct/build'
+make[1]: Leaving directory '/workspace/crazyflie-firmware'
+make KBUILD_OUTPUT=/workspace/apps/tinysdp_ct/build -C /workspace/apps/tinysdp_ct/../../crazyflie-firmware OOT=/workspace/apps/tinysdp_ct EXTRA_CFLAGS="-I/workspace/apps/tinysdp_ct/include -DTSDP_MAX_OBS=4 -DTSDP_MAX_WORLD=8 -DTSDP_MEMORY=0 -Wno-double-promotion" OOT_USES_CXX=1
+make[1]: Entering directory '/workspace/crazyflie-firmware'
+make[2]: Entering directory '/workspace/apps/tinysdp_ct/build'
+  GEN     ./Makefile
+scripts/kconfig/conf  --silentoldconfig Kconfig
+  Using /workspace/crazyflie-firmware as source for kernel
+  GEN     ./Makefile
+python3 /workspace/crazyflie-firmware/tools/make/versionTemplate.py --crazyflie-base /workspace/crazyflie-firmware /workspace/crazyflie-firmware/src/utils/src/version.vtpl src/utils/src/version_gen.c
+fatal: No names found, cannot describe anything.
+  CC      src/utils/src/version_gen.o
+  LD      src/utils/src/version.o
+  LD      src/utils/src/built-in.o
+  LD      src/utils/built-in.o
+  LD      src/built-in.o
+  LD      firmware
+  COPY  cf21bl.hex
+  COPY  cf21bl.bin
+Build for the cf21bl platform!
+fatal: No names found, cannot describe anything.
+Build 0:de14ff9f08ae (NA) [1;31mMODIFIED[m
+Version extracted from git
+Flash |  303376/1032192 (29%),  728816 free | text: 295760, data: 7616, ccmdata: 0
+RAM   |  119488/131072  (91%),   11584 free | bss: 111872, data: 7616
+CCM   |   55648/65536   (85%),    9888 free | ccmbss: 55648, ccmdata: 0
+make[2]: Leaving directory '/workspace/apps/tinysdp_ct/build'
+make[1]: Leaving directory '/workspace/crazyflie-firmware'
+tinysdp_ct: build completed successfully.

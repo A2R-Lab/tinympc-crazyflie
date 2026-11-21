@@ -1,0 +1,15 @@
+Flashing tinysdp_ct to radio://0/80/2M/E7E7E7E7E7...
+make KBUILD_OUTPUT=/workspace/apps/tinysdp_ct/build -C /workspace/apps/tinysdp_ct/../../crazyflie-firmware OOT=/workspace/apps/tinysdp_ct EXTRA_CFLAGS="-I/workspace/apps/tinysdp_ct/include -DTSDP_MAX_OBS=4 -DTSDP_MAX_WORLD=8 -DTSDP_MEMORY=0 -Wno-double-promotion" OOT_USES_CXX=1 cload
+make[1]: Entering directory '/workspace/crazyflie-firmware'
+tools/kbuild/Makefile.kbuild:147: warning: overriding recipe for target 'cload'
+Makefile:142: warning: ignoring old recipe for target 'cload'
+make[2]: Entering directory '/workspace/apps/tinysdp_ct/build'
+python3 -m cfloader -w radio://0/80/2M/E7E7E7E7E7 flash  cf21bl.bin stm32-fw
+Reset to bootloader mode ...
+nRF51 has: sd-s130 and requires None and upgrade provides None. Current bootloader version is [2024.10.0] and upgrade provides [None]
+No need to flash nRF soft device
+Flashing 1 of 1 to stm32 (fw): 303831 bytes (297 pages) ..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10..........10.......7
+
+make[2]: Leaving directory '/workspace/apps/tinysdp_ct/build'
+make[1]: Leaving directory '/workspace/crazyflie-firmware'
+tinysdp_ct: flash completed successfully.
