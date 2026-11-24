@@ -90,21 +90,27 @@ def main():
                     help="props off: motors are never armed, tsdp.run = 1 for --timeout s. The planner runs on board against "
                          "the streamed obstacles and follows its own reference (tsdp.resetD is raised for the run and restored), "
                          "so planning time, stack headroom and the commitment logs are measured without flying")
+    ap.add_argument("--hover", action="store_true",
+                    help="hover test: the goal is the scenario's start, so after takeoff the on-board planner holds the drone "
+                         "there for the whole --timeout (the run does not stop at the goal)")
     ap.add_argument("--commit", type=int, choices=[0, 1], help="set tsdp.commit (1 commitment rule, 0 first certified); "
                     "default: leave the firmware's value (1)")
     ap.add_argument("--build-commit", default=None, help="source commit the flashed firmware was built from (recorded in meta)")
     a = ap.parse_args()
     sc = json.load(open(a.scenario))
+    if a.hover: sc["goal"] = list(sc["start"])   # hold the start point
     obstacles = sc.get("obstacles", [])[:8]
     os.makedirs(a.out_dir, exist_ok=True)
     if a.dry_run and a.bench: ap.error("--dry-run and --bench exclude each other")
     flying = not (a.dry_run or a.bench)
     name = (f"{os.path.splitext(os.path.basename(a.scenario))[0]}_{time.strftime('%Y%m%d_%H%M%S')}"
-            + ("_dry" if a.dry_run else "_bench" if a.bench else "") + ("" if a.commit is None else f"_commit{a.commit}"))
+            + ("_dry" if a.dry_run else "_bench" if a.bench else "") + ("_hover" if a.hover else "")
+            + ("" if a.commit is None else f"_commit{a.commit}"))
     csv_path, meta_path = os.path.join(a.out_dir, name + ".csv"), os.path.join(a.out_dir, name + ".meta.json")
 
     meta = {"scenario_file": a.scenario, "scenario": sc, "args": vars(a), "cflib": getattr(cflib, "__version__", "?"),
-            "build_commit": a.build_commit, "mode": "dry run" if a.dry_run else "bench (props off)" if a.bench else "flight",
+            "build_commit": a.build_commit,
+            "mode": ("dry run" if a.dry_run else "bench (props off)" if a.bench else "flight") + (", hover" if a.hover else ""),
             "host_start": time.strftime("%Y-%m-%dT%H:%M:%S"), "outcome": None}
     stop = {"count": 0}
     signal.signal(signal.SIGINT, lambda *_: stop.__setitem__("count", stop["count"] + 1))
@@ -169,7 +175,7 @@ def main():
             state["t_run"] = time.time()
             if not a.dry_run:   # flight or bench
                 p("tsdp.run", "1"); state["run"] = 1
-            outcome = "timeout"
+            outcome = "hover completed" if a.hover else "timeout"
             while time.time() - state["t_run"] < a.timeout:
                 if stop["count"]: outcome = "operator stop"; break
                 t = time.time() - state["t_run"]
@@ -179,10 +185,10 @@ def main():
                 v = [latest.get(f"stateEstimate.v{k}", 0.0) for k in "xyz"]
                 if flying and not all(a.fence[c] <= x[c] <= a.fence[c + 3] for c in range(3)):
                     outcome = f"geofence at {[round(c, 3) for c in x]}"; break
-                if a.bench:   # the reference (setpoint) is what moves on the bench
+                if a.bench and not a.hover:   # the reference (setpoint) is what moves on the bench
                     sp = [latest.get(f"tsdp.sp{k}") for k in "xyz"]
                     if None not in sp and math.dist(sp, sc["goal"]) < 0.1: outcome = "reference reached goal"; break
-                elif math.dist(x, sc["goal"]) < 0.1 and math.hypot(*v) < 0.1:
+                elif not a.hover and math.dist(x, sc["goal"]) < 0.1 and math.hypot(*v) < 0.1:
                     outcome = "reached"; break
                 time.sleep(0.05)
             meta["outcome"] = outcome

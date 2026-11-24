@@ -29,7 +29,28 @@ python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/s
 **Check:** it does not abort with "firmware lacks log variables" (that means an older build without the commitment rule),
 and the new `flights/*_dry.meta.json` shows `"tsdp.commit": "1"` under `params`.
 
-## Step 1: bench, propellers OFF
+## Step 1: hover with the planner on (start here)
+
+Takes off to 0.5 m at the scenario's start, then the on-board planner holds the drone there for 15 s (its goal is the
+start point), then the script lands. No obstacles. This is the first test with the planner commanding a flying drone.
+
+```bash
+for r in 1 2 3; do
+  python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/scenarios/00_empty.json --hover --timeout 15 --commit 1 --build-commit <sha>
+done
+for f in flights/*_hover_*.csv; do python3 apps/tinysdp_ct/host/analyze_flight.py "$f" --json "${f%.csv}.summary.json"; done
+```
+
+**Check:**
+- outcome `hover completed` (not `geofence` or `operator stop`);
+- `tracking error` p95 within a few cm, so the drone holds its point;
+- `frame (all)` p95 below 30 ms, `late` 0 and `fail` 0: the planner runs on board within its budget;
+- `stack free` for the planner and setpoint tasks above 0 (report the values).
+
+Expected, not a problem: holding at the goal, each plan ends about 1 s ahead, so the log shows a new promise roughly every
+second and a few `brake` decisions (a zero-speed hold) between them.
+
+## Step 2: bench, propellers OFF
 
 **Remove the propellers.** The motors are never armed in this mode, but take them off anyway. The planner runs on board
 against virtual obstacles and follows its own reference, so this measures planning time, stack headroom and the
@@ -49,7 +70,7 @@ for f in flights/*_bench_*.csv; do python3 apps/tinysdp_ct/host/analyze_flight.p
 - With `--commit 1`: `moved later within a commitment 0` and `slid` close to 0 s. With `--commit 0`: `slid` clearly above
   0 (the promise slides without the rule).
 
-## Step 2: short flight, no obstacles, rule on and off
+## Step 3: short flight, no obstacles, rule on and off
 
 Takes off to 0.5 m, hovers at the start, then the planner flies 1.5 m to the goal and the script lands.
 
@@ -62,7 +83,7 @@ done; done
 **Check:** outcome `reached` in every run; `tracking error` small (p95 a few cm); with `--commit 1`, `arrival - first
 promise` at most about 0.1 s (the host clock adds some jitter) and `slid` close to 0.
 
-## Step 3: virtual obstacles
+## Step 4: virtual obstacles
 
 The obstacles exist only on the radio link, so nothing physical is in the way. Same pattern, one scenario at a time,
 stopping if any run fails its check:
@@ -81,7 +102,7 @@ safety certificate promises); outcome `reached`.
 
 The whole `flights/` folder: every `*.csv`, `*.meta.json` and `*.summary.json`, including failed or aborted runs, plus one
 line per session with the date, the drone, the positioning system and anything unusual. They are archived in the paper
-repository under `apps/tinysdp_ct/results/<date>_<step>/`.
+repository under `embedded/tinysdp-ct-crazyflie/results/<date>_<step>/`.
 
 ## Settings already in the scenarios
 
