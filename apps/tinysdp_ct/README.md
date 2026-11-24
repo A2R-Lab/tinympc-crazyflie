@@ -134,6 +134,8 @@ python3 apps/tinysdp_ct/host/fly_tinysdp_ct.py --scenario apps/tinysdp_ct/host/s
 ```
 
 Modes:
+**For a step-by-step test plan, start with `HARDWARE_TESTS.md`.**
+
 - `--dry-run`: no takeoff, `tsdp.run` stays 0. Checks, parameters and logging only.
 - `--bench` (**props off**): the motors are never armed, and `tsdp.run = 1` for `--timeout` seconds. The planner runs on board against the streamed obstacles and follows its own reference (`tsdp.resetD` is raised to 100 m for the run and restored), so planning time, stack headroom and the commitment logs are measured without flying. The run ends when the reference reaches the goal.
 - default: flight.
